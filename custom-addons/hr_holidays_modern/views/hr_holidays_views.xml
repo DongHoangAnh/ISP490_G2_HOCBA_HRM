@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Inherit and modify the pivot view for Holidays by Employee -->
+        <record id="hr_holidays_report_modern" model="ir.ui.view">
+            <field name="name">Holidays by Employee - Modern Report</field>
+            <field name="model">hr.leave</field>
+            <field name="inherit_id" ref="hr_holidays.view_hr_leave_report_pivot"/>
+            <field name="arch" type="xml">
+                <!-- Override the entire pivot with modern wrapper -->
+                <data>
+                    <xpath expr="//pivot" position="replace">
+                        <div class="o_hr_holidays_modern_container">
+                            <!-- Header Section -->
+                            <div class="o_hr_holidays_modern_header">
+                                <div class="o_header_left">
+                                    <h1 class="o_header_title">
+                                        <i class="fa fa-calendar-o o_header_icon"></i>
+                                        Ngày nghỉ theo Nhân viên
+                                    </h1>
+                                    <p class="o_header_subtitle">HR Analytics &amp; Insights</p>
+                                </div>
+                                <div class="o_header_right">
+                                    <div class="o_search_box">
+                                        <input type="text" class="o_search_input" 
+                                               placeholder="Tìm kiếm nhân viên..."/>
+                                        <i class="fa fa-search"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Filter Section -->
+                            <div class="o_hr_holidays_modern_filters">
+                                <div class="o_filters_container">
+                                    <span class="o_filter_label">Bộ lọc:</span>
+                                    <div class="o_filter_pills">
+                                        <button class="o_filter_pill o_filter_active">
+                                            <span>Tất cả</span>
+                                            <i class="fa fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <button class="o_filter_add_btn" title="Thêm bộ lọc">
+                                        <i class="fa fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- KPI Summary Cards -->
+                            <div class="o_hr_holidays_kpi_cards">
+                                <div class="o_kpi_card">
+                                    <div class="o_kpi_icon o_kpi_icon_1">
+                                        <i class="fa fa-calendar"></i>
+                                    </div>
+                                    <div class="o_kpi_content">
+                                        <p class="o_kpi_label">Tổng ngày nghỉ</p>
+                                        <p class="o_kpi_value" data-value="total_days">-</p>
+                                        <p class="o_kpi_meta">Tháng này</p>
+                                    </div>
+                                </div>
+
+                                <div class="o_kpi_card">
+                                    <div class="o_kpi_icon o_kpi_icon_2">
+                                        <i class="fa fa-user"></i>
+                                    </div>
+                                    <div class="o_kpi_content">
+                                        <p class="o_kpi_label">Nhân viên đầu tiên</p>
+                                        <p class="o_kpi_value" data-value="top_employee">-</p>
+                                        <p class="o_kpi_meta">12 ngày</p>
+                                    </div>
+                                </div>
+
+                                <div class="o_kpi_card">
+                                    <div class="o_kpi_icon o_kpi_icon_3">
+                                        <i class="fa fa-clock-o"></i>
+                                    </div>
+                                    <div class="o_kpi_content">
+                                        <p class="o_kpi_label">Chờ duyệt</p>
+                                        <p class="o_kpi_value" data-value="pending_count">-</p>
+                                        <p class="o_kpi_meta">Yêu cầu</p>
+                                    </div>
+                                </div>
+
+                                <div class="o_kpi_card">
+                                    <div class="o_kpi_icon o_kpi_icon_4">
+                                        <i class="fa fa-bar-chart"></i>
+                                    </div>
+                                    <div class="o_kpi_content">
+                                        <p class="o_kpi_label">Loại phổ biến</p>
+                                        <p class="o_kpi_value" data-value="popular_type">-</p>
+                                        <p class="o_kpi_meta">Loại nghỉ</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Modern Pivot Table -->
+                            <div class="o_hr_holidays_modern_table_wrapper">
+                                <pivot/>
+                            </div>
+                        </div>
+                    </xpath>
+                </data>
+            </field>
+        </record>
+
+        <!-- Update the action to use the new view -->
+        <record id="hr_holidays.action_view_employee_leave" model="ir.actions.act_window">
+            <field name="view_ids" eval="[(5, 0, 0)]"/>
+            <field name="view_ids" eval="[(0, 0, {'view_mode': 'tree', 'view_id': ref('hr_holidays.view_hr_leave_tree')})]"/>
+            <field name="view_ids" eval="[(0, 0, {'view_mode': 'form', 'view_id': ref('hr_holidays.view_hr_leave_form')})]"/>
+            <field name="view_ids" eval="[(0, 0, {'view_mode': 'pivot', 'view_id': ref('hr_holidays_modern.hr_holidays_report_modern')})]"/>
+            <field name="view_ids" eval="[(0, 0, {'view_mode': 'calendar', 'view_id': ref('hr_holidays.view_holiday_calendar')})]"/>
+        </record>
+
+    </data>
+</odoo>
