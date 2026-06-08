@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="action_hocba_hrm" model="ir.actions.act_url">
+            <field name="name">Học Bá HRM</field>
+            <field name="url">/hocba-hrm</field>
+            <field name="target">self</field>
+        </record>
+
+        <menuitem id="menu_hocba_hrm_root"
+            name="Học Bá HRM"
+            action="action_hocba_hrm"
+            sequence="1"/>
+    </data>
+</odoo>
