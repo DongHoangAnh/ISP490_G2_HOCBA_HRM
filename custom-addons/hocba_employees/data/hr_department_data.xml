@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- 6 phòng ban chuẩn theo đặc tả v2.1 (CONF-EMP-11).
+         noupdate="1": cho phép admin đổi tên mà không bị ghi đè khi nâng cấp. -->
+    <data noupdate="1">
+        <record id="dept_marketing" model="hr.department">
+            <field name="name">Marketing</field>
+            <field name="x_function_desc">Content, Ads, Social, thương hiệu</field>
+        </record>
+        <record id="dept_rd_sp" model="hr.department">
+            <field name="name">Sản phẩm (R&amp;D_SP)</field>
+            <field name="x_function_desc">Giáo viên, R&amp;D, học liệu, Tester</field>
+        </record>
+        <record id="dept_kinh_doanh" model="hr.department">
+            <field name="name">Kinh doanh</field>
+            <field name="x_function_desc">Tư vấn tuyển sinh, chốt học viên</field>
+        </record>
+        <record id="dept_van_hanh" model="hr.department">
+            <field name="name">Vận hành</field>
+            <field name="x_function_desc">Quản lý học viên, lớp học</field>
+        </record>
+        <record id="dept_ketoan_hcns" model="hr.department">
+            <field name="name">Kế toán_HCNS</field>
+            <field name="x_function_desc">Thu chi, quyết toán, HR, hành chính</field>
+        </record>
+        <record id="dept_bod" model="hr.department">
+            <field name="name">BOD</field>
+            <field name="x_function_desc">Ban giám đốc</field>
+        </record>
+    </data>
+</odoo>

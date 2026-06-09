@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Form: thêm trang "Thông tin Học Bá" với 4 trục phân loại + mốc chính thức -->
+        <record id="view_employee_form_hocba" model="ir.ui.view">
+            <field name="name">hr.employee.form.hocba</field>
+            <field name="model">hr.employee</field>
+            <field name="inherit_id" ref="hr.view_employee_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//notebook" position="inside">
+                    <page string="Thông tin Học Bá" name="hocba_info">
+                        <group>
+                            <group string="Định danh &amp; Phân loại">
+                                <field name="x_employee_code"/>
+                                <field name="x_work_form"/>
+                                <field name="x_employment_status"/>
+                                <field name="x_position_type"/>
+                            </group>
+                            <group string="Mốc chính thức">
+                                <field name="x_official_date"/>
+                                <field name="x_official_months" widget="float" readonly="1"/>
+                            </group>
+                        </group>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- List: thêm cột mã NV, hình thức, tình trạng -->
+        <record id="view_employee_tree_hocba" model="ir.ui.view">
+            <field name="name">hr.employee.list.hocba</field>
+            <field name="model">hr.employee</field>
+            <field name="inherit_id" ref="hr.view_employee_tree"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='name']" position="after">
+                    <field name="x_employee_code" optional="show"/>
+                    <field name="x_work_form" optional="show"/>
+                    <field name="x_employment_status" optional="show"/>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Search: lọc & nhóm theo các trục Học Bá -->
+        <record id="view_employee_filter_hocba" model="ir.ui.view">
+            <field name="name">hr.employee.search.hocba</field>
+            <field name="model">hr.employee</field>
+            <field name="inherit_id" ref="hr.view_employee_filter"/>
+            <field name="arch" type="xml">
+                <!-- Field tìm theo mã NV (chèn giữa khối field gốc) -->
+                <xpath expr="//field[@name='job_id']" position="after">
+                    <field name="x_employee_code"/>
+                </xpath>
+                <!-- Bộ lọc nhanh: chèn sau filter "Archived" (trước nhóm Group By) -->
+                <xpath expr="//filter[@name='inactive']" position="after">
+                    <separator/>
+                    <filter name="hocba_probation" string="Thử việc"
+                            domain="[('x_employment_status', '=', 'probation')]"/>
+                    <filter name="hocba_official" string="Chính thức"
+                            domain="[('x_employment_status', '=', 'official')]"/>
+                    <separator/>
+                    <filter name="hocba_offline" string="Offline"
+                            domain="[('x_work_form', '=', 'offline')]"/>
+                    <filter name="hocba_online" string="Online"
+                            domain="[('x_work_form', '=', 'online')]"/>
+                </xpath>
+                <!-- Group By: nhét vào nhóm "Group By" sẵn có của Odoo -->
+                <xpath expr="//filter[@name='group_category_ids']" position="after">
+                    <filter name="group_work_form" string="Hình thức"
+                            context="{'group_by': 'x_work_form'}"/>
+                    <filter name="group_employment_status" string="Tình trạng"
+                            context="{'group_by': 'x_employment_status'}"/>
+                    <filter name="group_position_type" string="Loại vị trí"
+                            context="{'group_by': 'x_position_type'}"/>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
