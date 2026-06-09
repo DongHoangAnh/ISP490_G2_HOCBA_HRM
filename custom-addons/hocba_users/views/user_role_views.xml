@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- User Role Form View -->
+        <record id="hocba_user_role_form" model="ir.ui.view">
+            <field name="name">User Role Form</field>
+            <field name="model">hocba.user.role</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="name" required="1"/>
+                            <field name="code" required="1"/>
+                            <field name="sequence"/>
+                            <field name="color_code"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="ODOO Groups">
+                            <field name="group_ids" nolabel="1"/>
+                        </group>
+                        <group string="Description">
+                            <field name="description" nolabel="1"/>
+                        </group>
+                        <group string="Permissions">
+                            <field name="permissions" nolabel="1"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- User Role Tree View -->
+        <record id="hocba_user_role_tree" model="ir.ui.view">
+            <field name="name">User Role Tree</field>
+            <field name="model">hocba.user.role</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="sequence" widget="handle"/>
+                    <field name="name"/>
+                    <field name="code"/>
+                    <field name="color_code"/>
+                    <field name="active"/>
+                </list>
+            </field>
+        </record>
+    </data>
+</odoo>

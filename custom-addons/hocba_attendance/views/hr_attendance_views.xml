@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Attendance Form View -->
+        <record id="hocba_attendance_form" model="ir.ui.view">
+            <field name="name">Attendance Form</field>
+            <field name="model">hocba.attendance</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="employee_id" required="1"/>
+                                <field name="department_id"/>
+                                <field name="date"/>
+                            </group>
+                            <group>
+                                <field name="check_in" required="1"/>
+                                <field name="check_out"/>
+                                <field name="working_hours"/>
+                            </group>
+                        </group>
+                        <group>
+                            <field name="work_assignment_id"/>
+                            <field name="status_id"/>
+                            <field name="status_code"/>
+                        </group>
+                        <group string="Notes">
+                            <field name="notes" nolabel="1"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Attendance Tree View -->
+        <record id="hocba_attendance_tree" model="ir.ui.view">
+            <field name="name">Attendance Tree</field>
+            <field name="model">hocba.attendance</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="date"/>
+                    <field name="employee_id"/>
+                    <field name="department_id"/>
+                    <field name="check_in"/>
+                    <field name="check_out"/>
+                    <field name="working_hours" sum="working_hours"/>
+                    <field name="status_code"/>
+                </list>
+            </field>
+        </record>
+
+        <!-- Attendance Search View -->
+        <record id="hocba_attendance_search" model="ir.ui.view">
+            <field name="name">Attendance Search</field>
+            <field name="model">hocba.attendance</field>
+            <field name="arch" type="xml">
+                <search>
+                    <field name="employee_id"/>
+                    <field name="department_id"/>
+                    <field name="date"/>
+                    <field name="status_code"/>
+                    <filter name="filter_today" string="Today" domain="[('date', '=', context_today())]"/>
+                    <filter name="filter_on_time" string="On Time" domain="[('status_code', '=', 'on_time')]"/>
+                    <filter name="filter_late" string="Late" domain="[('status_code', '=', 'late')]"/>
+                    <separator/>
+                    <filter name="filter_checked_out" string="Checked Out" domain="[('check_out', '!=', False)]"/>
+                    <filter name="filter_not_checked_out" string="Not Checked Out" domain="[('check_out', '=', False)]"/>
+                    <group>
+                        <filter name="group_by_employee" string="Employee" context="{'group_by': 'employee_id'}"/>
+                        <filter name="group_by_department" string="Department" context="{'group_by': 'department_id'}"/>
+                        <filter name="group_by_date" string="Date" context="{'group_by': 'date'}"/>
+                        <filter name="group_by_status" string="Status" context="{'group_by': 'status_id'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Attendance Calendar View -->
+        <record id="hocba_attendance_calendar" model="ir.ui.view">
+            <field name="name">Attendance Calendar</field>
+            <field name="model">hocba.attendance</field>
+            <field name="arch" type="xml">
+                <calendar string="Attendance" date_start="check_in" date_stop="check_out" color="status_code">
+                    <field name="employee_id"/>
+                    <field name="department_id"/>
+                    <field name="working_hours"/>
+                </calendar>
+            </field>
+        </record>
+    </data>
+</odoo>

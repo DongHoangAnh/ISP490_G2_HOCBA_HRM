@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Record-level security rules -->
+        
+        <!-- HOCBA User - Users can only see themselves -->
+        <record model="ir.rule" id="hocba_user_rule_self">
+            <field name="name">HOCBA User - Own Record Only</field>
+            <field name="model_id" ref="model_hocba_user"/>
+            <field name="groups" eval="[(4, ref('hr.group_hr_user'))]"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- HOCBA User - HR Managers can see all -->
+        <record model="ir.rule" id="hocba_user_rule_manager">
+            <field name="name">HOCBA User - All Records for Managers</field>
+            <field name="model_id" ref="model_hocba_user"/>
+            <field name="groups" eval="[(4, ref('hr.group_hr_manager'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <!-- Access Control - Users can only see their own -->
+        <record model="ir.rule" id="access_control_rule_self">
+            <field name="name">Access Control - Own Records Only</field>
+            <field name="model_id" ref="model_hocba_access_control"/>
+            <field name="groups" eval="[(4, ref('hr.group_hr_user'))]"/>
+            <field name="domain_force">[('user_id.user_id', '=', user.id)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Access Control - HR Managers full access -->
+        <record model="ir.rule" id="access_control_rule_manager">
+            <field name="name">Access Control - All for Managers</field>
+            <field name="model_id" ref="model_hocba_access_control"/>
+            <field name="groups" eval="[(4, ref('hr.group_hr_manager'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+    </data>
+</odoo>

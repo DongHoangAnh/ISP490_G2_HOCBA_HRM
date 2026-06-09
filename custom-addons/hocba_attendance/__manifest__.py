@@ -1,0 +1,19 @@
+{
+    'name': 'HOCBA Attendance Management',
+    'version': '19.0.1.0.0',
+    'category': 'Human Resources',
+    'author': 'HOCBA Team',
+    'license': 'LGPL-3',
+    'depends': ['hr', 'web'],
+    'data': [
+        'security/ir.model.access.csv',
+        'views/hr_attendance_status_views.xml',
+        'views/hr_work_assignment_views.xml',
+        'views/hr_attendance_views.xml',
+        'views/menus.xml',
+    ],
+    'installable': True,
+    'auto_install': False,
+    'application': True,
+    'sequence': 1,
+}

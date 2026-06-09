@@ -1,0 +1,11 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hocba_employee_type_user,access.hocba.employee.type.user,model_hocba_employee_type,hr.group_hr_user,1,0,0,0
+access_hocba_employee_type_manager,access.hocba.employee.type.manager,model_hocba_employee_type,hr.group_hr_manager,1,1,1,1
+access_hocba_user_role_user,access.hocba.user.role.user,model_hocba_user_role,hr.group_hr_user,1,0,0,0
+access_hocba_user_role_manager,access.hocba.user.role.manager,model_hocba_user_role,hr.group_hr_manager,1,1,1,1
+access_hocba_user_user,access.hocba.user.user,model_hocba_user,hr.group_hr_user,1,0,0,0
+access_hocba_user_manager,access.hocba.user.manager,model_hocba_user,hr.group_hr_manager,1,1,1,1
+access_hocba_access_control_user,access.hocba.access.control.user,model_hocba_access_control,hr.group_hr_user,1,0,0,0
+access_hocba_access_control_manager,access.hocba.access.control.manager,model_hocba_access_control,hr.group_hr_manager,1,1,1,1
+access_hocba_department_manager_user,access.hocba.department.manager.user,model_hocba_department_manager,hr.group_hr_user,1,0,0,0
+access_hocba_department_manager_manager,access.hocba.department.manager.manager,model_hocba_department_manager,hr.group_hr_manager,1,1,1,1

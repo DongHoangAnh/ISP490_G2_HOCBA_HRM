@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Employee Type Form View -->
+        <record id="hocba_employee_type_form" model="ir.ui.view">
+            <field name="name">Employee Type Form</field>
+            <field name="model">hocba.employee.type</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="name" required="1"/>
+                            <field name="code" required="1"/>
+                            <field name="sequence"/>
+                            <field name="color_code"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Details">
+                            <field name="description" nolabel="1"/>
+                        </group>
+                        <group string="Benefits">
+                            <field name="benefits" nolabel="1"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Employee Type Tree View -->
+        <record id="hocba_employee_type_tree" model="ir.ui.view">
+            <field name="name">Employee Type Tree</field>
+            <field name="model">hocba.employee.type</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="sequence" widget="handle"/>
+                    <field name="name"/>
+                    <field name="code"/>
+                    <field name="color_code"/>
+                    <field name="active"/>
+                </list>
+            </field>
+        </record>
+    </data>
+</odoo>

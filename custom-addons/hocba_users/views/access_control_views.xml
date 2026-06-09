@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Access Control Form View -->
+        <record id="hocba_access_control_form" model="ir.ui.view">
+            <field name="name">Access Control Form</field>
+            <field name="model">hocba.access.control</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="user_id" required="1"/>
+                            <field name="module_name" required="1"/>
+                            <field name="action" required="1"/>
+                            <field name="allowed"/>
+                        </group>
+                        <group string="Notes">
+                            <field name="notes" nolabel="1"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Access Control Tree View -->
+        <record id="hocba_access_control_tree" model="ir.ui.view">
+            <field name="name">Access Control Tree</field>
+            <field name="model">hocba.access.control</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="user_id"/>
+                    <field name="module_name"/>
+                    <field name="action"/>
+                    <field name="allowed"/>
+                </list>
+            </field>
+        </record>
+    </data>
+</odoo>

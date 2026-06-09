@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hocba_attendance_user,access.hocba.attendance.user,model_hocba_attendance,hr.group_hr_user,1,1,1,0
+access_hocba_attendance_manager,access.hocba.attendance.manager,model_hocba_attendance,hr.group_hr_manager,1,1,1,1
+access_hocba_work_assignment_user,access.hocba.work_assignment.user,model_hocba_work_assignment,hr.group_hr_user,1,1,1,0
+access_hocba_work_assignment_manager,access.hocba.work_assignment.manager,model_hocba_work_assignment,hr.group_hr_manager,1,1,1,1
+access_hocba_attendance_status_user,access.hocba.attendance.status.user,model_hocba_attendance_status,hr.group_hr_user,1,0,0,0
+access_hocba_attendance_status_manager,access.hocba.attendance.status.manager,model_hocba_attendance_status,hr.group_hr_manager,1,1,1,1

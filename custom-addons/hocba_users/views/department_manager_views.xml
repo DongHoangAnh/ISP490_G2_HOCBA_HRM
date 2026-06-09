@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Department Manager Form View -->
+        <record id="hocba_department_manager_form" model="ir.ui.view">
+            <field name="name">Department Manager Form</field>
+            <field name="model">hocba.department.manager</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="department_id" required="1"/>
+                            <field name="user_id" required="1"/>
+                        </group>
+                        <group string="Permissions">
+                            <field name="can_manage_attendance"/>
+                            <field name="can_manage_leaves"/>
+                            <field name="can_manage_employees"/>
+                            <field name="can_approve_reports"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Department Manager Tree View -->
+        <record id="hocba_department_manager_tree" model="ir.ui.view">
+            <field name="name">Department Manager Tree</field>
+            <field name="model">hocba.department.manager</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="department_id"/>
+                    <field name="user_id"/>
+                    <field name="can_manage_attendance"/>
+                    <field name="can_manage_leaves"/>
+                    <field name="can_manage_employees"/>
+                </list>
+            </field>
+        </record>
+    </data>
+</odoo>

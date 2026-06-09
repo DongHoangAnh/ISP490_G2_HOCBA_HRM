@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Attendance Status Form View -->
+        <record id="hocba_attendance_status_form" model="ir.ui.view">
+            <field name="name">Attendance Status Form</field>
+            <field name="model">hocba.attendance.status</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="name" required="1"/>
+                            <field name="code" required="1"/>
+                            <field name="sequence"/>
+                            <field name="color_code"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Description">
+                            <field name="description" nolabel="1"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Attendance Status Tree View -->
+        <record id="hocba_attendance_status_tree" model="ir.ui.view">
+            <field name="name">Attendance Status Tree</field>
+            <field name="model">hocba.attendance.status</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="sequence" widget="handle"/>
+                    <field name="name"/>
+                    <field name="code"/>
+                    <field name="color_code"/>
+                    <field name="active"/>
+                </list>
+            </field>
+        </record>
+
+        <!-- Attendance Status Search View -->
+        <record id="hocba_attendance_status_search" model="ir.ui.view">
+            <field name="name">Attendance Status Search</field>
+            <field name="model">hocba.attendance.status</field>
+            <field name="arch" type="xml">
+                <search>
+                    <field name="name"/>
+                    <field name="code"/>
+                    <filter name="filter_active" string="Active" domain="[('active', '=', True)]"/>
+                </search>
+            </field>
+        </record>
+    </data>
+</odoo>

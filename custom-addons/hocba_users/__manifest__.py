@@ -1,0 +1,26 @@
+{
+    'name': 'HOCBA User Management & Authentication',
+    'version': '19.0.1.0.0',
+    'category': 'Human Resources',
+    'author': 'HOCBA Team',
+    'license': 'LGPL-3',
+    'depends': ['hr', 'web', 'hocba_attendance'],
+    'data': [
+        'security/ir.model.access.csv',
+        'security/security_rules.xml',
+        'views/employee_type_views.xml',
+        'views/user_role_views.xml',
+        'views/hocba_user_views.xml',
+        'views/access_control_views.xml',
+        'views/department_manager_views.xml',
+        'views/menus.xml',
+    ],
+    'controllers': [
+        'controllers.auth',
+        'controllers.dashboard',
+    ],
+    'installable': True,
+    'auto_install': False,
+    'application': True,
+    'sequence': 0,
+}

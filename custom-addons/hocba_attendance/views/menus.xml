@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- HOCBA HRM Application Root (appears in the app launcher) -->
+        <menuitem name="HOCBA HRM" id="hocba_hrm_root" sequence="10" web_icon="hocba_attendance,static/description/icon.png"/>
+
+        <!-- Menu Items -->
+        <menuitem name="Attendance" id="hocba_attendance_menu_root" parent="hocba_hrm_root" sequence="20"/>
+
+        <menuitem name="Attendance Records" id="hocba_attendance_menu" parent="hocba_attendance_menu_root" sequence="10"/>
+        
+        <record id="hocba_attendance_action" model="ir.actions.act_window">
+            <field name="name">Attendance Records</field>
+            <field name="res_model">hocba.attendance</field>
+            <field name="view_mode">list,form,calendar</field>
+            <field name="search_view_id" ref="hocba_attendance_search"/>
+        </record>
+        
+        <menuitem name="Attendance Records" id="hocba_attendance_menu_items" parent="hocba_attendance_menu" action="hocba_attendance_action" sequence="10"/>
+
+        <!-- Work Assignments -->
+        <menuitem name="Work Assignments" id="hocba_work_assignment_menu" parent="hocba_attendance_menu_root" sequence="20"/>
+        
+        <record id="hocba_work_assignment_action" model="ir.actions.act_window">
+            <field name="name">Work Assignments</field>
+            <field name="res_model">hocba.work_assignment</field>
+            <field name="view_mode">list,form</field>
+        </record>
+        
+        <menuitem name="Work Assignments" id="hocba_work_assignment_menu_items" parent="hocba_work_assignment_menu" action="hocba_work_assignment_action" sequence="10"/>
+
+        <!-- Status Configuration -->
+        <menuitem name="Configuration" id="hocba_attendance_config_menu" parent="hocba_attendance_menu_root" sequence="100"/>
+        
+        <record id="hocba_attendance_status_action" model="ir.actions.act_window">
+            <field name="name">Attendance Status</field>
+            <field name="res_model">hocba.attendance.status</field>
+            <field name="view_mode">list,form</field>
+        </record>
+        
+        <menuitem name="Attendance Status" id="hocba_attendance_status_menu_items" parent="hocba_attendance_config_menu" action="hocba_attendance_status_action" sequence="10"/>
+    </data>
+</odoo>
