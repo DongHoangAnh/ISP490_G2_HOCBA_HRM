@@ -1,6 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_hocba_employee_type_user,access.hocba.employee.type.user,model_hocba_employee_type,hr.group_hr_user,1,0,0,0
-access_hocba_employee_type_manager,access.hocba.employee.type.manager,model_hocba_employee_type,hr.group_hr_manager,1,1,1,1
 access_hocba_user_role_user,access.hocba.user.role.user,model_hocba_user_role,hr.group_hr_user,1,0,0,0
 access_hocba_user_role_manager,access.hocba.user.role.manager,model_hocba_user_role,hr.group_hr_manager,1,1,1,1
 access_hocba_user_user,access.hocba.user.user,model_hocba_user,hr.group_hr_user,1,0,0,0

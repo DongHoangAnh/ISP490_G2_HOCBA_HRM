@@ -15,6 +15,7 @@ Payroll, Recruitment.
     """,
     'depends': ['hr'],
     'data': [
+        'security/ir.model.access.csv',
         'data/hr_employee_sequence.xml',
         'data/hr_department_data.xml',
         'views/hr_employee_views.xml',

@@ -7,11 +7,10 @@ class EmployeeType(models.Model):
     _order = 'sequence, name'
 
     sequence = fields.Integer(default=10)
-    name = fields.Char(string='Type Name', required=True, unique=True)
+    name = fields.Char(string='Type Name', required=True)
     code = fields.Char(
         string='Type Code',
         required=True,
-        unique=True,
         help='Internal code for system use'
     )
     description = fields.Text(string='Description')
