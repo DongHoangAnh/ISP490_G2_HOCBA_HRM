@@ -22,6 +22,45 @@
                             </group>
                         </group>
                     </page>
+                    <!-- F-002 + F-003: Hồ sơ pháp lý VN & người phụ thuộc -->
+                    <page string="Pháp lý &amp; Người phụ thuộc" name="hocba_legal">
+                        <group>
+                            <group string="Giấy tờ pháp lý">
+                                <field name="x_id_date_issue"/>
+                                <field name="x_id_place_issue"/>
+                                <field name="x_pit_code"/>
+                                <field name="x_social_insurance_no"/>
+                                <field name="x_health_insurance_no"/>
+                                <field name="x_health_care_place"/>
+                            </group>
+                            <group string="Địa chỉ thường trú">
+                                <field name="x_permanent_state_id" options="{'no_create': True}"/>
+                                <field name="x_permanent_ward"/>
+                                <field name="x_permanent_street"/>
+                            </group>
+                        </group>
+                        <group string="Địa chỉ tạm trú">
+                            <field name="x_current_same_as_permanent"/>
+                            <group invisible="x_current_same_as_permanent">
+                                <field name="x_current_state_id" options="{'no_create': True}"/>
+                                <field name="x_current_ward"/>
+                                <field name="x_current_street"/>
+                            </group>
+                        </group>
+                        <separator string="Người phụ thuộc (giảm trừ gia cảnh)"/>
+                        <field name="x_active_dependent_count"/>
+                        <field name="x_dependent_ids">
+                            <list editable="bottom">
+                                <field name="name"/>
+                                <field name="relationship"/>
+                                <field name="birthday"/>
+                                <field name="national_id"/>
+                                <field name="date_start"/>
+                                <field name="date_end"/>
+                                <field name="notes"/>
+                            </list>
+                        </field>
+                    </page>
                 </xpath>
             </field>
         </record>
