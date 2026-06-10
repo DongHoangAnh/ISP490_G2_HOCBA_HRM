@@ -7,6 +7,18 @@
             <field name="model">hr.employee</field>
             <field name="inherit_id" ref="hr.view_employee_form"/>
             <field name="arch" type="xml">
+                <!-- Smart buttons: Tài sản (đếm đang giữ — BR-052) + Thăng tiến -->
+                <xpath expr="//div[@name='button_box']" position="inside">
+                    <button name="action_view_hocba_assets" type="object"
+                            class="oe_stat_button" icon="fa-laptop">
+                        <field name="x_asset_count" widget="statinfo" string="Tài sản"/>
+                    </button>
+                    <button name="action_view_hocba_promotions" type="object"
+                            class="oe_stat_button" icon="fa-line-chart"
+                            groups="hr.group_hr_user">
+                        <field name="x_promotion_count" widget="statinfo" string="Thăng tiến"/>
+                    </button>
+                </xpath>
                 <xpath expr="//notebook" position="inside">
                     <page string="Thông tin Học Bá" name="hocba_info">
                         <group>

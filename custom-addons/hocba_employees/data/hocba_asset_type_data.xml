@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- 11 loại tài sản theo sổ 8.3 Lark (GĐ-05 đã xác nhận từ dữ liệu thật) -->
+    <data noupdate="1">
+        <record id="asset_type_monitor" model="hocba.asset.type">
+            <field name="sequence">10</field>
+            <field name="name">Màn hình máy tính</field>
+            <field name="code">monitor</field>
+        </record>
+        <record id="asset_type_pc" model="hocba.asset.type">
+            <field name="sequence">20</field>
+            <field name="name">Cây máy tính</field>
+            <field name="code">pc</field>
+        </record>
+        <record id="asset_type_keyboard" model="hocba.asset.type">
+            <field name="sequence">30</field>
+            <field name="name">Bàn phím</field>
+            <field name="code">keyboard</field>
+        </record>
+        <record id="asset_type_mouse" model="hocba.asset.type">
+            <field name="sequence">40</field>
+            <field name="name">Chuột máy tính</field>
+            <field name="code">mouse</field>
+        </record>
+        <record id="asset_type_keyboard_pad" model="hocba.asset.type">
+            <field name="sequence">50</field>
+            <field name="name">Tấm lót bàn phím</field>
+            <field name="code">keyboard_pad</field>
+        </record>
+        <record id="asset_type_headset_big" model="hocba.asset.type">
+            <field name="sequence">60</field>
+            <field name="name">Tai nghe to</field>
+            <field name="code">headset_big</field>
+        </record>
+        <record id="asset_type_headset_sale" model="hocba.asset.type">
+            <field name="sequence">70</field>
+            <field name="name">Tai nghe sale</field>
+            <field name="code">headset_sale</field>
+        </record>
+        <record id="asset_type_chair" model="hocba.asset.type">
+            <field name="sequence">80</field>
+            <field name="name">Ghế làm việc</field>
+            <field name="code">chair</field>
+        </record>
+        <record id="asset_type_desk" model="hocba.asset.type">
+            <field name="sequence">90</field>
+            <field name="name">Bàn làm việc</field>
+            <field name="code">desk</field>
+        </record>
+        <record id="asset_type_printer" model="hocba.asset.type">
+            <field name="sequence">100</field>
+            <field name="name">Máy in</field>
+            <field name="code">printer</field>
+        </record>
+        <record id="asset_type_trash_bin" model="hocba.asset.type">
+            <field name="sequence">110</field>
+            <field name="name">Thùng rác</field>
+            <field name="code">trash_bin</field>
+        </record>
+    </data>
+</odoo>

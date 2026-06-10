@@ -3,3 +3,6 @@ from . import hr_version
 from . import hr_employee_dependent
 from . import hr_department
 from . import employee_type
+from . import hocba_asset_type
+from . import hr_employee_asset
+from . import hr_promotion_history

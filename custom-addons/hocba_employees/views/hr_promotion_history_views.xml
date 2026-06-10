@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="hr_promotion_history_form" model="ir.ui.view">
+            <field name="name">hr.promotion.history.form</field>
+            <field name="model">hr.promotion.history</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group string="Nhân viên &amp; hiệu lực">
+                                <field name="employee_id"/>
+                                <field name="date_effective"/>
+                                <field name="decision_ref"/>
+                                <field name="approved_by"/>
+                            </group>
+                            <group string="Thay đổi">
+                                <field name="from_job_id"/>
+                                <field name="to_job_id"/>
+                                <field name="to_department_id"/>
+                                <field name="from_wage"/>
+                                <field name="to_wage"/>
+                            </group>
+                        </group>
+                        <group string="Phụ cấp &amp; lý do">
+                            <field name="allowance_note" nolabel="1" placeholder="Phụ cấp (tóm tắt)..."/>
+                            <field name="reason" nolabel="1" placeholder="Lý do / Căn cứ (bắt buộc khi đổi lương)..."/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="hr_promotion_history_list" model="ir.ui.view">
+            <field name="name">hr.promotion.history.list</field>
+            <field name="model">hr.promotion.history</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="date_effective"/>
+                    <field name="employee_id"/>
+                    <field name="from_job_id"/>
+                    <field name="to_job_id"/>
+                    <field name="from_wage" optional="show"/>
+                    <field name="to_wage" optional="show"/>
+                    <field name="decision_ref" optional="show"/>
+                    <field name="approved_by" optional="hide"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="hr_promotion_history_action" model="ir.actions.act_window">
+            <field name="name">Lịch sử thăng tiến</field>
+            <field name="res_model">hr.promotion.history</field>
+            <field name="view_mode">list,form</field>
+        </record>
+        <menuitem id="menu_hr_promotion_history" name="Lịch sử thăng tiến"
+                  parent="menu_hocba_employees_root" action="hr_promotion_history_action" sequence="30"/>
+    </data>
+</odoo>

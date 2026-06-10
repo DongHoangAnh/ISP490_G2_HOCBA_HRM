@@ -127,10 +127,54 @@ class HrEmployee(models.Model):
         compute='_compute_active_dependent_count',
         help='Số người phụ thuộc đang trong thời gian được tính giảm trừ.')
 
+    # --- F-006 / F-007: tài sản & thăng tiến ---
+    x_asset_ids = fields.One2many(
+        'hr.employee.asset', 'employee_id', string='Tài sản')
+    x_asset_count = fields.Integer(
+        string='Tài sản đang giữ', compute='_compute_asset_count')
+    x_promotion_ids = fields.One2many(
+        'hr.promotion.history', 'employee_id', string='Lịch sử thăng tiến')
+    x_promotion_count = fields.Integer(
+        string='Số lần thăng tiến', compute='_compute_promotion_count')
+
     _sql_constraints = [
         ('x_employee_code_uniq', 'unique(x_employee_code)',
          'Mã nhân sự phải là duy nhất!'),
     ]
+
+    @api.depends('x_asset_ids.state')
+    def _compute_asset_count(self):
+        # BR-052: chỉ đếm tài sản đang giữ
+        for emp in self:
+            emp.x_asset_count = len(emp.x_asset_ids.filtered(
+                lambda a: a.state == 'assigned'))
+
+    @api.depends('x_promotion_ids')
+    def _compute_promotion_count(self):
+        for emp in self:
+            emp.x_promotion_count = len(emp.x_promotion_ids)
+
+    def action_view_hocba_assets(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Tài sản: %s') % self.name,
+            'res_model': 'hr.employee.asset',
+            'view_mode': 'list,form',
+            'domain': [('employee_id', '=', self.id)],
+            'context': {'default_employee_id': self.id},
+        }
+
+    def action_view_hocba_promotions(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Thăng tiến: %s') % self.name,
+            'res_model': 'hr.promotion.history',
+            'view_mode': 'list,form',
+            'domain': [('employee_id', '=', self.id)],
+            'context': {'default_employee_id': self.id},
+        }
 
     @api.depends('x_official_date')
     def _compute_official_months(self):
@@ -259,6 +303,16 @@ class HrEmployee(models.Model):
     # F-005: Tự động hóa cổng (AUT-001 / AUT-002) — chạy khi result đổi
     # ------------------------------------------------------------------
     def write(self, vals):
+        # F-006: chặn Archive khi còn tài sản chưa thu hồi/chuyển giao
+        if vals.get('active') is False:
+            for emp in self:
+                pending = emp.x_asset_ids.filtered(lambda a: a.state == 'assigned')
+                if pending:
+                    raise ValidationError(_(
+                        'Không thể lưu trữ "%(emp)s" — còn %(n)d tài sản chưa thu hồi: '
+                        '%(codes)s') % {
+                            'emp': emp.name, 'n': len(pending),
+                            'codes': ', '.join(pending.mapped('asset_code'))})
         # Quyền điền kết quả: HR Manager hoặc quản lý trực tiếp (spec F-004)
         if any(f in vals for f in self.GATE_EDIT_FIELDS) and not self.env.su \
                 and not self.env.user.has_group('hr.group_hr_manager'):
