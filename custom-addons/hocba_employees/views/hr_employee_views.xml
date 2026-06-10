@@ -54,6 +54,20 @@
                                 <field name="x_skip_auto_trigger" groups="hr.group_hr_manager"/>
                             </group>
                         </group>
+                        <!-- F-008: chỉ hiện với Nhóm A (GV/CTV/Part-time/Online) -->
+                        <group string="Đánh giá thử giảng (Nhóm A — giảng viên)"
+                               invisible="x_work_form != 'online' and x_employment_status not in ('parttime', 'ctv', 'advisor')">
+                            <group>
+                                <field name="x_trial_lesson_date"/>
+                                <field name="x_trial_lesson_class"/>
+                                <field name="x_trial_lesson_result"/>
+                            </group>
+                            <group>
+                                <field name="x_trial_score_method"/>
+                                <field name="x_trial_score_content"/>
+                                <field name="x_trial_lesson_note"/>
+                            </group>
+                        </group>
                     </page>
                     <!-- F-002 + F-003: Hồ sơ pháp lý VN & người phụ thuộc -->
                     <page string="Pháp lý &amp; Người phụ thuộc" name="hocba_legal">

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- CONF-EMP-04/05 + BR-070: ma trận kỹ năng tiếng Trung & Sư phạm -->
+    <data noupdate="1">
+        <!-- Skill Type: Tiếng Trung -->
+        <record id="skill_type_chinese" model="hr.skill.type">
+            <field name="name">Tiếng Trung</field>
+        </record>
+        <record id="skill_level_chinese_basic" model="hr.skill.level">
+            <field name="name">Sơ cấp</field>
+            <field name="level_progress">33</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_level_chinese_mid" model="hr.skill.level">
+            <field name="name">Trung cấp</field>
+            <field name="level_progress">66</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_level_chinese_adv" model="hr.skill.level">
+            <field name="name">Cao cấp</field>
+            <field name="level_progress">100</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+            <field name="default_level" eval="True"/>
+        </record>
+        <record id="skill_hsk1" model="hr.skill">
+            <field name="name">HSK 1</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hsk2" model="hr.skill">
+            <field name="name">HSK 2</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hsk3" model="hr.skill">
+            <field name="name">HSK 3</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hsk4" model="hr.skill">
+            <field name="name">HSK 4</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hsk5" model="hr.skill">
+            <field name="name">HSK 5</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hsk6" model="hr.skill">
+            <field name="name">HSK 6</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hskk_so" model="hr.skill">
+            <field name="name">HSKK Sơ cấp</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hskk_trung" model="hr.skill">
+            <field name="name">HSKK Trung cấp</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_hskk_cao" model="hr.skill">
+            <field name="name">HSKK Cao cấp</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_tocfl_a2" model="hr.skill">
+            <field name="name">TOCFL A2</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_tocfl_b1" model="hr.skill">
+            <field name="name">TOCFL B1</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_tocfl_b2" model="hr.skill">
+            <field name="name">TOCFL B2</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_tocfl_c1" model="hr.skill">
+            <field name="name">TOCFL C1</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+        <record id="skill_tocfl_c2" model="hr.skill">
+            <field name="name">TOCFL C2</field>
+            <field name="skill_type_id" ref="skill_type_chinese"/>
+        </record>
+
+        <!-- Skill Type: Sư phạm ngoại ngữ -->
+        <record id="skill_type_pedagogy" model="hr.skill.type">
+            <field name="name">Sư phạm ngoại ngữ</field>
+        </record>
+        <record id="skill_level_pedagogy_cert" model="hr.skill.level">
+            <field name="name">Có chứng chỉ</field>
+            <field name="level_progress">100</field>
+            <field name="skill_type_id" ref="skill_type_pedagogy"/>
+            <field name="default_level" eval="True"/>
+        </record>
+        <record id="skill_pedagogy_univ" model="hr.skill">
+            <field name="name">Bằng ĐH Sư phạm tiếng Trung</field>
+            <field name="skill_type_id" ref="skill_type_pedagogy"/>
+        </record>
+        <record id="skill_pedagogy_nvsp" model="hr.skill">
+            <field name="name">Chứng chỉ NVSP (Bộ GD VN)</field>
+            <field name="skill_type_id" ref="skill_type_pedagogy"/>
+        </record>
+        <record id="skill_pedagogy_ctcsol" model="hr.skill">
+            <field name="name">CTCSOL Quốc tế</field>
+            <field name="skill_type_id" ref="skill_type_pedagogy"/>
+        </record>
+    </data>
+</odoo>

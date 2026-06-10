@@ -127,6 +127,20 @@ class HrEmployee(models.Model):
         compute='_compute_active_dependent_count',
         help='Số người phụ thuộc đang trong thời gian được tính giảm trừ.')
 
+    # --- F-008: Đánh giá thử giảng (Nhóm A — giảng viên) ---
+    x_trial_lesson_date = fields.Date(string='Ngày thử giảng')
+    x_trial_lesson_class = fields.Char(string='Lớp thử giảng')
+    x_trial_score_method = fields.Float(
+        string='Điểm phương pháp', digits=(3, 1),
+        help='Thang điểm 1–10.')
+    x_trial_score_content = fields.Float(
+        string='Điểm chuyên môn', digits=(3, 1),
+        help='Thang điểm 1–10.')
+    x_trial_lesson_note = fields.Text(string='Nhận xét thử giảng')
+    x_trial_lesson_result = fields.Selection(
+        selection=[('draft', 'Chưa đánh giá'), ('pass', 'Đạt'), ('fail', 'Không đạt')],
+        string='Kết quả thử giảng', default='draft', tracking=True)
+
     # --- F-006 / F-007: tài sản & thăng tiến ---
     x_asset_ids = fields.One2many(
         'hr.employee.asset', 'employee_id', string='Tài sản')
@@ -299,6 +313,21 @@ class HrEmployee(models.Model):
                     raise ValidationError(_(
                         'Ngày đánh giá phải từ ngày bắt đầu thử việc đến hôm nay.'))
 
+    @api.constrains('x_trial_score_method', 'x_trial_score_content',
+                    'x_trial_lesson_date', 'x_trial_lesson_result',
+                    'x_trial_lesson_note')
+    def _check_trial_lesson(self):
+        today = fields.Date.context_today(self)
+        for emp in self:
+            for score in (emp.x_trial_score_method, emp.x_trial_score_content):
+                if score and not (1 <= score <= 10):
+                    raise ValidationError(_('Điểm thử giảng phải trong thang 1–10.'))
+            if emp.x_trial_lesson_date and emp.x_trial_lesson_date > today:
+                raise ValidationError(_('Ngày thử giảng không được sau hôm nay.'))
+            if emp.x_trial_lesson_result == 'fail' and not emp.x_trial_lesson_note:
+                raise ValidationError(_(
+                    'Cần nhập Nhận xét thử giảng khi kết quả Không đạt.'))
+
     # ------------------------------------------------------------------
     # F-005: Tự động hóa cổng (AUT-001 / AUT-002) — chạy khi result đổi
     # ------------------------------------------------------------------
@@ -331,7 +360,28 @@ class HrEmployee(models.Model):
 
         track_gates = any(f in vals for f in self.GATE_RESULT_FIELDS)
         pre = {e.id: (e.x_eval_2w_result, e.x_eval_2m_result) for e in self} if track_gates else {}
+        track_trial = 'x_trial_lesson_result' in vals
+        pre_trial = {e.id: e.x_trial_lesson_result for e in self} if track_trial else {}
         res = super().write(vals)
+        # F-008: kết quả thử giảng → activity cho HR
+        if track_trial:
+            today = fields.Date.context_today(self)
+            for emp in self:
+                if emp.x_trial_lesson_result == pre_trial[emp.id] \
+                        or emp.x_trial_lesson_result == 'draft':
+                    continue
+                if emp.x_trial_lesson_result == 'pass':
+                    emp._hocba_gate_activity(
+                        _('Ký HĐ thỉnh giảng cho %s') % emp.name,
+                        today + timedelta(days=3))
+                    emp.message_post(body=_(
+                        '✅ Thử giảng ĐẠT (PP %(m).1f / CM %(c).1f) — nhắc HR ký HĐ.') % {
+                            'm': emp.x_trial_score_method, 'c': emp.x_trial_score_content})
+                else:
+                    emp._hocba_gate_activity(
+                        _('Thông báo kết quả thử giảng cho %s') % emp.name,
+                        today + timedelta(days=1))
+                    emp.message_post(body=_('❌ Thử giảng KHÔNG ĐẠT — nhắc HR thông báo.'))
         if track_gates:
             for emp in self:
                 old_2w, old_2m = pre[emp.id]
@@ -426,3 +476,34 @@ class HrEmployee(models.Model):
             emp._hocba_gate_activity(
                 _('Sắp đến hạn đánh giá tháng-2: %s') % emp.name,
                 emp.x_eval_2m_due, emp.parent_id.user_id or None)
+
+    @api.model
+    def _cron_cert_expiry_alerts(self):
+        """F-009 — CRON 7:00 SA: cảnh báo chứng chỉ sắp/đã hết hạn.
+
+        Ngưỡng cấu hình qua ir.config_parameter `hoc_ba.cert_alert_days`
+        (mặc định 60 — GĐ-08); chỉ xét chứng chỉ đã xác minh (GĐ-09).
+        """
+        Skill = self.env['hr.employee.skill']
+        days = int(self.env['ir.config_parameter'].sudo().get_param(
+            'hoc_ba.cert_alert_days', '60'))
+        today = fields.Date.today()
+        common = [('x_cert_verified', '=', True),
+                  ('employee_id.active', '=', True)]
+        # Sắp hết hạn trong <days> ngày
+        expiring = Skill.search(common + [
+            ('x_cert_expiry', '>=', today),
+            ('x_cert_expiry', '<=', today + timedelta(days=days))])
+        for emp in expiring.employee_id:
+            skills = expiring.filtered(lambda s: s.employee_id == emp)
+            deadline = max(min(skills.mapped('x_cert_expiry')) - timedelta(days=30), today)
+            emp._hocba_gate_activity(
+                _('Chứng chỉ sắp hết hạn: %s') % ', '.join(
+                    skills.mapped('skill_id.name')), deadline)
+        # Đã hết hạn → ưu tiên cao
+        expired = Skill.search(common + [('x_cert_expiry', '<', today)])
+        for emp in expired.employee_id:
+            skills = expired.filtered(lambda s: s.employee_id == emp)
+            emp._hocba_gate_activity(
+                _('Chứng chỉ ĐÃ HẾT HẠN: %s') % ', '.join(
+                    skills.mapped('skill_id.name')), today)

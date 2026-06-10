@@ -13,5 +13,22 @@
                    eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 00:00:00')"/>
             <field name="active" eval="True"/>
         </record>
+
+        <!-- F-009: cảnh báo chứng chỉ sắp hết hạn (ngưỡng GĐ-08, configurable) -->
+        <record id="config_cert_alert_days" model="ir.config_parameter">
+            <field name="key">hoc_ba.cert_alert_days</field>
+            <field name="value">60</field>
+        </record>
+        <record id="cron_cert_expiry_alert" model="ir.cron">
+            <field name="name">HOCBA: Cảnh báo chứng chỉ sắp hết hạn</field>
+            <field name="model_id" ref="hr.model_hr_employee"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_cert_expiry_alerts()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall"
+                   eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 00:05:00')"/>
+            <field name="active" eval="True"/>
+        </record>
     </data>
 </odoo>
