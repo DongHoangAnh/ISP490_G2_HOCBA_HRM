@@ -151,6 +151,13 @@ class HrEmployee(models.Model):
     x_promotion_count = fields.Integer(
         string='Số lần thăng tiến', compute='_compute_promotion_count')
 
+    # --- F-001: Hồ sơ tổng quan — mini-timeline & cảnh báo chứng chỉ ---
+    x_probation_timeline_html = fields.Html(
+        string='Dòng thời gian thử việc',
+        compute='_compute_probation_timeline_html', sanitize=False)
+    x_cert_alert_count = fields.Integer(
+        string='Chứng chỉ sắp hết hạn', compute='_compute_cert_alert_count')
+
     _sql_constraints = [
         ('x_employee_code_uniq', 'unique(x_employee_code)',
          'Mã nhân sự phải là duy nhất!'),
@@ -189,6 +196,83 @@ class HrEmployee(models.Model):
             'domain': [('employee_id', '=', self.id)],
             'context': {'default_employee_id': self.id},
         }
+
+    def action_view_hocba_certs(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Chứng chỉ: %s') % self.name,
+            'res_model': 'hr.employee.skill',
+            'view_mode': 'list',
+            'view_id': self.env.ref(
+                'hocba_employees.hr_employee_skill_cert_list').id,
+            'domain': [('employee_id', '=', self.id),
+                       ('x_cert_expiry', '!=', False)],
+        }
+
+    @api.depends('employee_skill_ids.x_cert_expiry',
+                 'employee_skill_ids.x_cert_verified')
+    def _compute_cert_alert_count(self):
+        days = int(self.env['ir.config_parameter'].sudo().get_param(
+            'hoc_ba.cert_alert_days', '60'))
+        limit = fields.Date.context_today(self) + timedelta(days=days)
+        for emp in self:
+            emp.x_cert_alert_count = len(emp.employee_skill_ids.filtered(
+                lambda s: s.x_cert_verified and s.x_cert_expiry
+                and s.x_cert_expiry <= limit))
+
+    TIMELINE_COLORS = {'done': '#28a745', 'fail': '#C8102E', 'pending': '#ced4da'}
+
+    @api.depends('x_probation_start', 'x_eval_2w_result', 'x_eval_2w_date',
+                 'x_eval_2w_due', 'x_equip_grant_date', 'x_eval_2m_result',
+                 'x_eval_2m_date', 'x_eval_2m_due', 'x_official_date')
+    def _compute_probation_timeline_html(self):
+        # F-001: mini-timeline 5 điểm theo wireframe (server-rendered, không JS)
+        def fmt(d):
+            return d.strftime('%d/%m/%Y') if d else ''
+
+        for emp in self:
+            def gate_state(result):
+                return 'done' if result == 'pass' else (
+                    'fail' if result == 'fail' else 'pending')
+
+            steps = [
+                (_('Thử việc'), 'done' if emp.x_probation_start else 'pending',
+                 fmt(emp.x_probation_start)),
+                (_('ĐG tuần-2'), gate_state(emp.x_eval_2w_result),
+                 fmt(emp.x_eval_2w_date) or (
+                     emp.x_eval_2w_due and _('hạn %s') % fmt(emp.x_eval_2w_due) or '')),
+                (_('Cấp thiết bị'), 'done' if emp.x_equip_grant_date else 'pending',
+                 fmt(emp.x_equip_grant_date)),
+                (_('ĐG tháng-2'), gate_state(emp.x_eval_2m_result),
+                 fmt(emp.x_eval_2m_date) or (
+                     emp.x_eval_2m_due and _('hạn %s') % fmt(emp.x_eval_2m_due) or '')),
+                (_('Chính thức'), 'done' if emp.x_official_date else 'pending',
+                 fmt(emp.x_official_date)),
+            ]
+            parts = []
+            for i, (label, state, sub) in enumerate(steps):
+                if i:
+                    parts.append(
+                        '<div style="flex:1 1 24px;border-top:2px solid #dee2e6;'
+                        'margin-top:11px;min-width:12px;"></div>')
+                mark = {'done': '✓', 'fail': '✗'}.get(state, str(i + 1))
+                color = self.TIMELINE_COLORS[state]
+                txt = '#fff' if state != 'pending' else '#495057'
+                parts.append(
+                    '<div style="text-align:center;min-width:78px;">'
+                    '<div style="width:24px;height:24px;border-radius:50%%;'
+                    'background:%(color)s;color:%(txt)s;line-height:24px;'
+                    'margin:0 auto;font-size:12px;font-weight:bold;">%(mark)s</div>'
+                    '<div style="font-size:11px;font-weight:600;margin-top:4px;">'
+                    '%(label)s</div>'
+                    '<div style="font-size:10px;color:#6c757d;">%(sub)s</div>'
+                    '</div>' % {
+                        'color': color, 'txt': txt, 'mark': mark,
+                        'label': label, 'sub': sub})
+            emp.x_probation_timeline_html = (
+                '<div style="display:flex;align-items:flex-start;'
+                'padding:4px 0;">%s</div>' % ''.join(parts))
 
     @api.depends('x_official_date')
     def _compute_official_months(self):

@@ -7,11 +7,22 @@
             <field name="model">hr.employee</field>
             <field name="inherit_id" ref="hr.view_employee_form"/>
             <field name="arch" type="xml">
-                <!-- Smart buttons: Tài sản (đếm đang giữ — BR-052) + Thăng tiến -->
+                <!-- F-001: statusbar Thử việc → Chính thức → Nghỉ việc -->
+                <xpath expr="//form/header" position="inside">
+                    <field name="x_employment_status" widget="statusbar"
+                           statusbar_visible="probation,official,resigned"/>
+                </xpath>
+                <!-- Smart buttons: Tài sản (BR-052) + Chứng chỉ + Thăng tiến -->
                 <xpath expr="//div[@name='button_box']" position="inside">
                     <button name="action_view_hocba_assets" type="object"
                             class="oe_stat_button" icon="fa-laptop">
                         <field name="x_asset_count" widget="statinfo" string="Tài sản"/>
+                    </button>
+                    <button name="action_view_hocba_certs" type="object"
+                            class="oe_stat_button" icon="fa-certificate"
+                            groups="hr.group_hr_user">
+                        <field name="x_cert_alert_count" widget="statinfo"
+                               string="CC sắp hết hạn"/>
                     </button>
                     <button name="action_view_hocba_promotions" type="object"
                             class="oe_stat_button" icon="fa-line-chart"
@@ -32,6 +43,11 @@
                                 <field name="x_official_date"/>
                                 <field name="x_official_months" widget="float" readonly="1"/>
                             </group>
+                        </group>
+                        <!-- F-001: mini-timeline 5 điểm (Nhóm B) -->
+                        <group invisible="x_position_type not in ('staff', 'manager') or x_work_form != 'offline'">
+                            <field name="x_probation_timeline_html" nolabel="1"
+                                   colspan="2" readonly="1"/>
                         </group>
                         <!-- F-004: chỉ hiện với Nhóm B — BR-030 -->
                         <group string="Dòng thời gian thử việc (2 cổng — Nhóm B)"
@@ -118,11 +134,60 @@
             <field name="model">hr.employee</field>
             <field name="inherit_id" ref="hr.view_employee_tree"/>
             <field name="arch" type="xml">
+                <xpath expr="//list" position="attributes">
+                    <attribute name="decoration-info">x_employment_status == 'probation'</attribute>
+                    <attribute name="decoration-warning">x_employment_status == 'exiting'</attribute>
+                    <attribute name="decoration-muted">x_employment_status == 'resigned'</attribute>
+                </xpath>
                 <xpath expr="//field[@name='name']" position="after">
                     <field name="x_employee_code" optional="show"/>
                     <field name="x_work_form" optional="show"/>
                     <field name="x_employment_status" optional="show"/>
                 </xpath>
+            </field>
+        </record>
+
+        <!-- Kanban: badge mã NV / tình trạng / hình thức (F-001 chips) -->
+        <record id="view_employee_kanban_hocba" model="ir.ui.view">
+            <field name="name">hr.employee.kanban.hocba</field>
+            <field name="model">hr.employee</field>
+            <field name="inherit_id" ref="hr.hr_kanban_view_employees"/>
+            <field name="arch" type="xml">
+                <xpath expr="//t[@t-name='card']//main" position="inside">
+                    <div class="mt-1 d-flex flex-wrap gap-1">
+                        <span t-if="record.x_employee_code.raw_value"
+                              class="badge text-bg-dark">
+                            <field name="x_employee_code"/>
+                        </span>
+                        <span t-if="record.x_employment_status.raw_value"
+                              t-attf-class="badge {{ record.x_employment_status.raw_value == 'official' ? 'text-bg-success' : record.x_employment_status.raw_value == 'probation' ? 'text-bg-warning' : 'text-bg-secondary' }}">
+                            <field name="x_employment_status"/>
+                        </span>
+                        <span t-if="record.x_work_form.raw_value"
+                              class="badge text-bg-info">
+                            <field name="x_work_form"/>
+                        </span>
+                    </div>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- List chứng chỉ (mở từ smart button "CC sắp hết hạn") -->
+        <record id="hr_employee_skill_cert_list" model="ir.ui.view">
+            <field name="name">hr.employee.skill.cert.list</field>
+            <field name="model">hr.employee.skill</field>
+            <field name="priority">99</field>
+            <field name="arch" type="xml">
+                <list decoration-danger="x_cert_status == 'expired'"
+                      decoration-warning="x_cert_status == 'expiring'"
+                      create="false" delete="false">
+                    <field name="skill_id"/>
+                    <field name="skill_level_id"/>
+                    <field name="x_cert_date"/>
+                    <field name="x_cert_expiry"/>
+                    <field name="x_cert_status"/>
+                    <field name="x_cert_verified" widget="boolean_toggle"/>
+                </list>
             </field>
         </record>
 
