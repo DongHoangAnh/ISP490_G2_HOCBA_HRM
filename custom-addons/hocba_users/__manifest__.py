@@ -8,6 +8,8 @@
     'data': [
         'security/ir.model.access.csv',
         'security/security_rules.xml',
+        'data/hocba_user_role_data.xml',
+        'templates/login_and_dashboards.xml',
         'views/employee_type_views.xml',
         'views/user_role_views.xml',
         'views/hocba_user_views.xml',

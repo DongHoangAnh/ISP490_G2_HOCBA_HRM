@@ -38,6 +38,7 @@
                                 <field name="x_work_form"/>
                                 <field name="x_employment_status"/>
                                 <field name="x_position_type"/>
+                                <field name="x_employee_type_id"/>
                             </group>
                             <group string="Mốc chính thức">
                                 <field name="x_official_date"/>

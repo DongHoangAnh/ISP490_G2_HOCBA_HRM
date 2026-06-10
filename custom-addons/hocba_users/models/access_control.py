@@ -40,8 +40,7 @@ class AccessControl(models.Model):
     )
     notes = fields.Text(string='Notes')
 
-    _sql_constraints = [
-        ('unique_user_module_action', 
-         'UNIQUE(user_id, module_name, action)', 
-         'Access control rule must be unique per user, module, and action!'),
-    ]
+    _unique_user_module_action = models.Constraint(
+        'unique (user_id, module_name, action)',
+        'Access control rule must be unique per user, module, and action!',
+    )

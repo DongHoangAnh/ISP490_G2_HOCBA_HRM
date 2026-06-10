@@ -7,11 +7,10 @@ class UserRole(models.Model):
     _order = 'sequence, name'
 
     sequence = fields.Integer(default=10)
-    name = fields.Char(string='Role Name', required=True, unique=True)
+    name = fields.Char(string='Role Name', required=True)
     code = fields.Char(
         string='Role Code',
         required=True,
-        unique=True,
         help='Internal code: admin, hr_manager, employee, contractor'
     )
     description = fields.Text(string='Description')
@@ -24,6 +23,7 @@ class UserRole(models.Model):
     active = fields.Boolean(default=True)
     color_code = fields.Char(default='#808080')
 
-    _sql_constraints = [
-        ('code_unique', 'UNIQUE(code)', 'Role Code must be unique!'),
-    ]
+    _code_unique = models.Constraint(
+        'unique (code)',
+        'Role Code must be unique!',
+    )

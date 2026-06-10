@@ -35,8 +35,7 @@ class DepartmentManager(models.Model):
         default=False
     )
 
-    _sql_constraints = [
-        ('unique_department_manager',
-         'UNIQUE(department_id, user_id)',
-         'User can only manage each department once!'),
-    ]
+    _unique_department_manager = models.Constraint(
+        'unique (department_id, user_id)',
+        'User can only manage each department once!',
+    )

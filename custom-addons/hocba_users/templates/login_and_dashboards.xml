@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <template id="login_template" name="HOCBA Login Page">
-        <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8"/>
@@ -150,7 +149,6 @@
 
     <!-- Admin Dashboard -->
     <template id="admin_dashboard" name="Admin Dashboard">
-        <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8"/>
@@ -267,7 +265,6 @@
 
     <!-- HR Manager Dashboard -->
     <template id="hr_manager_dashboard" name="HR Manager Dashboard">
-        <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8"/>
@@ -349,7 +346,6 @@
 
     <!-- Employee Dashboard -->
     <template id="employee_dashboard" name="Employee Dashboard">
-        <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8"/>

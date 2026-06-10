@@ -22,6 +22,7 @@ class EmployeeType(models.Model):
     benefits = fields.Text(string='Benefits')
     active = fields.Boolean(default=True)
 
-    _sql_constraints = [
-        ('code_unique', 'UNIQUE(code)', 'Employee Type Code must be unique!'),
-    ]
+    _code_unique = models.Constraint(
+        'unique (code)',
+        'Employee Type Code must be unique!',
+    )

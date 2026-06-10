@@ -11,6 +11,7 @@ class HocbaAssetType(models.Model):
     code = fields.Char(string='Mã loại', required=True)
     active = fields.Boolean(default=True)
 
-    _sql_constraints = [
-        ('code_unique', 'UNIQUE(code)', 'Mã loại tài sản phải là duy nhất!'),
-    ]
+    _code_unique = models.Constraint(
+        'unique (code)',
+        'Mã loại tài sản phải là duy nhất!',
+    )

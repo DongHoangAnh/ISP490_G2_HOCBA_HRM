@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- 3 loại nhân viên theo HRM_SYSTEM_GUIDE (single source: hocba_employees) -->
+    <data noupdate="1">
+        <record id="employee_type_office_staff" model="hocba.employee.type">
+            <field name="sequence">10</field>
+            <field name="name">Nhân viên văn phòng</field>
+            <field name="code">office_staff</field>
+            <field name="color_code">#C8102E</field>
+            <field name="benefits">Bảo hiểm, lương hưu, phép năm. Giờ làm 8:00–17:00.</field>
+        </record>
+        <record id="employee_type_teacher" model="hocba.employee.type">
+            <field name="sequence">20</field>
+            <field name="name">Giáo viên</field>
+            <field name="code">teacher</field>
+            <field name="color_code">#0F766E</field>
+            <field name="benefits">Hỗ trợ giáo dục, phát triển chuyên môn. Toàn thời gian.</field>
+        </record>
+        <record id="employee_type_contractor" model="hocba.employee.type">
+            <field name="sequence">30</field>
+            <field name="name">Cộng tác viên</field>
+            <field name="code">contractor</field>
+            <field name="color_code">#6D28D9</field>
+            <field name="benefits">Thanh toán theo dự án, lịch linh hoạt. Bán thời gian.</field>
+        </record>
+    </data>
+</odoo>

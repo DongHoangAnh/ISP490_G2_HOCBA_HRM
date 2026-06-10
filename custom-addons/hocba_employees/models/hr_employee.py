@@ -52,6 +52,11 @@ class HrEmployee(models.Model):
         ],
         string='Loại vị trí',
     )
+    # Loại nhân viên (danh mục hocba.employee.type — single source tại đây)
+    x_employee_type_id = fields.Many2one(
+        'hocba.employee.type', string='Loại nhân viên',
+        help='Nhân viên văn phòng / Giáo viên / Cộng tác viên — '
+             'hocba.user đọc related từ field này.')
     # Mốc lên chính thức (automation thử việc sẽ set ở Pha 3 — F-004/F-005)
     x_official_date = fields.Date(
         string='Ngày chính thức',
@@ -158,10 +163,11 @@ class HrEmployee(models.Model):
     x_cert_alert_count = fields.Integer(
         string='Chứng chỉ sắp hết hạn', compute='_compute_cert_alert_count')
 
-    _sql_constraints = [
-        ('x_employee_code_uniq', 'unique(x_employee_code)',
-         'Mã nhân sự phải là duy nhất!'),
-    ]
+    # Odoo 19: _sql_constraints không còn được hỗ trợ → models.Constraint
+    _x_employee_code_uniq = models.Constraint(
+        'unique (x_employee_code)',
+        'Mã nhân sự phải là duy nhất!',
+    )
 
     @api.depends('x_asset_ids.state')
     def _compute_asset_count(self):
