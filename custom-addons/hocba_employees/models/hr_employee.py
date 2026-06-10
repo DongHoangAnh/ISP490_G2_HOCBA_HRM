@@ -1,9 +1,10 @@
 import re
+from datetime import timedelta
 
 from dateutil.relativedelta import relativedelta
 
 from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 
 
 class HrEmployee(models.Model):
@@ -33,6 +34,7 @@ class HrEmployee(models.Model):
             ('parttime', 'Part-time'),
             ('ctv', 'CTV'),
             ('advisor', 'Cố vấn'),
+            ('exiting', 'Đang offboarding'),
             ('resigned', 'Nghỉ việc'),
         ],
         string='Tình trạng',
@@ -86,6 +88,36 @@ class HrEmployee(models.Model):
         domain="[('country_id.code', '=', 'VN')]")
     x_current_ward = fields.Char(string='Phường/Xã (tạm trú)')
     x_current_street = fields.Char(string='Số nhà/Đường (tạm trú)')
+
+    # --- F-004: Dòng thời gian thử việc & 2 cổng đánh giá (Nhóm B) ---
+    x_probation_start = fields.Date(string='Ngày bắt đầu thử việc', tracking=True)
+    x_eval_2w_due = fields.Date(
+        string='Hạn đánh giá tuần-2',
+        compute='_compute_eval_dues', store=True, readonly=False,
+        help='Mặc định = ngày thử việc + 14; được sửa trong khoảng [+7, +21] ngày.')
+    x_eval_2w_result = fields.Selection(
+        selection=[('draft', 'Chưa đánh giá'), ('pass', 'Đạt'), ('fail', 'Không đạt')],
+        string='Kết quả tuần-2', default='draft', tracking=True)
+    x_eval_2w_date = fields.Date(string='Ngày đánh giá tuần-2')
+    x_eval_2w_evaluator_id = fields.Many2one('res.users', string='Người đánh giá tuần-2')
+    x_eval_2w_note = fields.Text(string='Ghi chú tuần-2')
+    x_equip_grant_date = fields.Date(
+        string='Ngày cấp thiết bị', readonly=True,
+        help='Tự set khi cổng tuần-2 Đạt (AUT-001).')
+    x_eval_2m_due = fields.Date(
+        string='Hạn đánh giá tháng-2',
+        compute='_compute_eval_dues', store=True, readonly=False,
+        help='Mặc định = ngày thử việc + 60 (GĐ-04, đã xác nhận từ dữ liệu Lark); '
+             'được sửa trong khoảng [+30, +120] ngày.')
+    x_eval_2m_result = fields.Selection(
+        selection=[('draft', 'Chưa đánh giá'), ('pass', 'Đạt'), ('fail', 'Không đạt')],
+        string='Kết quả tháng-2', default='draft', tracking=True)
+    x_eval_2m_date = fields.Date(string='Ngày đánh giá tháng-2')
+    x_eval_2m_evaluator_id = fields.Many2one('res.users', string='Người đánh giá tháng-2')
+    x_eval_2m_note = fields.Text(string='Ghi chú tháng-2')
+    x_skip_auto_trigger = fields.Boolean(
+        string='Bỏ qua tự động hóa cổng', groups='hr.group_hr_manager',
+        help='Bật để nhập liệu lịch sử mà không kích hoạt AUT-001/002.')
 
     # --- F-003: Người phụ thuộc (giảm trừ gia cảnh) ---
     x_dependent_ids = fields.One2many(
@@ -171,3 +203,172 @@ class HrEmployee(models.Model):
                 vals['x_employee_code'] = self.env['ir.sequence'].next_by_code(
                     'hocba.employee.code') or '/'
         return super().create(vals_list)
+
+    # ------------------------------------------------------------------
+    # F-004: Dòng thời gian thử việc — compute & constraints
+    # ------------------------------------------------------------------
+    GATE_RESULT_FIELDS = ('x_eval_2w_result', 'x_eval_2m_result')
+    GATE_EDIT_FIELDS = GATE_RESULT_FIELDS + (
+        'x_eval_2w_date', 'x_eval_2w_note', 'x_eval_2w_evaluator_id',
+        'x_eval_2m_date', 'x_eval_2m_note', 'x_eval_2m_evaluator_id')
+
+    @api.depends('x_probation_start')
+    def _compute_eval_dues(self):
+        for emp in self:
+            if emp.x_probation_start:
+                emp.x_eval_2w_due = emp.x_probation_start + timedelta(days=14)
+                emp.x_eval_2m_due = emp.x_probation_start + timedelta(days=60)
+            else:
+                emp.x_eval_2w_due = False
+                emp.x_eval_2m_due = False
+
+    @api.constrains('x_probation_start', 'x_eval_2w_due', 'x_eval_2m_due')
+    def _check_eval_due_ranges(self):
+        for emp in self:
+            start = emp.x_probation_start
+            if not start:
+                continue
+            if emp.x_eval_2w_due and not (
+                    start + timedelta(days=7) <= emp.x_eval_2w_due <= start + timedelta(days=21)):
+                raise ValidationError(_(
+                    'Hạn đánh giá tuần-2 phải trong khoảng 7–21 ngày kể từ ngày thử việc.'))
+            if emp.x_eval_2m_due and not (
+                    start + timedelta(days=30) <= emp.x_eval_2m_due <= start + timedelta(days=120)):
+                raise ValidationError(_(
+                    'Hạn đánh giá tháng-2 phải trong khoảng 30–120 ngày kể từ ngày thử việc.'))
+
+    @api.constrains('x_eval_2w_result', 'x_eval_2m_result', 'x_probation_start',
+                    'x_eval_2w_date', 'x_eval_2m_date')
+    def _check_gate_rules(self):
+        today = fields.Date.context_today(self)
+        for emp in self:
+            has_result = emp.x_eval_2w_result != 'draft' or emp.x_eval_2m_result != 'draft'
+            if has_result and not emp.x_probation_start:
+                raise ValidationError(_(
+                    'Cần nhập Ngày bắt đầu thử việc trước khi ghi kết quả đánh giá.'))
+            # Không điền cổng tháng-2 nếu tuần-2 chưa Đạt
+            if emp.x_eval_2m_result != 'draft' and emp.x_eval_2w_result != 'pass':
+                raise ValidationError(_(
+                    'Chỉ đánh giá cổng tháng-2 sau khi cổng tuần-2 đã Đạt.'))
+            for d in (emp.x_eval_2w_date, emp.x_eval_2m_date):
+                if d and emp.x_probation_start and (d < emp.x_probation_start or d > today):
+                    raise ValidationError(_(
+                        'Ngày đánh giá phải từ ngày bắt đầu thử việc đến hôm nay.'))
+
+    # ------------------------------------------------------------------
+    # F-005: Tự động hóa cổng (AUT-001 / AUT-002) — chạy khi result đổi
+    # ------------------------------------------------------------------
+    def write(self, vals):
+        # Quyền điền kết quả: HR Manager hoặc quản lý trực tiếp (spec F-004)
+        if any(f in vals for f in self.GATE_EDIT_FIELDS) and not self.env.su \
+                and not self.env.user.has_group('hr.group_hr_manager'):
+            for emp in self:
+                if emp.parent_id.user_id != self.env.user:
+                    raise AccessError(_(
+                        'Chỉ HR Manager hoặc quản lý trực tiếp được điền kết quả thử việc.'))
+        # F-001: không sửa tay probation→official ngoài automation (trừ HR Manager)
+        if vals.get('x_employment_status') == 'official' \
+                and not self.env.context.get('hocba_gate_automation') \
+                and not self.env.su \
+                and not self.env.user.has_group('hr.group_hr_manager'):
+            raise AccessError(_(
+                'Chuyển Chính thức được thực hiện qua cổng tháng-2 (AUT-002) '
+                'hoặc bởi HR Manager.'))
+
+        track_gates = any(f in vals for f in self.GATE_RESULT_FIELDS)
+        pre = {e.id: (e.x_eval_2w_result, e.x_eval_2m_result) for e in self} if track_gates else {}
+        res = super().write(vals)
+        if track_gates:
+            for emp in self:
+                old_2w, old_2m = pre[emp.id]
+                if emp.sudo().x_skip_auto_trigger:
+                    if emp.x_eval_2w_result != old_2w or emp.x_eval_2m_result != old_2m:
+                        emp.message_post(body=_(
+                            'Auto trigger bị bỏ qua bởi %s.') % self.env.user.name)
+                    continue
+                if emp.x_eval_2w_result != old_2w and emp.x_eval_2w_result != 'draft':
+                    emp._hocba_aut_001()
+                if emp.x_eval_2m_result != old_2m and emp.x_eval_2m_result != 'draft':
+                    emp._hocba_aut_002()
+        return res
+
+    def _hocba_gate_activity(self, summary, date_deadline, user=None):
+        """Tạo Activity nếu chưa có activity cùng summary đang mở (BR-041)."""
+        self.ensure_one()
+        if any(a.summary == summary for a in self.activity_ids):
+            return
+        self.activity_schedule(
+            'mail.mail_activity_data_todo',
+            summary=summary,
+            date_deadline=date_deadline,
+            user_id=(user or self.env.user).id,
+        )
+
+    def _hocba_aut_001(self):
+        """Cổng tuần-2: Đạt → cấp thiết bị + hẹn cổng tháng-2; Không đạt → offboarding."""
+        self.ensure_one()
+        today = fields.Date.context_today(self)
+        tbp_user = self.parent_id.user_id or self.env.user
+        if self.x_eval_2w_result == 'pass':
+            self.sudo().with_context(hocba_gate_automation=True).write(
+                {'x_equip_grant_date': today})
+            self._hocba_gate_activity(
+                _('Cấp thiết bị văn phòng cho %s') % self.name,
+                today + timedelta(days=1))
+            self._hocba_gate_activity(
+                _('Đánh giá thử việc tháng-2: %s') % self.name,
+                self.x_eval_2m_due or today + timedelta(days=46), tbp_user)
+            self.message_post(body=_(
+                '✅ Cổng tuần-2 ĐẠT — đã khởi động cấp thiết bị và hẹn đánh giá tháng-2.'))
+        elif self.x_eval_2w_result == 'fail':
+            self.sudo().with_context(hocba_gate_automation=True).write(
+                {'x_employment_status': 'exiting'})
+            self._hocba_gate_activity(
+                _('Offboarding nghỉ thử việc: %s') % self.name,
+                today + timedelta(days=1))
+            self.message_post(body=_(
+                '❌ Cổng tuần-2 KHÔNG ĐẠT — khởi động nghỉ thử việc '
+                '(GĐ-03: không gia hạn).'))
+
+    def _hocba_aut_002(self):
+        """Cổng tháng-2: Đạt → Chính thức; Không đạt → offboarding."""
+        self.ensure_one()
+        today = fields.Date.context_today(self)
+        if self.x_eval_2m_result == 'pass':
+            self.sudo().with_context(hocba_gate_automation=True).write({
+                'x_employment_status': 'official',
+                'x_official_date': today,
+            })
+            # Odoo 19: hợp đồng nằm trên hr.version → giao HR tạo bản ghi
+            self._hocba_gate_activity(
+                _('Tạo hợp đồng chính thức cho %s') % self.name,
+                today + timedelta(days=3))
+            self.message_post(body=_(
+                '🎉 Cổng tháng-2 ĐẠT — chuyển Chính thức từ %s. '
+                'Vui lòng tạo hợp đồng chính thức.') % fields.Date.to_string(today))
+        elif self.x_eval_2m_result == 'fail':
+            self.sudo().with_context(hocba_gate_automation=True).write(
+                {'x_employment_status': 'exiting'})
+            self._hocba_gate_activity(
+                _('Offboarding nghỉ thử việc: %s') % self.name,
+                today + timedelta(days=1))
+            self.message_post(body=_(
+                '❌ Cổng tháng-2 KHÔNG ĐẠT — khởi động nghỉ thử việc.'))
+
+    @api.model
+    def _cron_probation_eval_reminders(self):
+        """CRON 7:00 SA (Asia/Ho_Chi_Minh): nhắc đánh giá đến hạn trong 2 ngày."""
+        soon = fields.Date.today() + timedelta(days=2)
+        base = [('x_employment_status', '=', 'probation'),
+                ('x_probation_start', '!=', False)]
+        for emp in self.search(base + [('x_eval_2w_result', '=', 'draft'),
+                                       ('x_eval_2w_due', '<=', soon)]):
+            emp._hocba_gate_activity(
+                _('Sắp đến hạn đánh giá tuần-2: %s') % emp.name,
+                emp.x_eval_2w_due, emp.parent_id.user_id or None)
+        for emp in self.search(base + [('x_eval_2w_result', '=', 'pass'),
+                                       ('x_eval_2m_result', '=', 'draft'),
+                                       ('x_eval_2m_due', '<=', soon)]):
+            emp._hocba_gate_activity(
+                _('Sắp đến hạn đánh giá tháng-2: %s') % emp.name,
+                emp.x_eval_2m_due, emp.parent_id.user_id or None)

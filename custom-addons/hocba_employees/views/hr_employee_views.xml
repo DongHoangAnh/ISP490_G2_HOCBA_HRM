@@ -21,6 +21,27 @@
                                 <field name="x_official_months" widget="float" readonly="1"/>
                             </group>
                         </group>
+                        <!-- F-004: chỉ hiện với Nhóm B — BR-030 -->
+                        <group string="Dòng thời gian thử việc (2 cổng — Nhóm B)"
+                               invisible="x_position_type not in ('staff', 'manager') or x_work_form != 'offline'">
+                            <group string="Cổng tuần-2 (cấp thiết bị)">
+                                <field name="x_probation_start"/>
+                                <field name="x_eval_2w_due"/>
+                                <field name="x_eval_2w_result"/>
+                                <field name="x_eval_2w_date" invisible="x_eval_2w_result == 'draft'"/>
+                                <field name="x_eval_2w_evaluator_id" invisible="x_eval_2w_result == 'draft'"/>
+                                <field name="x_eval_2w_note"/>
+                                <field name="x_equip_grant_date" readonly="1"/>
+                            </group>
+                            <group string="Cổng tháng-2 (lên chính thức)">
+                                <field name="x_eval_2m_due"/>
+                                <field name="x_eval_2m_result" readonly="x_eval_2w_result != 'pass'"/>
+                                <field name="x_eval_2m_date" invisible="x_eval_2m_result == 'draft'"/>
+                                <field name="x_eval_2m_evaluator_id" invisible="x_eval_2m_result == 'draft'"/>
+                                <field name="x_eval_2m_note"/>
+                                <field name="x_skip_auto_trigger" groups="hr.group_hr_manager"/>
+                            </group>
+                        </group>
                     </page>
                     <!-- F-002 + F-003: Hồ sơ pháp lý VN & người phụ thuộc -->
                     <page string="Pháp lý &amp; Người phụ thuộc" name="hocba_legal">
