@@ -41,3 +41,24 @@ class AttendancePolicy(models.Model):
         if not policy:
             policy = self.create({'name': 'Default Policy'})
         return policy
+
+    @staticmethod
+    def _haversine_m(lat1, lng1, lat2, lng2):
+        """Great-circle distance between two WGS84 points, in meters."""
+        r = 6371000.0  # Earth radius (m)
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlmb = math.radians(lng2 - lng1)
+        a = (math.sin(dphi / 2) ** 2
+             + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2)
+        return 2 * r * math.asin(math.sqrt(a))
+
+    def is_within_office(self, lat, lng):
+        """True if (lat, lng) is within office_radius_m of the office point.
+        Returns False if any coordinate is missing/unset."""
+        self.ensure_one()
+        if not lat or not lng or not self.office_lat or not self.office_lng:
+            return False
+        dist = self._haversine_m(self.office_lat, self.office_lng, lat, lng)
+        return dist <= self.office_radius_m
