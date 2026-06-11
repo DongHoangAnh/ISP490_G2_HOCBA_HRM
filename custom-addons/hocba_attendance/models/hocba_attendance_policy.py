@@ -62,3 +62,24 @@ class AttendancePolicy(models.Model):
             return False
         dist = self._haversine_m(self.office_lat, self.office_lng, lat, lng)
         return dist <= self.office_radius_m
+
+    def is_workday(self, dt_local):
+        """True if dt_local (naive local datetime) falls on an enabled workday."""
+        self.ensure_one()
+        flags = [
+            self.workday_mon, self.workday_tue, self.workday_wed,
+            self.workday_thu, self.workday_fri, self.workday_sat,
+            self.workday_sun,
+        ]
+        return bool(flags[dt_local.weekday()])
+
+    def is_within_window(self, dt_local, kind):
+        """True if dt_local is on a workday AND within the window for `kind`
+        ('in' = check-in / morning, 'out' = check-out / evening)."""
+        self.ensure_one()
+        if not self.is_workday(dt_local):
+            return False
+        hour = dt_local.hour + dt_local.minute / 60.0
+        if kind == 'in':
+            return self.morning_start <= hour <= self.morning_end
+        return self.evening_start <= hour <= self.evening_end
