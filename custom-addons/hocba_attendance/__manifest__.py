@@ -4,9 +4,10 @@
     'category': 'Human Resources',
     'author': 'HOCBA Team',
     'license': 'LGPL-3',
-    'depends': ['hr', 'web'],
+    'depends': ['hr', 'web', 'hocba_employees'],
     'data': [
         'security/ir.model.access.csv',
+        'data/hocba_attendance_policy_data.xml',
         'views/hr_attendance_status_views.xml',
         'views/hr_work_assignment_views.xml',
         'views/hr_attendance_views.xml',

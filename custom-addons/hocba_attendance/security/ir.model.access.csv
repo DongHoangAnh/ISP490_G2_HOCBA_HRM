@@ -5,3 +5,5 @@ access_hocba_work_assignment_user,access.hocba.work_assignment.user,model_hocba_
 access_hocba_work_assignment_manager,access.hocba.work_assignment.manager,model_hocba_work_assignment,hr.group_hr_manager,1,1,1,1
 access_hocba_attendance_status_user,access.hocba.attendance.status.user,model_hocba_attendance_status,hr.group_hr_user,1,0,0,0
 access_hocba_attendance_status_manager,access.hocba.attendance.status.manager,model_hocba_attendance_status,hr.group_hr_manager,1,1,1,1
+access_hocba_attendance_policy_user,access.hocba.attendance.policy.user,model_hocba_attendance_policy,hr.group_hr_user,1,0,0,0
+access_hocba_attendance_policy_manager,access.hocba.attendance.policy.manager,model_hocba_attendance_policy,hr.group_hr_manager,1,1,1,1
