@@ -1,0 +1,40 @@
+# ════════════════════════════════════════════════════════════════════
+# Dev LOCAL — chạy Postgres trong Docker thay vì Neon cloud.
+# Cách dùng:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+# (vẫn cần file .env tồn tại — copy từ .env.example, giá trị không dùng tới
+#  vì khối environment dưới đây ghi đè; xem docs/DEV_LOCAL.md)
+# ════════════════════════════════════════════════════════════════════
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hocba_hrm
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  odoo:
+    depends_on:
+      - db
+    environment:
+      - HOST=db
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo_password
+    volumes:
+      # ghi đè odoo.conf gốc (sslmode=require chỉ dành cho Neon)
+      - ./odoo.local.conf:/etc/odoo/odoo.conf
+    command: >
+      odoo
+      --database=hocba_hrm
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
+      --addons-path=/mnt/extra-addons
+      --dev=xml
+
+volumes:
+  postgres_data:
