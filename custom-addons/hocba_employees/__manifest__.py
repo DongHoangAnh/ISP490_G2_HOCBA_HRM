@@ -26,6 +26,12 @@ Payroll, Recruitment.
         'views/hr_employee_asset_views.xml',
         'views/hr_promotion_history_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'hocba_employees/static/src/js/face_descriptor_field.js',
+            'hocba_employees/static/src/xml/face_descriptor_field.xml',
+        ],
+    },
     'installable': True,
     'auto_install': False,
     'application': False,
