@@ -384,6 +384,7 @@ class HrEmployee(models.Model):
             'enrolled': bool(emp.x_face_descriptor),
         }
 
+    @api.model
     def enroll_self_face(self, payload):
         """Save the current user's face sample (image + descriptor)."""
         emp = self.env.user.employee_id

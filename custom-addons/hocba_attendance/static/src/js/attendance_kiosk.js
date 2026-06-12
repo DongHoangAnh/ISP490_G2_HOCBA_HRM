@@ -4,7 +4,7 @@ import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { Component, onWillStart, onMounted, onWillUnmount, useRef, useState } from "@odoo/owl";
 
-const MODELS_URL = "/hocba_attendance/static/lib/face-api/models";
+const MODELS_URL = "/hocba_employees/static/lib/face-api/models";
 
 export class AttendanceKiosk extends Component {
     static template = "hocba_attendance.AttendanceKiosk";
@@ -25,8 +25,13 @@ export class AttendanceKiosk extends Component {
         this._stream = null;
 
         onWillStart(async () => {
-            await this._loadFaceApi();
-            await this._loadEmployee();
+            try {
+                await this._loadFaceApi();
+                await this._loadEmployee();
+            } catch (e) {
+                this.state.message =
+                    "Không tải được nhận diện khuôn mặt. Tải lại trang hoặc kiểm tra kết nối.";
+            }
         });
         onMounted(() => this._startCamera());
         onWillUnmount(() => this._stopCamera());
@@ -36,7 +41,7 @@ export class AttendanceKiosk extends Component {
         if (!window.faceapi) {
             await new Promise((resolve, reject) => {
                 const s = document.createElement("script");
-                s.src = "/hocba_attendance/static/lib/face-api/face-api.min.js";
+                s.src = "/hocba_employees/static/lib/face-api/face-api.min.js";
                 s.onload = resolve;
                 s.onerror = reject;
                 document.head.appendChild(s);
@@ -110,6 +115,12 @@ export class AttendanceKiosk extends Component {
     }
 
     async _captureCommon() {
+        if (!this._stream) {
+            this.notification.add(
+                "Camera chưa sẵn sàng. Hãy cấp quyền camera và thử lại.",
+                { type: "warning" });
+            return null;
+        }
         const descriptor = await this._computeDescriptor();
         if (!descriptor) {
             this.notification.add("Không phát hiện khuôn mặt. Thử lại.", { type: "warning" });
@@ -132,6 +143,8 @@ export class AttendanceKiosk extends Component {
             this.state.enrolled = true;
             this.state.message = "Đăng ký khuôn mặt thành công.";
             this.notification.add("Đã lưu khuôn mặt mẫu.", { type: "success" });
+        } catch (e) {
+            this.notification.add("Đăng ký thất bại. Vui lòng thử lại.", { type: "danger" });
         } finally {
             this.state.busy = false;
         }
@@ -155,6 +168,8 @@ export class AttendanceKiosk extends Component {
             const msg = (kind === "in" ? "Đã check-in" : "Đã check-out")
                 + (flags.length ? " (⚠ " + flags.join(", ") + ")" : " thành công");
             this.notification.add(msg, { type: flags.length ? "warning" : "success" });
+        } catch (e) {
+            this.notification.add("Điểm danh thất bại. Vui lòng thử lại.", { type: "danger" });
         } finally {
             this.state.busy = false;
         }

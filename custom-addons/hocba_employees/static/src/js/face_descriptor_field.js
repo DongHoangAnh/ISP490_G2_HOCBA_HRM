@@ -5,7 +5,7 @@ import { Component, onWillStart } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
-const MODELS_URL = "/hocba_attendance/static/lib/face-api/models";
+const MODELS_URL = "/hocba_employees/static/lib/face-api/models";
 
 export class FaceDescriptorField extends Component {
     static template = "hocba_attendance.FaceDescriptorField";
@@ -20,7 +20,7 @@ export class FaceDescriptorField extends Component {
         if (!window.faceapi) {
             await new Promise((resolve, reject) => {
                 const s = document.createElement("script");
-                s.src = "/hocba_attendance/static/lib/face-api/face-api.min.js";
+                s.src = "/hocba_employees/static/lib/face-api/face-api.min.js";
                 s.onload = resolve;
                 s.onerror = reject;
                 document.head.appendChild(s);
@@ -43,14 +43,20 @@ export class FaceDescriptorField extends Component {
             this.notification.add("Hãy tải ảnh khuôn mặt trước.", { type: "warning" });
             return;
         }
-        const img = new Image();
-        img.src = "data:image/png;base64," + b64;
-        await img.decode();
-        const faceapi = window.faceapi;
-        const det = await faceapi
-            .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
-            .withFaceDescriptor();
+        let det;
+        try {
+            const img = new Image();
+            img.src = "data:image/png;base64," + b64;
+            await img.decode();
+            const faceapi = window.faceapi;
+            det = await faceapi
+                .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+        } catch (e) {
+            this.notification.add("Lỗi xử lý ảnh khuôn mặt.", { type: "danger" });
+            return;
+        }
         if (!det) {
             this.notification.add("Không phát hiện khuôn mặt trong ảnh.", { type: "danger" });
             return;
