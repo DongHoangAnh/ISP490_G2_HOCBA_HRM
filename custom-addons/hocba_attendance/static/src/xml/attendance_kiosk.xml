@@ -10,15 +10,15 @@
             </div>
             <div class="mt-3 d-flex gap-2">
                 <button class="btn btn-secondary" t-on-click="onEnroll"
-                        t-att-disabled="state.busy or not state.ready">
+                        t-att-disabled="state.busy or not state.ready or not state.applicable">
                     Đăng ký khuôn mặt
                 </button>
                 <button class="btn btn-primary" t-on-click="onCheckIn"
-                        t-att-disabled="state.busy or not state.enrolled">
+                        t-att-disabled="state.busy or not state.enrolled or not state.applicable">
                     Check In
                 </button>
                 <button class="btn btn-warning" t-on-click="onCheckOut"
-                        t-att-disabled="state.busy or not state.enrolled">
+                        t-att-disabled="state.busy or not state.enrolled or not state.applicable">
                     Check Out
                 </button>
             </div>

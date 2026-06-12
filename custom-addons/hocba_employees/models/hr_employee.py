@@ -382,6 +382,7 @@ class HrEmployee(models.Model):
             'employee_id': emp.id,
             'name': emp.name,
             'enrolled': bool(emp.x_face_descriptor),
+            'is_official': emp.x_employment_status == 'official',
         }
 
     @api.model

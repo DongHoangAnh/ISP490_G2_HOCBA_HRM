@@ -19,6 +19,7 @@ export class AttendanceKiosk extends Component {
             ready: false,
             busy: false,
             enrolled: false,
+            applicable: false,
             employeeName: "",
             message: "Đang khởi tạo...",
         });
@@ -57,10 +58,16 @@ export class AttendanceKiosk extends Component {
         const emp = await this.orm.call("hr.employee", "get_self_attendance_info", []);
         this.state.employeeName = emp.name || "";
         this.state.enrolled = !!emp.enrolled;
+        this.state.applicable = !!emp.is_official;
         this.state.ready = true;
-        this.state.message = this.state.enrolled
-            ? "Sẵn sàng điểm danh"
-            : "Bạn chưa đăng ký khuôn mặt — bấm Đăng ký để chụp ảnh mẫu.";
+        if (!this.state.applicable) {
+            this.state.message =
+                "Chức năng điểm danh chỉ áp dụng cho nhân viên chính thức.";
+        } else {
+            this.state.message = this.state.enrolled
+                ? "Sẵn sàng điểm danh"
+                : "Bạn chưa đăng ký khuôn mặt — bấm Đăng ký để chụp ảnh mẫu.";
+        }
     }
 
     async _startCamera() {

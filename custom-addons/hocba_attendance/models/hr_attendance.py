@@ -2,7 +2,7 @@ import json
 import math
 
 from odoo import models, fields, api
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 
 class Attendance(models.Model):
@@ -127,7 +127,7 @@ class Attendance(models.Model):
     def _check_dates(self):
         for record in self:
             if record.check_out and record.check_in > record.check_out:
-                raise models.ValidationError('Check-out time must be after check-in time')
+                raise ValidationError('Check-out time must be after check-in time')
 
     @api.depends('face_suspect', 'out_of_zone', 'out_of_window')
     def _compute_needs_review(self):
