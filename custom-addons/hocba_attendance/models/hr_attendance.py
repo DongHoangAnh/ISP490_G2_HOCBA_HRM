@@ -87,7 +87,8 @@ class Attendance(models.Model):
     def _compute_date(self):
         for record in self:
             if record.check_in:
-                record.date = record.check_in.date()
+                local_dt = fields.Datetime.context_timestamp(record, record.check_in)
+                record.date = local_dt.date()
             else:
                 record.date = False
 
