@@ -36,7 +36,7 @@ services:
     command: >
       odoo
       --database=hocba_hrm
-      --init=hocba_employees,hocba_attendance,hocba_users
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_hrm
       --addons-path=/mnt/extra-addons
       --dev=xml
 
