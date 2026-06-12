@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_hb_timeoff_export_wizard_form" model="ir.ui.view">
+        <field name="name">hb.timeoff.export.wizard.form</field>
+        <field name="model">hb.timeoff.export.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Xuất Báo cáo Nghỉ phép">
+                <group>
+                    <group string="Bộ lọc">
+                        <field name="date_from"/>
+                        <field name="date_to"/>
+                        <field name="department_id"/>
+                    </group>
+                    <group string="Tuỳ chọn xuất">
+                        <field name="export_type" widget="radio"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_export"
+                            string="Xuất báo cáo"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Huỷ" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_hb_timeoff_export_wizard" model="ir.actions.act_window">
+        <field name="name">Xuất Báo cáo Nghỉ phép</field>
+        <field name="res_model">hb.timeoff.export.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            BR-044: Nhân viên thường (base.group_user không phải HR Officer)
+            chỉ thấy dữ liệu phòng ban của mình.
+
+            Quy tắc OR trong Odoo: HR Officer có rule riêng (domain = True) nên
+            vẫn thấy toàn bộ dữ liệu dù cũng là thành viên của base.group_user.
+        -->
+
+        <!-- Leave Analysis — department filter for non-HR users -->
+        <record id="rule_leave_analysis_dept_user" model="ir.rule">
+            <field name="name">Leave Analysis — chỉ xem phòng ban của mình</field>
+            <field name="model_id" ref="model_hb_timeoff_leave_analysis"/>
+            <field name="domain_force">
+                [('department_id', '=', user.employee_id.department_id.id)]
+            </field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Leave Analysis — HR Officer sees everything -->
+        <record id="rule_leave_analysis_hr_all" model="ir.rule">
+            <field name="name">Leave Analysis — HR Officer xem tất cả</field>
+            <field name="model_id" ref="model_hb_timeoff_leave_analysis"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('hr_holidays.group_hr_holidays_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Burnout — department filter for non-HR users -->
+        <record id="rule_burnout_dept_user" model="ir.rule">
+            <field name="name">Burnout — chỉ xem phòng ban của mình</field>
+            <field name="model_id" ref="model_hb_timeoff_burnout_line"/>
+            <field name="domain_force">
+                [('department_id', '=', user.employee_id.department_id.id)]
+            </field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Burnout — HR Officer sees everything -->
+        <record id="rule_burnout_hr_all" model="ir.rule">
+            <field name="name">Burnout — HR Officer xem tất cả</field>
+            <field name="model_id" ref="model_hb_timeoff_burnout_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('hr_holidays.group_hr_holidays_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+    </data>
+</odoo>

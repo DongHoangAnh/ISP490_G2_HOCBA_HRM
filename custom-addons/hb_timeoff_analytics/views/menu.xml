@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Leave Analytics Dashboard menu structure.
+        Đặt dưới Time Off > Reporting, sau các mục reporting hiện có.
+    -->
+
+    <!-- Parent menu: Leave Analytics -->
+    <menuitem
+        id="menu_hb_leave_analytics_root"
+        name="Phân tích Nghỉ phép"
+        parent="hr_holidays.menu_hr_holidays_report"
+        sequence="20"/>
+
+    <!-- W1: Leave by Department -->
+    <menuitem
+        id="menu_hb_leave_analysis_dept"
+        name="W1 — Theo Phòng ban"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_leave_analysis_by_dept"
+        sequence="10"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+    <!-- W2: Monthly Trend -->
+    <menuitem
+        id="menu_hb_leave_analysis_monthly"
+        name="W2 — Xu hướng Tháng"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_leave_analysis_monthly"
+        sequence="20"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+    <!-- W3: Sick Leave Frequency -->
+    <menuitem
+        id="menu_hb_leave_analysis_sick"
+        name="W3 — Tần suất Nghỉ ốm"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_leave_analysis_sick"
+        sequence="30"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+    <!-- W4: Top Absent Employees -->
+    <menuitem
+        id="menu_hb_leave_analysis_absent"
+        name="W4 — Nhân viên vắng nhiều"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_leave_analysis_absent"
+        sequence="40"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+    <!-- W5: Leave Balance -->
+    <menuitem
+        id="menu_hb_leave_balance"
+        name="W5 — Số dư Nghỉ phép"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_leave_balance"
+        sequence="50"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+    <!-- W6: Burnout Risk -->
+    <menuitem
+        id="menu_hb_burnout_risk"
+        name="W6 — Cảnh báo Burnout"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_burnout_risk"
+        sequence="60"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+    <!-- Export wizard -->
+    <menuitem
+        id="menu_hb_leave_export"
+        name="Xuất Báo cáo (Excel/PDF)"
+        parent="menu_hb_leave_analytics_root"
+        action="action_hb_timeoff_export_wizard"
+        sequence="70"
+        groups="hr_holidays.group_hr_holidays_user"/>
+
+</odoo>

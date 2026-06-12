@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        CFG-TO-02: Accrual Plan — tích lũy 1 ngày/tháng, tối đa 12 ngày/năm
+        CFG-TO-04: Carry-over — tối đa 5 ngày, hết hạn cuối Q1 năm sau (31/3)
+
+        Áp dụng cho: Nhân viên toàn thời gian (Full-time)
+        Loại nghỉ:   Nghỉ Phép Năm (ref hb_leave_type_annual)
+    -->
+    <data noupdate="1">
+
+        <!-- ====================================================
+             ACCRUAL PLAN: Phép Năm Toàn Thời Gian
+             - Gắn với loại "Nghỉ Phép Năm"
+             - Carry-over: hết hạn ngày 31/3 năm sau
+        ==================================================== -->
+        <record id="hb_accrual_plan_annual_fulltime" model="hr.leave.accrual.plan">
+            <field name="name">Phép Năm — Nhân Viên Toàn Thời Gian</field>
+            <field name="time_off_type_id" ref="hb_leave_type_annual"/>
+            <!-- Tích lũy tính vào đầu kỳ -->
+            <field name="accrued_gain_time">start</field>
+            <!-- Carry-over: bật và đặt hạn cuối Q1 (31/3) -->
+            <field name="can_be_carryover">True</field>
+            <field name="carryover_date">other</field>
+            <field name="carryover_month">3</field>
+            <field name="carryover_day">31</field>
+        </record>
+
+        <!-- ====================================================
+             ACCRUAL LEVEL: 1 ngày/tháng, tối đa 12 ngày tích lũy
+             Carry-over: giữ tối đa 5 ngày sang năm sau
+        ==================================================== -->
+        <record id="hb_accrual_level_annual_monthly" model="hr.leave.accrual.level">
+            <field name="accrual_plan_id" ref="hb_accrual_plan_annual_fulltime"/>
+            <!-- Bắt đầu tích lũy ngay từ ngày vào -->
+            <field name="milestone_date">creation</field>
+            <field name="start_count">0</field>
+            <field name="start_type">day</field>
+            <!-- Tích lũy: 1 ngày mỗi tháng -->
+            <field name="added_value">1</field>
+            <field name="added_value_type">day</field>
+            <field name="frequency">monthly</field>
+            <!-- Trần tích lũy: tối đa 12 ngày trong tài khoản -->
+            <field name="cap_accrued_time">True</field>
+            <field name="maximum_leave">12</field>
+            <!-- Carry-over: chuyển sang năm sau thay vì mất -->
+            <field name="action_with_unused_accruals">all</field>
+            <!-- Giới hạn carry-over: tối đa 5 ngày -->
+            <field name="carryover_options">limited</field>
+            <field name="postpone_max_days">5</field>
+        </record>
+
+    </data>
+</odoo>

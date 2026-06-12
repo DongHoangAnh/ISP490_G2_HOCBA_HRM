@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        AUT-TO-001 / CUS-TO-005: Nghỉ Khẩn Cấp fast-track
+        - Badge "Khẩn Cấp" hiển thị trên form khi loại nghỉ là Emergency Leave
+        - Banner thông báo cho nhân viên biết đơn sẽ được xử lý ưu tiên (1 bước duyệt)
+        - Thông báo tức thời HR + Manager được gửi khi đơn được tạo (xem models/hr_leave.py)
+    -->
+    <record id="view_hr_leave_form_hb_emergency" model="ir.ui.view">
+        <field name="name">hr.leave.form.hb.emergency</field>
+        <field name="model">hr.leave</field>
+        <field name="inherit_id" ref="hr_holidays.hr_leave_view_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Khai báo field helper để dùng trong invisible conditions -->
+            <xpath expr="//field[@name='holiday_status_id']" position="after">
+                <field name="x_is_emergency" invisible="1"/>
+            </xpath>
+
+            <!--
+                Ribbon "Khẩn Cấp" — hiển thị trên thẻ khi là đơn nghỉ khẩn cấp.
+                Đặt TRƯỚC ribbon "Cancelled" để tránh xung đột;
+                chỉ một trong hai sẽ hiện tại một thời điểm.
+            -->
+            <xpath expr="//widget[@name='web_ribbon']" position="before">
+                <widget name="web_ribbon"
+                        title="Khẩn Cấp"
+                        bg_color="text-bg-danger"
+                        invisible="not x_is_emergency"/>
+            </xpath>
+
+            <!--
+                Banner thông tin cho nhân viên — đặt ngay sau dashboard_warning_message
+                (trước leave_type_increases_duration) để tránh trùng anchor với Phase 3.
+                Hiện cho cả nhân viên lẫn HR.
+            -->
+            <xpath expr="//field[@name='dashboard_warning_message']" position="after">
+                <div class="alert alert-danger d-flex align-items-start mt-2"
+                     role="alert"
+                     invisible="not x_is_emergency">
+                    <i class="fa fa-bolt me-2 mt-1"/>
+                    <span>
+                        <b>Đơn nghỉ khẩn cấp.</b>
+                        HR và Manager trực tiếp đã được thông báo ngay lập tức.
+                        Đơn này chỉ cần <b>1 bước phê duyệt</b>.
+                    </span>
+                </div>
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>

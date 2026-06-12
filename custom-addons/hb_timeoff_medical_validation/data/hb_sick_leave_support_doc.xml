@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Bật yêu cầu chứng từ hỗ trợ cho Nghỉ Ốm (FUNC-TO-002) -->
+        <record id="hb_timeoff_config.hb_leave_type_sick" model="hr.leave.type">
+            <field name="support_document">True</field>
+        </record>
+    </data>
+</odoo>

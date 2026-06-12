@@ -1,0 +1,198 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Menu standalone React cũ đã gỡ — hr_recruitment cung cấp menu Recruitment.
+         Không dùng record active=False ở đây: db cài mới không có menu này nên
+         record sẽ bị tạo rỗng (thiếu name) -> NotNullViolation -> sập registry;
+         db cũ sẽ tự dọn xmlid mồ côi khi upgrade module. -->
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         HỌC BÁ — Window Actions (9 sheets)
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <!-- 7.4 Danh sách CV (hr.applicant list) -->
+    <record id="hb_action_applicants_list" model="ir.actions.act_window">
+        <field name="name">Danh sách CV</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="context">{'search_default_applicants': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào</p>
+            <p>Tạo hồ sơ ứng viên mới hoặc để hệ thống tự tạo khi nhận email.</p>
+        </field>
+    </record>
+
+    <!-- 7.3 Lịch rảnh PV (hb.interview.slot — calendar + list) -->
+    <record id="hb_action_interview_calendar" model="ir.actions.act_window">
+        <field name="name">Lịch rảnh phỏng vấn</field>
+        <field name="res_model">hb.interview.slot</field>
+        <field name="view_mode">calendar,list,form</field>
+        <field name="search_view_id" ref="hocba_recruitments.hb_view_interview_slot_search"/>
+        <field name="context">{'search_default_filter_available': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có slot rảnh nào được khai báo</p>
+            <p>Dùng "Khai báo lịch rảnh" để TBP điền khung giờ rảnh trong tuần.</p>
+        </field>
+    </record>
+
+    <!-- 7.5 Danh sách phỏng vấn (hr.applicant list, filter by interview_date set) -->
+    <record id="hb_action_interview_list" model="ir.actions.act_window">
+        <field name="name">Danh sách phỏng vấn</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">list,calendar,form</field>
+        <field name="views" eval="[(ref('hocba_recruitments.hb_view_applicant_interview_list'), 'list'), (False, 'calendar'), (False, 'form')]"/>
+        <field name="domain">[('interview_date','!=',False)]</field>
+        <field name="context">{'search_default_applicants': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có phỏng vấn nào được ghi nhận</p>
+        </field>
+    </record>
+
+    <!-- 7.6 Offer & Nhận việc (hr.applicant đã chốt — date_closed set) -->
+    <record id="hb_action_offer_hire" model="ir.actions.act_window">
+        <field name="name">Offer &amp; Nhận việc</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('date_closed', '!=', False)]</field>
+        <field name="context">{'active_test': False}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào được chốt offer</p>
+        </field>
+    </record>
+
+    <!-- 7.8 Vị trí tuyển dụng / JD (hr.job) -->
+    <record id="hb_action_job_positions" model="ir.actions.act_window">
+        <field name="name">Vị trí tuyển dụng / JD</field>
+        <field name="res_model">hr.job</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="search_view_id" ref="hocba_recruitments.view_hr_job_hocba_search"/>
+        <field name="context">{'search_default_filter_recruiting': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có vị trí tuyển dụng nào</p>
+            <p>Tạo vị trí và Job Description trước khi bắt đầu quy trình tuyển dụng.</p>
+        </field>
+    </record>
+
+    <!-- 7.7 Mail mẫu tuyển dụng (mail.template → hr.applicant) -->
+    <record id="hb_action_mail_templates" model="ir.actions.act_window">
+        <field name="name">Mail mẫu tuyển dụng</field>
+        <field name="res_model">mail.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('model', '=', 'hr.applicant')]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có mail mẫu nào</p>
+            <p>Tạo template email dùng cho thông báo tuyển dụng.</p>
+        </field>
+    </record>
+
+    <!-- 7.9 Báo cáo tuyển dụng (hr.applicant pivot/graph) -->
+    <record id="hb_action_recruitment_report" model="ir.actions.act_window">
+        <field name="name">Báo cáo tuyển dụng</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="context">{'search_default_applicants': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có dữ liệu để báo cáo</p>
+            <p>Báo cáo sẽ hiển thị sau khi có dữ liệu ứng viên.</p>
+        </field>
+    </record>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         HỌC BÁ — Menu Items (thanh nav Recruitment, 9 sheets)
+         seq 10 Ứng viên → 15 Phiếu YC → 20 Phỏng vấn →
+              25 Offer & NV → 30 Báo cáo | Config: 10 Vị trí/JD, 45 Mail mẫu
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <!-- 7.1 + 7.4 ── Ứng viên (parent, seq 10) -->
+    <menuitem id="hb_menu_applicants"
+        name="Ứng viên"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        groups="hr_recruitment.group_hr_recruitment_user,hr_recruitment.group_hr_recruitment_interviewer"
+        sequence="10"/>
+
+        <!-- 7.1 Pipeline Kanban -->
+        <menuitem id="hb_menu_applicants_pipeline"
+            name="Pipeline Kanban"
+            parent="hb_menu_applicants"
+            action="hocba_recruitments.hb_action_pipeline_kanban"
+            sequence="1"/>
+
+        <!-- 7.4 Danh sách CV -->
+        <menuitem id="hb_menu_applicants_list"
+            name="Danh sách CV"
+            parent="hb_menu_applicants"
+            action="hb_action_applicants_list"
+            sequence="2"/>
+
+    <!-- 7.2 ── Phiếu yêu cầu tuyển dụng (seq 15) -->
+    <menuitem id="hb_menu_recruitment_request"
+        name="Phiếu yêu cầu"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        action="hb_action_recruitment_request"
+        groups="hr_recruitment.group_hr_recruitment_user"
+        sequence="15"/>
+
+    <!-- 7.3 + 7.5 ── Phỏng vấn (parent, seq 20) -->
+    <menuitem id="hb_menu_interviews"
+        name="Phỏng vấn"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        groups="hr_recruitment.group_hr_recruitment_user,hr_recruitment.group_hr_recruitment_interviewer"
+        sequence="20"/>
+
+        <!-- 7.3a Khai báo lịch rảnh (wizard — TBP điền batch slot) -->
+        <menuitem id="hb_menu_interviews_declare"
+            name="Khai báo lịch rảnh"
+            parent="hb_menu_interviews"
+            action="hocba_recruitments.hb_action_slot_wizard"
+            groups="hr_recruitment.group_hr_recruitment_user,hr_recruitment.group_hr_recruitment_interviewer"
+            sequence="1"/>
+
+        <!-- 7.3b Lịch rảnh PV (calendar — xem tổng quan slot) -->
+        <menuitem id="hb_menu_interviews_calendar"
+            name="Lịch rảnh PV"
+            parent="hb_menu_interviews"
+            action="hb_action_interview_calendar"
+            sequence="2"/>
+
+        <!-- 7.5 Danh sách phỏng vấn (list) -->
+        <menuitem id="hb_menu_interviews_list"
+            name="Danh sách phỏng vấn"
+            parent="hb_menu_interviews"
+            action="hb_action_interview_list"
+            sequence="3"/>
+
+    <!-- 7.6 ── Offer & Nhận việc (seq 25) -->
+    <menuitem id="hb_menu_offer_hire"
+        name="Offer &amp; Nhận việc"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        action="hb_action_offer_hire"
+        groups="hr_recruitment.group_hr_recruitment_user"
+        sequence="25"/>
+
+    <!-- 7.9 ── Báo cáo (seq 30) -->
+    <menuitem id="hb_menu_recruitment_report"
+        name="Báo cáo"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        action="hb_action_recruitment_report"
+        groups="hr_recruitment.group_hr_recruitment_user"
+        sequence="30"/>
+
+    <!-- 7.8 ── Vị trí / JD (seq 5 — nền tảng, đứng đầu nav) -->
+    <menuitem id="hb_menu_job_positions"
+        name="Vị trí / JD"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        action="hb_action_job_positions"
+        groups="hr_recruitment.group_hr_recruitment_user"
+        sequence="5"/>
+
+    <!-- ════ Configuration ════ -->
+
+    <!-- 7.7 ── Mail mẫu (seq 45) -->
+    <menuitem id="hb_menu_mail_templates"
+        name="Mail mẫu"
+        parent="hr_recruitment.menu_hr_recruitment_configuration"
+        action="hb_action_mail_templates"
+        groups="hr_recruitment.group_hr_recruitment_user"
+        sequence="45"/>
+
+</odoo>

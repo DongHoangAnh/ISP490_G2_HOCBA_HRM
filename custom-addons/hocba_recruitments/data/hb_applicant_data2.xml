@@ -1,0 +1,772 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <record id="hb_cv_056" model="hr.applicant">
+        <field name="partner_name">Đặng Thị Thuý Quỳnh</field>
+        <field name="partner_phone">0397697592</field>
+        <field name="email_from">Quynhdang12022000@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-06</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Dang-Thi-Thuy-Quynh-Nhân viên tư vấn.pdf</field>
+        <field name="cv_filter_result">fail</field>
+        <field name="cv_note">CV ko phù hợp công việc</field>
+        <field name="interview_date">2025-11-06</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_screening"/>
+    </record>
+
+    <record id="hb_cv_057" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Minh Phương</field>
+        <field name="partner_phone">0355916414</field>
+        <field name="email_from">luyenmp2003@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-05</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">NGUYỄN THỊ MINH PHƯƠNG-TVTS.jfif</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-07</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_058" model="hr.applicant">
+        <field name="partner_name">Trần Phương Thảo</field>
+        <field name="partner_phone">0888909958</field>
+        <field name="email_from">fangcao90.cn@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-06</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">陈芳草 - 个人简历 pdf .pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-07</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_059" model="hr.applicant">
+        <field name="partner_name">Trần Thị Nhung</field>
+        <field name="partner_phone">0353685613</field>
+        <field name="email_from">Nhungtran7102002@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-05</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">CV TRAN THI NHUNG.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Nhà CG khá xa, check xem bạn có sang đây đi làm được không em nhé</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-07</field>
+        <field name="interview_time">15h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_060" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Vân Anh</field>
+        <field name="partner_phone">0339956962</field>
+        <field name="email_from">vanvivu0420@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-05</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">Nguyễn Thị Vân Anh.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Tương tự, bạn này cũng địa điểm khá xa em</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-08</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_061" model="hr.applicant">
+        <field name="partner_name">Trần Nữ Diệp Chi</field>
+        <field name="partner_phone">0849180604</field>
+        <field name="email_from">diepchihht@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-05</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">Nhân viên kinh doanh .pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Tương tự, bạn này cũng địa điểm khá xa em</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-11</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_062" model="hr.applicant">
+        <field name="partner_name">Phạm Hồng Anh</field>
+        <field name="partner_phone">0388926215</field>
+        <field name="email_from">phamhonganh290303@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-07</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Pham-Hong-Anh-TopCV.vn-041125.02133 (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-12</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_063" model="hr.applicant">
+        <field name="partner_name">Thieu Thi Oanh</field>
+        <field name="partner_phone">18205607694</field>
+        <field name="email_from">thieuoanh2003@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-10</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">cv (3).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-12</field>
+        <field name="interview_time">16h</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_064" model="hr.applicant">
+        <field name="partner_name">Trần Thị Ngọc</field>
+        <field name="partner_phone">0865572997</field>
+        <field name="email_from">tranngoc22072002@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-07</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV-Trần Thị Ngọc-GVTT_1.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-13</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_065" model="hr.applicant">
+        <field name="partner_name">Phan Thị Ngọc</field>
+        <field name="partner_phone">0354049845</field>
+        <field name="email_from">phanngocys10@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-10</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">履历表.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-13</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_066" model="hr.applicant">
+        <field name="partner_name">Phạm Lê Quang</field>
+        <field name="partner_phone">0373886189</field>
+        <field name="email_from">plquang99@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-11</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">范黎光-简历.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-13</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_067" model="hr.applicant">
+        <field name="partner_name">Bùi Thị Minh Nguyệt</field>
+        <field name="partner_phone">0325615606</field>
+        <field name="email_from">nguyetminh140597@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-12</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Bui-Thi-Minh-Nguyet CV(1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Nhảy việc hơi nhiều, phỏng vấn đánh giá thêm</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-14</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_068" model="hr.applicant">
+        <field name="partner_name">Trần Thị Liên</field>
+        <field name="partner_phone">0359333826</field>
+        <field name="email_from">lientt820@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-14</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Tràn -Thị-Liên.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Nhà xa, HCNS check trước</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-14</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_069" model="hr.applicant">
+        <field name="partner_name">Nguyễn Nữ Trà My</field>
+        <field name="partner_phone">0989084992</field>
+        <field name="email_from">Nguyennutramy83@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-10</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV TRÀ MY TIẾNG TRUNG.docx</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-15</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_070" model="hr.applicant">
+        <field name="partner_name">Mai Thị Lý</field>
+        <field name="partner_phone">0847362986</field>
+        <field name="email_from">kimly3815@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-13</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">MAI-THI-LY-TopCV.vn-200925.155402.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-17</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_071" model="hr.applicant">
+        <field name="partner_name">Nguyễn Châu Giang</field>
+        <field name="partner_phone">0943340905</field>
+        <field name="email_from">giangchauuu00@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-14</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_Nguyễn Châu Giang (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-18</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_072" model="hr.applicant">
+        <field name="partner_name">Đoàn Thị Bích Ngọc</field>
+        <field name="partner_phone">0982473606</field>
+        <field name="email_from">bichngoc02022003@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-12</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Doan_Thi_Bich_Ngoc_CV (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-19</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_073" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Huyền</field>
+        <field name="partner_phone">0354487957</field>
+        <field name="email_from">saytiengtrung@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-15</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV- NGUYỄN THỊ HUYỀN - Giáo viên tiếng Trung.pdf</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-19</field>
+        <field name="interview_time">15h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_074" model="hr.applicant">
+        <field name="partner_name">Vũ Thị Trang</field>
+        <field name="partner_phone">0962630875</field>
+        <field name="email_from">vuthitrangbn2002@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-19</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">f3e1144a-e3a3-47dc-a848-2e4839949fca (1).jfif</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-21</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_075" model="hr.applicant">
+        <field name="partner_name">Trần Hằng Nga</field>
+        <field name="partner_phone">0984590423</field>
+        <field name="email_from">tranhangnga0423@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-11-11</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">求职简历.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-21</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_076" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Huyền Trang</field>
+        <field name="partner_phone">0962606569</field>
+        <field name="email_from">nguyentranglamson2002@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-14</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Nguyễn Thị Huyền Trang.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-25</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_077" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thu Thuỷ</field>
+        <field name="partner_phone">0372043721</field>
+        <field name="email_from">thuthuyhn1999@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-25</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Nguyễn Thu Thuỷ_CV_Tư vấn tuyển sinh.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-27</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_078" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thanh</field>
+        <field name="partner_phone">0769129491</field>
+        <field name="email_from">thanhthanh29032002@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-12-04</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV.NGUYỄN THỊ THANH.pdf.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-12-11</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_079" model="hr.applicant">
+        <field name="partner_name">Trần Thị Thu Uyên</field>
+        <field name="partner_phone">0348072150</field>
+        <field name="email_from">uyen79314@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-12-11</field>
+        <field name="ctv_tuyen_dung">HuongLT</field>
+        <field name="cv_link">CV Tran Thi Thu Uyen- vị trí nhân viên kinh doanh.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-12-17</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_080" model="hr.applicant">
+        <field name="partner_name">Đặng Thu Hà</field>
+        <field name="partner_phone">0929306273</field>
+        <field name="email_from">dangthuha0711@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-12-25</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Dangthuhaa.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-12-27</field>
+        <field name="interview_time">10h30</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_081" model="hr.applicant">
+        <field name="partner_name">Bùi Khánh Linh</field>
+        <field name="partner_phone">0866454326</field>
+        <field name="email_from">khanhlinhcv1511@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-02-27</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">72074467eeaf85820733f21bf19fd437.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-02-28</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_082" model="hr.applicant">
+        <field name="partner_name">Hoàng Kim Chi</field>
+        <field name="partner_phone">0901762216</field>
+        <field name="email_from">chihk1900@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-02-27</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">e146e22a88986a94f7783cb1046743b8.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-02-28</field>
+        <field name="interview_time">9h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_083" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Bình An</field>
+        <field name="partner_phone">0969161075</field>
+        <field name="email_from">Binhan.kyu1010@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-02</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Nguyen-Thi-Binh-An--TopCV.vn-020326.142601.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-02</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_084" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Hà</field>
+        <field name="partner_phone">0964322150</field>
+        <field name="email_from">ntha21032001@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-02</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">CV_Nguyễn Thị Hà_NVKD1771906216014.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Nhà xa</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-03</field>
+        <field name="interview_time">16h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_085" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Kim Oanh</field>
+        <field name="partner_phone">0372137096</field>
+        <field name="email_from">kmoanh966@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-02</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV (5).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-04</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_086" model="hr.applicant">
+        <field name="partner_name">Phan Thị Thanh Hoa</field>
+        <field name="partner_phone">0382965523</field>
+        <field name="email_from">thanhhoapham1111@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-02</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_PHẠM THỊ THANH HOA.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-04</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_087" model="hr.applicant">
+        <field name="partner_name">Trần Thuỳ Linh</field>
+        <field name="partner_phone">0946198216</field>
+        <field name="email_from">tranthuylinh14082002@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-02</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">643842404_1987367155519717_131402017750151988_n.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-04</field>
+        <field name="interview_time">15h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_088" model="hr.applicant">
+        <field name="partner_name">Lê Thị Phương</field>
+        <field name="partner_phone">0987917823</field>
+        <field name="email_from">phuonglt0420@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-02</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Le-Thi-Phuong-TopCV.vn-020326.115758.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Độ tuổi</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-05</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_089" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thu Hà</field>
+        <field name="partner_phone">0814266408</field>
+        <field name="email_from">nggthuha11@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_quan_ly_hoc_vien"/>
+        <field name="date_received">2026-03-04</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV Nguyễn Thu Hà - Quản lý học viên (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-06</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_090" model="hr.applicant">
+        <field name="partner_name">Phạm Ngọc Anh</field>
+        <field name="partner_phone">0375056919</field>
+        <field name="email_from">pna803@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_quan_ly_hoc_vien"/>
+        <field name="date_received">2026-03-04</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">PHAM-NGOC-ANH-TopCV.vn-270226.101936.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-06</field>
+        <field name="interview_time">15h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_091" model="hr.applicant">
+        <field name="partner_name">Lã Thị Thu Trang</field>
+        <field name="partner_phone">0352718343</field>
+        <field name="email_from">lathutrang.tn@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-04</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV - Lã Thị Thu Trang .pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-14</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_092" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thuỳ Linh</field>
+        <field name="partner_phone">0975122733</field>
+        <field name="email_from">linhtn0910@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-04</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Nguyễn Thuỳ Linh .pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-14</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_093" model="hr.applicant">
+        <field name="partner_name">Đỗ Thị Dòng</field>
+        <field name="partner_phone">0352593892</field>
+        <field name="email_from">ndong6946@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-09</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">Do-Thi-Dong-TopCV.vn-050326.104604.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Nhà xa</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-14</field>
+        <field name="interview_time">15h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_094" model="hr.applicant">
+        <field name="partner_name">Nguyễn Tùng Chi</field>
+        <field name="partner_phone">0968013802</field>
+        <field name="email_from">beenguyen9599@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-03-09</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CHI-NGUYEN-TopCV.vn-090326.160343.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="cv_note">Chưa có kinh nghiệm, cân nhắc tinh thần học hỏi</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-14</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_095" model="hr.applicant">
+        <field name="partner_name">Lê Hà Phương</field>
+        <field name="partner_phone">0378326511</field>
+        <field name="email_from">phuonglh0063@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_quan_ly_hoc_vien"/>
+        <field name="date_received">2026-03-23</field>
+        <field name="ctv_tuyen_dung">HuongLT</field>
+        <field name="cv_link">LeHaPhuongCV.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-23</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_096" model="hr.applicant">
+        <field name="partner_name">Vũ Linh Trang</field>
+        <field name="partner_phone">0339489302</field>
+        <field name="email_from">linhtrangvu65@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_quan_ly_hoc_vien"/>
+        <field name="date_received">2026-03-25</field>
+        <field name="ctv_tuyen_dung">HuongLT</field>
+        <field name="cv_link">CV Quản lý học viên_Vũ Linh Trang..pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-03-26</field>
+        <field name="interview_time">17h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_097" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thu Hà</field>
+        <field name="partner_phone">0774339117</field>
+        <field name="email_from">nguyenthuha.hn99@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-04-07</field>
+        <field name="ctv_tuyen_dung">huonglt</field>
+        <field name="cv_link">CV Nguyễn Thu Hà.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-04-08</field>
+        <field name="interview_time">15h00</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_098" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thảo</field>
+        <field name="partner_phone">0946289731</field>
+        <field name="email_from">thithao.nb@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_hanh_chinh_nhan_su"/>
+        <field name="date_received">2026-04-10</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">CV Nguyễn Thị Thảo.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-04-11</field>
+        <field name="interview_time">16h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_099" model="hr.applicant">
+        <field name="partner_name">Đặng Thị Quỳnh Trang</field>
+        <field name="partner_phone">0962485113</field>
+        <field name="email_from">trangquynh240595@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_hanh_chinh_nhan_su"/>
+        <field name="date_received">2026-04-10</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Dang-Thi-Quynh-Trang-TopCV.vn-030426.143101.pdf</field>
+        <field name="interview_date">2026-04-13</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_screening"/>
+    </record>
+
+    <record id="hb_cv_100" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Ninh Thuỷ</field>
+        <field name="partner_phone">0983063319</field>
+        <field name="email_from">nguyenninhthuy99@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-04-16</field>
+        <field name="ctv_tuyen_dung">HuongLT</field>
+        <field name="cv_link">CV-Chuyên viên Sales Admin - Nguyễn Thị Ninh Thủy1776256711891.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-04-21</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_101" model="hr.applicant">
+        <field name="partner_name">Đào Thị Linh</field>
+        <field name="partner_phone">0967486237</field>
+        <field name="email_from">linhsvdh99@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-04-13</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">ĐÀO THỊ LINH - CHUYÊN VIÊN TƯ VẤN.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-04-22</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_102" model="hr.applicant">
+        <field name="partner_name">Vũ Hồng Nhung</field>
+        <field name="partner_phone">0333636005</field>
+        <field name="email_from">Vhnhung511@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-05-11</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_Vũ Hồng Nhung_Tư vấn tuyển sinh.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-05-13</field>
+        <field name="interview_time">10h00</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_103" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thuỳ Linh</field>
+        <field name="partner_phone">0394028838</field>
+        <field name="email_from">linhlinh241220@gmail.com</field>
+        <field name="job_id" ref="hocba_recruitments.hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2026-05-13</field>
+        <field name="ctv_tuyen_dung">huonglt</field>
+        <field name="cv_link">CV NHAN VIEN KINH DOANG 2026.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2026-05-14</field>
+        <field name="interview_time">10h00</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hocba_recruitments.hb_stage_interview"/>
+    </record>
+
+</odoo>

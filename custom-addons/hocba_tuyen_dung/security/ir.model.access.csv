@@ -1,3 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_hb_recruitment_request_user,hb.recruitment.request user,model_hb_recruitment_request,hr_recruitment.group_hr_recruitment_user,1,1,1,1
-access_hb_recruitment_request_interviewer,hb.recruitment.request interviewer,model_hb_recruitment_request,hr_recruitment.group_hr_recruitment_interviewer,1,0,0,0

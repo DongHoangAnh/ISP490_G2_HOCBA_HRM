@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================
+         List view: Chính sách Nghỉ phép
+    ============================================================ -->
+    <record id="view_hb_timeoff_policy_rule_list" model="ir.ui.view">
+        <field name="name">hb.timeoff.policy.rule.list</field>
+        <field name="model">hb.timeoff.policy.rule</field>
+        <field name="arch" type="xml">
+            <list string="Chính sách Nghỉ phép">
+                <field name="employment_type"/>
+                <field name="name"/>
+                <field name="allocation_mode"/>
+                <field name="annual_days"/>
+                <field name="accrual_plan_id"/>
+                <field name="employee_count"/>
+                <field name="active" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============================================================
+         Form view: Chính sách Nghỉ phép
+    ============================================================ -->
+    <record id="view_hb_timeoff_policy_rule_form" model="ir.ui.view">
+        <field name="name">hb.timeoff.policy.rule.form</field>
+        <field name="model">hb.timeoff.policy.rule</field>
+        <field name="arch" type="xml">
+            <form string="Chính sách Nghỉ phép">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button
+                            name="action_view_employees"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-users">
+                            <field name="employee_count" widget="statinfo" string="Nhân viên"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Tên chính sách..."/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Thông tin chính sách">
+                            <field name="employment_type"/>
+                            <field name="allocation_mode"/>
+                            <field name="annual_days"
+                                   invisible="allocation_mode == 'none'"/>
+                            <field name="accrual_plan_id"
+                                   invisible="allocation_mode != 'accrual'"
+                                   required="allocation_mode == 'accrual'"/>
+                        </group>
+                        <group string="Trạng thái">
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                    </group>
+                    <group string="Loại nghỉ phép được phép">
+                        <field name="leave_type_ids" widget="many2many_tags"
+                               nolabel="1"
+                               colspan="2"/>
+                    </group>
+                    <group string="Ghi chú">
+                        <field name="notes" nolabel="1" colspan="2"
+                               placeholder="Ghi chú về chính sách này..."/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============================================================
+         Action window
+    ============================================================ -->
+    <record id="action_hb_timeoff_policy_rule" model="ir.actions.act_window">
+        <field name="name">Chính sách Nghỉ phép</field>
+        <field name="res_model">hb.timeoff.policy.rule</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Chưa có chính sách nghỉ phép nào.
+            </p>
+            <p>
+                Tạo chính sách để hệ thống tự động phân bổ phép cho từng loại nhân viên.
+            </p>
+        </field>
+    </record>
+
+    <!-- ============================================================
+         Log history view
+    ============================================================ -->
+    <record id="view_hb_leave_policy_log_list" model="ir.ui.view">
+        <field name="name">hb.leave.policy.log.list</field>
+        <field name="model">hb.leave.policy.log</field>
+        <field name="arch" type="xml">
+            <list string="Lịch sử Chính sách Nghỉ phép" create="false" delete="false">
+                <field name="applied_date"/>
+                <field name="employee_id"/>
+                <field name="old_policy_id"/>
+                <field name="new_policy_id"/>
+                <field name="triggered_by"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_hb_leave_policy_log_form" model="ir.ui.view">
+        <field name="name">hb.leave.policy.log.form</field>
+        <field name="model">hb.leave.policy.log</field>
+        <field name="arch" type="xml">
+            <form string="Lịch sử Chính sách" create="false">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="employee_id" readonly="1"/>
+                            <field name="applied_date" readonly="1"/>
+                            <field name="triggered_by" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="old_policy_id" readonly="1"/>
+                            <field name="new_policy_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Allocations đã tạo">
+                        <field name="allocation_ids" readonly="1" nolabel="1" colspan="2">
+                            <list>
+                                <field name="name"/>
+                                <field name="holiday_status_id"/>
+                                <field name="number_of_days"/>
+                                <field name="allocation_type"/>
+                                <field name="state"/>
+                            </list>
+                        </field>
+                    </group>
+                    <group string="Ghi chú">
+                        <field name="notes" readonly="1" nolabel="1" colspan="2"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+</odoo>

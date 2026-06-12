@@ -1,18 +1,28 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *$py.class
 *.egg-info/
 .Python
 
 # Odoo
 *.log
+*.pot
+
+# Environment / secrets
+.env
 
 # OS / Editor
 .DS_Store
+**/.DS_Store
 Thumbs.db
 .idea/
 .vscode/
 
-# Claude Code (cấu hình cá nhân, không commit)
+# Microsoft Office temp files
+~$*
+
+# Claude Code (cau hinh ca nhan)
 .claude/

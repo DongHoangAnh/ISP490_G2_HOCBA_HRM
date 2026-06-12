@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Bank File Wizard Form -->
+    <record id="hb_bank_file_wizard_form" model="ir.ui.view">
+        <field name="name">hb.bank.file.wizard.form</field>
+        <field name="model">hb.bank.file.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Tạo file thanh toán ngân hàng">
+                <group>
+                    <group>
+                        <field name="payslip_batch_id" readonly="1"/>
+                        <field name="payslip_count" readonly="1"/>
+                        <field name="total_net" widget="monetary" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="bank_format_id"/>
+                        <field name="company_bank_id"/>
+                        <field name="payment_date"/>
+                        <field name="description"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_generate" string="Tạo file"
+                            type="object" class="btn-primary"/>
+                    <button string="Hủy" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Wizard Action (called from Payslip Batch) -->
+    <record id="action_hb_bank_file_wizard" model="ir.actions.act_window">
+        <field name="name">Tạo file Ngân hàng</field>
+        <field name="res_model">hb.bank.file.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>
