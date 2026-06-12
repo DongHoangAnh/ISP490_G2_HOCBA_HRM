@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hb_leave_analysis_hr_user,hb.timeoff.leave.analysis HR user,model_hb_timeoff_leave_analysis,hr_holidays.group_hr_holidays_user,1,0,0,0
+access_hb_leave_analysis_base_user,hb.timeoff.leave.analysis base user,model_hb_timeoff_leave_analysis,base.group_user,1,0,0,0
+access_hb_burnout_line_hr_user,hb.timeoff.burnout.line HR user,model_hb_timeoff_burnout_line,hr_holidays.group_hr_holidays_user,1,0,0,0
+access_hb_burnout_line_base_user,hb.timeoff.burnout.line base user,model_hb_timeoff_burnout_line,base.group_user,1,0,0,0
+access_hb_export_wizard_hr_user,hb.timeoff.export.wizard HR user,model_hb_timeoff_export_wizard,hr_holidays.group_hr_holidays_user,1,1,1,1
