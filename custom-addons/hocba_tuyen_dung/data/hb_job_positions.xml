@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!--
+        Sheet 7.8 — 8 vị trí tuyển dụng Học Bá
+        noupdate="1": chỉ tạo lần đầu, không ghi đè khi upgrade.
+        jd_google_link: điền URL Google Drive sau khi có link thực.
+    -->
+
+    <!-- ── Đang tuyển ──────────────────────────────────────────────── -->
+
+    <record id="hb_job_tu_van_tuyen_sinh" model="hr.job">
+        <field name="name">Tư vấn tuyển sinh</field>
+        <field name="department_id" ref="hocba_employees.dept_kinh_doanh"/>
+        <field name="recruitment_status">recruiting</field>
+        <field name="x_published" eval="True"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <record id="hb_job_giao_vien_tieng_trung" model="hr.job">
+        <field name="name">Giáo viên dạy tiếng Trung</field>
+        <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
+        <field name="recruitment_status">recruiting</field>
+        <field name="x_published" eval="True"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <record id="hb_job_chuyen_vien_rd" model="hr.job">
+        <field name="name">Chuyên viên R&amp;D</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+        <field name="recruitment_status">recruiting</field>
+        <field name="x_published" eval="True"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <record id="hb_job_quan_ly_hoc_vien" model="hr.job">
+        <field name="name">Quản lý học viên</field>
+        <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
+        <field name="recruitment_status">recruiting</field>
+        <field name="x_published" eval="True"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <record id="hb_job_content_marketing" model="hr.job">
+        <field name="name">Content Marketing</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="recruitment_status">recruiting</field>
+        <field name="x_published" eval="True"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <!-- ── Dừng tuyển ─────────────────────────────────────────────── -->
+
+    <record id="hb_job_tro_giang" model="hr.job">
+        <field name="name">Trợ giảng</field>
+        <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
+        <field name="recruitment_status">stopped</field>
+        <field name="x_published" eval="False"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <record id="hb_job_giao_vu" model="hr.job">
+        <field name="name">Giáo vụ</field>
+        <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
+        <field name="recruitment_status">stopped</field>
+        <field name="x_published" eval="False"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+    <record id="hb_job_hanh_chinh_nhan_su" model="hr.job">
+        <field name="name">Hành chính nhân sự</field>
+        <field name="department_id" ref="hocba_employees.dept_ketoan_hcns"/>
+        <field name="recruitment_status">stopped</field>
+        <field name="x_published" eval="False"/>
+        <field name="jd_google_link"></field>
+    </record>
+
+</odoo>

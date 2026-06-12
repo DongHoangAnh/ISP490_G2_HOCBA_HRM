@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Sheet 7.4 — Danh sách CV (hr.applicant extended)
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Custom List View ── -->
+    <record id="hb_view_applicant_cv_list" model="ir.ui.view">
+        <field name="name">hr.applicant.hocba.cv.list</field>
+        <field name="model">hr.applicant</field>
+        <field name="arch" type="xml">
+            <list string="Danh sách CV"
+                decoration-success="cv_filter_result == 'pass' and call_status == 'agree'"
+                decoration-danger="cv_filter_result == 'fail'"
+                decoration-warning="cv_filter_result == 'potential' or cv_filter_result == 'contact_later'"
+                decoration-muted="call_status == 'refuse'">
+                <field name="date_received"     string="Thời gian"/>
+                <field name="ctv_tuyen_dung"    string="CTV"/>
+                <field name="partner_name"      string="Họ tên ứng viên"/>
+                <field name="partner_phone"     string="Số điện thoại"/>
+                <field name="email_from"        string="Email"/>
+                <field name="job_id"            string="Vị trí"/>
+                <field name="cv_link"           string="Link CV" widget="url" optional="show"/>
+                <field name="cv_filter_result"  string="Lọc CV" widget="badge"
+                    decoration-success="cv_filter_result == 'pass'"
+                    decoration-danger="cv_filter_result == 'fail'"
+                    decoration-warning="cv_filter_result in ('potential', 'contact_later')"/>
+                <field name="cv_note"           string="Ghi chú CV" optional="show"/>
+                <field name="call_status"       string="Gọi điện" widget="badge"
+                    decoration-success="call_status == 'agree'"
+                    decoration-danger="call_status == 'refuse'"/>
+                <field name="interview_date"    string="Ngày hẹn PV"/>
+                <field name="interview_time"    string="Giờ PV"/>
+                <field name="interviewer_name"  string="Người PV"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ── Form View Inherit — add CV tab ── -->
+    <record id="hb_view_applicant_cv_form_inherit" model="ir.ui.view">
+        <field name="name">hr.applicant.hocba.cv.form.inherit</field>
+        <field name="model">hr.applicant</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_applicant_view_form"/>
+        <field name="arch" type="xml">
+            <!-- Inject CV fields into the first group after partner_name -->
+            <field name="partner_name" position="after">
+                <field name="date_received"/>
+                <field name="ctv_tuyen_dung" placeholder="Tên CTV tuyển dụng"/>
+                <field name="cv_link" placeholder="Link Google Drive hoặc tên file CV"/>
+            </field>
+            <!-- Add CV screening tab in notebook -->
+            <notebook position="inside">
+                <page string="Lọc CV &amp; Phỏng vấn" name="cv_screening">
+                    <group string="Kết quả lọc CV" col="2">
+                        <group>
+                            <field name="cv_filter_result"/>
+                            <field name="call_status"/>
+                        </group>
+                        <group>
+                            <field name="interview_date"/>
+                            <field name="interview_time" placeholder="VD: 10h, 10h30"/>
+                            <field name="interviewer_name" placeholder="VD: Dunglt, Huonglt"/>
+                        </group>
+                        <field name="cv_note"
+                            colspan="2"
+                            placeholder="Ghi chú về CV, điều kiện, vị trí địa lý..."/>
+                    </group>
+                </page>
+            </notebook>
+        </field>
+    </record>
+
+    <!-- ── Search View Inherit ── -->
+    <record id="hb_view_applicant_cv_search_inherit" model="ir.ui.view">
+        <field name="name">hr.applicant.hocba.cv.search.inherit</field>
+        <field name="model">hr.applicant</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_applicant_view_search_bis"/>
+        <field name="arch" type="xml">
+            <search position="inside">
+                <field name="ctv_tuyen_dung" string="CTV tuyển dụng"/>
+                <field name="interviewer_name" string="Người PV"/>
+                <separator/>
+                <filter name="filter_pass"     string="Pass"
+                    domain="[('cv_filter_result','=','pass')]"/>
+                <filter name="filter_fail"     string="Fail"
+                    domain="[('cv_filter_result','=','fail')]"/>
+                <filter name="filter_potential" string="Tiềm năng"
+                    domain="[('cv_filter_result','=','potential')]"/>
+                <filter name="filter_contact_later" string="Liên hệ sau"
+                    domain="[('cv_filter_result','=','contact_later')]"/>
+                <separator/>
+                <filter name="filter_agree"    string="Đồng ý PV"
+                    domain="[('call_status','=','agree')]"/>
+                <filter name="filter_refuse"   string="Từ chối PV"
+                    domain="[('call_status','=','refuse')]"/>
+                <separator/>
+                <filter name="filter_interview_today" string="PV hôm nay"
+                    domain="[('interview_date','=',context_today().strftime('%Y-%m-%d'))]"/>
+                <group>
+                    <filter name="group_cv_result" string="Kết quả lọc CV"
+                        context="{'group_by':'cv_filter_result'}"/>
+                    <filter name="group_interviewer" string="Người PV"
+                        context="{'group_by':'interviewer_name'}"/>
+                    <filter name="group_job" string="Vị trí"
+                        context="{'group_by':'job_id'}"/>
+                    <filter name="group_date_received" string="Tháng nhận CV"
+                        context="{'group_by':'date_received:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ── Mail Buttons — inject 4 template buttons into form header ── -->
+    <record id="hb_view_applicant_mail_form_inherit" model="ir.ui.view">
+        <field name="name">hr.applicant.hocba.mail.form.inherit</field>
+        <field name="model">hr.applicant</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_applicant_view_form"/>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button string="Mời phỏng vấn"
+                        name="action_send_interview_invite"
+                        type="object"
+                        class="btn-primary"
+                        invisible="not email_from"/>
+                <button string="Kết quả phỏng vấn"
+                        name="action_send_interview_result"
+                        type="object"
+                        invisible="not email_from"/>
+                <button string="Thư mời nhận việc"
+                        name="action_send_job_offer"
+                        type="object"
+                        class="btn-success"
+                        invisible="not email_from"/>
+                <button string="Chào mừng Học Bá"
+                        name="action_send_welcome"
+                        type="object"
+                        invisible="not email_from"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ── Action: Danh sách CV (list-first, our custom list view) ── -->
+    <record id="hb_action_applicants_list" model="ir.actions.act_window">
+        <field name="name">Danh sách CV</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="views" eval="[(ref('hb_view_applicant_cv_list'), 'list'), (False, 'kanban'), (False, 'form')]"/>
+        <field name="context">{'search_default_applicants': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có CV nào</p>
+            <p>Tạo hồ sơ ứng viên mới hoặc để hệ thống tự tạo khi nhận email.</p>
+        </field>
+    </record>
+
+</odoo>

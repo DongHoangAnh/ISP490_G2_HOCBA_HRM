@@ -1,0 +1,896 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ══ Bổ sung vị trí còn thiếu ═══════════════════════════════════════ -->
+    <record id="hb_job_hoc_thuat"        model="hr.job">
+        <field name="name">Học thuật</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+    </record>
+    <record id="hb_job_digital_marketing" model="hr.job">
+        <field name="name">Digital Marketing</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+    </record>
+    <record id="hb_job_editor"           model="hr.job">
+        <field name="name">Editor</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+    </record>
+
+    <!-- ══ Danh sách CV ════════════════════════════════════════════════════ -->
+
+    <record id="hb_cv_001" model="hr.applicant">
+        <field name="partner_name">李群婷</field>
+        <field name="partner_phone">0948166111</field>
+        <field name="email_from">619181315@qq.com.cn</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">李群婷 求职简历(1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-18</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_002" model="hr.applicant">
+        <field name="partner_name">Hán Vũ Tú Ngọc</field>
+        <field name="partner_phone">0387911223</field>
+        <field name="email_from">hvtungoc02@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV Việt Trung_ Hán Vũ Tú Ngọc_ Nhân Viên Vận Hành Sản Phẩm.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-19</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_003" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thanh Thuý</field>
+        <field name="partner_phone">0909738198</field>
+        <field name="email_from">thuythanhnguyen21103@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Giáo viên tiếng Trung_NGUYỄN THỊ THANH THUÝ.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-19</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_004" model="hr.applicant">
+        <field name="partner_name">Đỗ Thu Giang</field>
+        <field name="partner_phone">0393464445</field>
+        <field name="email_from">dothugiang2408@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-15</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">z7014400524296_9b2a4f19dc6a1601f91a162891ae6417.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-19</field>
+        <field name="interview_time">16h00</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_005" model="hr.applicant">
+        <field name="partner_name">Lê Thu Thảo</field>
+        <field name="partner_phone">0843627236</field>
+        <field name="email_from">lethth11@gmail.com</field>
+        <field name="job_id" ref="hb_job_hoc_thuat"/>
+        <field name="date_received">2025-09-18</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_LÊ THU THẢO.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-19</field>
+        <field name="interview_time">9h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_006" model="hr.applicant">
+        <field name="partner_name">Bùi Thị Trang</field>
+        <field name="partner_phone">0329057122</field>
+        <field name="email_from">buitrang0329057122@gmail.com</field>
+        <field name="job_id" ref="hb_job_hoc_thuat"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Bùi Thị Trang - CV Học Thuật.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-23</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">GiangPG</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_007" model="hr.applicant">
+        <field name="partner_name">Đinh Hoàng Mai Phương</field>
+        <field name="partner_phone">0931514918</field>
+        <field name="email_from">dhmpmeomeo@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-18</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV Đinh Hoàng Mai Phương.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-23</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_008" model="hr.applicant">
+        <field name="partner_name">Lâm Thị Thuy</field>
+        <field name="partner_phone">0886120997</field>
+        <field name="email_from">thuyl6037@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV -Giáo viên tiếng trung.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-23</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_009" model="hr.applicant">
+        <field name="partner_name">Lê Thuỳ Chang</field>
+        <field name="partner_phone">16601394168</field>
+        <field name="email_from">chaew16@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-18</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV-黎垂庄.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-23</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_010" model="hr.applicant">
+        <field name="partner_name">Lê Thị Ngọc Trang</field>
+        <field name="partner_phone">0907399534</field>
+        <field name="email_from">lengoctrang.epu1410@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV LÊ THỊ NGỌC TRANG.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-24</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_011" model="hr.applicant">
+        <field name="partner_name">Hà Thị Hồng</field>
+        <field name="partner_phone">0386745536</field>
+        <field name="email_from">hathihong571987@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-23</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">个人简历-何氏红.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-25</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_012" model="hr.applicant">
+        <field name="partner_name">Mai Hoài Tâm</field>
+        <field name="partner_phone">0365651998</field>
+        <field name="email_from">tammai272001@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-18</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV Mai Hoài Tâm.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-25</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_013" model="hr.applicant">
+        <field name="partner_name">Phạm Thị Thanh Mai</field>
+        <field name="partner_phone">0963994420</field>
+        <field name="email_from">phammai9.2tn@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV Giáo viên tiếng Trung - Phạm Thị Thanh Mai.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-25</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_014" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thuỷ</field>
+        <field name="partner_phone">15840884524</field>
+        <field name="email_from">1259005796@qq.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">阮氏水简历.docx</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-25</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_015" model="hr.applicant">
+        <field name="partner_name">Nguyễn Minh Trung</field>
+        <field name="partner_phone">0946915884</field>
+        <field name="email_from">nguyenbaominhminh@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">汉语教师_阮铭忠-01 (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-26</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_016" model="hr.applicant">
+        <field name="partner_name">Bùi Thị Tú</field>
+        <field name="partner_phone">0985761767</field>
+        <field name="email_from">Subu4391@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Bùi Thị Tú 个人简历.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-26</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_017" model="hr.applicant">
+        <field name="partner_name">Lê Thị Tâm</field>
+        <field name="partner_phone">0986806428</field>
+        <field name="email_from">Xiaoxin22287@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">LE_THI_TAM_Viectotnhat.com_1640187072.docx</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-26</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_018" model="hr.applicant">
+        <field name="partner_name">Đỗ Thị Minh Tuyết</field>
+        <field name="partner_phone">0334220656</field>
+        <field name="email_from">minhtuyetdhqg@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Đỗ Thị Minh Tuyết_CV GV tiếng Trung - Tuyet Minh.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-26</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_019" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Minh Thuỳ</field>
+        <field name="partner_phone">0934332982</field>
+        <field name="email_from">nguyenthuy011020049@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-23</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Sơ yếu lý lịch (7) (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-09-27</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_020" model="hr.applicant">
+        <field name="partner_name">Nguyễn Phương Thảo</field>
+        <field name="partner_phone">0379486208</field>
+        <field name="email_from">phuongthao14072001@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-24</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">NGUYỄN PHƯƠNG THẢO_Giáo viên tiếng Trung-2.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-02</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_021" model="hr.applicant">
+        <field name="partner_name">Nguyễn Vũ Bình Dương</field>
+        <field name="partner_phone">0904340366</field>
+        <field name="email_from">duogduog1122@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-24</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV-Nguyễn Vũ Bình Dương.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-02</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_022" model="hr.applicant">
+        <field name="partner_name">Ngọc Thuý Hường</field>
+        <field name="partner_phone">0968530558</field>
+        <field name="email_from">Ngocthuyhuong1611@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-30</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Sơ yếu lý lịch - Ngọc Thuý Hường.pdf.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-03</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">MaiLTN</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_023" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Phương Nga</field>
+        <field name="partner_phone">0342024408</field>
+        <field name="email_from">phuongnganguyen08@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-03</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Nguyễn Thị Phương Nga.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-04</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">MaiLTN</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_024" model="hr.applicant">
+        <field name="partner_name">Đặng Vũ Thu Hà</field>
+        <field name="partner_phone">0967125060</field>
+        <field name="email_from">dangvuthuha2002@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-09-23</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">z7041958429531_faea2551f6bc4830b9c25bcd0aab3aed.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-06</field>
+        <field name="interview_time">9h</field>
+        <field name="interviewer_name">MaiLTN</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_025" model="hr.applicant">
+        <field name="partner_name">Lê Oanh</field>
+        <field name="partner_phone">0399588605</field>
+        <field name="email_from">lekimoanhls@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-08</field>
+        <field name="ctv_tuyen_dung">Tâm nguyễn</field>
+        <field name="cv_link">LE OANH.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-09</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">MaiLTN</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_026" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Quỳnh Như</field>
+        <field name="partner_phone">0898983215</field>
+        <field name="email_from">nhunguyen3796@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-08</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">阮氏瓊如 - 個人履歷 - 漢語老師.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-09</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">MaiLTN</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_027" model="hr.applicant">
+        <field name="partner_name">Phùng Văn Dũng</field>
+        <field name="partner_phone">0914416354</field>
+        <field name="email_from">ng0kjrdns@gmail.com</field>
+        <field name="job_id" ref="hb_job_content_marketing"/>
+        <field name="date_received">2025-10-06</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">Phung-Van-Dung-CV.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-10</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Kiennt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_028" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thuỳ Dương</field>
+        <field name="partner_phone">0385068032</field>
+        <field name="email_from">duongmichelle1404@gmail.com</field>
+        <field name="job_id" ref="hb_job_content_marketing"/>
+        <field name="date_received">2025-10-09</field>
+        <field name="ctv_tuyen_dung">KienNT</field>
+        <field name="cv_link">CV_Social Marketing Executive_NGUYỄN THUỲ DƯƠNG .pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-10</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Kiennt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_029" model="hr.applicant">
+        <field name="partner_name">Vương Quỳnh Huệ</field>
+        <field name="partner_phone">0865410616</field>
+        <field name="email_from">vuonghuecb1992@gmail.com</field>
+        <field name="job_id" ref="hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-10-11</field>
+        <field name="ctv_tuyen_dung">huongLT</field>
+        <field name="cv_link">VUONG-QUYNH-HUE-TopCV.vn-111025.141617.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-11</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_030" model="hr.applicant">
+        <field name="partner_name">Lý Ngọc Hà</field>
+        <field name="partner_phone">0931865891</field>
+        <field name="email_from">lyngocha27@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-13</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV LÝ NGỌC HÀ.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-14</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_031" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thu Hương</field>
+        <field name="partner_phone">0948503594</field>
+        <field name="email_from">huong117201@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-15</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">[CV song ngữ]_Nguyễn Thị Thu Hương.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-16</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_032" model="hr.applicant">
+        <field name="partner_name">Vũ Thị Thuỳ Linh</field>
+        <field name="partner_phone">0976940493</field>
+        <field name="email_from">thuylinh.hb2k@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-14</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Hồ Sơ Xin Việc-Vũ Thị Thuỳ Linh.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">refuse</field>
+        <field name="interview_date">2025-10-16</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_screening"/>
+    </record>
+
+    <record id="hb_cv_033" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Bảo Khuyên</field>
+        <field name="partner_phone">0763690781</field>
+        <field name="email_from">nguyenbaokhuyenhue@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-14</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">个人简历(Nguyễn Thị Bảo Khuyên_阮氏宝娟).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-16</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_034" model="hr.applicant">
+        <field name="partner_name">Hana</field>
+        <field name="partner_phone">0828711222</field>
+        <field name="email_from">beolabeola26@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-15</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_HANA.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">refuse</field>
+        <field name="interview_date">2025-10-17</field>
+        <field name="interview_time">14h</field>
+        <field name="stage_id" ref="hb_stage_screening"/>
+    </record>
+
+    <record id="hb_cv_035" model="hr.applicant">
+        <field name="partner_name">Trương Hoàng Châu</field>
+        <field name="partner_phone">0333900527</field>
+        <field name="email_from">linslins1508@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-15</field>
+        <field name="ctv_tuyen_dung">tamnguyen</field>
+        <field name="cv_link">TRUONG-HOAN-CHAU.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-17</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_036" model="hr.applicant">
+        <field name="partner_name">Cao Thị Hà</field>
+        <field name="partner_phone">0982522720</field>
+        <field name="email_from">newsunth89@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-16</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">个人简历.doc</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-18</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_037" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thanh Hoa</field>
+        <field name="partner_phone">0979806368</field>
+        <field name="email_from">hoaphugia@yahoo.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-14</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV - 阮氏青华 .pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">refuse</field>
+        <field name="interview_date">2025-10-18</field>
+        <field name="interview_time">15h</field>
+        <field name="stage_id" ref="hb_stage_screening"/>
+    </record>
+
+    <record id="hb_cv_038" model="hr.applicant">
+        <field name="partner_name">Đỗ Hương Trang</field>
+        <field name="partner_phone">0966705364</field>
+        <field name="email_from">dohuongtrang2095@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-16</field>
+        <field name="ctv_tuyen_dung">anhtn</field>
+        <field name="cv_link">CV.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-22</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_039" model="hr.applicant">
+        <field name="partner_name">Võ Đặng Phương Trang</field>
+        <field name="partner_phone">0905938379</field>
+        <field name="email_from">orynchanal2507@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV tiếng Trung (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-22</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_040" model="hr.applicant">
+        <field name="partner_name">Tưởng Bảo Ngọc</field>
+        <field name="partner_phone">0328633222</field>
+        <field name="email_from">tuongbaongoc@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_GVTT_BaoNgoc1758104544961.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-22</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_041" model="hr.applicant">
+        <field name="partner_name">Phạm Thuỳ Dương</field>
+        <field name="partner_phone">0367217391</field>
+        <field name="email_from">phamthuyduongxinhdep01@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-21</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">范垂阳-CV.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">10h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_042" model="hr.applicant">
+        <field name="partner_name">Trần Ngọc Hoa</field>
+        <field name="partner_phone">0912737128</field>
+        <field name="email_from">ngochoatrann@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-21</field>
+        <field name="ctv_tuyen_dung">tam nguyen</field>
+        <field name="cv_link">z7139774379115_1ae49bb8487a8b5af6290202e7f45d4f.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_043" model="hr.applicant">
+        <field name="partner_name">Lương Thị Yên</field>
+        <field name="partner_phone">0363959624</field>
+        <field name="email_from">yenluong4k@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-21</field>
+        <field name="ctv_tuyen_dung">tamnguyen</field>
+        <field name="cv_link">z7135835815494_0c38e3028fdff866a04d2b4a88f0c8a9.jpg</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">11h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_044" model="hr.applicant">
+        <field name="partner_name">Trần Thị Thương</field>
+        <field name="partner_phone">0397958411</field>
+        <field name="email_from">thuongtran11112002@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-17</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Trần Thị Thương - Ứng tuyển giáo viên tiếng Trung.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_045" model="hr.applicant">
+        <field name="partner_name">Nguyễn Hương Giang</field>
+        <field name="partner_phone">0395792416</field>
+        <field name="email_from">bachthan05@gmail.com</field>
+        <field name="job_id" ref="hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-10-21</field>
+        <field name="ctv_tuyen_dung">HuongLT</field>
+        <field name="cv_link">Ứng tuyển CSKH1760960730962_1.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Huonglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_046" model="hr.applicant">
+        <field name="partner_name">Huệ Long</field>
+        <field name="partner_phone">0349588928</field>
+        <field name="email_from">Longhue02@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-21</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV GIÁO VIÊN TIẾNG TRUNG-LONG THỊ HUỆ.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_047" model="hr.applicant">
+        <field name="partner_name">Hoàng Đình Điệp</field>
+        <field name="partner_phone">0329188358</field>
+        <field name="email_from">hoangddiep1904@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-16</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">Hoang-Dinh-Diep-TopCV.vn-300925.171115 (1).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-23</field>
+        <field name="interview_time">16h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_048" model="hr.applicant">
+        <field name="partner_name">Vũ Thị Thu Phương</field>
+        <field name="partner_phone">0972984203</field>
+        <field name="email_from">vuvu29052003@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-24</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">Ứng tuyển giáo viên tiếng trung Vũ Thị Thu Phương.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-28</field>
+        <field name="interview_time">10h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_049" model="hr.applicant">
+        <field name="partner_name">Nguyễn Phương Thanh</field>
+        <field name="partner_phone">0799083285</field>
+        <field name="email_from">phuongthanhnguyen31786@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-22</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">阮芳青(求职单)(2025年08月01日).docx</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-28</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_050" model="hr.applicant">
+        <field name="partner_name">Nguyễn Quỳnh Như</field>
+        <field name="partner_phone">0377731103</field>
+        <field name="email_from">n.q.nhu177@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-24</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV Quỳnh Như (2).docx</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-29</field>
+        <field name="interview_time">15h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_051" model="hr.applicant">
+        <field name="partner_name">Vũ Tuấn Minh</field>
+        <field name="partner_phone">0828491882</field>
+        <field name="email_from">nguyenvuminhkhoi2301@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-24</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">1111.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-10-29</field>
+        <field name="interview_time">18h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_052" model="hr.applicant">
+        <field name="partner_name">Trần Thị Minh Thư</field>
+        <field name="partner_phone">0397881025</field>
+        <field name="email_from">tranthiminhthu940@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-24</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV_陈氏明舒-Trần Thị Minh Thư.pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-01</field>
+        <field name="interview_time">14h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_053" model="hr.applicant">
+        <field name="partner_name">Nguyễn Thị Thanh Tâm</field>
+        <field name="partner_phone">0987834065</field>
+        <field name="email_from">thanhtam24042002@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-24</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">CV-NguyenThiThanhTam-GVTT (2).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-01</field>
+        <field name="interview_time">14h30</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_054" model="hr.applicant">
+        <field name="partner_name">Cao Xuân Huy</field>
+        <field name="partner_phone">0848830769</field>
+        <field name="email_from">huycaofy@gmail.com</field>
+        <field name="job_id" ref="hb_job_giao_vien_tieng_trung"/>
+        <field name="date_received">2025-10-24</field>
+        <field name="ctv_tuyen_dung">Anhhtn</field>
+        <field name="cv_link">CV (2).pdf</field>
+        <field name="cv_filter_result">pass</field>
+        <field name="call_status">agree</field>
+        <field name="interview_date">2025-11-01</field>
+        <field name="interview_time">15h</field>
+        <field name="interviewer_name">Dunglt</field>
+        <field name="stage_id" ref="hb_stage_interview"/>
+    </record>
+
+    <record id="hb_cv_055" model="hr.applicant">
+        <field name="partner_name">Nông Thị Ngọc Chuẩn</field>
+        <field name="partner_phone">0359928421</field>
+        <field name="email_from">ntnchuan2025@gmail.com</field>
+        <field name="job_id" ref="hb_job_tu_van_tuyen_sinh"/>
+        <field name="date_received">2025-11-06</field>
+        <field name="ctv_tuyen_dung">anhhtn</field>
+        <field name="cv_link">NGỌC CHUẨN - NVKD MKT.png</field>
+        <field name="cv_filter_result">potential</field>
+        <field name="cv_note">CV này ứng tuyển MKT, nội dung kinh nghiệm cũng MKT. Bạn này đang tìm việc và không có nơi phù hợp nên cứ ứng tuyển, hay thực sự muốn làm TVTS cần check lại.</field>
+        <field name="interview_date">2025-11-06</field>
+        <field name="stage_id" ref="hb_stage_screening"/>
+    </record>
+
+</odoo>
