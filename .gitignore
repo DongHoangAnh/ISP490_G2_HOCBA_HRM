@@ -23,3 +23,6 @@ Thumbs.db
 
 # Microsoft Office temp files
 ~$*
+
+# Claude Code (cau hinh ca nhan)
+.claude/

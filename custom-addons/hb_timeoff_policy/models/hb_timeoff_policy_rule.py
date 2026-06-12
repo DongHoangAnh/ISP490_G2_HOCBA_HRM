@@ -59,7 +59,7 @@ class HbTimeoffPolicyRule(models.Model):
     def _compute_employee_count(self):
         for rule in self:
             rule.employee_count = self.env['hr.employee'].search_count([
-                ('x_employment_status', '=', rule.employment_type),
+                ('x_hb_leave_emp_type', '=', rule.employment_type),
             ])
 
     def action_view_employees(self):
@@ -68,6 +68,6 @@ class HbTimeoffPolicyRule(models.Model):
             'type': 'ir.actions.act_window',
             'name': 'Nhân viên áp dụng chính sách',
             'res_model': 'hr.employee',
-            'domain': [('x_employment_status', '=', self.employment_type)],
+            'domain': [('x_hb_leave_emp_type', '=', self.employment_type)],
             'view_mode': 'list,form',
         }

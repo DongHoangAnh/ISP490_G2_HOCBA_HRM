@@ -13,7 +13,7 @@ EMPLOYMENT_TYPE_SELECTION = [
 class HrEmployee(models.Model):
     _inherit = 'hr.employee'
 
-    x_employment_status = fields.Selection(
+    x_hb_leave_emp_type = fields.Selection(
         EMPLOYMENT_TYPE_SELECTION,
         string='Loại nhân viên',
         tracking=True,
@@ -50,16 +50,16 @@ class HrEmployee(models.Model):
     def create(self, vals_list):
         employees = super().create(vals_list)
         for emp in employees:
-            if emp.x_employment_status and not emp.x_policy_override:
+            if emp.x_hb_leave_emp_type and not emp.x_policy_override:
                 emp.sudo()._apply_leave_policy(triggered_by='auto')
         return employees
 
     def write(self, vals):
-        old_statuses = {emp.id: emp.x_employment_status for emp in self}
+        old_statuses = {emp.id: emp.x_hb_leave_emp_type for emp in self}
         result = super().write(vals)
-        if 'x_employment_status' in vals:
+        if 'x_hb_leave_emp_type' in vals:
             for emp in self:
-                if (old_statuses[emp.id] != emp.x_employment_status
+                if (old_statuses[emp.id] != emp.x_hb_leave_emp_type
                         and not emp.x_policy_override):
                     emp.sudo()._apply_leave_policy(triggered_by='auto')
         return result
@@ -106,7 +106,7 @@ class HrEmployee(models.Model):
         old_policy = self.x_current_policy_id
 
         # BR-021: Cộng tác viên — tắt toàn bộ policy allocation
-        if self.x_employment_status == 'ctv':
+        if self.x_hb_leave_emp_type == 'ctv':
             self._expire_policy_allocations()
             self.x_current_policy_id = False
             self.env['hb.leave.policy.log'].create({
@@ -126,7 +126,7 @@ class HrEmployee(models.Model):
 
         # Tìm policy rule theo loại nhân viên
         policy_rule = self.env['hb.timeoff.policy.rule'].search([
-            ('employment_type', '=', self.x_employment_status),
+            ('employment_type', '=', self.x_hb_leave_emp_type),
             ('active', '=', True),
         ], limit=1)
 
@@ -140,7 +140,7 @@ class HrEmployee(models.Model):
                     'chính sách nghỉ phép. Vui lòng cấu hình trong '
                     'Time Off > Cấu hình > Chính sách Nghỉ phép.'
                 ) % {
-                    'type': self.x_employment_status or '',
+                    'type': self.x_hb_leave_emp_type or '',
                     'name': self.name,
                 },
             )

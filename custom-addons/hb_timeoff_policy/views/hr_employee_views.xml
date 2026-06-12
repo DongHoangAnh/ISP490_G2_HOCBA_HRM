@@ -4,7 +4,7 @@
     <!-- ============================================================
          Kế thừa hr.employee form — thêm:
          1. Smart button "Chính sách" ở button_box
-         2. Trường x_employment_status trong tab Work Information
+         2. Trường x_hb_leave_emp_type trong tab Work Information
          3. Section chính sách nghỉ phép trong tab Settings
     ============================================================ -->
     <record id="view_employee_form_hb_policy" model="ir.ui.view">
@@ -28,9 +28,9 @@
                 </button>
             </xpath>
 
-            <!-- 2. Thêm x_employment_status sau job_id trong tab Work Information -->
+            <!-- 2. Thêm x_hb_leave_emp_type sau job_id trong tab Work Information -->
             <xpath expr="//div[@id='o_work_information']//field[@name='job_id']" position="after">
-                <field name="x_employment_status" string="Loại nhân viên"/>
+                <field name="x_hb_leave_emp_type" string="Loại nhân viên"/>
             </xpath>
 
             <!-- 3. Thêm section chính sách trong tab Settings -->

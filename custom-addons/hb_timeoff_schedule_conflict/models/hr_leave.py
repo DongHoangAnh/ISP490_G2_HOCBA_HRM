@@ -4,7 +4,7 @@ from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
-# x_employment_status values defined in hb_timeoff_policy
+# x_hb_leave_emp_type values defined in hb_timeoff_policy
 INSTRUCTOR_TYPES = frozenset({'teacher', 'ta', 'visiting'})
 
 
@@ -38,7 +38,7 @@ class HrLeave(models.Model):
     def create(self, vals_list):
         leaves = super().create(vals_list)
         instructor_leaves = leaves.filtered(
-            lambda l: getattr(l.employee_id, 'x_employment_status', False) in INSTRUCTOR_TYPES
+            lambda l: getattr(l.employee_id, 'x_hb_leave_emp_type', False) in INSTRUCTOR_TYPES
         )
         if instructor_leaves:
             instructor_leaves._check_schedule_conflict()
@@ -48,7 +48,7 @@ class HrLeave(models.Model):
         result = super().write(vals)
         if 'date_from' in vals or 'date_to' in vals:
             instructor_leaves = self.filtered(
-                lambda l: getattr(l.employee_id, 'x_employment_status', False) in INSTRUCTOR_TYPES
+                lambda l: getattr(l.employee_id, 'x_hb_leave_emp_type', False) in INSTRUCTOR_TYPES
             )
             if instructor_leaves:
                 instructor_leaves._check_schedule_conflict()
