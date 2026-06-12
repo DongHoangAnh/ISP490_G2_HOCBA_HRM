@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Bank Format Form -->
+    <record id="hb_bank_format_form" model="ir.ui.view">
+        <field name="name">hb.bank.format.form</field>
+        <field name="model">hb.bank.format</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="code"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="formatter_class"/>
+                            <field name="encoding"/>
+                            <field name="file_extension"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="account_format_regex"/>
+                        <field name="max_records_per_file"/>
+                        <field name="description_template"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Bank Format List -->
+    <record id="hb_bank_format_tree" model="ir.ui.view">
+        <field name="name">hb.bank.format.tree</field>
+        <field name="model">hb.bank.format</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="formatter_class"/>
+                <field name="encoding"/>
+                <field name="file_extension"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Bank Format Action -->
+    <record id="action_hb_bank_format" model="ir.actions.act_window">
+        <field name="name">Cấu hình Ngân hàng</field>
+        <field name="res_model">hb.bank.format</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

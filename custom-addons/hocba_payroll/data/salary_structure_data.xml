@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Salary computation logic is embedded directly in hb.payslip model
+        (payslip.py → action_compute_teaching_salary / _build_teaching_salary).
+
+        Enterprise hr.salary.rule / hr.payroll.structure are NOT used.
+        This file is kept as a placeholder for any future seed data.
+    -->
+</odoo>

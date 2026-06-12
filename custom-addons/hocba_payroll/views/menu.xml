@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Top-level Payroll menu (under HR) -->
+    <menuitem id="menu_hb_payroll_root"
+              name="Payroll"
+              parent="hr.menu_hr_root"
+              sequence="40"/>
+
+    <!-- Payslip Batches & Payslips -->
+    <menuitem id="menu_payslip_batches"
+              name="Payslip Batches"
+              parent="menu_hb_payroll_root"
+              action="action_hb_payslip_run"
+              sequence="10"/>
+
+    <menuitem id="menu_payslips"
+              name="Payslips"
+              parent="menu_hb_payroll_root"
+              action="action_hb_payslip"
+              sequence="20"/>
+
+    <!-- Contracts -->
+    <menuitem id="menu_contracts"
+              name="Hợp đồng"
+              parent="menu_hb_payroll_root"
+              action="action_hb_contract"
+              sequence="5"/>
+
+    <!-- Work Entries -->
+    <menuitem id="menu_work_entries"
+              name="Work Entries"
+              parent="menu_hb_payroll_root"
+              action="action_hb_work_entry"
+              sequence="25"/>
+
+    <!-- Bank Files -->
+    <menuitem id="menu_bank_files"
+              name="File Ngân hàng"
+              parent="menu_hb_payroll_root"
+              action="action_hb_bank_file"
+              sequence="30"/>
+
+    <!-- Reports sub-menu -->
+    <menuitem id="menu_hb_payroll_reports"
+              name="Báo cáo"
+              parent="menu_hb_payroll_root"
+              sequence="40"/>
+
+    <menuitem id="menu_bhxh_report"
+              name="Báo cáo BHXH"
+              parent="menu_hb_payroll_reports"
+              action="action_hb_bhxh_report"
+              sequence="10"/>
+
+    <menuitem id="menu_etax_report"
+              name="Báo cáo thuế TNCN"
+              parent="menu_hb_payroll_reports"
+              action="action_hb_etax_report"
+              sequence="20"/>
+
+    <!-- Configuration sub-menu -->
+    <menuitem id="menu_hb_payroll_config"
+              name="Cấu hình"
+              parent="menu_hb_payroll_root"
+              sequence="90"
+              groups="hr.group_hr_manager"/>
+
+    <menuitem id="menu_bank_format_config"
+              name="Cấu hình Ngân hàng"
+              parent="menu_hb_payroll_config"
+              action="action_hb_bank_format"
+              sequence="10"/>
+
+    <menuitem id="menu_work_entry_type_config"
+              name="Loại Work Entry"
+              parent="menu_hb_payroll_config"
+              action="action_hb_work_entry_type"
+              sequence="20"/>
+</odoo>
