@@ -177,7 +177,7 @@ class Attendance(models.Model):
         lng = payload.get('longitude') or 0.0
 
         # Face matching
-        face_score = 0.0
+        face_score = None
         face_suspect = False
         enrolled = []
         if employee.x_face_descriptor:
@@ -207,7 +207,6 @@ class Attendance(models.Model):
                 'check_in_photo': payload.get('photo'),
                 'check_in_lat': lat,
                 'check_in_lng': lng,
-                'check_in_face_score': face_score,
             }
             if not record:
                 vals['employee_id'] = employee.id
@@ -217,7 +216,6 @@ class Attendance(models.Model):
                 'check_out_photo': payload.get('photo'),
                 'check_out_lat': lat,
                 'check_out_lng': lng,
-                'check_out_face_score': face_score,
             }
             if not record:
                 # checkout with no prior check-in today: still create
@@ -230,6 +228,9 @@ class Attendance(models.Model):
             'out_of_window': out_of_window,
         })
 
+        if face_score is not None:
+            vals['check_in_face_score' if kind == 'in' else 'check_out_face_score'] = face_score
+
         if record:
             record.write(vals)
         else:
@@ -241,19 +242,25 @@ class Attendance(models.Model):
             'face_suspect': face_suspect,
             'out_of_zone': out_of_zone,
             'out_of_window': out_of_window,
-            'face_score': face_score,
+            'face_score': face_score if face_score is not None else 0.0,
         }
 
     @api.model
     def action_check_in(self, payload):
         """RPC entry: self-service check-in for the current user's employee."""
         payload = dict(payload or {})
-        payload.setdefault('employee_id', self.env.user.employee_id.id)
+        employee = self.env.user.employee_id
+        if not employee:
+            raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
+        payload['employee_id'] = employee.id
         return self._do_check(payload, 'in')
 
     @api.model
     def action_check_out(self, payload):
         """RPC entry: self-service check-out for the current user's employee."""
         payload = dict(payload or {})
-        payload.setdefault('employee_id', self.env.user.employee_id.id)
+        employee = self.env.user.employee_id
+        if not employee:
+            raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
+        payload['employee_id'] = employee.id
         return self._do_check(payload, 'out')
