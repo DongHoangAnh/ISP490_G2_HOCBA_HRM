@@ -6,7 +6,9 @@ class DashboardController(http.Controller):
     
     @http.route('/hocba/dashboard', type='http', auth='user')
     def dashboard(self):
-        hocba_user = request.env['hocba.user'].search(
+        # sudo: user thường (base.group_user) không có ACL đọc hocba.user,
+        # domain đã khóa đúng bản ghi của chính họ nên không lộ dữ liệu khác
+        hocba_user = request.env['hocba.user'].sudo().search(
             [('user_id', '=', request.uid)],
             limit=1
         )
