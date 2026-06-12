@@ -2,6 +2,7 @@ import json
 import math
 
 from odoo import models, fields, api
+from odoo.exceptions import UserError
 
 
 class Attendance(models.Model):
@@ -153,3 +154,105 @@ class Attendance(models.Model):
         if not desc_a or not desc_b or len(desc_a) != len(desc_b):
             return None
         return math.sqrt(sum((x - y) ** 2 for x, y in zip(desc_a, desc_b)))
+
+    def _do_check(self, payload, kind):
+        """Core check-in/out logic. `kind` is 'in' or 'out'.
+        payload keys: employee_id, photo (base64 str), descriptor (list),
+        latitude (float), longitude (float).
+        Returns dict {record_id, kind, face_suspect, out_of_zone,
+        out_of_window, face_score}."""
+        employee = self.env['hr.employee'].browse(payload['employee_id'])
+        if not employee.exists():
+            raise UserError('Không tìm thấy nhân viên cho điểm danh.')
+
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        now = fields.Datetime.now()
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'), now
+        ).replace(tzinfo=None)
+        today = now_local.date()
+
+        lat = payload.get('latitude') or 0.0
+        lng = payload.get('longitude') or 0.0
+
+        # Face matching
+        face_score = 0.0
+        face_suspect = False
+        enrolled = []
+        if employee.x_face_descriptor:
+            try:
+                enrolled = json.loads(employee.x_face_descriptor)
+            except (ValueError, TypeError):
+                enrolled = []
+        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
+        if dist is None:
+            face_suspect = True   # cannot verify -> flag for review
+        else:
+            face_score = dist
+            face_suspect = dist > policy.face_threshold
+
+        out_of_zone = not policy.is_within_office(lat, lng)
+        out_of_window = not policy.is_within_window(now_local, kind)
+
+        # One record per employee per day
+        record = self.search([
+            ('employee_id', '=', employee.id),
+            ('date', '=', today),
+        ], limit=1)
+
+        if kind == 'in':
+            vals = {
+                'check_in': now,
+                'check_in_photo': payload.get('photo'),
+                'check_in_lat': lat,
+                'check_in_lng': lng,
+                'check_in_face_score': face_score,
+            }
+            if not record:
+                vals['employee_id'] = employee.id
+        else:  # out
+            vals = {
+                'check_out': now,
+                'check_out_photo': payload.get('photo'),
+                'check_out_lat': lat,
+                'check_out_lng': lng,
+                'check_out_face_score': face_score,
+            }
+            if not record:
+                # checkout with no prior check-in today: still create
+                vals['employee_id'] = employee.id
+                vals['check_in'] = now
+
+        vals.update({
+            'face_suspect': face_suspect,
+            'out_of_zone': out_of_zone,
+            'out_of_window': out_of_window,
+        })
+
+        if record:
+            record.write(vals)
+        else:
+            record = self.create(vals)
+
+        return {
+            'record_id': record.id,
+            'kind': kind,
+            'face_suspect': face_suspect,
+            'out_of_zone': out_of_zone,
+            'out_of_window': out_of_window,
+            'face_score': face_score,
+        }
+
+    @api.model
+    def action_check_in(self, payload):
+        """RPC entry: self-service check-in for the current user's employee."""
+        payload = dict(payload or {})
+        payload.setdefault('employee_id', self.env.user.employee_id.id)
+        return self._do_check(payload, 'in')
+
+    @api.model
+    def action_check_out(self, payload):
+        """RPC entry: self-service check-out for the current user's employee."""
+        payload = dict(payload or {})
+        payload.setdefault('employee_id', self.env.user.employee_id.id)
+        return self._do_check(payload, 'out')
