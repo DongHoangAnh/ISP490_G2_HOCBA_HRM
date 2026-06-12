@@ -1,7 +1,8 @@
-# SPEC — Module `hocba_tuyen_dung` (v19.0.2.0.0)
+﻿# SPEC — Module `hocba_recruitments` (v19.0.2.0.0)
 
 > **Trạng thái:** Đã implement — branch `Viet/Recruitment`  
-> **Cập nhật:** 2026-06-12  
+> **Cập nhật:** 2026-06-12 (thêm 7.3 — hb.interview.slot)  
+> **Odoo version:** 19.0-20260609  
 > **Depends:** `hr_recruitment` (Odoo 19 core)
 
 Module mở rộng tuyển dụng Odoo cho Học Bá Education. Không có SPA riêng — toàn bộ UI nằm trong menu **Recruitment** của Odoo. (Controller `/hocba-tuyen-dung` vẫn tồn tại nhưng là legacy React app chưa dùng.)
@@ -11,19 +12,21 @@ Module mở rộng tuyển dụng Odoo cho Học Bá Education. Không có SPA r
 ## 1. Cấu trúc file
 
 ```
-hocba_tuyen_dung/
+hocba_recruitments/
 ├── __manifest__.py
 ├── __init__.py
 ├── controllers/
 │   └── main.py               # Legacy React shell (chưa dùng)
 ├── models/
 │   ├── hb_recruitment_request.py   # Model mới
+│   ├── hb_interview_slot.py        # Model mới — Screen 7.3
 │   ├── hr_applicant.py             # Inherit
 │   ├── hr_job.py                   # Inherit
 │   └── hr_recruitment_stage.py     # Inherit
 ├── views/
 │   ├── menu.xml                         # Toàn bộ menu items + window actions
 │   ├── hb_recruitment_request_views.xml # Screen 7.2
+│   ├── hb_interview_slot_views.xml      # Screen 7.3
 │   ├── hb_cv_list_views.xml             # Screen 7.4
 │   ├── hb_interview_list_views.xml      # Screen 7.5
 │   ├── hr_applicant_kanban.xml          # Screen 7.1
@@ -57,8 +60,9 @@ Tất cả nằm dưới root menu `hr_recruitment.menu_hr_recruitment_root`.
 | 10.2 | → Danh sách CV | `hr.applicant` | **list custom**, kanban, form |
 | 15 | **Phiếu yêu cầu** | `hb.recruitment.request` | list, form |
 | 20 | **Phỏng vấn** _(parent)_ | — | — |
-| 20.1 | → Lịch rảnh PV | `hr.applicant` | calendar, list, form |
-| 20.2 | → Danh sách phỏng vấn | `hr.applicant` | **list custom**, calendar, form — domain: `interview_date != False` |
+| 20.1 | → Khai báo lịch rảnh | `hb.interview.slot.wizard` | form dialog (wizard) |
+| 20.2 | → Lịch rảnh PV | `hb.interview.slot` | **calendar week**, list, form |
+| 20.3 | → Danh sách phỏng vấn | `hr.applicant` | **list custom**, calendar, form — domain: `interview_date != False` |
 | 25 | **Offer & Nhận việc** | `hr.applicant` | list, kanban, form — domain: `date_closed != False` |
 | 30 | **Báo cáo** | `hr.applicant` | pivot, graph, list |
 | Config.45 | **Mail mẫu** | `mail.template` | list, form — domain: `model = hr.applicant` |
@@ -253,22 +257,93 @@ Model mới. Inherit `mail.thread`, `mail.activity.mixin`. Order: `create_date d
 
 ### 6.2 Seed data — 10 bước quy trình (noupdate=0)
 
-| # | Tên | Người hỗ trợ | Tiêu chí thành công |
-|---|-----|-------------|---------------------|
-| 1 | Yêu cầu tuyển dụng | BP tuyển dụng | Yêu cầu rõ ràng, JD đầy đủ, có chỉ tiêu SL và thời gian |
-| 2 | Đăng tuyển & tổng hợp CV | TBP | Tin đăng trên 3 kênh, CV tổng hợp đủ thông tin |
-| 3 | Lọc CV | TBP | TBP nhận đủ hồ sơ, điền Pass/Fail tại cột Lọc CV |
-| 4 | Lên lịch phỏng vấn | BP tuyển dụng | TBP điền lịch rảnh trong tuần |
-| 5 | Hẹn & mời phỏng vấn | TBP | >80% ứng viên đồng ý và xác nhận lịch |
-| 6 | Phỏng vấn | BP tuyển dụng | Đúng giờ, đánh giá đủ năng lực và thái độ |
-| 7 | Kết quả phỏng vấn | BP tuyển dụng | BP nhận kết quả + lý do pass/không pass |
-| 8 | Gửi Offer | TBP | Offer rõ ràng, ứng viên xác nhận đồng ý qua mail |
-| 9 | Onboarding | TBP | Nhân sự nắm quy trình, hoà nhập, ký HĐ đầy đủ |
-| 10 | Bàn giao nhân sự | TBP | Nhân sự bắt đầu chính thức, TBP tiếp nhận. `hired_stage=True` |
+Sequence dùng bước nhảy 10 để dễ chèn stage mới giữa các bước sau này.
+
+| Sequence | Tên | Người hỗ trợ | Tiêu chí thành công |
+|----------|-----|-------------|---------------------|
+| 10 | Yêu cầu tuyển dụng | BP tuyển dụng | Yêu cầu rõ ràng, JD đầy đủ, có chỉ tiêu SL và thời gian |
+| 20 | Đăng tuyển & tổng hợp CV | TBP | Tin đăng trên 3 kênh, CV tổng hợp đủ thông tin |
+| 30 | Lọc CV | TBP | TBP nhận đủ hồ sơ, điền Pass/Fail tại cột Lọc CV |
+| 40 | Lên lịch phỏng vấn | BP tuyển dụng | TBP điền lịch rảnh trong tuần |
+| 50 | Hẹn & mời phỏng vấn | TBP | >80% ứng viên đồng ý và xác nhận lịch |
+| 60 | Phỏng vấn | BP tuyển dụng | Đúng giờ, đánh giá đủ năng lực và thái độ |
+| 70 | Kết quả phỏng vấn | BP tuyển dụng | BP nhận kết quả + lý do pass/không pass |
+| 80 | Gửi Offer | TBP | Offer rõ ràng, ứng viên xác nhận đồng ý qua mail |
+| 90 | Onboarding | TBP | Nhân sự nắm quy trình, hoà nhập, ký HĐ đầy đủ |
+| 100 | Bàn giao nhân sự | TBP | Nhân sự bắt đầu chính thức, TBP tiếp nhận. `hired_stage=True` |
+
+### 6.3 Cleanup — Xóa stages mặc định của Odoo
+
+Cuối file `hr_recruitment_stages.xml` gọi `<function name="_hocba_cleanup_default_stages"/>`. Method này (trên model `hr.recruitment.stage`) chạy mỗi lần upgrade và:
+
+1. Tìm stages có tên trong danh sách: `New`, `Qualification`, `Initial Qualification`, `First Interview`, `Second Interview`, `Contract Proposal`, `Contract Signed`, `Hồ sơ mới`
+2. Reassign toàn bộ `hr.applicant` (kể cả archived — `active_test=False`) đang ở stage đó về `hb_stage_request`
+3. Unlink các stage thừa
+
+> **Lưu ý vận hành:** Nếu thêm stage mới vào Odoo mặc định cần xóa, thêm tên vào `_ODOO_DEFAULT_STAGE_NAMES` trong `hr_recruitment_stage.py` rồi upgrade module.
 
 ---
 
-## 7. Mail Templates (4 templates — model: `hr.applicant`)
+## 7. Model: `hb.interview.slot` — Lịch rảnh phỏng vấn (Screen 7.3)
+
+Model mới. Order: `start_datetime`. **Không** inherit mail.thread.
+
+### 7.1 Fields
+
+| Field | Type | Ghi chú |
+|-------|------|---------|
+| `name` | Char (compute, store) | `"{user} — {dd/mm HH:MM}"` theo timezone user |
+| `start_datetime` | Datetime | Required — thời điểm bắt đầu slot (UTC) |
+| `stop_datetime` | Datetime | Required — thời điểm kết thúc slot (UTC) |
+| `user_id` | Many2one `res.users` | Required, default: current user |
+| `department_id` | Many2one `hr.department` | Compute từ `hr.employee.user_id`, store=True |
+| `state` | Selection | `available` / `booked`. Default: available |
+| `applicant_id` | Many2one `hr.applicant` | Ứng viên được đặt (khi state=booked) |
+| `notes` | Text | Ghi chú nội bộ |
+
+### 7.2 Constraint
+
+`stop_datetime > start_datetime` — ValidationError nếu vi phạm.
+
+### 7.3 Methods
+
+| Method | Mô tả |
+|--------|-------|
+| `action_mark_booked` | Set `state = booked` |
+| `action_mark_available` | Set `state = available`, xóa `applicant_id` |
+
+### 7.4 Views
+
+**Calendar view** (`hb_view_interview_slot_calendar`): `mode="week"`, `date_start=start_datetime`, `date_stop=stop_datetime`, `color=user_id`. Đây là màn hình chính — tương đương Weekly Availability Matrix.
+
+**List view** (`hb_view_interview_slot_list`): Decoration xanh = available, muted = booked. Các cột: start/stop datetime, user, department, state (badge), applicant, notes.
+
+**Form view** (`hb_view_interview_slot_form`): Header buttons "Đánh dấu đã đặt" / "Trả về còn trống". Statusbar hiển thị state.
+
+**Search view** (`hb_view_interview_slot_search`): Filter available/booked/tuần này. Group by ngày/người PV/phòng ban/trạng thái.
+
+### 7.5 Wizard: `hb.interview.slot.wizard` (Khai báo batch)
+
+TBP mở wizard từ menu **Phỏng vấn → Khai báo lịch rảnh**, điền danh sách slot:
+
+- `user_id` — người phỏng vấn (default: current user)
+- `line_ids` (o2m → `hb.interview.slot.wizard.line`): mỗi dòng gồm `date` + `start_hour` + `end_hour` (Selection từ 09:00–17:00, bước 30 phút)
+
+`action_create_slots` convert giờ local → UTC (dùng `user.tz`, fallback `Asia/Ho_Chi_Minh`) rồi tạo records `hb.interview.slot`. Sau khi tạo, navigate về calendar.
+
+Server action `hb_server_action_slot_wizard` binding vào model `hb.interview.slot` — nút "Khai báo lịch rảnh theo tuần…" xuất hiện trong dropdown Action trên list view.
+
+### 7.6 Security
+
+| Rule | Model | Group | R | W | C | D |
+|------|-------|-------|---|---|---|---|
+| `access_hb_interview_slot_user` | `hb.interview.slot` | `group_hr_recruitment_user` | ✓ | ✓ | ✓ | ✓ |
+| `access_hb_interview_slot_interviewer` | `hb.interview.slot` | `group_hr_recruitment_interviewer` | ✓ | ✓ | ✓ | — |
+| `access_hb_interview_slot_wizard_*` | wizard + line | cả 2 groups | ✓ | ✓ | ✓ | ✓ |
+
+---
+
+## 8. Mail Templates (4 templates — model: `hr.applicant`)
 
 | XML ID | Tên | Chủ đề | Dùng khi |
 |--------|-----|--------|---------|
@@ -277,7 +352,7 @@ Model mới. Inherit `mail.thread`, `mail.activity.mixin`. Order: `create_date d
 | `email_template_job_offer` | Thư mời nhận việc | `[HỌC BÁ] THƯ MỜI NHẬN VIỆC VỊ TRÍ ${job} - FULLTIME` | Khi interview_result = pass |
 | `email_template_welcome` | Chào mừng Học Bá | `[HỌC BÁ] CHÀO MỪNG BẠN ĐẾN VỚI HỌC BÁ` | Ngày đầu nhận việc |
 
-Tất cả template dùng biểu thức `${object.partner_name}`, `${object.job_id.name}`, `${object.interview_date.strftime('%d/%m/%Y')}`.
+Tất cả template dùng cú pháp **Jinja2 chuẩn** (Odoo 17+): `{{ object.partner_name }}`, `{{ object.job_id.name }}`, `{{ object.interview_date.strftime('%d/%m/%Y') if object.interview_date else '' }}`.
 
 **Thông tin liên hệ cố định trong template:**
 - Địa chỉ: Tầng 2, toà IP3, Imperial 360 Giải Phóng, Thanh Xuân, Hà Nội
@@ -286,18 +361,20 @@ Tất cả template dùng biểu thức `${object.partner_name}`, `${object.job_
 
 ---
 
-## 8. Security
+## 9. Security
 
 | Rule | Model | Group | R | W | C | D |
 |------|-------|-------|---|---|---|---|
 | `access_hb_recruitment_request_user` | `hb.recruitment.request` | `group_hr_recruitment_user` | ✓ | ✓ | ✓ | ✓ |
 | `access_hb_recruitment_request_interviewer` | `hb.recruitment.request` | `group_hr_recruitment_interviewer` | ✓ | — | — | — |
+| `access_hb_interview_slot_user` | `hb.interview.slot` | `group_hr_recruitment_user` | ✓ | ✓ | ✓ | ✓ |
+| `access_hb_interview_slot_interviewer` | `hb.interview.slot` | `group_hr_recruitment_interviewer` | ✓ | ✓ | ✓ | — |
 
 > Không có access rule riêng cho `hr.job` và `hr.applicant` — dùng rule từ `hr_recruitment`.
 
 ---
 
-## 9. Controller (legacy)
+## 10. Controller (legacy)
 
 **Route:** `GET /hocba-tuyen-dung` (auth=user)
 
@@ -307,11 +384,11 @@ Trả về HTML shell chứa React app (CDN React 18.3.1 + Babel standalone). Lo
 - `rec-dashboard.jsx` — dashboard component
 - `rec-app.jsx` — root app
 
-> **Trạng thái:** Chưa dùng trong flow hiện tại. Menu `menu_hocba_tuyen_dung_root` đã bị `active=False`.
+> **Trạng thái:** Chưa dùng trong flow hiện tại. Menu `menu_hocba_recruitments_root` đã bị `active=False`.
 
 ---
 
-## 10. Điểm cần xem lại / TODO
+## 11. Điểm cần xem lại / TODO
 
 | # | Vấn đề | Mức độ |
 |---|--------|--------|
