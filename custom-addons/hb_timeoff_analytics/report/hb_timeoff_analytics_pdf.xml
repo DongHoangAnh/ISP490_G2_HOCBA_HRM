@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_report_hb_timeoff_analytics" model="ir.actions.report">
+        <field name="name">Báo cáo Phân tích Nghỉ phép</field>
+        <field name="model">hb.timeoff.export.wizard</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">hb_timeoff_analytics.report_timeoff_analytics_pdf</field>
+        <field name="report_file">hb_timeoff_analytics.report_timeoff_analytics_pdf</field>
+        <field name="binding_model_id" ref="model_hb_timeoff_export_wizard"/>
+    </record>
+
+    <template id="report_timeoff_analytics_pdf">
+        <t t-call="web.html_container">
+            <t t-call="web.external_layout">
+                <div class="page">
+                    <h2 style="color:#1F497D;">
+                        Báo cáo Phân tích Nghỉ phép — Học Bá
+                    </h2>
+                    <p>
+                        <strong>Kỳ báo cáo:</strong>
+                        <t t-esc="doc.date_from"/> đến <t t-esc="doc.date_to"/> |
+                        <strong>Phòng ban:</strong>
+                        <t t-esc="doc.department_id.name or 'Tất cả'"/>
+                    </p>
+
+                    <!-- Widget 1: Leave by Department -->
+                    <h4>1. Nghỉ phép theo Phòng ban</h4>
+                    <table class="table table-bordered table-sm">
+                        <thead>
+                            <tr style="background:#D9E1F2;">
+                                <th>Phòng ban</th>
+                                <th class="text-end">Số đơn</th>
+                                <th class="text-end">Tổng ngày</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-set="leave_recs" t-value="env['hb.timeoff.leave.analysis'].search(doc._build_domain())"/>
+                            <t t-set="dept_data" t-value="{}"/>
+                            <t t-foreach="leave_recs" t-as="r">
+                                <t t-set="dk" t-value="r.department_id.name or '(Không phòng ban)'"/>
+                                <!-- Python dict manipulation not available in QWeb; show raw list -->
+                            </t>
+                            <t t-foreach="leave_recs.mapped('department_id')" t-as="dept">
+                                <t t-set="dept_leaves" t-value="leave_recs.filtered(lambda l: l.department_id == dept)"/>
+                                <tr>
+                                    <td><t t-esc="dept.name"/></td>
+                                    <td class="text-end"><t t-esc="len(dept_leaves)"/></td>
+                                    <td class="text-end">
+                                        <t t-esc="'%.1f' % sum(dept_leaves.mapped('number_of_days'))"/>
+                                    </td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+
+                    <!-- Widget 4: Top Absent Employees -->
+                    <h4>2. Nhân viên vắng nhiều nhất (Top 20)</h4>
+                    <table class="table table-bordered table-sm">
+                        <thead>
+                            <tr style="background:#D9E1F2;">
+                                <th>Nhân viên</th>
+                                <th>Phòng ban</th>
+                                <th class="text-end">Tổng ngày</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-set="emp_map" t-value="{}"/>
+                            <t t-foreach="leave_recs.mapped('employee_id')" t-as="emp">
+                                <t t-set="emp_leaves" t-value="leave_recs.filtered(lambda l: l.employee_id == emp)"/>
+                                <tr>
+                                    <td><t t-esc="emp.name"/></td>
+                                    <td><t t-esc="emp.department_id.name or ''"/></td>
+                                    <td class="text-end">
+                                        <t t-esc="'%.1f' % sum(emp_leaves.mapped('number_of_days'))"/>
+                                    </td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+
+                    <!-- Widget 6: Burnout Risk -->
+                    <h4>3. Cảnh báo Burnout</h4>
+                    <table class="table table-bordered table-sm">
+                        <thead>
+                            <tr style="background:#D9E1F2;">
+                                <th>Nhân viên</th>
+                                <th>Phòng ban</th>
+                                <th class="text-end">Nghỉ ốm (3T)</th>
+                                <th class="text-end">Ngày vắng (3T)</th>
+                                <th class="text-end">Số dư phép</th>
+                                <th>Lý do</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-set="burnout_domain" t-value="[('department_id','=',doc.department_id.id)] if doc.department_id else []"/>
+                            <t t-foreach="env['hb.timeoff.burnout.line'].search(burnout_domain)" t-as="b">
+                                <tr t-att-style="'background:#FFE0E0;' if b.burnout_risk else ''">
+                                    <td><t t-esc="b.employee_id.name"/></td>
+                                    <td><t t-esc="b.department_id.name or ''"/></td>
+                                    <td class="text-end"><t t-esc="b.sick_leave_count_3m"/></td>
+                                    <td class="text-end"><t t-esc="'%.1f' % b.total_absence_days_3m"/></td>
+                                    <td class="text-end"><t t-esc="'%.1f' % b.remaining_leave_balance"/></td>
+                                    <td><t t-esc="b.risk_reason or ''"/></td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+
+                    <p class="text-muted small mt-4">
+                        Báo cáo được tạo tự động bởi Học Bá HRM — Odoo 19.
+                        Tiêu chí burnout: nghỉ ốm ≥3 lần hoặc vắng >10 ngày trong 90 ngày gần nhất.
+                    </p>
+                </div>
+            </t>
+        </t>
+    </template>
+
+</odoo>

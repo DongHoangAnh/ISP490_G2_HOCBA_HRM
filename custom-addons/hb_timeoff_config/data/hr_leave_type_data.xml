@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        CFG-TO-05: Tạo 5 loại nghỉ chuẩn cho Học Bá
+        CFG-TO-01: Cấu hình approval hierarchy theo loại nghỉ
+
+        leave_validation_type:
+            'no_validation' = Không cần duyệt
+            'hr'            = Chỉ HR Officer duyệt
+            'manager'       = Chỉ Manager trực tiếp duyệt
+            'both'          = Manager + HR (double validation)
+
+        requires_allocation:
+            True  = Phải có allocation trước mới nghỉ được
+            False = Nghỉ tự do, không cần allocation
+
+        unpaid:
+            True  = Trừ lương khi nghỉ
+            False = Không trừ lương (paid leave)
+    -->
+    <data noupdate="1">
+
+        <!-- ====================================================
+             1. NGHỈ PHÉP NĂM (Annual Leave)
+             - Cần allocation (accrual 12 ngày/năm)
+             - Phải duyệt cả Manager lẫn HR
+             - Có lương
+        ==================================================== -->
+        <record id="hb_leave_type_annual" model="hr.leave.type">
+            <field name="name">Nghỉ Phép Năm</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">True</field>
+            <field name="leave_validation_type">both</field>
+            <field name="allocation_validation_type">hr</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">10</field>
+        </record>
+
+        <!-- ====================================================
+             2. NGHỈ ỐM (Sick Leave)
+             - Không cần allocation trước (nộp khi phát sinh)
+             - HR Officer duyệt (kèm giấy tờ y tế - enforce ở Phase 3)
+             - Có lương (theo BHXH)
+        ==================================================== -->
+        <record id="hb_leave_type_sick" model="hr.leave.type">
+            <field name="name">Nghỉ Ốm</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">False</field>
+            <field name="leave_validation_type">hr</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">1</field>
+        </record>
+
+        <!-- ====================================================
+             3. NGHỈ KHÔNG LƯƠNG (Unpaid Leave)
+             - Không cần allocation
+             - Phải duyệt cả Manager lẫn HR (tác động lương)
+             - Không có lương → tạo work entry LEAVE_UNPAID
+        ==================================================== -->
+        <record id="hb_leave_type_unpaid" model="hr.leave.type">
+            <field name="name">Nghỉ Không Lương</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">False</field>
+            <field name="leave_validation_type">both</field>
+            <field name="unpaid">True</field>
+            <field name="request_unit">day</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- ====================================================
+             4. NGHỈ THAI SẢN (Maternity Leave)
+             - Cần allocation (do HR tạo thủ công từng trường hợp)
+             - Manager + HR duyệt
+             - Có lương (hưởng BHXH)
+             - Allocation validation chỉ cần HR
+        ==================================================== -->
+        <record id="hb_leave_type_maternity" model="hr.leave.type">
+            <field name="name">Nghỉ Thai Sản</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">True</field>
+            <field name="leave_validation_type">both</field>
+            <field name="allocation_validation_type">hr</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">4</field>
+        </record>
+
+        <!-- ====================================================
+             5. NGHỈ KHẨN CẤP (Emergency Leave)
+             - Không cần allocation
+             - Chỉ cần Manager duyệt 1 bước (fast-track)
+             - Có lương (tối đa 3 ngày/năm theo chính sách HB)
+             - Logic fast-track sẽ được mở rộng ở Phase 4
+        ==================================================== -->
+        <record id="hb_leave_type_emergency" model="hr.leave.type">
+            <field name="name">Nghỉ Khẩn Cấp</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">False</field>
+            <field name="leave_validation_type">manager</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">3</field>
+        </record>
+
+    </data>
+</odoo>

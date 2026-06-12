@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        FUNC-TO-002: Chứng từ y tế cho Nghỉ Ốm (tùy chọn, không bắt buộc)
+        - Nhân viên có thể đính kèm chứng từ khi xin nghỉ (không bắt buộc)
+        - HR thấy cảnh báo khi duyệt mà thiếu chứng từ (nhưng vẫn duyệt được)
+        - Khi HR duyệt thiếu chứng từ → tự động ghi chú vào chatter
+    -->
+    <record id="view_hr_leave_form_hb_medical" model="ir.ui.view">
+        <field name="name">hr.leave.form.hb.medical</field>
+        <field name="model">hr.leave</field>
+        <field name="inherit_id" ref="hr_holidays.hr_leave_view_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Khai báo computed helper fields để dùng trong invisible conditions -->
+            <xpath expr="//field[@name='holiday_status_id']" position="after">
+                <field name="leave_type_support_document" invisible="1"/>
+                <field name="x_has_medical_doc" invisible="1"/>
+            </xpath>
+
+            <!--
+                Sửa visibility của field đính kèm:
+                - Trước: chỉ hiện khi state = 'confirm'
+                - Sau:   hiện khi state = 'confirm' (mọi loại) HOẶC khi loại nghỉ yêu cầu chứng từ (mọi state)
+                → Nhân viên upload khi submit; HR thấy chứng từ khi review
+            -->
+            <xpath expr="//field[@name='supported_attachment_ids']" position="attributes">
+                <attribute name="invisible">state != 'confirm' and not leave_type_support_document</attribute>
+                <attribute name="string">Chứng từ y tế</attribute>
+            </xpath>
+
+            <!-- Hint cho nhân viên khi chọn Nghỉ Ốm (chỉ hiện lúc đang submit) -->
+            <xpath expr="//field[@name='supported_attachment_ids']" position="before">
+                <div class="text-muted small mb-1"
+                     invisible="not leave_type_support_document or state != 'confirm'">
+                    Không bắt buộc — Vui lòng đính kèm giấy xác nhận của bác sĩ nếu có.
+                    Chứng từ giúp HR xử lý nhanh hơn.
+                </div>
+            </xpath>
+
+            <!-- Cảnh báo HR khi duyệt đơn nghỉ ốm thiếu chứng từ (chỉ HR mới thấy) -->
+            <xpath expr="//field[@name='leave_type_increases_duration']" position="after">
+                <div class="alert alert-warning d-flex align-items-start mt-2"
+                     role="alert"
+                     invisible="not leave_type_support_document or x_has_medical_doc"
+                     groups="hr_holidays.group_hr_holidays_user">
+                    <i class="fa fa-exclamation-triangle me-2 mt-1"/>
+                    <span>
+                        Đơn nghỉ ốm chưa có chứng từ y tế.
+                        Cân nhắc yêu cầu nhân viên bổ sung trước khi duyệt.
+                    </span>
+                </div>
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>

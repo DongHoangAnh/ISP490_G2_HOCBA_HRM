@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ================================================================ -->
+    <!--  hb.timeoff.leave.analysis — 4 views (Widgets 1-4)               -->
+    <!-- ================================================================ -->
+
+    <!-- Widget 1: Bar chart - Leave by Department -->
+    <record id="view_hb_leave_analysis_graph_dept" model="ir.ui.view">
+        <field name="name">hb.timeoff.leave.analysis.graph.dept</field>
+        <field name="model">hb.timeoff.leave.analysis</field>
+        <field name="arch" type="xml">
+            <graph string="Nghỉ phép theo Phòng ban" type="bar">
+                <field name="department_id" type="row"/>
+                <field name="number_of_days" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Widget 2: Line chart - Monthly Trend -->
+    <record id="view_hb_leave_analysis_graph_month" model="ir.ui.view">
+        <field name="name">hb.timeoff.leave.analysis.graph.month</field>
+        <field name="model">hb.timeoff.leave.analysis</field>
+        <field name="arch" type="xml">
+            <graph string="Xu hướng Nghỉ phép theo Tháng" type="line">
+                <field name="date_from" type="row" interval="month"/>
+                <field name="number_of_days" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Widget 3: Pivot - Sick Leave Frequency (heatmap equivalent) -->
+    <record id="view_hb_leave_analysis_pivot_sick" model="ir.ui.view">
+        <field name="name">hb.timeoff.leave.analysis.pivot.sick</field>
+        <field name="model">hb.timeoff.leave.analysis</field>
+        <field name="arch" type="xml">
+            <pivot string="Tần suất Nghỉ ốm">
+                <field name="employee_id" type="row"/>
+                <field name="date_from" type="col" interval="month"/>
+                <field name="number_of_days" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Widget 4: List - Top Absent Employees -->
+    <record id="view_hb_leave_analysis_list_absent" model="ir.ui.view">
+        <field name="name">hb.timeoff.leave.analysis.list.absent</field>
+        <field name="model">hb.timeoff.leave.analysis</field>
+        <field name="arch" type="xml">
+            <list string="Nhân viên vắng nhiều nhất" default_order="number_of_days desc">
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <field name="holiday_status_id" string="Loại nghỉ"/>
+                <field name="date_from" string="Từ ngày"/>
+                <field name="date_to" string="Đến ngày"/>
+                <field name="number_of_days" string="Số ngày" sum="Tổng"/>
+                <field name="is_sick_leave" string="Nghỉ ốm" widget="boolean"/>
+                <field name="is_emergency_leave" string="Khẩn cấp" widget="boolean"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search view for leave analysis -->
+    <record id="view_hb_leave_analysis_search" model="ir.ui.view">
+        <field name="name">hb.timeoff.leave.analysis.search</field>
+        <field name="model">hb.timeoff.leave.analysis</field>
+        <field name="arch" type="xml">
+            <search string="Bộ lọc Phân tích Nghỉ phép">
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <field name="holiday_status_id"/>
+                <filter name="sick_leave" string="Chỉ nghỉ ốm"
+                        domain="[('is_sick_leave','=',True)]"/>
+                <filter name="emergency_leave" string="Chỉ nghỉ khẩn cấp"
+                        domain="[('is_emergency_leave','=',True)]"/>
+                <separator/>
+                <filter name="filter_date_from" date="date_from" string="Ngày bắt đầu"/>
+                <group>
+                    <filter name="group_dept" string="Phòng ban"
+                            context="{'group_by':'department_id'}"/>
+                    <filter name="group_type" string="Loại nghỉ"
+                            context="{'group_by':'holiday_status_id'}"/>
+                    <filter name="group_month" string="Tháng"
+                            context="{'group_by':'date_from:month'}"/>
+                    <filter name="group_emp" string="Nhân viên"
+                            context="{'group_by':'employee_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action: Widget 1 - Leave by Department -->
+    <record id="action_hb_leave_analysis_by_dept" model="ir.actions.act_window">
+        <field name="name">W1 — Nghỉ phép theo Phòng ban</field>
+        <field name="res_model">hb.timeoff.leave.analysis</field>
+        <field name="view_mode">graph,pivot,list</field>
+        <field name="view_id" ref="view_hb_leave_analysis_graph_dept"/>
+        <field name="search_view_id" ref="view_hb_leave_analysis_search"/>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Action: Widget 2 - Monthly Trend -->
+    <record id="action_hb_leave_analysis_monthly" model="ir.actions.act_window">
+        <field name="name">W2 — Xu hướng Nghỉ phép theo Tháng</field>
+        <field name="res_model">hb.timeoff.leave.analysis</field>
+        <field name="view_mode">graph,pivot,list</field>
+        <field name="view_id" ref="view_hb_leave_analysis_graph_month"/>
+        <field name="search_view_id" ref="view_hb_leave_analysis_search"/>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Action: Widget 3 - Sick Leave Frequency -->
+    <record id="action_hb_leave_analysis_sick" model="ir.actions.act_window">
+        <field name="name">W3 — Tần suất Nghỉ ốm</field>
+        <field name="res_model">hb.timeoff.leave.analysis</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="view_id" ref="view_hb_leave_analysis_pivot_sick"/>
+        <field name="search_view_id" ref="view_hb_leave_analysis_search"/>
+        <field name="domain">[('is_sick_leave','=',True)]</field>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Action: Widget 4 - Top Absent Employees -->
+    <record id="action_hb_leave_analysis_absent" model="ir.actions.act_window">
+        <field name="name">W4 — Nhân viên vắng nhiều nhất</field>
+        <field name="res_model">hb.timeoff.leave.analysis</field>
+        <field name="view_mode">list,pivot,graph</field>
+        <field name="view_id" ref="view_hb_leave_analysis_list_absent"/>
+        <field name="search_view_id" ref="view_hb_leave_analysis_search"/>
+        <field name="context">{'search_default_this_year': 1, 'group_by': []}</field>
+    </record>
+
+    <!-- ================================================================ -->
+    <!--  Widget 5: Leave Balance — uses hr.leave.report (existing model)  -->
+    <!-- ================================================================ -->
+
+    <record id="action_hb_leave_balance" model="ir.actions.act_window">
+        <field name="name">W5 — Số dư Nghỉ phép</field>
+        <field name="res_model">hr.leave.report</field>
+        <field name="view_mode">pivot,list</field>
+        <field name="domain">[('state','=','validate')]</field>
+        <field name="context">{
+            'search_default_group_employee': 1,
+            'pivot_row_groupby': ['employee_id'],
+            'pivot_col_groupby': ['holiday_status_id'],
+            'pivot_measures': ['number_of_days']
+        }</field>
+    </record>
+
+    <!-- ================================================================ -->
+    <!--  hb.timeoff.burnout.line — Widget 6                               -->
+    <!-- ================================================================ -->
+
+    <record id="view_hb_burnout_line_list" model="ir.ui.view">
+        <field name="name">hb.timeoff.burnout.line.list</field>
+        <field name="model">hb.timeoff.burnout.line</field>
+        <field name="arch" type="xml">
+            <list string="Cảnh báo Burnout Nhân viên"
+                  default_order="burnout_risk desc, sick_leave_count_3m desc"
+                  decoration-danger="burnout_risk == True">
+                <field name="employee_id" string="Nhân viên"/>
+                <field name="department_id" string="Phòng ban"/>
+                <field name="sick_leave_count_3m" string="Nghỉ ốm (3T)"
+                       decoration-warning="sick_leave_count_3m >= 2"
+                       decoration-danger="sick_leave_count_3m >= 3"/>
+                <field name="total_absence_days_3m" string="Ngày vắng (3T)"
+                       decoration-warning="total_absence_days_3m > 7"
+                       decoration-danger="total_absence_days_3m > 10"/>
+                <field name="remaining_leave_balance" string="Số dư phép"
+                       decoration-warning="remaining_leave_balance &lt; 5"
+                       decoration-danger="remaining_leave_balance &lt; 2"/>
+                <field name="burnout_risk" string="⚠ Burnout" widget="boolean"/>
+                <field name="risk_reason" string="Lý do"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_hb_burnout_line_search" model="ir.ui.view">
+        <field name="name">hb.timeoff.burnout.line.search</field>
+        <field name="model">hb.timeoff.burnout.line</field>
+        <field name="arch" type="xml">
+            <search string="Lọc Burnout Risk">
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <filter name="at_risk" string="Chỉ nhân viên có cảnh báo"
+                        domain="[('burnout_risk','=',True)]"/>
+                <filter name="low_balance" string="Số dư phép thấp (&lt;5 ngày)"
+                        domain="[('remaining_leave_balance','&lt;',5)]"/>
+                <group>
+                    <filter name="group_dept" string="Phòng ban"
+                            context="{'group_by':'department_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hb_burnout_risk" model="ir.actions.act_window">
+        <field name="name">W6 — Cảnh báo Burnout Nhân viên</field>
+        <field name="res_model">hb.timeoff.burnout.line</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="view_hb_burnout_line_list"/>
+        <field name="search_view_id" ref="view_hb_burnout_line_search"/>
+        <field name="context">{'search_default_at_risk': 1}</field>
+    </record>
+
+</odoo>

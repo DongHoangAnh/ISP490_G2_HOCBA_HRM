@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        AUT-TO-002 / FUNC-TO-004: Phát hiện xung đột lịch dạy cho giảng viên
+        - Banner cảnh báo hiển thị khi x_schedule_conflict = True
+        - Trường ghi chú thay thế (x_replacement_note) bắt buộc khi Academic Manager phê duyệt
+        - Logic phát hiện xung đột nằm trong models/hr_leave.py
+    -->
+    <record id="view_hr_leave_form_hb_schedule_conflict" model="ir.ui.view">
+        <field name="name">hr.leave.form.hb.schedule.conflict</field>
+        <field name="model">hr.leave</field>
+        <field name="inherit_id" ref="hr_holidays.hr_leave_view_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Khai báo field helpers (invisible) để dùng trong điều kiện hiển thị -->
+            <xpath expr="//field[@name='holiday_status_id']" position="after">
+                <field name="x_schedule_conflict" invisible="1"/>
+                <field name="x_academic_review_required" invisible="1"/>
+            </xpath>
+
+            <!--
+                Banner cảnh báo xung đột lịch dạy.
+                Dùng cùng anchor với Phase 4 (dashboard_warning_message) nhưng
+                điều kiện khác: chỉ hiện khi x_schedule_conflict = True.
+                Hai banner sẽ không bao giờ hiện đồng thời vì giảng viên ít khi
+                xin Nghỉ Khẩn Cấp có xung đột lịch dạy đồng thời.
+            -->
+            <xpath expr="//field[@name='dashboard_warning_message']" position="after">
+                <div class="alert alert-warning d-flex align-items-start mt-2"
+                     role="alert"
+                     invisible="not x_schedule_conflict">
+                    <i class="fa fa-calendar-times-o me-2 mt-1" title="Xung đột lịch dạy"/>
+                    <div>
+                        <b>Phát hiện xung đột lịch dạy.</b>
+                        <span invisible="not x_academic_review_required">
+                            Vui lòng điền <b>Ghi chú bố trí thay thế</b>
+                            và chờ xác nhận từ <b>Academic Manager</b>
+                            trước khi đơn được phê duyệt.
+                        </span>
+                        <span invisible="x_academic_review_required">
+                            Đây là đơn nghỉ khẩn cấp — xung đột được ghi nhận
+                            nhưng không chặn luồng duyệt.
+                        </span>
+                    </div>
+                </div>
+            </xpath>
+
+            <!--
+                Thông tin buổi dạy xung đột + ghi chú bố trí thay thế.
+                Đặt ngay sau trường Reason (name), trước phần đính kèm.
+                Chỉ hiển thị khi x_schedule_conflict = True.
+            -->
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="x_conflict_info"
+                       string="Buổi dạy xung đột"
+                       readonly="1"
+                       invisible="not x_schedule_conflict"
+                       colspan="2"/>
+                <field name="x_replacement_note"
+                       string="Ghi chú bố trí thay thế"
+                       readonly="state != 'confirm' and state != 'validate1'"
+                       invisible="not x_schedule_conflict"
+                       colspan="2"
+                       placeholder="Mô tả cách bố trí giảng viên thay thế cho các buổi dạy bị ảnh hưởng..."/>
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>
