@@ -37,6 +37,7 @@ services:
       odoo
       --database=hocba_hrm
       --init=hocba_employees,hocba_attendance,hocba_users,hocba_tuyen_dung,hocba_hrm
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_tuyen_dung,hocba_hrm
       --addons-path=/mnt/extra-addons
       --dev=xml
 
