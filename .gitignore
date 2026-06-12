@@ -13,3 +13,6 @@ __pycache__/
 Thumbs.db
 .idea/
 .vscode/
+
+# Claude Code (cấu hình cá nhân, không commit)
+.claude/
