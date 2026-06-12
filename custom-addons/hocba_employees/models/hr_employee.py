@@ -1,10 +1,11 @@
+import json
 import re
 from datetime import timedelta
 
 from dateutil.relativedelta import relativedelta
 
 from odoo import models, fields, api, _
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 
 class HrEmployee(models.Model):
@@ -369,6 +370,30 @@ class HrEmployee(models.Model):
                 vals['x_employee_code'] = self.env['ir.sequence'].next_by_code(
                     'hocba.employee.code') or '/'
         return super().create(vals_list)
+
+    # ------------------------------------------------------------------
+    # Face attendance helpers (kiosk client action — hocba_attendance)
+    # ------------------------------------------------------------------
+    @api.model
+    def get_self_attendance_info(self):
+        """Return current user's employee name + enrollment state for kiosk."""
+        emp = self.env.user.employee_id
+        return {
+            'employee_id': emp.id,
+            'name': emp.name,
+            'enrolled': bool(emp.x_face_descriptor),
+        }
+
+    def enroll_self_face(self, payload):
+        """Save the current user's face sample (image + descriptor)."""
+        emp = self.env.user.employee_id
+        if not emp:
+            raise UserError('Tài khoản chưa gắn với hồ sơ nhân viên.')
+        emp.write({
+            'x_face_image': payload.get('photo'),
+            'x_face_descriptor': json.dumps(payload.get('descriptor') or []),
+        })
+        return True
 
     # ------------------------------------------------------------------
     # F-004: Dòng thời gian thử việc — compute & constraints
