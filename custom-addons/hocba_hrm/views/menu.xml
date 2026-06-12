@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
+        <!-- 12/06/2026: tạm ngắt SPA — test trên giao diện Odoo backend trước.
+             Mở lại: bỏ comment khối dưới + đặt SPA_ENABLED = True trong
+             controllers/main.py + upgrade hocba_hrm (docs/SPEC_HRM_SPA_API.md §2).
+
         <record id="action_hocba_hrm" model="ir.actions.act_url">
             <field name="name">Học Bá HRM</field>
             <field name="url">/hocba-hrm</field>
@@ -11,5 +15,6 @@
             name="Học Bá HRM"
             action="action_hocba_hrm"
             sequence="1"/>
+        -->
     </data>
 </odoo>
