@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Screen 7.2 — Phiếu Yêu Cầu Tuyển Dụng (hb.recruitment.request)
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Form View ── -->
+    <record id="view_hb_recruitment_request_form" model="ir.ui.view">
+        <field name="name">hb.recruitment.request.form</field>
+        <field name="model">hb.recruitment.request</field>
+        <field name="arch" type="xml">
+            <form string="Phiếu Yêu Cầu Tuyển Dụng">
+                <header>
+                    <button name="action_submit"
+                        string="Gửi duyệt"
+                        type="object"
+                        class="btn-primary"
+                        invisible="state != 'draft'"/>
+
+                    <button name="action_manager_approve"
+                        string="TBP Duyệt"
+                        type="object"
+                        class="btn-primary"
+                        invisible="state != 'submitted'"
+                        groups="hr_recruitment.group_hr_recruitment_user"/>
+
+                    <button name="action_hr_approve"
+                        string="HR Duyệt"
+                        type="object"
+                        class="btn-primary"
+                        invisible="state != 'manager_approved'"
+                        groups="hr_recruitment.group_hr_recruitment_user"/>
+
+                    <button name="action_start_recruiting"
+                        string="Bắt đầu tuyển"
+                        type="object"
+                        class="btn-success"
+                        invisible="state != 'hr_approved'"
+                        groups="hr_recruitment.group_hr_recruitment_user"/>
+
+                    <button name="action_close"
+                        string="Đóng phiếu"
+                        type="object"
+                        invisible="state != 'recruiting'"
+                        groups="hr_recruitment.group_hr_recruitment_user"/>
+
+                    <button name="action_refuse"
+                        string="Từ chối"
+                        type="object"
+                        class="btn-danger"
+                        invisible="state in ('draft', 'recruiting', 'closed', 'refused')"
+                        groups="hr_recruitment.group_hr_recruitment_user"/>
+
+                    <button name="action_reset_draft"
+                        string="Trả về nháp"
+                        type="object"
+                        invisible="state != 'refused'"/>
+
+                    <field name="state" widget="statusbar"
+                        statusbar_visible="draft,submitted,manager_approved,hr_approved,recruiting,closed"/>
+                </header>
+
+                <sheet>
+                    <!-- Smart button box -->
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_create_job_position"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-briefcase"
+                            invisible="job_id">
+                            <div class="o_stat_info">
+                                <span class="o_stat_value">Tạo mới</span>
+                                <span class="o_stat_text">Job Position</span>
+                            </div>
+                        </button>
+                        <button name="action_create_job_position"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-briefcase"
+                            invisible="not job_id">
+                            <div class="o_stat_info">
+                                <field name="job_id" class="o_stat_value" readonly="1" nolabel="1"/>
+                                <span class="o_stat_text">Job Position</span>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="oe_title">
+                        <span class="o_form_label text-muted">Mã phiếu</span>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <!-- Thông tin chung -->
+                    <group string="Thông tin chung" name="general_info">
+                        <group>
+                            <field name="date_request"/>
+                            <field name="requester_id"/>
+                        </group>
+                        <group>
+                            <field name="department_id"/>
+                        </group>
+                    </group>
+
+                    <!-- Vị trí cần tuyển -->
+                    <group string="Vị trí cần tuyển" name="job_info">
+                        <group>
+                            <field name="job_title" placeholder="VD: Giáo viên tiếng Trung"/>
+                            <field name="qty_expected"/>
+                            <field name="level"/>
+                        </group>
+                        <group>
+                            <field name="reason"/>
+                            <field name="job_id"
+                                placeholder="Chọn từ danh sách JD (tùy chọn)"/>
+                            <field name="jd_link"
+                                placeholder="https://docs.google.com/... hoặc tên tài liệu JD"/>
+                        </group>
+                    </group>
+
+                    <!-- Yêu cầu ứng viên -->
+                    <group string="Yêu cầu ứng viên" name="candidate_req">
+                        <group>
+                            <field name="education"/>
+                            <field name="experience_years"/>
+                        </group>
+                        <group>
+                            <field name="language_requirement"
+                                placeholder="VD: Tiếng Trung HSK4, Tiếng Anh B2"/>
+                        </group>
+                        <field name="skill_description"
+                            placeholder="Liệt kê kỹ năng chuyên môn, phần mềm, kỹ năng mềm..."
+                            colspan="2"
+                            nolabel="1"/>
+                    </group>
+
+                    <!-- Điều kiện -->
+                    <group string="Điều kiện làm việc" name="conditions">
+                        <group>
+                            <field name="expected_start_date"/>
+                            <field name="work_type"/>
+                        </group>
+                        <group>
+                            <field name="salary_range"
+                                placeholder="VD: 10-15 triệu, 8-40tr, thỏa thuận..."/>
+                            <field name="salary_from" placeholder="0"/>
+                            <field name="salary_to" placeholder="0"/>
+                        </group>
+                    </group>
+
+                    <!-- Phê duyệt -->
+                    <group string="Phê duyệt" name="approval">
+                        <group>
+                            <field name="manager_id"
+                                placeholder="Trưởng phòng phụ trách"/>
+                            <field name="hr_manager_id"
+                                placeholder="HR Manager phụ trách"/>
+                        </group>
+                        <group>
+                            <field name="director_id"
+                                placeholder="BGĐ (nếu cần)"/>
+                        </group>
+                        <field name="refuse_reason"
+                            invisible="state != 'refused'"
+                            colspan="2"
+                            placeholder="Nhập lý do từ chối..."/>
+                    </group>
+
+                    <!-- Ghi chú -->
+                    <notebook>
+                        <page string="Ghi chú nội bộ" name="notes">
+                            <field name="note"
+                                placeholder="Thông tin bổ sung, yêu cầu đặc biệt..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ── List View ── -->
+    <record id="view_hb_recruitment_request_list" model="ir.ui.view">
+        <field name="name">hb.recruitment.request.list</field>
+        <field name="model">hb.recruitment.request</field>
+        <field name="arch" type="xml">
+            <list string="Phiếu Yêu Cầu Tuyển Dụng"
+                decoration-info="state == 'submitted'"
+                decoration-warning="state == 'manager_approved'"
+                decoration-success="state in ('hr_approved', 'recruiting')"
+                decoration-muted="state in ('closed', 'refused')">
+                <field name="name" string="Mã phiếu"/>
+                <field name="date_request" string="Ngày order"/>
+                <field name="department_id" string="Phòng"/>
+                <field name="job_title" string="Vị trí"/>
+                <field name="qty_expected" string="SL"/>
+                <field name="expected_start_date" string="Nhận việc"/>
+                <field name="salary_range" string="Mức lương"/>
+                <field name="reason" string="Lý do"/>
+                <field name="jd_link" string="Link JD" widget="url" optional="show"/>
+                <field name="state" string="Trạng thái" widget="badge"
+                    decoration-info="state == 'submitted'"
+                    decoration-warning="state == 'manager_approved'"
+                    decoration-success="state in ('hr_approved', 'recruiting')"
+                    decoration-danger="state == 'refused'"
+                    decoration-muted="state == 'closed'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ── Search View ── -->
+    <record id="view_hb_recruitment_request_search" model="ir.ui.view">
+        <field name="name">hb.recruitment.request.search</field>
+        <field name="model">hb.recruitment.request</field>
+        <field name="arch" type="xml">
+            <search string="Tìm phiếu yêu cầu">
+                <field name="name" string="Mã phiếu"/>
+                <field name="job_title" string="Vị trí"/>
+                <field name="department_id" string="Phòng ban"/>
+                <field name="requester_id" string="Người tạo"/>
+                <separator/>
+                <filter name="filter_draft" string="Nháp"
+                    domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_submitted" string="Chờ duyệt"
+                    domain="[('state', 'in', ('submitted', 'manager_approved'))]"/>
+                <filter name="filter_approved" string="Đã duyệt"
+                    domain="[('state', '=', 'hr_approved')]"/>
+                <filter name="filter_recruiting" string="Đang tuyển"
+                    domain="[('state', '=', 'recruiting')]"/>
+                <filter name="filter_closed" string="Đã đóng"
+                    domain="[('state', '=', 'closed')]"/>
+                <filter name="filter_refused" string="Từ chối"
+                    domain="[('state', '=', 'refused')]"/>
+                <separator/>
+                <filter name="filter_create_date" string="Ngày order" date="date_request"/>
+                <separator/>
+                <group>
+                    <filter name="group_department" string="Phòng ban"
+                        context="{'group_by': 'department_id'}"/>
+                    <filter name="group_state" string="Trạng thái"
+                        context="{'group_by': 'state'}"/>
+                    <filter name="group_month" string="Tháng"
+                        context="{'group_by': 'date_request:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ── Window Action ── -->
+    <record id="hb_action_recruitment_request" model="ir.actions.act_window">
+        <field name="name">Phiếu Yêu Cầu Tuyển Dụng</field>
+        <field name="res_model">hb.recruitment.request</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_hb_recruitment_request_search"/>
+        <field name="context">{'search_default_filter_recruiting': 0}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có phiếu yêu cầu tuyển dụng nào</p>
+            <p>Tạo phiếu yêu cầu để bắt đầu quy trình phê duyệt tuyển dụng từ các phòng ban.</p>
+        </field>
+    </record>
+
+</odoo>

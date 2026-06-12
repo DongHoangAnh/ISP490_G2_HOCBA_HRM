@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Sheet 7.1 — Quy trình tuyển dụng
+         Inherit hr.recruitment.stage form: thêm Người hỗ trợ + Tiêu chí
+         thành công vào Configuration → Stages
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <record id="hb_view_recruitment_stage_form_inherit" model="ir.ui.view">
+        <field name="name">hr.recruitment.stage.hocba.form.inherit</field>
+        <field name="model">hr.recruitment.stage</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_recruitment_stage_form"/>
+        <field name="arch" type="xml">
+            <!-- Inject sau field requirements (cuối form) -->
+            <field name="requirements" position="after">
+                <separator string="Thông tin quy trình Học Bá"/>
+                <group>
+                    <field name="support_person"
+                           placeholder="VD: BP tuyển dụng, TBP"/>
+                </group>
+                <field name="success_criteria"
+                       placeholder="Điều kiện để coi bước này hoàn thành đúng nghĩa..."/>
+            </field>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Screen 7.1 — Pipeline Kanban (hr.applicant)
+         Mở rộng kanban mặc định:
+           • Thêm Nguồn (source_id) và Ngày tạo (create_date) lên card
+           • Dịch menu quick-action sang tiếng Việt
+           • Thêm quick action "Gửi email"
+         ══════════════════════════════════════════════════════════════════ -->
+    <record id="hr_applicant_kanban_hocba" model="ir.ui.view">
+        <field name="name">hr.applicant.kanban.hocba</field>
+        <field name="model">hr.applicant</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_kanban_view_applicant"/>
+        <field name="arch" type="xml">
+
+            <!-- Khai báo thêm field cần dùng trong template -->
+            <field name="application_status" position="after">
+                <field name="source_id"/>
+                <field name="create_date"/>
+            </field>
+
+            <!-- Thêm Nguồn + Ngày tạo sau thẻ tags trên card -->
+            <xpath expr="//t[@t-name='card']//field[@name='categ_ids']" position="after">
+                <div class="d-flex flex-column gap-1 mt-1 small">
+                    <t t-if="record.source_id.raw_value">
+                        <span class="text-muted">
+                            <i class="fa fa-share-alt me-1" role="img" aria-label="Nguồn"/>
+                            <field name="source_id"/>
+                        </span>
+                    </t>
+                    <span class="text-muted">
+                        <i class="fa fa-calendar me-1" role="img" aria-label="Ngày tạo"/>
+                        <field name="create_date" widget="date"/>
+                    </span>
+                </div>
+            </xpath>
+
+            <!-- Thay menu dropdown bằng phiên bản tiếng Việt + Gửi email -->
+            <xpath expr="//t[@t-name='menu']" position="replace">
+                <t t-name="menu">
+                    <a role="menuitem" name="action_create_meeting" type="object"
+                       class="dropdown-item">Lên lịch phỏng vấn</a>
+                    <a role="menuitem" name="action_send_email" type="object"
+                       class="dropdown-item">Gửi email</a>
+                    <a role="menuitem" name="archive_applicant" type="object"
+                       class="dropdown-item">Từ chối hồ sơ</a>
+                    <a t-if="record.active.raw_value" role="menuitem"
+                       type="archive" class="dropdown-item">Lưu trữ</a>
+                    <a t-if="!record.active.raw_value" role="menuitem"
+                       type="unarchive" class="dropdown-item">Khôi phục</a>
+                    <t t-if="widget.deletable">
+                        <a role="menuitem" type="delete" class="dropdown-item">Xóa</a>
+                    </t>
+                </t>
+            </xpath>
+
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Action cho menu Pipeline Kanban (7.1)
+         — group_by stage_id tự động nhờ default_group_by="stage_id"
+           được khai báo trong kanban view của hr_recruitment
+         ══════════════════════════════════════════════════════════════════ -->
+    <record id="hb_action_pipeline_kanban" model="ir.actions.act_window">
+        <field name="name">Pipeline Kanban — Quy trình tuyển dụng</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="hr_recruitment.hr_applicant_view_search_bis"/>
+        <field name="context">{'search_default_applicants': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào trong pipeline</p>
+            <p>Kéo thả thẻ ứng viên giữa các cột để cập nhật stage tuyển dụng.</p>
+        </field>
+    </record>
+
+</odoo>
