@@ -1,11 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Ẩn menu standalone React cũ — hr_recruitment cung cấp menu Recruitment -->
-    <record id="menu_hocba_recruitments_root" model="ir.ui.menu">
-        <field name="active" eval="False"/>
-    </record>
-
     <!-- ════════════════════════════════════════════════════════════════════
          HỌC BÁ — Window Actions (9 sheets)
          ════════════════════════════════════════════════════════════════════ -->
