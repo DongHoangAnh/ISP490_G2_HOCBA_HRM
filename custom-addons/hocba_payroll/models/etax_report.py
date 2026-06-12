@@ -155,7 +155,7 @@ class EtaxReport(models.Model):
 
     def _get_gross(self, payslip):
         gross_line = payslip.line_ids.filtered(lambda l: l.code == 'GROSS')
-        return gross_line[0].total if gross_line else 0.0
+        return gross_line[0].amount if gross_line else 0.0
 
     def _get_insurance_deduction(self, payslip):
         """Sum BHXH + BHYT + BHTN employee portions from payslip lines."""
@@ -163,7 +163,7 @@ class EtaxReport(models.Model):
         total = 0.0
         for line in payslip.line_ids:
             if line.code in codes:
-                total += abs(line.total)
+                total += abs(line.amount)
         return total
 
     def _get_dependent_count(self, employee):

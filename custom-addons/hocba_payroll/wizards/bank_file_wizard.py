@@ -64,7 +64,18 @@ class BankFileWizard(models.TransientModel):
     @staticmethod
     def _get_net(payslip):
         net_line = payslip.line_ids.filtered(lambda l: l.code == 'NET')
-        return net_line[0].total if net_line else 0.0
+        return net_line[0].amount if net_line else 0.0
+
+    @staticmethod
+    def _get_employee_bank(employee):
+        """Get employee bank account — compatible with Community (no bank_account_id)."""
+        if hasattr(employee, 'bank_account_id') and employee.bank_account_id:
+            return employee.bank_account_id
+        # Community fallback: partner bank accounts
+        partner = employee.address_home_id or employee.work_contact_id
+        if partner and partner.bank_ids:
+            return partner.bank_ids[0]
+        return None
 
     # ─────────────────────────────────────────────────────────
     # Validation
@@ -88,7 +99,7 @@ class BankFileWizard(models.TransientModel):
 
         for slip in batch.slip_ids.filtered(lambda s: s.state == 'done'):
             emp = slip.employee_id
-            bank_acc = emp.bank_account_id
+            bank_acc = self._get_employee_bank(emp)
             if not bank_acc or not bank_acc.acc_number:
                 missing.append(f'{emp.name} ({getattr(emp, "x_employee_code", "N/A")})')
                 continue

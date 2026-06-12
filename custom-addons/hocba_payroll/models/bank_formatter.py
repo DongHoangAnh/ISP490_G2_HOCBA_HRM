@@ -79,7 +79,7 @@ class BaseBankFormatter:
                 )
                 continue
 
-            bank_account = slip.employee_id.bank_account_id
+            bank_account = self._get_employee_bank(slip.employee_id)
             if not bank_account or not bank_account.acc_number:
                 continue  # already validated in wizard
 
@@ -147,7 +147,17 @@ class BaseBankFormatter:
     def _get_net_amount(payslip):
         """Read NET amount from payslip lines."""
         net_line = payslip.line_ids.filtered(lambda l: l.code == 'NET')
-        return net_line[0].total if net_line else 0.0
+        return net_line[0].amount if net_line else 0.0
+
+    @staticmethod
+    def _get_employee_bank(employee):
+        """Get employee bank account — compatible with Community (no bank_account_id)."""
+        if hasattr(employee, 'bank_account_id') and employee.bank_account_id:
+            return employee.bank_account_id
+        partner = employee.address_home_id or employee.work_contact_id
+        if partner and partner.bank_ids:
+            return partner.bank_ids[0]
+        return None
 
 
 # ═════════════════════════════════════════════════════════════
