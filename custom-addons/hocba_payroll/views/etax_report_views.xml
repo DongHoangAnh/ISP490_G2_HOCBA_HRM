@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- eTax Report Form -->
+    <record id="hb_etax_report_form" model="ir.ui.view">
+        <field name="name">hb.etax.report.form</field>
+        <field name="model">hb.etax.report</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_compute" string="Tính thuế TNCN"
+                            type="object" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_mark_submitted" string="Đánh dấu Đã nộp"
+                            type="object" class="btn-success"
+                            invisible="state != 'computed'"/>
+                    <button name="action_reset_draft" string="Reset Nháp"
+                            type="object"
+                            invisible="state == 'draft'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,computed,submitted"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="period_month"/>
+                            <field name="period_year"/>
+                            <field name="batch_id"/>
+                        </group>
+                        <group>
+                            <field name="employee_count"/>
+                            <field name="total_gross" widget="monetary"/>
+                            <field name="total_pit" widget="monetary"/>
+                            <field name="company_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Chi tiết theo nhân viên">
+                            <field name="line_ids" nolabel="1">
+                                <list>
+                                    <field name="employee_code"/>
+                                    <field name="employee_id"/>
+                                    <field name="pit_code"/>
+                                    <field name="residence_status"/>
+                                    <field name="gross_income" widget="monetary"/>
+                                    <field name="insurance_deduction" widget="monetary"/>
+                                    <field name="personal_deduction" widget="monetary"/>
+                                    <field name="dependent_count"/>
+                                    <field name="dependent_deduction" widget="monetary"/>
+                                    <field name="taxable_income" widget="monetary"/>
+                                    <field name="pit_amount" widget="monetary"/>
+                                    <field name="net_income" widget="monetary"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- eTax Report List -->
+    <record id="hb_etax_report_tree" model="ir.ui.view">
+        <field name="name">hb.etax.report.tree</field>
+        <field name="model">hb.etax.report</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="period_month"/>
+                <field name="period_year"/>
+                <field name="batch_id"/>
+                <field name="employee_count"/>
+                <field name="total_gross" widget="monetary"/>
+                <field name="total_pit" widget="monetary"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'computed'"
+                       decoration-success="state == 'submitted'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- eTax Report Action -->
+    <record id="action_hb_etax_report" model="ir.actions.act_window">
+        <field name="name">Báo cáo thuế TNCN</field>
+        <field name="res_model">hb.etax.report</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

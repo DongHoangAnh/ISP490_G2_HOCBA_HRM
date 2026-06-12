@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Work Entry Type List -->
+    <record id="hb_work_entry_type_tree" model="ir.ui.view">
+        <field name="name">hb.work.entry.type.tree</field>
+        <field name="model">hb.work.entry.type</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_hb_work_entry_type" model="ir.actions.act_window">
+        <field name="name">Loại Work Entry</field>
+        <field name="res_model">hb.work.entry.type</field>
+        <field name="view_mode">list</field>
+    </record>
+
+    <!-- Work Entry Form -->
+    <record id="hb_work_entry_form" model="ir.ui.view">
+        <field name="name">hb.work.entry.form</field>
+        <field name="model">hb.work.entry</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_validate" string="Xác thực"
+                            type="object" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_reset_draft" string="Reset Nháp"
+                            type="object"
+                            invisible="state not in ('validated', 'conflict')"/>
+                    <button name="action_cancel" string="Hủy"
+                            type="object"
+                            invisible="state == 'cancelled'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,validated"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="employee_id"/>
+                            <field name="work_entry_type_id"/>
+                            <field name="x_class_level"/>
+                            <field name="x_class_code"/>
+                        </group>
+                        <group>
+                            <field name="date_start"/>
+                            <field name="date_stop"/>
+                            <field name="duration"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Work Entry List -->
+    <record id="hb_work_entry_tree" model="ir.ui.view">
+        <field name="name">hb.work.entry.tree</field>
+        <field name="model">hb.work.entry</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="employee_id"/>
+                <field name="work_entry_type_id"/>
+                <field name="date_start"/>
+                <field name="date_stop"/>
+                <field name="duration"/>
+                <field name="x_class_level"/>
+                <field name="x_class_code"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-success="state == 'validated'"
+                       decoration-danger="state == 'conflict'"
+                       decoration-muted="state == 'cancelled'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Work Entry Search -->
+    <record id="hb_work_entry_search" model="ir.ui.view">
+        <field name="name">hb.work.entry.search</field>
+        <field name="model">hb.work.entry</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="employee_id"/>
+                <field name="work_entry_type_id"/>
+                <filter name="filter_draft" string="Nháp"
+                        domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_validated" string="Đã xác thực"
+                        domain="[('state', '=', 'validated')]"/>
+                <group>
+                    <filter name="group_by_employee" string="Nhân viên"
+                            context="{'group_by': 'employee_id'}"/>
+                    <filter name="group_by_type" string="Loại"
+                            context="{'group_by': 'work_entry_type_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hb_work_entry" model="ir.actions.act_window">
+        <field name="name">Work Entries (Giờ dạy)</field>
+        <field name="res_model">hb.work.entry</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

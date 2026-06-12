@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ═══ Payslip Batch (hb.payslip.run) ═══ -->
+
+    <record id="hb_payslip_run_form" model="ir.ui.view">
+        <field name="name">hb.payslip.run.form</field>
+        <field name="model">hb.payslip.run</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_verify" string="Xác nhận"
+                            type="object" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_close" string="Đóng batch"
+                            type="object" class="btn-success"
+                            invisible="state == 'close'"/>
+                    <button name="action_reset_draft" string="Reset Nháp"
+                            type="object"
+                            invisible="state == 'draft'"/>
+                    <button name="action_open_bank_file_wizard"
+                            string="Tạo file Ngân hàng"
+                            type="object" class="btn-warning"
+                            invisible="state != 'close'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,verify,close"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_payslips"
+                                type="object" class="oe_stat_button"
+                                icon="fa-money">
+                            <field name="payslip_count" string="Phiếu lương"
+                                   widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="date_start"/>
+                            <field name="date_end"/>
+                        </group>
+                        <group>
+                            <field name="company_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Phiếu lương">
+                            <field name="slip_ids" nolabel="1">
+                                <list>
+                                    <field name="number"/>
+                                    <field name="employee_id"/>
+                                    <field name="x_teaching_total_hours"/>
+                                    <field name="gross_amount" widget="monetary"/>
+                                    <field name="net_amount" widget="monetary"/>
+                                    <field name="x_teaching_computed" widget="boolean"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state == 'draft'"
+                                           decoration-warning="state == 'verify'"
+                                           decoration-success="state == 'done'"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="hb_payslip_run_tree" model="ir.ui.view">
+        <field name="name">hb.payslip.run.tree</field>
+        <field name="model">hb.payslip.run</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="date_start"/>
+                <field name="date_end"/>
+                <field name="payslip_count"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'verify'"
+                       decoration-success="state == 'close'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_hb_payslip_run" model="ir.actions.act_window">
+        <field name="name">Payslip Batches</field>
+        <field name="res_model">hb.payslip.run</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ═══ Payslip (hb.payslip) ═══ -->
+
+    <record id="hb_payslip_form" model="ir.ui.view">
+        <field name="name">hb.payslip.form</field>
+        <field name="model">hb.payslip</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_compute_teaching_salary"
+                            string="Tính lương"
+                            type="object" class="btn-primary"
+                            invisible="state not in ('draft', 'verify')"/>
+                    <button name="action_payslip_verify"
+                            string="Gửi xác nhận"
+                            type="object"
+                            invisible="state != 'draft'"/>
+                    <button name="action_payslip_done"
+                            string="Hoàn tất"
+                            type="object" class="btn-success"
+                            invisible="state not in ('draft', 'verify')"/>
+                    <button name="action_payslip_cancel"
+                            string="Hủy"
+                            type="object"
+                            invisible="state in ('done', 'cancel')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,verify,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="number"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="employee_id"/>
+                            <field name="contract_id"/>
+                            <field name="payslip_run_id"/>
+                        </group>
+                        <group>
+                            <field name="date_from"/>
+                            <field name="date_to"/>
+                            <field name="company_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <group string="Kết quả tính lương" invisible="not x_teaching_computed">
+                        <group>
+                            <field name="x_teaching_total_hours"/>
+                            <field name="x_holiday_ot_hours"/>
+                            <field name="x_teaching_computed" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="gross_amount" widget="monetary"/>
+                            <field name="net_amount" widget="monetary"/>
+                        </group>
+                    </group>
+                    <field name="x_compute_warnings"
+                           invisible="not x_compute_warnings"
+                           widget="text"/>
+                    <notebook>
+                        <page string="Chi tiết lương">
+                            <field name="line_ids" nolabel="1">
+                                <list>
+                                    <field name="sequence"/>
+                                    <field name="code"/>
+                                    <field name="name"/>
+                                    <field name="quantity"/>
+                                    <field name="rate" widget="monetary"/>
+                                    <field name="amount" widget="monetary"
+                                           decoration-danger="amount &lt; 0"
+                                           decoration-success="amount &gt; 0"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="hb_payslip_tree" model="ir.ui.view">
+        <field name="name">hb.payslip.tree</field>
+        <field name="model">hb.payslip</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="number"/>
+                <field name="employee_id"/>
+                <field name="date_from"/>
+                <field name="date_to"/>
+                <field name="x_teaching_total_hours"/>
+                <field name="gross_amount" widget="monetary"/>
+                <field name="net_amount" widget="monetary"/>
+                <field name="x_teaching_computed" widget="boolean"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'verify'"
+                       decoration-success="state == 'done'"
+                       decoration-muted="state == 'cancel'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="hb_payslip_search" model="ir.ui.view">
+        <field name="name">hb.payslip.search</field>
+        <field name="model">hb.payslip</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="employee_id"/>
+                <field name="number"/>
+                <filter name="filter_draft" string="Nháp"
+                        domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_done" string="Hoàn tất"
+                        domain="[('state', '=', 'done')]"/>
+                <filter name="filter_computed" string="Đã tính"
+                        domain="[('x_teaching_computed', '=', True)]"/>
+                <group>
+                    <filter name="group_employee" string="Nhân viên"
+                            context="{'group_by': 'employee_id'}"/>
+                    <filter name="group_batch" string="Batch"
+                            context="{'group_by': 'payslip_run_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hb_payslip" model="ir.actions.act_window">
+        <field name="name">Phiếu lương</field>
+        <field name="res_model">hb.payslip</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

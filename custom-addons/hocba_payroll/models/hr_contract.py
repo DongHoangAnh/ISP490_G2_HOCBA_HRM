@@ -1,0 +1,188 @@
+"""
+Contract — standalone replacement for hr.contract (Enterprise).
+FUNC-PR-001: Cấu hình đơn giá giờ dạy trên hợp đồng giáo viên.
+"""
+import logging
+
+from odoo import api, fields, models, _
+from odoo.exceptions import ValidationError
+
+_logger = logging.getLogger(__name__)
+
+# ── Constants ────────────────────────────────────────────────
+HOURLY_RATE_WARN_THRESHOLD = 1_000_000   # VND/h  (VR-009)
+THRESHOLD_MIN = 0.0
+THRESHOLD_MAX = 200.0                     # VR-003
+
+
+class HbContract(models.Model):
+    _name = 'hb.contract'
+    _description = 'Hợp đồng giáo viên'
+    _order = 'date_start desc'
+    _inherit = ['mail.thread']
+
+    name = fields.Char(string='Tên hợp đồng', required=True, tracking=True)
+    employee_id = fields.Many2one(
+        'hr.employee', string='Nhân viên', required=True,
+        index=True, ondelete='restrict',
+    )
+    date_start = fields.Date(string='Ngày bắt đầu', required=True)
+    date_end = fields.Date(string='Ngày kết thúc')
+    wage = fields.Float(
+        string='Lương cơ bản (đóng BH)',
+        digits=(12, 0),
+        help='Mức lương ghi trên hợp đồng, dùng làm base tính BHXH/BHYT/BHTN.',
+    )
+    state = fields.Selection([
+        ('draft', 'Nháp'),
+        ('open', 'Đang hiệu lực'),
+        ('close', 'Hết hạn'),
+        ('cancel', 'Đã hủy'),
+    ], string='Trạng thái', default='draft', tracking=True, index=True)
+    company_id = fields.Many2one(
+        'res.company', string='Công ty',
+        default=lambda self: self.env.company,
+    )
+
+    # ── Teaching hourly-rate fields (PR-001 Screen 1) ────────
+    x_teaching_hourly_rate = fields.Float(
+        string='Đơn giá giờ cơ bản',
+        digits=(12, 0),
+        help='Đơn giá 1 giờ dạy cơ bản (VND/h). Bắt buộc cho hợp đồng GV.',
+    )
+    x_rate_hsk_class = fields.Float(
+        string='Đơn giá giờ HSK4+',
+        digits=(12, 0),
+        help='Đơn giá giờ cho lớp HSK cấp 4 trở lên (VND/h). Để trống → dùng đơn giá cơ bản.',
+    )
+    x_rate_advanced_class = fields.Float(
+        string='Đơn giá giờ lớp đặc biệt',
+        digits=(12, 0),
+        help='Đơn giá giờ cho lớp đặc biệt (VND/h).',
+    )
+    x_standard_threshold = fields.Float(
+        string='Ngưỡng giờ chuẩn/tháng',
+        digits=(6, 2),
+        default=60.0,
+        help='Số giờ chuẩn mỗi tháng. Vượt ngưỡng sẽ tính bonus.',
+    )
+    x_extra_rate = fields.Float(
+        string='Đơn giá giờ vượt ngưỡng',
+        digits=(12, 0),
+        help='Đơn giá cho giờ vượt ngưỡng (VND/h). Để trống → = đơn giá cơ bản × 1.25.',
+    )
+    x_has_fixed_base = fields.Boolean(
+        string='Có lương cố định base',
+        default=False,
+        help='Bật nếu giáo viên có phần lương cố định hàng tháng.',
+    )
+    x_fixed_base = fields.Float(
+        string='Lương cố định',
+        digits=(12, 0),
+        help='Lương cố định hàng tháng (VND). Sẽ pro-rate nếu vào/nghỉ giữa kỳ.',
+    )
+
+    # ── Computed helper ──────────────────────────────────────
+    x_effective_extra_rate = fields.Float(
+        string='Đơn giá vượt ngưỡng (thực tế)',
+        compute='_compute_effective_extra_rate',
+        digits=(12, 0),
+        help='= x_extra_rate nếu đã cấu hình, ngược lại = base × 1.25',
+    )
+
+    @api.depends('x_teaching_hourly_rate', 'x_extra_rate')
+    def _compute_effective_extra_rate(self):
+        for rec in self:
+            if rec.x_extra_rate and rec.x_extra_rate > 0:
+                rec.x_effective_extra_rate = rec.x_extra_rate
+            else:
+                rec.x_effective_extra_rate = rec.x_teaching_hourly_rate * 1.25
+
+    # ── State transitions ────────────────────────────────────
+    def action_open(self):
+        for rec in self:
+            rec.state = 'open'
+
+    def action_close(self):
+        for rec in self:
+            rec.state = 'close'
+
+    def action_cancel(self):
+        for rec in self:
+            rec.state = 'cancel'
+
+    def action_reset_draft(self):
+        for rec in self:
+            rec.state = 'draft'
+
+    # ── Constraints (VR-001 .. VR-009) ───────────────────────
+    @api.constrains('x_teaching_hourly_rate')
+    def _check_hourly_rate_positive(self):
+        """VR-001: Đơn giá giờ phải > 0 nếu nhân viên là teacher."""
+        for rec in self:
+            if rec.x_teaching_hourly_rate and rec.x_teaching_hourly_rate < 0:
+                raise ValidationError(
+                    _('Đơn giá giờ phải lớn hơn 0.')
+                )
+
+    @api.constrains('x_rate_hsk_class', 'x_teaching_hourly_rate')
+    def _check_hsk_rate_higher(self):
+        """VR-002: HSK rate nên > base rate (warning-level, dùng log)."""
+        for rec in self:
+            if (rec.x_rate_hsk_class
+                    and rec.x_teaching_hourly_rate
+                    and rec.x_rate_hsk_class < rec.x_teaching_hourly_rate):
+                _logger.warning(
+                    'Contract %s: Đơn giá HSK (%.0f) < đơn giá cơ bản (%.0f)',
+                    rec.name, rec.x_rate_hsk_class, rec.x_teaching_hourly_rate,
+                )
+
+    @api.constrains('x_standard_threshold')
+    def _check_threshold_range(self):
+        """VR-003: Ngưỡng giờ chuẩn phải trong khoảng 0-200h/tháng."""
+        for rec in self:
+            if rec.x_standard_threshold < THRESHOLD_MIN or rec.x_standard_threshold > THRESHOLD_MAX:
+                raise ValidationError(
+                    _('Ngưỡng giờ chuẩn phải trong khoảng %(min)s – %(max)s giờ/tháng.',
+                      min=THRESHOLD_MIN, max=THRESHOLD_MAX)
+                )
+
+    @api.constrains('x_has_fixed_base', 'x_fixed_base')
+    def _check_fixed_base_consistent(self):
+        """VR-007: Nếu has_fixed_base = True thì fixed_base phải > 0."""
+        for rec in self:
+            if rec.x_has_fixed_base and (not rec.x_fixed_base or rec.x_fixed_base <= 0):
+                raise ValidationError(
+                    _('Bật "Có lương cố định base" nhưng chưa nhập số tiền lương cố định.')
+                )
+
+    @api.constrains('x_teaching_hourly_rate')
+    def _warn_high_hourly_rate(self):
+        """VR-009: Đơn giá > 1tr/h → log warning (cần HR Manager phê duyệt)."""
+        for rec in self:
+            if rec.x_teaching_hourly_rate and rec.x_teaching_hourly_rate > HOURLY_RATE_WARN_THRESHOLD:
+                _logger.warning(
+                    'Contract %s: Đơn giá giờ %.0f vượt ngưỡng cảnh báo %s — cần HR Manager review.',
+                    rec.name, rec.x_teaching_hourly_rate, HOURLY_RATE_WARN_THRESHOLD,
+                )
+
+    def _to_api_dict(self):
+        self.ensure_one()
+        return {
+            'id': self.id,
+            'name': self.name,
+            'employee_id': self.employee_id.id,
+            'employee_name': self.employee_id.name,
+            'date_start': str(self.date_start) if self.date_start else None,
+            'date_end': str(self.date_end) if self.date_end else None,
+            'wage': self.wage,
+            'state': self.state,
+            'x_teaching_hourly_rate': self.x_teaching_hourly_rate,
+            'x_rate_hsk_class': self.x_rate_hsk_class,
+            'x_rate_advanced_class': self.x_rate_advanced_class,
+            'x_standard_threshold': self.x_standard_threshold,
+            'x_extra_rate': self.x_extra_rate,
+            'x_effective_extra_rate': self.x_effective_extra_rate,
+            'x_has_fixed_base': self.x_has_fixed_base,
+            'x_fixed_base': self.x_fixed_base,
+        }
