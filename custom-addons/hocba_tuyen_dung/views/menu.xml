@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Ẩn menu standalone React cũ — hr_recruitment cung cấp menu Recruitment -->
-    <record id="menu_hocba_tuyen_dung_root" model="ir.ui.menu">
-        <field name="active" eval="False"/>
-    </record>
+    <!-- Menu standalone React cũ đã gỡ — hr_recruitment cung cấp menu Recruitment.
+         Không dùng record active=False ở đây: db cài mới không có menu này nên
+         record sẽ bị tạo rỗng (thiếu name) làm sập registry; db cũ sẽ tự dọn
+         xmlid mồ côi khi upgrade module. -->
 
     <!-- ════════════════════════════════════════════════════════════════════
          HỌC BÁ — Window Actions (9 sheets)
