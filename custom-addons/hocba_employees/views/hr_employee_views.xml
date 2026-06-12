@@ -125,6 +125,20 @@
                             </list>
                         </field>
                     </page>
+                    <!-- Task 4: đăng ký khuôn mặt cho điểm danh (hocba_attendance) -->
+                    <page string="Khuôn mặt &amp; Điểm danh" name="hocba_face">
+                        <group>
+                            <field name="x_face_enrolled" readonly="1"/>
+                            <field name="x_face_image" widget="image" class="oe_avatar"/>
+                            <field name="x_face_descriptor"
+                                   widget="hocba_face_descriptor"
+                                   options="{'image_field': 'x_face_image'}"/>
+                        </group>
+                        <div class="text-muted">
+                            Tải ảnh chân dung rõ mặt; hệ thống sẽ tự tính vector khuôn mặt
+                            (cần trình duyệt hỗ trợ, chạy trên localhost hoặc HTTPS).
+                        </div>
+                    </page>
                 </xpath>
             </field>
         </record>

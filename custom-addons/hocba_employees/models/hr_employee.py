@@ -79,6 +79,19 @@ class HrEmployee(models.Model):
         help='Số sổ Bảo hiểm xã hội (10 chữ số).')
     x_health_insurance_no = fields.Char(string='Số thẻ BHYT')
     x_health_care_place = fields.Char(string='Nơi KCB ban đầu')
+
+    # --- Face enrollment (for hocba_attendance face check-in) ---
+    x_face_image = fields.Binary(string='Ảnh khuôn mặt mẫu', attachment=True)
+    x_face_descriptor = fields.Text(
+        string='Face descriptor (JSON)',
+        help='128-d face descriptor as JSON list, computed by face-api.js.',
+        copy=False,
+    )
+    x_face_enrolled = fields.Boolean(
+        string='Đã đăng ký khuôn mặt',
+        compute='_compute_x_face_enrolled',
+        store=True,
+    )
     # Địa chỉ thường trú
     x_permanent_state_id = fields.Many2one(
         'res.country.state', string='Tỉnh/Thành (thường trú)',
@@ -279,6 +292,11 @@ class HrEmployee(models.Model):
             emp.x_probation_timeline_html = (
                 '<div style="display:flex;align-items:flex-start;'
                 'padding:4px 0;">%s</div>' % ''.join(parts))
+
+    @api.depends('x_face_descriptor')
+    def _compute_x_face_enrolled(self):
+        for emp in self:
+            emp.x_face_enrolled = bool(emp.x_face_descriptor)
 
     @api.depends('x_official_date')
     def _compute_official_months(self):
