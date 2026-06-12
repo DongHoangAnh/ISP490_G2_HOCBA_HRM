@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        CFG-TO-03: Ngày lễ / nghỉ lễ Việt Nam
+        Model: hr.leave.mandatory.day (Time Off > Configuration > Public Holidays)
+
+        Nguồn luật: Điều 112 Bộ Luật Lao Động 2019
+        Tổng: 11 ngày nghỉ lễ chính thức/năm
+
+        Cấu hình cho 2025 và 2026.
+        Lưu ý: Các năm tiếp theo HR cần cập nhật bằng tay vì ngày âm lịch
+        thay đổi hàng năm (Tết Âm Lịch, Giỗ Tổ Hùng Vương).
+    -->
+    <data noupdate="1">
+
+        <!-- ============================================================
+             NĂM 2025
+        ============================================================ -->
+
+        <!-- Tết Dương Lịch 2025: 1/1/2025 -->
+        <record id="hb_holiday_2025_new_year" model="hr.leave.mandatory.day">
+            <field name="name">Tết Dương Lịch</field>
+            <field name="start_date">2025-01-01</field>
+            <field name="end_date">2025-01-01</field>
+            <field name="color">1</field>
+        </record>
+
+        <!--
+            Tết Nguyên Đán 2025 (Ất Tỵ - Năm Rắn)
+            Ngày mùng 1 Tết: 29/1/2025
+            5 ngày luật định: 27/1 - 31/1/2025
+            (28/12 âm, 29/12 âm, 1/1 âm, 2/1 âm, 3/1 âm)
+        -->
+        <record id="hb_holiday_2025_tet" model="hr.leave.mandatory.day">
+            <field name="name">Tết Nguyên Đán 2025 (Ất Tỵ)</field>
+            <field name="start_date">2025-01-27</field>
+            <field name="end_date">2025-01-31</field>
+            <field name="color">4</field>
+        </record>
+
+        <!--
+            Giỗ Tổ Hùng Vương 2025
+            10/3 Âm Lịch = 7/4/2025 (Thứ Hai)
+        -->
+        <record id="hb_holiday_2025_hung_kings" model="hr.leave.mandatory.day">
+            <field name="name">Giỗ Tổ Hùng Vương</field>
+            <field name="start_date">2025-04-07</field>
+            <field name="end_date">2025-04-07</field>
+            <field name="color">3</field>
+        </record>
+
+        <!-- Ngày Giải Phóng Miền Nam: 30/4/2025 -->
+        <record id="hb_holiday_2025_liberation" model="hr.leave.mandatory.day">
+            <field name="name">Ngày Giải Phóng Miền Nam (30/4)</field>
+            <field name="start_date">2025-04-30</field>
+            <field name="end_date">2025-04-30</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- Ngày Quốc Tế Lao Động: 1/5/2025 -->
+        <record id="hb_holiday_2025_labor" model="hr.leave.mandatory.day">
+            <field name="name">Ngày Quốc Tế Lao Động (1/5)</field>
+            <field name="start_date">2025-05-01</field>
+            <field name="end_date">2025-05-01</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- Quốc Khánh 2025: 2/9 và 3/9 (Thứ Ba & Thứ Tư) -->
+        <record id="hb_holiday_2025_national_day" model="hr.leave.mandatory.day">
+            <field name="name">Quốc Khánh (2/9)</field>
+            <field name="start_date">2025-09-02</field>
+            <field name="end_date">2025-09-03</field>
+            <field name="color">1</field>
+        </record>
+
+        <!-- ============================================================
+             NĂM 2026
+        ============================================================ -->
+
+        <!-- Tết Dương Lịch 2026: 1/1/2026 -->
+        <record id="hb_holiday_2026_new_year" model="hr.leave.mandatory.day">
+            <field name="name">Tết Dương Lịch</field>
+            <field name="start_date">2026-01-01</field>
+            <field name="end_date">2026-01-01</field>
+            <field name="color">1</field>
+        </record>
+
+        <!--
+            Tết Nguyên Đán 2026 (Bính Ngọ - Năm Ngựa)
+            Ngày mùng 1 Tết: 17/2/2026
+            5 ngày luật định: 16/2 - 20/2/2026
+        -->
+        <record id="hb_holiday_2026_tet" model="hr.leave.mandatory.day">
+            <field name="name">Tết Nguyên Đán 2026 (Bính Ngọ)</field>
+            <field name="start_date">2026-02-16</field>
+            <field name="end_date">2026-02-20</field>
+            <field name="color">4</field>
+        </record>
+
+        <!--
+            Giỗ Tổ Hùng Vương 2026
+            10/3 Âm Lịch = 26/4/2026 (Chủ Nhật → bù sang 27/4 Thứ Hai)
+        -->
+        <record id="hb_holiday_2026_hung_kings" model="hr.leave.mandatory.day">
+            <field name="name">Giỗ Tổ Hùng Vương</field>
+            <field name="start_date">2026-04-27</field>
+            <field name="end_date">2026-04-27</field>
+            <field name="color">3</field>
+        </record>
+
+        <!-- Ngày Giải Phóng Miền Nam: 30/4/2026 (Thứ Năm) -->
+        <record id="hb_holiday_2026_liberation" model="hr.leave.mandatory.day">
+            <field name="name">Ngày Giải Phóng Miền Nam (30/4)</field>
+            <field name="start_date">2026-04-30</field>
+            <field name="end_date">2026-04-30</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- Ngày Quốc Tế Lao Động: 1/5/2026 (Thứ Sáu) -->
+        <record id="hb_holiday_2026_labor" model="hr.leave.mandatory.day">
+            <field name="name">Ngày Quốc Tế Lao Động (1/5)</field>
+            <field name="start_date">2026-05-01</field>
+            <field name="end_date">2026-05-01</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- Quốc Khánh 2026: 2/9 và 3/9 (Thứ Tư & Thứ Năm) -->
+        <record id="hb_holiday_2026_national_day" model="hr.leave.mandatory.day">
+            <field name="name">Quốc Khánh (2/9)</field>
+            <field name="start_date">2026-09-02</field>
+            <field name="end_date">2026-09-03</field>
+            <field name="color">1</field>
+        </record>
+
+    </data>
+</odoo>

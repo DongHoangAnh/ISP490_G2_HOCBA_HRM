@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hocba_hrm
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hocba-network
+
+  odoo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    ports:
+      - "8069:8069"
+    environment:
+      - HOST=db
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo_password
+      - ADDONS_PATH=/mnt/extra-addons
+    volumes:
+      - ./custom-addons:/mnt/extra-addons
+      - odoo_data:/var/lib/odoo
+    networks:
+      - hocba-network
+    command: >
+      odoo
+      --database=hocba_hrm
+      --init=hocba_employees,hocba_attendance,hocba_users
+      --addons-path=/mnt/extra-addons
+      --dev=xml
+
+volumes:
+  postgres_data:
+  odoo_data:
+
+networks:
+  hocba-network:
+    driver: bridge
