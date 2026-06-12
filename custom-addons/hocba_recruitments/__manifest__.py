@@ -31,6 +31,7 @@
         'views/hb_recruitment_request_views.xml',
         'views/hb_cv_list_views.xml',
         'views/hb_interview_list_views.xml',
+        'views/hb_interview_slot_views.xml',
         'views/menu.xml',
     ],
     'installable': True,

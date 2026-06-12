@@ -4,26 +4,27 @@
     <!-- ══════════════════════════════════════════════════════════════════
          Sheet 7.7 — Mail mẫu tuyển dụng (4 templates)
          model: hr.applicant
+         Odoo 17+: dùng {{ expr }} (inline_template / Jinja2 chuẩn)
          ══════════════════════════════════════════════════════════════════ -->
 
     <!-- ── Template 1: Thư mời tham gia phỏng vấn ── -->
     <record id="email_template_interview_invite" model="mail.template">
         <field name="name">Thư mời phỏng vấn - Học Bá</field>
         <field name="model_id" ref="hr_recruitment.model_hr_applicant"/>
-        <field name="subject">[HỌC BÁ EDUCATION] - THƯ MỜI THAM GIA PHỎNG VẤN VỊ TRÍ ${object.job_id.name if object.job_id else ''}</field>
-        <field name="email_to">${object.email_from or ''}</field>
+        <field name="subject">[HỌC BÁ EDUCATION] - THƯ MỜI THAM GIA PHỎNG VẤN VỊ TRÍ {{ object.job_id.name if object.job_id else '' }}</field>
+        <field name="email_to">{{ object.email_from or '' }}</field>
         <field name="body_html" type="html">
 <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.8; color: #333333;">
-    <p>Thân gửi bạn <strong>${object.partner_name or ''}</strong>,</p>
+    <p>Thân gửi bạn <strong>{{ object.partner_name or '' }}</strong>,</p>
     <p>
         Lời đầu tiên, cảm ơn bạn đã quan tâm và ứng tuyển vào vị trí
-        <strong>${object.job_id.name if object.job_id else ''}</strong>
+        <strong>{{ object.job_id.name if object.job_id else '' }}</strong>
         tại Học Bá Education. Sau khi xem xét hồ sơ, chúng tôi nhận thấy bạn có những phẩm chất phù hợp
         với vị trí và rất mong muốn được trao đổi thêm với bạn về công việc trong buổi phỏng vấn.
     </p>
     <p><strong>Thông tin buổi phỏng vấn như sau:</strong></p>
     <ul>
-        <li><strong>Thời gian:</strong> ${object.interview_time or '[giờ]'}, ${object.interview_date.strftime('%d/%m/%Y') if object.interview_date else 'ngày .../...'}</li>
+        <li><strong>Thời gian:</strong> {{ object.interview_time or '[giờ]' }}, {{ object.interview_date.strftime('%d/%m/%Y') if object.interview_date else 'ngày .../.../...' }}</li>
         <li><strong>Hình thức:</strong> Trực tiếp tại văn phòng</li>
         <li><strong>Địa chỉ:</strong> Tầng 2, toà IP3, Imperial 360 Giải Phóng, Thanh Xuân, Hà Nội</li>
         <li><strong>Thông tin liên hệ:</strong> 0356960580 _ Ms.Ngọc Anh</li>
@@ -46,14 +47,14 @@
     <record id="email_template_interview_result" model="mail.template">
         <field name="name">Thông báo kết quả phỏng vấn - Học Bá</field>
         <field name="model_id" ref="hr_recruitment.model_hr_applicant"/>
-        <field name="subject">[HỌC BÁ EDUCATION] - THÔNG BÁO KẾT QUẢ PHỎNG VẤN VỊ TRÍ ${object.job_id.name if object.job_id else ''}</field>
-        <field name="email_to">${object.email_from or ''}</field>
+        <field name="subject">[HỌC BÁ EDUCATION] - THÔNG BÁO KẾT QUẢ PHỎNG VẤN VỊ TRÍ {{ object.job_id.name if object.job_id else '' }}</field>
+        <field name="email_to">{{ object.email_from or '' }}</field>
         <field name="body_html" type="html">
 <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.8; color: #333333;">
-    <p>Thân gửi bạn <strong>${object.partner_name or ''}</strong>,</p>
+    <p>Thân gửi bạn <strong>{{ object.partner_name or '' }}</strong>,</p>
     <p>
         Cảm ơn bạn đã dành thời gian tham gia buổi phỏng vấn cho vị trí
-        <strong>${object.job_id.name if object.job_id else ''}</strong>
+        <strong>{{ object.job_id.name if object.job_id else '' }}</strong>
         tại Học Bá Education trong thời gian vừa qua. Chúng tôi rất trân trọng sự quan tâm và những chia sẻ
         của bạn về kinh nghiệm làm việc cũng như định hướng công việc.
     </p>
@@ -80,15 +81,15 @@
     <record id="email_template_job_offer" model="mail.template">
         <field name="name">Thư mời nhận việc - Học Bá</field>
         <field name="model_id" ref="hr_recruitment.model_hr_applicant"/>
-        <field name="subject">[HỌC BÁ EDUCATION] - THƯ MỜI NHẬN VIỆC VỊ TRÍ ${object.job_id.name if object.job_id else ''} - FULLTIME</field>
-        <field name="email_to">${object.email_from or ''}</field>
+        <field name="subject">[HỌC BÁ EDUCATION] - THƯ MỜI NHẬN VIỆC VỊ TRÍ {{ object.job_id.name if object.job_id else '' }} - FULLTIME</field>
+        <field name="email_to">{{ object.email_from or '' }}</field>
         <field name="body_html" type="html">
 <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.8; color: #333333;">
-    <p>Thân gửi bạn <strong>${object.partner_name or ''}</strong>,</p>
+    <p>Thân gửi bạn <strong>{{ object.partner_name or '' }}</strong>,</p>
     <p><strong>Chúc mừng bạn đã vượt qua vòng tuyển dụng!</strong></p>
     <p>
         Học Bá trân trọng mời bạn tham gia làm việc với vị trí
-        <strong>${object.job_id.name if object.job_id else ''}</strong>.
+        <strong>{{ object.job_id.name if object.job_id else '' }}</strong>.
         Chúng tôi mong muốn được đồng hành cùng bạn trên hành trình phát triển sắp tới!
     </p>
     <p><strong>Thông tin nhận việc:</strong></p>
@@ -127,10 +128,10 @@
         <field name="name">Chào mừng đến với Học Bá</field>
         <field name="model_id" ref="hr_recruitment.model_hr_applicant"/>
         <field name="subject">[HỌC BÁ EDUCATION] - CHÀO MỪNG BẠN ĐẾN VỚI HỌC BÁ</field>
-        <field name="email_to">${object.email_from or ''}</field>
+        <field name="email_to">{{ object.email_from or '' }}</field>
         <field name="body_html" type="html">
 <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.8; color: #333333;">
-    <p><strong>Chào mừng bạn đến với đại gia đình Học Bá!</strong></p>
+    <p><strong>Chào mừng {{ object.partner_name or 'bạn' }} đến với đại gia đình Học Bá!</strong></p>
     <p>
         Chúng mình rất vui khi bạn đã chính thức trở thành một phần của Học Bá Education.
         Hy vọng rằng bạn sẽ có khoảng thời gian làm việc thật ý nghĩa, phát triển và nhiều kỷ niệm đẹp tại đây.

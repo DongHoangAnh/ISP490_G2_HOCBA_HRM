@@ -1,4 +1,4 @@
-from odoo import fields, models
+﻿from odoo import fields, models
 
 
 class HrApplicantHocBaExt(models.Model):
@@ -56,26 +56,28 @@ class HrApplicantHocBaExt(models.Model):
                 'default_use_template': True,
                 'default_template_id': template.id,
                 'default_composition_mode': 'comment',
-                'default_email_to': self.email_from,
+                'active_id': self.id,
+                'active_ids': self.ids,
+                'active_model': self._name,
             },
         }
 
     def action_send_interview_invite(self):
         return self._open_mail_compose_with_template(
-            'hocba_tuyen_dung.email_template_interview_invite'
+            'hocba_recruitments.email_template_interview_invite'
         )
 
     def action_send_interview_result(self):
         return self._open_mail_compose_with_template(
-            'hocba_tuyen_dung.email_template_interview_result'
+            'hocba_recruitments.email_template_interview_result'
         )
 
     def action_send_job_offer(self):
         return self._open_mail_compose_with_template(
-            'hocba_tuyen_dung.email_template_job_offer'
+            'hocba_recruitments.email_template_job_offer'
         )
 
     def action_send_welcome(self):
         return self._open_mail_compose_with_template(
-            'hocba_tuyen_dung.email_template_welcome'
+            'hocba_recruitments.email_template_welcome'
         )

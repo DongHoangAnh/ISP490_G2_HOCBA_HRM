@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
     <!-- ══════════════════════════════════════════════════════════════════
@@ -43,7 +43,7 @@
     <record id="hb_view_applicant_interview_form_inherit" model="ir.ui.view">
         <field name="name">hr.applicant.hocba.interview.form.inherit</field>
         <field name="model">hr.applicant</field>
-        <field name="inherit_id" ref="hocba_tuyen_dung.hb_view_applicant_cv_form_inherit"/>
+        <field name="inherit_id" ref="hocba_recruitments.hb_view_applicant_cv_form_inherit"/>
         <field name="arch" type="xml">
             <page name="cv_screening" position="after">
                 <page string="Kết quả PV" name="interview_result_tab">
@@ -73,7 +73,7 @@
     <record id="hb_view_applicant_interview_search_inherit" model="ir.ui.view">
         <field name="name">hr.applicant.hocba.interview.search.inherit</field>
         <field name="model">hr.applicant</field>
-        <field name="inherit_id" ref="hocba_tuyen_dung.hb_view_applicant_cv_search_inherit"/>
+        <field name="inherit_id" ref="hocba_recruitments.hb_view_applicant_cv_search_inherit"/>
         <field name="arch" type="xml">
             <filter name="filter_agree" position="after">
                 <separator/>

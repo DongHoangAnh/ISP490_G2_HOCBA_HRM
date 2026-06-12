@@ -1,4 +1,4 @@
-from odoo import http
+﻿from odoo import http
 from odoo.http import Response
 
 
@@ -6,7 +6,7 @@ class HocBaTuyenDung(http.Controller):
 
     @http.route('/hocba-tuyen-dung', auth='user', type='http', csrf=False)
     def recruitment_app(self, **kw):
-        base = '/hocba_tuyen_dung/static/src'
+        base = '/hocba_recruitments/static/src'
         html = f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
