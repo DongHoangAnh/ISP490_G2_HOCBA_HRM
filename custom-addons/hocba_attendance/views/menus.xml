@@ -39,5 +39,9 @@
         </record>
         
         <menuitem name="Attendance Status" id="hocba_attendance_status_menu_items" parent="hocba_attendance_config_menu" action="hocba_attendance_status_action" sequence="10"/>
+
+        <menuitem name="Attendance Policy" id="hocba_attendance_policy_menu_items"
+                  parent="hocba_attendance_config_menu"
+                  action="hocba_attendance_policy_action" sequence="20"/>
     </data>
 </odoo>

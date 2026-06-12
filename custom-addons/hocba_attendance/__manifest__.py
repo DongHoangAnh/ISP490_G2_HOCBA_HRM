@@ -11,6 +11,7 @@
         'views/hr_attendance_status_views.xml',
         'views/hr_work_assignment_views.xml',
         'views/hr_attendance_views.xml',
+        'views/hocba_attendance_policy_views.xml',
         'views/menus.xml',
     ],
     'installable': True,
