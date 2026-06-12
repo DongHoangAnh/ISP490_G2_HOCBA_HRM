@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="hocba_attendance_policy_form" model="ir.ui.view">
+            <field name="name">Attendance Policy Form</field>
+            <field name="model">hocba.attendance.policy</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="name"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Khung giờ (giờ địa phương)">
+                            <group>
+                                <field name="morning_start"/>
+                                <field name="morning_end"/>
+                            </group>
+                            <group>
+                                <field name="evening_start"/>
+                                <field name="evening_end"/>
+                            </group>
+                        </group>
+                        <group string="Ngày làm việc">
+                            <field name="workday_mon"/>
+                            <field name="workday_tue"/>
+                            <field name="workday_wed"/>
+                            <field name="workday_thu"/>
+                            <field name="workday_fri"/>
+                            <field name="workday_sat"/>
+                            <field name="workday_sun"/>
+                        </group>
+                        <group string="Văn phòng (geofence)">
+                            <field name="office_lat"/>
+                            <field name="office_lng"/>
+                            <field name="office_radius_m"/>
+                        </group>
+                        <group string="Nhận diện khuôn mặt">
+                            <field name="face_threshold"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="hocba_attendance_policy_tree" model="ir.ui.view">
+            <field name="name">Attendance Policy List</field>
+            <field name="model">hocba.attendance.policy</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="name"/>
+                    <field name="office_radius_m"/>
+                    <field name="face_threshold"/>
+                    <field name="active"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="hocba_attendance_policy_action" model="ir.actions.act_window">
+            <field name="name">Attendance Policy</field>
+            <field name="res_model">hocba.attendance.policy</field>
+            <field name="view_mode">list,form</field>
+        </record>
+    </data>
+</odoo>

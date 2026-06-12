@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!--
+        13 phiếu yêu cầu tuyển dụng thực tế của Học Bá (2025–2026).
+        noupdate="1": tạo lần đầu khi install, không ghi đè khi upgrade.
+        Trạng thái: 2025 + Feb/2026 → closed | May/2026 → recruiting
+    -->
+
+    <!-- ── Tháng 8/2025 ────────────────────────────────────────────── -->
+
+    <!-- 1. Giáo viên tiếng Trung -->
+    <record id="hb_rr_001" model="hb.recruitment.request">
+        <field name="date_request">2025-08-13</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+        <field name="job_title">Giáo viên tiếng Trung</field>
+        <field name="qty_expected">10</field>
+        <field name="expected_start_date">2025-08-13</field>
+        <field name="salary_range">5–20 triệu</field>
+        <field name="reason">new</field>
+        <field name="note"><![CDATA[<p>Lý do: Nhận lớp theo kế hoạch</p>]]></field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 2. Tư vấn tuyển sinh (Aug 2025) -->
+    <record id="hb_rr_002" model="hb.recruitment.request">
+        <field name="date_request">2025-08-27</field>
+        <field name="department_id" ref="hocba_employees.dept_kinh_doanh"/>
+        <field name="job_title">Tư vấn tuyển sinh</field>
+        <field name="qty_expected">3</field>
+        <field name="expected_start_date">2025-09-03</field>
+        <field name="salary_range">8–40 triệu</field>
+        <field name="reason">new</field>
+        <field name="note"><![CDATA[<p>Lý do: Tuyển theo mục tiêu DT tháng 9</p><p>Tuyển PV trước lễ, sau lễ đi làm</p>]]></field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 3. Content Marketing -->
+    <record id="hb_rr_003" model="hb.recruitment.request">
+        <field name="date_request">2025-08-28</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="job_title">Content Marketing</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2025-08-28</field>
+        <field name="salary_range">10–15 triệu+</field>
+        <field name="reason">new</field>
+        <field name="note"><![CDATA[<p>Lý do: Đảm bảo mục tiêu kinh doanh</p><p>Tuyển PV trước lễ, sau lễ đi làm</p>]]></field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- ── Tháng 02/2026 ───────────────────────────────────────────── -->
+
+    <!-- 4. Chuyên viên R&D E-Learning -->
+    <record id="hb_rr_004" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+        <field name="job_title">Chuyên viên R&amp;D E-Learning</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">10–15 triệu</field>
+        <field name="reason">new</field>
+        <field name="jd_link">https://docs.google.com/document/d/1GRARzL-LlJyf0ljDmMTQZZuq5jQ6P9EkC6N-yZb7m0M/edit?usp=sharing</field>
+        <field name="note"><![CDATA[<p>Lý do: Phát triển sản phẩm mới, tuyển mới</p>]]></field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 5. Nhân viên Tester -->
+    <record id="hb_rr_005" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+        <field name="job_title">Nhân viên Tester</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">7–12 triệu</field>
+        <field name="reason">expansion</field>
+        <field name="jd_link">https://docs.google.com/document/d/1AJhRFSaHK0aKqhJyo1XVbD37zGbyNqM5Hoz3is2gnKc/edit?usp=sharing</field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 6. Nhân viên vận hành (QLHV) -->
+    <record id="hb_rr_006" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+        <field name="job_title">Nhân viên vận hành (QLHV)</field>
+        <field name="qty_expected">2</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">7–12 triệu</field>
+        <field name="reason">expansion</field>
+        <field name="jd_link">https://docs.google.com/document/d/17zkzNhyoVmeCQW4ZTkzRco49NdqeVy9N30voLnCKDFI/edit?usp=sharing</field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 7. Tư vấn tuyển sinh (Feb 2026) -->
+    <record id="hb_rr_007" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_kinh_doanh"/>
+        <field name="job_title">Tư vấn tuyển sinh</field>
+        <field name="qty_expected">5</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">TV 8–9tr / Tổng 20–50tr</field>
+        <field name="reason">expansion</field>
+        <field name="jd_link">JD Tư vấn tuyển sinh</field>
+        <field name="note"><![CDATA[<p>Lương thử việc 8–9 triệu (cao hơn năm 2025 khoảng 1–2 triệu). Tổng thu nhập 20–50 triệu.</p>]]></field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 8. Nhân viên Content Performance -->
+    <record id="hb_rr_008" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="job_title">Nhân viên Content Performance</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">10–15 triệu+</field>
+        <field name="reason">expansion</field>
+        <field name="jd_link">JD Content Performance</field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 9. Nhân viên Digital ADS -->
+    <record id="hb_rr_009" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="job_title">Nhân viên Digital ADS</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">10–15 triệu+</field>
+        <field name="reason">expansion</field>
+        <field name="jd_link">JD Digital Ads Marketing</field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- 10. Nhân viên Social Marketing (Feb 2026) -->
+    <record id="hb_rr_010" model="hb.recruitment.request">
+        <field name="date_request">2026-02-23</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="job_title">Nhân viên Social Marketing</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-03-01</field>
+        <field name="salary_range">8–15 triệu+</field>
+        <field name="reason">expansion</field>
+        <field name="jd_link">JD Social Marketing</field>
+        <field name="state">closed</field>
+    </record>
+
+    <!-- ── Tháng 05/2026 ───────────────────────────────────────────── -->
+
+    <!-- 11. Nhân viên R&D -->
+    <record id="hb_rr_011" model="hb.recruitment.request">
+        <field name="date_request">2026-05-04</field>
+        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
+        <field name="job_title">Nhân viên R&amp;D</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-05-16</field>
+        <field name="salary_range">10–15 triệu</field>
+        <field name="reason">expansion</field>
+        <field name="state">recruiting</field>
+    </record>
+
+    <!-- 12. Nhân viên Editor -->
+    <record id="hb_rr_012" model="hb.recruitment.request">
+        <field name="date_request">2026-05-04</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="job_title">Nhân viên Editor</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-05-01</field>
+        <field name="salary_range">10–15 triệu</field>
+        <field name="reason">expansion</field>
+        <field name="state">recruiting</field>
+    </record>
+
+    <!-- 13. Nhân viên Social Marketing (May 2026) -->
+    <record id="hb_rr_013" model="hb.recruitment.request">
+        <field name="date_request">2026-05-04</field>
+        <field name="department_id" ref="hocba_employees.dept_marketing"/>
+        <field name="job_title">Nhân viên Social Marketing</field>
+        <field name="qty_expected">1</field>
+        <field name="expected_start_date">2026-05-01</field>
+        <field name="salary_range">8–15 triệu</field>
+        <field name="reason">expansion</field>
+        <field name="state">recruiting</field>
+    </record>
+
+</odoo>

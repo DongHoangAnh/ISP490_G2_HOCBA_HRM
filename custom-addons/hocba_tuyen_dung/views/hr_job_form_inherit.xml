@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Screen 7.8 — Form View Extension
+         Thêm recruitment_status, jd_google_link + teaching fields
+         ══════════════════════════════════════════════════════════════════ -->
+    <record id="hr_job_form_hocba_ext" model="ir.ui.view">
+        <field name="name">hr.job.form.hocba.ext</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr.view_hr_job_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Buttons Đăng tuyển / Ngừng đăng trong header -->
+            <header position="inside">
+                <button name="action_toggle_published"
+                    type="object"
+                    string="Đăng tuyển"
+                    class="btn-success"
+                    invisible="x_published"
+                    groups="hr_recruitment.group_hr_recruitment_user"/>
+                <button name="action_toggle_published"
+                    type="object"
+                    string="Ngừng đăng"
+                    class="btn-secondary"
+                    invisible="not x_published"
+                    groups="hr_recruitment.group_hr_recruitment_user"/>
+            </header>
+
+            <!-- Khai báo field ẩn cần dùng trong computed/required logic -->
+            <field name="active" position="after">
+                <field name="x_requires_teaching_level" invisible="1"/>
+            </field>
+
+            <!-- 7.8: Trạng thái tuyển + Link JD — sau department_id trong main form -->
+            <field name="department_id" position="after">
+                <field name="recruitment_status"/>
+                <field name="jd_google_link" widget="url"
+                       placeholder="https://docs.google.com/..."/>
+            </field>
+
+            <!-- Thêm nhóm field Học Bá vào cuối Tab "Details" -->
+            <page name="recruitment_page" position="inside">
+                <group string="Học Bá — Yêu cầu giảng dạy" name="hocba_teaching"
+                      invisible="not x_requires_teaching_level">
+                    <field name="x_teaching_level"
+                           required="x_requires_teaching_level"/>
+                    <field name="x_required_sessions_per_week"
+                           invisible="not x_requires_teaching_level"/>
+                </group>
+            </page>
+
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Screen 1 — Kanban View Extension
+         Hiển thị badge PUBLISHED xanh khi x_published = True
+         ══════════════════════════════════════════════════════════════════ -->
+    <record id="hr_job_kanban_hocba_ext" model="ir.ui.view">
+        <field name="name">hr.job.kanban.hocba.ext</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr_recruitment.view_hr_job_kanban"/>
+        <field name="arch" type="xml">
+
+            <!-- Khai báo field để dùng trong template -->
+            <field name="active" position="after">
+                <field name="x_published"/>
+            </field>
+
+            <!-- Badge PUBLISHED sau tiêu đề thẻ (large screen) -->
+            <xpath expr="//div[hasclass('o_kanban_card_header_title')]" position="after">
+                <t t-if="record.x_published.raw_value">
+                    <span class="badge text-bg-success ms-2 align-self-center">PUBLISHED</span>
+                </t>
+            </xpath>
+
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Screen 7.8 — List View Extension (Vị trí / JD)
+         Cột: Trạng thái tuyển, Địa điểm, Số tuyển, Đơn mới, Đăng tuyển, Link JD
+         ══════════════════════════════════════════════════════════════════ -->
+    <record id="hr_job_list_hocba_ext" model="ir.ui.view">
+        <field name="name">hr.job.list.hocba.ext</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_job_view_tree_inherit"/>
+        <field name="arch" type="xml">
+
+            <!-- Trạng thái tuyển + Địa điểm: chèn trước no_of_recruitment -->
+            <field name="no_of_recruitment" position="before">
+                <field name="recruitment_status"
+                    string="Trạng thái"
+                    widget="badge"
+                    decoration-success="recruitment_status == 'recruiting'"
+                    decoration-muted="recruitment_status == 'stopped'"/>
+                <field name="address_id" string="Địa điểm" optional="show"/>
+            </field>
+
+            <!-- Đơn mới + Đăng tuyển + Link JD: chèn sau Recruiter (user_id) -->
+            <field name="user_id" position="after">
+                <field name="new_application_count"
+                    string="Đơn mới"
+                    optional="show"
+                    groups="hr_recruitment.group_hr_recruitment_interviewer"/>
+                <field name="x_published"
+                    string="Đăng tuyển"
+                    widget="boolean_toggle"
+                    optional="show"/>
+                <field name="jd_google_link"
+                    string="Link JD"
+                    widget="url"
+                    optional="show"/>
+            </field>
+
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Screen 7.8 — Search View (Vị trí / JD)
+         Filter nhanh: Đang tuyển / Dừng tuyển; Group by: Phòng ban
+         ══════════════════════════════════════════════════════════════════ -->
+    <record id="view_hr_job_hocba_search" model="ir.ui.view">
+        <field name="name">hr.job.hocba.search</field>
+        <field name="model">hr.job</field>
+        <field name="arch" type="xml">
+            <search string="Tìm vị trí tuyển dụng">
+                <field name="name" string="Vị trí"/>
+                <field name="department_id" string="Phòng ban"/>
+                <separator/>
+                <filter name="filter_recruiting" string="Đang tuyển"
+                    domain="[('recruitment_status', '=', 'recruiting')]"/>
+                <filter name="filter_stopped" string="Dừng tuyển"
+                    domain="[('recruitment_status', '=', 'stopped')]"/>
+                <separator/>
+                <filter name="filter_published" string="Đã đăng tuyển"
+                    domain="[('x_published', '=', True)]"/>
+                <separator/>
+                <group>
+                    <filter name="group_department" string="Phòng ban"
+                        context="{'group_by': 'department_id'}"/>
+                    <filter name="group_status" string="Trạng thái tuyển"
+                        context="{'group_by': 'recruitment_status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+</odoo>

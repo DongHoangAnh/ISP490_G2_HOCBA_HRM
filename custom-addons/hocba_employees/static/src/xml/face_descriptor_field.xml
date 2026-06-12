@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="hocba_attendance.FaceDescriptorField">
+        <div class="o_field_face_descriptor">
+            <span t-if="hasDescriptor" class="badge text-bg-success">Đã có vector</span>
+            <span t-else="" class="badge text-bg-secondary">Chưa có vector</span>
+            <button class="btn btn-sm btn-secondary ms-2" t-on-click="onCompute">
+                Tính vector từ ảnh
+            </button>
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="0">
+
+    <!--
+        Sheet 7.1 — Quy trình tuyển dụng Học Bá (10 bước)
+        noupdate="0" — luôn đồng bộ từ XML khi upgrade module.
+    -->
+
+    <!-- ── Bước 1: Yêu cầu tuyển dụng ── -->
+    <record id="hb_stage_request" model="hr.recruitment.stage">
+        <field name="name">Yêu cầu tuyển dụng</field>
+        <field name="sequence">1</field>
+        <field name="support_person">BP tuyển dụng</field>
+        <field name="requirements">TBP gửi yêu cầu tuyển dụng (order vị trí cần tuyển, kèm JD nếu có) cho BP tuyển dụng. Thời gian: Khi phát sinh nhu cầu.</field>
+        <field name="success_criteria">Yêu cầu rõ ràng, JD đầy đủ, có chỉ tiêu số lượng và thời gian cần tuyển</field>
+        <field name="legend_normal">Đang chuẩn bị yêu cầu tuyển dụng</field>
+        <field name="legend_done">Yêu cầu đã gửi, JD đầy đủ</field>
+        <field name="legend_blocked">Yêu cầu chưa đầy đủ thông tin</field>
+    </record>
+
+    <!-- ── Bước 2: Đăng tuyển & tổng hợp CV ── -->
+    <record id="hb_stage_sourcing" model="hr.recruitment.stage">
+        <field name="name">Đăng tuyển &amp; tổng hợp CV</field>
+        <field name="sequence">2</field>
+        <field name="support_person">TBP</field>
+        <field name="requirements">Ngay sau khi nhận order: BP tuyển dụng đăng tin và tổng hợp CV ứng viên.</field>
+        <field name="success_criteria">Tin tuyển dụng thu hút, đúng đối tượng, đăng trên 3 kênh phù hợp. Tổng hợp đủ thông tin liên hệ, lưu file khoa học.</field>
+        <field name="legend_normal">Đang đăng tin / thu thập CV</field>
+        <field name="legend_done">Đủ CV theo chỉ tiêu</field>
+        <field name="legend_blocked">Thiếu CV hoặc nguồn chưa đủ</field>
+    </record>
+
+    <!-- ── Bước 3: Lọc CV ── -->
+    <record id="hb_stage_screening" model="hr.recruitment.stage">
+        <field name="name">Lọc CV</field>
+        <field name="sequence">3</field>
+        <field name="support_person">TBP</field>
+        <field name="requirements">Trong 24h sau khi nhận CV: BP tuyển dụng chuyển hồ sơ, TBP lọc CV ứng viên phù hợp.</field>
+        <field name="success_criteria">TBP nhận đầy đủ hồ sơ. Lọc và chọn CV phù hợp. Với các CV phù hợp điền "Pass" / không phù hợp điền "Fail" tại cột Lọc CV.</field>
+        <field name="legend_normal">Đang lọc CV</field>
+        <field name="legend_done">CV đạt tiêu chuẩn, sắp xếp phỏng vấn</field>
+        <field name="legend_blocked">CV chưa đạt yêu cầu</field>
+    </record>
+
+    <!-- ── Bước 4: Lên lịch phỏng vấn ── -->
+    <record id="hb_stage_schedule" model="hr.recruitment.stage">
+        <field name="name">Lên lịch phỏng vấn</field>
+        <field name="sequence">4</field>
+        <field name="support_person">BP tuyển dụng</field>
+        <field name="requirements">Trong 1 ngày làm việc: TBP điền lịch rảnh phỏng vấn trong tuần.</field>
+        <field name="success_criteria">TBP điền lịch rảnh mình có thể phỏng vấn. BP tuyển dụng sẽ liên hệ và hẹn ứng viên theo lịch rảnh TBP đã cung cấp.</field>
+        <field name="legend_normal">Chờ TBP xác nhận lịch rảnh</field>
+        <field name="legend_done">Lịch phỏng vấn đã xác nhận</field>
+        <field name="legend_blocked">TBP chưa cung cấp lịch rảnh</field>
+    </record>
+
+    <!-- ── Bước 5: Hẹn & mời phỏng vấn ── -->
+    <record id="hb_stage_invite" model="hr.recruitment.stage">
+        <field name="name">Hẹn &amp; mời phỏng vấn</field>
+        <field name="sequence">5</field>
+        <field name="support_person">TBP</field>
+        <field name="requirements">Trong 1 ngày làm việc sau khi có lịch: BP tuyển dụng liên hệ, hẹn lịch và gửi mail mời phỏng vấn.</field>
+        <field name="success_criteria">Trên 80% ứng viên đồng ý và xác nhận lịch phỏng vấn.</field>
+        <field name="legend_normal">Đang liên hệ / hẹn lịch ứng viên</field>
+        <field name="legend_done">Ứng viên đã xác nhận lịch</field>
+        <field name="legend_blocked">Ứng viên từ chối hoặc chưa phản hồi</field>
+    </record>
+
+    <!-- ── Bước 6: Phỏng vấn ── -->
+    <record id="hb_stage_interview" model="hr.recruitment.stage">
+        <field name="name">Phỏng vấn</field>
+        <field name="sequence">6</field>
+        <field name="support_person">BP tuyển dụng</field>
+        <field name="requirements">Theo lịch hẹn: TBP phỏng vấn ứng viên.</field>
+        <field name="success_criteria">Phỏng vấn đúng giờ, đánh giá đủ năng lực chuyên môn và thái độ ứng viên.</field>
+        <field name="legend_normal">Đang lên lịch / chờ phỏng vấn</field>
+        <field name="legend_done">Đã phỏng vấn, kết quả tốt</field>
+        <field name="legend_blocked">Phỏng vấn chưa đạt / hủy lịch</field>
+    </record>
+
+    <!-- ── Bước 7: Kết quả phỏng vấn ── -->
+    <record id="hb_stage_result" model="hr.recruitment.stage">
+        <field name="name">Kết quả phỏng vấn</field>
+        <field name="sequence">7</field>
+        <field name="support_person">BP tuyển dụng</field>
+        <field name="requirements">Trong 1 ngày sau phỏng vấn: TBP gửi kết quả phỏng vấn cho BP tuyển dụng.</field>
+        <field name="success_criteria">BP tuyển dụng nhận đầy đủ kết quả và lí do pass / không pass từ TBP.</field>
+        <field name="legend_normal">Chờ TBP gửi kết quả</field>
+        <field name="legend_done">Kết quả pass — chuyển sang offer</field>
+        <field name="legend_blocked">Không pass hoặc chưa có kết quả</field>
+    </record>
+
+    <!-- ── Bước 8: Gửi Offer ── -->
+    <record id="hb_stage_offer" model="hr.recruitment.stage">
+        <field name="name">Gửi Offer</field>
+        <field name="sequence">8</field>
+        <field name="support_person">TBP</field>
+        <field name="requirements">Trong 1 ngày sau khi nhận kết quả: BP tuyển dụng gửi thư mời nhận việc / offer.</field>
+        <field name="success_criteria">Offer rõ ràng, ứng viên xác nhận đồng ý theo mail mẫu.</field>
+        <field name="legend_normal">Đang soạn / gửi offer</field>
+        <field name="legend_done">Ứng viên đã nhận offer</field>
+        <field name="legend_blocked">Ứng viên từ chối offer</field>
+    </record>
+
+    <!-- ── Bước 9: Onboarding ── -->
+    <record id="hb_stage_onboarding" model="hr.recruitment.stage">
+        <field name="name">Onboarding</field>
+        <field name="sequence">9</field>
+        <field name="support_person">TBP</field>
+        <field name="requirements">Ngày đầu đi làm — đào tạo hội nhập trong 1-2 ngày đi làm đầu tiên.</field>
+        <field name="success_criteria">Sáng ngày 1: Nhân sự nắm rõ quy trình, hoà nhập nhanh, ký HĐ đầy đủ. Ngày 1 (hoặc 2): Nhân sự hiểu sứ mệnh, giá trị, văn hoá, quy định Học Bá.</field>
+        <field name="legend_normal">Đang đào tạo hội nhập</field>
+        <field name="legend_done">Onboarding hoàn tất, ký HĐ đầy đủ</field>
+        <field name="legend_blocked">Chưa ký HĐ / chưa hoàn tất hội nhập</field>
+    </record>
+
+    <!-- ── Bước 10: Bàn giao nhân sự ── -->
+    <record id="hb_stage_hired" model="hr.recruitment.stage">
+        <field name="name">Bàn giao nhân sự</field>
+        <field name="sequence">10</field>
+        <field name="hired_stage" eval="True"/>
+        <field name="support_person">TBP</field>
+        <field name="requirements">Ngày làm việc đầu tiên: BP tuyển dụng bàn giao nhân sự mới cho TBP phụ trách.</field>
+        <field name="success_criteria">Nhân sự bắt đầu công việc chính thức, TBP tiếp nhận đầy đủ.</field>
+        <field name="legend_normal">Đang bàn giao nhân sự</field>
+        <field name="legend_done">Bàn giao hoàn tất, nhân sự chính thức</field>
+        <field name="legend_blocked">Chờ xác nhận ngày bắt đầu</field>
+    </record>
+
+</odoo>
