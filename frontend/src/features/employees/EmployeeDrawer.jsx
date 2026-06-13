@@ -9,8 +9,8 @@ import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
-export default function EmployeeDrawer({ emp, onClose, isHr, isMgr }) {
-  const [tab, setTab] = useState('info');
+export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab = 'info' }) {
+  const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
   useEffect(() => {

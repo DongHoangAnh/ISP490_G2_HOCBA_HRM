@@ -428,6 +428,46 @@ class HocBaHRM(http.Controller):
         alerts.sort(key=lambda a: (a['status'] != 'expired', a['expiry'] or '9999'))
         return request.make_json_response({'isHr': True, 'alerts': alerts})
 
+    @http.route('/hocba-hrm/api/employees/onboarding', auth='user',
+                type='http', methods=['GET'])
+    def api_onboarding(self, **kw):
+        """Bảng theo dõi nhập việc: nhân viên đang thử việc + tình trạng 2 cổng
+        (F-004/005) và thử giảng (F-008). Dữ liệu cổng không nhạy cảm → trả cho
+        mọi user đăng nhập; FE tự suy ra phase/quá hạn từ ngày trả về."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        emps = request.env['hr.employee'].sudo().search(
+            [('x_employment_status', '=', 'probation')],
+            order='x_probation_start desc, id')
+        items = []
+        for e in emps:
+            items.append({
+                'id': e.id,
+                'code': e.x_employee_code or '—',
+                'name': e.name,
+                'depName': e.department_id.name or 'Chưa gán',
+                'jobTitle': e.job_id.name or '—',
+                'hasImg': bool(e.image_1920),
+                'start': _d(e.x_probation_start),
+                'isGroupB': (e.x_position_type in ('staff', 'manager')
+                             and e.x_work_form == 'offline'),
+                # Cổng tuần-2 (cấp thiết bị)
+                'g1Due': _d(e.x_eval_2w_due),
+                'g1Result': e.x_eval_2w_result or 'draft',
+                'g1Date': _d(e.x_eval_2w_date),
+                'equipDate': _d(e.x_equip_grant_date),
+                # Cổng tháng-2 (lên chính thức)
+                'g2Due': _d(e.x_eval_2m_due),
+                'g2Result': e.x_eval_2m_result or 'draft',
+                'g2Date': _d(e.x_eval_2m_date),
+                # Thử giảng (Nhóm A)
+                'trialDate': _d(e.x_trial_lesson_date),
+                'trialResult': e.x_trial_lesson_result or 'draft',
+            })
+        return request.make_json_response({
+            'isHr': is_hr, 'isHrManager': is_mgr, 'items': items})
+
     # ------------------------------------------------------------------
     # JSON API Chấm công (Attendance) — owner FE: Hoàng Anh.
     # Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md
