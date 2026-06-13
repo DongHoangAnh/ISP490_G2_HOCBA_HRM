@@ -271,17 +271,9 @@ class HocBaHRM(http.Controller):
             'employees': rows,
         })
 
-    @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
-                type='http', methods=['GET'])
-    def api_employee_detail(self, emp_id, **kw):
-        if not SPA_ENABLED:
-            return request.make_json_response({'error': 'spa_disabled'}, status=410)
-        is_hr, is_mgr = self._hr_flags()
-        labels = self._labels()
-        e = request.env['hr.employee'].sudo().browse(emp_id)
-        if not e.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-
+    def _employee_detail(self, e, labels, is_hr, is_mgr):
+        """Dựng dict hồ sơ chi tiết theo quyền — dùng chung cho
+        /api/employee/<id> (HR xem người khác) và /api/me (tự xem hồ sơ mình)."""
         data = self._emp_base(e, labels, is_mgr)
 
         # --- Pháp lý (F-002) + NPT (F-003): chỉ HR ---
@@ -384,6 +376,34 @@ class HocBaHRM(http.Controller):
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
 
+        return data
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
+                type='http', methods=['GET'])
+    def api_employee_detail(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        labels = self._labels()
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(
+            self._employee_detail(e, labels, is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/me', auth='user', type='http', methods=['GET'])
+    def api_me(self, **kw):
+        """Hồ sơ self-service: user xem hồ sơ CỦA CHÍNH MÌNH. Vì là dữ liệu của
+        bản thân nên trả đầy đủ (truyền is_hr=is_mgr=True cho bộ dựng) — nhân
+        viên luôn được xem pháp lý/NPT/lương của chính mình."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        e = request.env.user.employee_id
+        if not e:
+            return request.make_json_response({'hasEmployee': False})
+        labels = self._labels()
+        data = self._employee_detail(e.sudo(), labels, True, True)
+        data['hasEmployee'] = True
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',

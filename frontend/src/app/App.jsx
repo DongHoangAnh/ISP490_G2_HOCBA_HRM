@@ -3,6 +3,7 @@ import { Sidebar, Topbar } from './Shell';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
+import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
 import ComingSoon from '../components/ComingSoon';
 
@@ -24,6 +25,7 @@ export default function App() {
         {view === 'timeoff' && <ComingSoon title="Nghỉ phép" owner="Nhật Anh" api="/hocba-hrm/api/timeoff/*" />}
         {view === 'payroll' && <ComingSoon title="Bảng lương" owner="Hùng" api="/hocba-hrm/api/payroll/*" />}
         {view === 'recruitment' && <ComingSoon title="Tuyển dụng" owner="Việt" api="/hocba-hrm/api/recruitment/*" />}
+        {view === 'profile' && <Profile />}
       </div>
     </div>
   );

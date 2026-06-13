@@ -66,7 +66,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
   );
 }
 
-function InfoTab({ det, isHr, isMgr }) {
+export function InfoTab({ det, isHr, isMgr }) {
   const rows = [
     ['Mã nhân sự', det.code], ['Họ và tên', det.name],
     ['Phòng ban', det.depName], ['Chức danh', det.jobTitle],
@@ -130,7 +130,7 @@ function InfoTab({ det, isHr, isMgr }) {
 }
 
 /* Timeline thử việc 5 điểm (Nhóm B) + thử giảng (Nhóm A) */
-function ProbationTab({ det }) {
+export function ProbationTab({ det }) {
   const p = det.probation || {};
   const steps = [
     ['Thử việc', p.start ? 'done' : 'pending', fmtDate(p.start)],
@@ -214,7 +214,7 @@ function ProbationTab({ det }) {
   );
 }
 
-function AssetsTab({ det }) {
+export function AssetsTab({ det }) {
   if (!det.assets.length) return <EmptyState>Chưa có tài sản cấp phát.</EmptyState>;
   const kind = (s) => s === 'assigned' ? 'green' : s === 'transferred' ? 'blue' : 'gray';
   return (
@@ -234,7 +234,7 @@ function AssetsTab({ det }) {
   );
 }
 
-function PromoTab({ det, isMgr }) {
+export function PromoTab({ det, isMgr }) {
   if (!det.promotions.length) return <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>;
   const path = det.promotions;
   return (

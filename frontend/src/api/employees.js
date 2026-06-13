@@ -5,3 +5,4 @@ export const fetchEmployees = () => hbGet('/hocba-hrm/api/employees');
 export const fetchEmployee = (id) => hbGet(`/hocba-hrm/api/employee/${id}`);
 export const fetchCertAlerts = () => hbGet('/hocba-hrm/api/employees/cert-alerts');
 export const fetchOnboarding = () => hbGet('/hocba-hrm/api/employees/onboarding');
+export const fetchMe = () => hbGet('/hocba-hrm/api/me');

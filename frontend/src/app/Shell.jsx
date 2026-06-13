@@ -13,6 +13,9 @@ const NAV = [
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase' },
   ]},
+  { sec: 'Cá nhân', items: [
+    { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user' },
+  ]},
 ];
 
 export const PAGE_META = {
@@ -23,6 +26,7 @@ export const PAGE_META = {
   timeoff: { t: 'Nghỉ phép', c: 'Quản lý nhân sự / Time Off' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
+  profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
 };
 
 export function Sidebar({ view, setView }) {
