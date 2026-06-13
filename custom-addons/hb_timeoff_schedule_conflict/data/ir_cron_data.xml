@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!--
+        BR-030: Dò xung đột lịch dạy bất đồng bộ.
+
+        Cron này KHÔNG chạy theo lịch cố định mà được kích hoạt theo nhu cầu
+        (_trigger) ngay khi giảng viên tạo/sửa đơn nghỉ. interval đặt dài để
+        tránh chạy nền vô ích; thực tế nó chỉ chạy khi có _trigger.
+
+        ir.cron Odoo 19 _inherits ir.actions.server → dùng model_id + state=code.
+    -->
+    <record id="ir_cron_schedule_conflict_check" model="ir.cron">
+        <field name="name">HB: Dò xung đột lịch dạy (BR-030, async)</field>
+        <field name="model_id" ref="hr_holidays.model_hr_leave"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_process_pending_conflict_checks()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

@@ -37,7 +37,7 @@ class HrLeave(models.Model):
                 )
                 if hr_group:
                     hr_users = self.env['res.users'].search([
-                        ('groups_id', 'in', hr_group.id),
+                        ('all_group_ids', 'in', hr_group.id),
                         ('active', '=', True),
                     ])
                     recipients |= hr_users.mapped('partner_id')
