@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
+        <!-- Lối vào SPA — frontend chính thức (FE/BE tách qua API, 13/06/2026) -->
         <record id="action_hocba_hrm" model="ir.actions.act_url">
             <field name="name">Học Bá HRM</field>
             <field name="url">/hocba-hrm</field>

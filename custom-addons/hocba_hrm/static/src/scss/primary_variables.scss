@@ -1,0 +1,12 @@
+// ============================================================
+// HỌC BÁ — đổi biến thương hiệu của Odoo backend
+// (prepend vào web._assets_primary_variables: gán thường,
+//  các !default của web phía sau sẽ không ghi đè)
+// ============================================================
+
+$o-community-color: #C8102E;
+$o-brand-odoo: #C8102E;
+$o-brand-primary: #C8102E;
+
+$o-font-family-sans-serif: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;

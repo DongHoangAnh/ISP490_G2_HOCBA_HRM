@@ -8,7 +8,7 @@ class AttendanceStatus(models.Model):
 
     sequence = fields.Integer(default=10)
     name = fields.Char(string='Status Name', required=True)
-    code = fields.Char(string='Status Code', required=True, unique=True)
+    code = fields.Char(string='Status Code', required=True)
     description = fields.Text(string='Description')
     color_code = fields.Char(
         string='Color Code',
@@ -16,3 +16,8 @@ class AttendanceStatus(models.Model):
         default='#808080'
     )
     active = fields.Boolean(default=True)
+
+    _code_unique = models.Constraint(
+        'unique (code)',
+        'Status code must be unique!',
+    )

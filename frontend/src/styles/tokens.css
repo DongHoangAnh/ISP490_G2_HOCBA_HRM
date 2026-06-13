@@ -1,0 +1,54 @@
+/* ============================================================
+   HOC BA HRM — Design System
+   Brand: Đỏ Học Bá + Gold accent, nền trắng ấm
+   Font: Be Vietnam Pro
+   ============================================================ */
+
+:root {
+  /* Brand red */
+  --red-900: #5C0A17;
+  --red-800: #7A0C1E;
+  --red-700: #A50D26;
+  --red-600: #C8102E;
+  --red-500: #DC2942;
+  --red-100: #F8DADF;
+  --red-50:  #FCEEF0;
+
+  /* Gold */
+  --gold-600: #C99A00;
+  --gold-500: #F2C200;
+  --gold-200: #F6E08F;
+  --gold-50:  #FCF6DF;
+
+  /* Warm neutrals */
+  --ink:      #1C1917;
+  --ink-soft: #44403C;
+  --muted:    #78716C;
+  --faint:    #A8A29E;
+  --bg:       #F5F3F0;
+  --surface:  #FFFFFF;
+  --surface-2:#FAF8F5;
+  --border:   #EAE6E1;
+  --border-strong: #DDD7CF;
+
+  /* Semantic */
+  --green:    #15803D;  --green-bg: #E6F4EB;
+  --amber:    #B45309;  --amber-bg: #FAEFD8;
+  --blue:     #1D4ED8;  --blue-bg:  #E7ECFB;
+  --violet:   #6D28D9;  --violet-bg:#EFE9FB;
+  --teal:     #0F766E;  --teal-bg:  #E0F2F0;
+
+  --radius:    14px;
+  --radius-md: 10px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+
+  --shadow-xs: 0 1px 2px rgba(28,25,23,.06);
+  --shadow-sm: 0 2px 6px -2px rgba(28,25,23,.10);
+  --shadow:    0 8px 24px -8px rgba(28,25,23,.16);
+  --shadow-lg: 0 24px 60px -16px rgba(28,25,23,.30);
+
+  --sidebar-w: 248px;
+  --topbar-h: 64px;
+}
+
