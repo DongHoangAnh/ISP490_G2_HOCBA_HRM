@@ -1,4 +1,6 @@
-from odoo import http
+from datetime import timedelta
+
+from odoo import http, fields
 from odoo.http import request, Response
 from odoo.tools import file_open
 
@@ -233,3 +235,45 @@ class HocBaHRM(http.Controller):
                 if s.x_cert_date or s.x_cert_expiry]
 
         return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',
+                type='http', methods=['GET'])
+    def api_cert_alerts(self, **kw):
+        """F-009: chứng chỉ sắp/đã hết hạn — widget cảnh báo dashboard.
+        Cert là dữ liệu HR → non-HR nhận danh sách rỗng (không phải 403) để
+        dashboard tự ẩn widget."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'isHr': False, 'alerts': []})
+
+        # Khớp đúng tập cảnh báo của CRON F-009 (_cron_cert_expiry_alerts):
+        # chỉ cert ĐÃ XÁC MINH + nhân viên active; search trên x_cert_expiry
+        # (stored) vì x_cert_status là computed non-stored, không search được.
+        days = int(request.env['ir.config_parameter'].sudo().get_param(
+            'hoc_ba.cert_alert_days', '60'))
+        today = fields.Date.today()
+        skills = request.env['hr.employee.skill'].sudo().search([
+            ('x_cert_verified', '=', True),
+            ('employee_id.active', '=', True),
+            ('x_cert_expiry', '!=', False),
+            ('x_cert_expiry', '<=', today + timedelta(days=days)),
+        ])
+        alerts = []
+        for s in skills:
+            e = s.employee_id
+            alerts.append({
+                'empId': e.id,
+                'empName': e.name,
+                'empCode': e.x_employee_code or '—',
+                'dep': e.department_id.name or 'Chưa gán',
+                'hasImg': bool(e.image_1920),
+                'skill': s.skill_id.name or '',
+                'level': s.skill_level_id.name or '',
+                'expiry': _d(s.x_cert_expiry),
+                'status': 'expired' if s.x_cert_expiry < today else 'expiring',
+            })
+        # sắp xếp: hết hạn trước, rồi theo ngày hết hạn gần nhất
+        alerts.sort(key=lambda a: (a['status'] != 'expired', a['expiry'] or '9999'))
+        return request.make_json_response({'isHr': True, 'alerts': alerts})

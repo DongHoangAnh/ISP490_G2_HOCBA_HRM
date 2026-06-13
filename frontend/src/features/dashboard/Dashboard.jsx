@@ -2,12 +2,12 @@
    Các domain khác (chấm công/lương/nghỉ phép…) sẽ bổ sung widget ở G4
    khi API của họ sẵn sàng. File [CHUNG] — sửa qua review. */
 import { useState, useEffect } from 'react';
-import { fetchEmployees } from '../../api/employees';
+import { fetchEmployees, fetchCertAlerts } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState } from '../../components/states';
-import { fmtDate, hbStatusKind } from '../../utils/format';
+import { fmtDate, hbStatusKind, HB_CERT } from '../../utils/format';
 
 const COMING = [
   ['attendance', 'Chấm công', 'clock', 'Hoàng Anh'],
@@ -19,10 +19,13 @@ const COMING = [
 export default function Dashboard({ setView }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  const [certs, setCerts] = useState(null);
 
   const load = () => {
     setErr(null); setData(null);
     fetchEmployees().then(setData).catch((e) => setErr(e.message));
+    // cert-alerts độc lập: lỗi/không phải HR thì chỉ ẩn widget, không chặn dashboard
+    fetchCertAlerts().then(setCerts).catch(() => setCerts({ isHr: false, alerts: [] }));
   };
   useEffect(load, []);
 
@@ -116,6 +119,48 @@ export default function Dashboard({ setView }) {
           </div>
         </div>
       </div>
+
+      {/* F-009: cảnh báo chứng chỉ sắp/đã hết hạn — chỉ HR mới có dữ liệu */}
+      {certs && certs.isHr && certs.alerts.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <h3>Chứng chỉ cần gia hạn</h3>
+            <span className="sub">{certs.alerts.length} chứng chỉ sắp/đã hết hạn</span>
+            <div className="actions">
+              <Badge kind="red" dot>{certs.alerts.filter((a) => a.status === 'expired').length} hết hạn</Badge>
+              <Badge kind="amber" dot>{certs.alerts.filter((a) => a.status === 'expiring').length} sắp hết</Badge>
+            </div>
+          </div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Kỹ năng</th><th>Cấp độ</th><th>Hết hạn</th><th>Trạng thái</th></tr></thead>
+              <tbody>
+                {certs.alerts.map((a, i) => {
+                  const [lbl, kind] = HB_CERT[a.status] || HB_CERT.none;
+                  return (
+                    <tr key={i} onClick={() => setView('employees')}>
+                      <td>
+                        <div className="cell-emp">
+                          <Avatar emp={{ id: a.empId, name: a.empName, hasImg: a.hasImg }} size={32} />
+                          <div>
+                            <div className="nm">{a.empName}</div>
+                            <div className="id">{a.empCode}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="muted">{a.dep}</td>
+                      <td>{a.skill}</td>
+                      <td className="muted">{a.level || '—'}</td>
+                      <td className="mono">{fmtDate(a.expiry)}</td>
+                      <td><Badge kind={kind} dot>{lbl}</Badge></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Lối vào domain khác — chờ API từng owner (G3) */}
       <div className="card">
