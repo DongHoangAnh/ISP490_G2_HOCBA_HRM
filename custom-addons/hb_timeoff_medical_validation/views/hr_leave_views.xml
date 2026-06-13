@@ -2,10 +2,9 @@
 <odoo>
 
     <!--
-        FUNC-TO-002: Chứng từ y tế cho Nghỉ Ốm (tùy chọn, không bắt buộc)
-        - Nhân viên có thể đính kèm chứng từ khi xin nghỉ (không bắt buộc)
-        - HR thấy cảnh báo khi duyệt mà thiếu chứng từ (nhưng vẫn duyệt được)
-        - Khi HR duyệt thiếu chứng từ → tự động ghi chú vào chatter
+        FUNC-TO-002: Chứng từ y tế cho Nghỉ Ốm
+        BR-011: HR Manager bypass với override checkbox + lý do bắt buộc
+        BR-012: Validation tại Draft→Confirm (file type/size) và Confirm→Approve (yêu cầu có file)
     -->
     <record id="view_hr_leave_form_hb_medical" model="ir.ui.view">
         <field name="name">hr.leave.form.hb.medical</field>
@@ -13,44 +12,55 @@
         <field name="inherit_id" ref="hr_holidays.hr_leave_view_form"/>
         <field name="arch" type="xml">
 
-            <!-- Khai báo computed helper fields để dùng trong invisible conditions -->
+            <!-- Helper fields cho invisible conditions -->
             <xpath expr="//field[@name='holiday_status_id']" position="after">
                 <field name="leave_type_support_document" invisible="1"/>
                 <field name="x_has_medical_doc" invisible="1"/>
+                <field name="x_medical_override" invisible="1"/>
             </xpath>
 
             <!--
-                Sửa visibility của field đính kèm:
-                - Trước: chỉ hiện khi state = 'confirm'
-                - Sau:   hiện khi state = 'confirm' (mọi loại) HOẶC khi loại nghỉ yêu cầu chứng từ (mọi state)
-                → Nhân viên upload khi submit; HR thấy chứng từ khi review
+                Hiển thị field đính kèm:
+                - Luôn hiện khi loại nghỉ yêu cầu chứng từ
+                - Hiện ở state = 'confirm' cho mọi loại (hành vi mặc định Odoo)
             -->
             <xpath expr="//field[@name='supported_attachment_ids']" position="attributes">
                 <attribute name="invisible">state != 'confirm' and not leave_type_support_document</attribute>
                 <attribute name="string">Chứng từ y tế</attribute>
             </xpath>
 
-            <!-- Hint cho nhân viên khi chọn Nghỉ Ốm (chỉ hiện lúc đang submit) -->
+            <!-- Hướng dẫn file type/size cho nhân viên khi submit -->
             <xpath expr="//field[@name='supported_attachment_ids']" position="before">
                 <div class="text-muted small mb-1"
                      invisible="not leave_type_support_document or state != 'confirm'">
-                    Không bắt buộc — Vui lòng đính kèm giấy xác nhận của bác sĩ nếu có.
-                    Chứng từ giúp HR xử lý nhanh hơn.
+                    Vui lòng đính kèm chứng từ y tế.
+                    Chỉ chấp nhận <strong>PDF, JPG, PNG</strong> — tối đa <strong>5 MB</strong> mỗi file.
                 </div>
             </xpath>
 
-            <!-- Cảnh báo HR khi duyệt đơn nghỉ ốm thiếu chứng từ (chỉ HR mới thấy) -->
+            <!-- Cảnh báo HR khi đơn nghỉ ốm chưa có chứng từ và chưa override -->
             <xpath expr="//field[@name='leave_type_increases_duration']" position="after">
                 <div class="alert alert-warning d-flex align-items-start mt-2"
                      role="alert"
-                     invisible="not leave_type_support_document or x_has_medical_doc"
+                     invisible="not leave_type_support_document or x_has_medical_doc or x_medical_override"
                      groups="hr_holidays.group_hr_holidays_user">
                     <i class="fa fa-exclamation-triangle me-2 mt-1"/>
                     <span>
                         Đơn nghỉ ốm chưa có chứng từ y tế.
-                        Cân nhắc yêu cầu nhân viên bổ sung trước khi duyệt.
+                        HR Manager có thể bật "Bỏ qua yêu cầu chứng từ" bên dưới để phê duyệt.
                     </span>
                 </div>
+
+                <!-- BR-011: Override section — chỉ HR Manager mới thấy -->
+                <group invisible="not leave_type_support_document"
+                       groups="hr_holidays.group_hr_holidays_manager">
+                    <field name="x_medical_override"
+                           string="Bỏ qua yêu cầu chứng từ (BR-011)"/>
+                    <field name="x_medical_override_reason"
+                           invisible="not x_medical_override"
+                           required="x_medical_override"
+                           placeholder="Nhập lý do bắt buộc khi bỏ qua yêu cầu chứng từ..."/>
+                </group>
             </xpath>
 
         </field>

@@ -1,8 +1,8 @@
 {
     'name': 'HB Time Off — Chính sách Nghỉ phép theo Loại Nhân viên',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Human Resources/Time Off',
-    'summary': 'Tự động phân bổ phép năm theo loại nhân viên (FUNC-TO-003)',
+    'summary': 'Tự động phân bổ phép năm theo loại NV — log BR-023, override BR-021, prorated BR-020 (FUNC-TO-003)',
     'author': 'Học Bá HRM Team',
     'license': 'LGPL-3',
     'depends': ['hr_holidays', 'hb_timeoff_config'],
