@@ -1,8 +1,8 @@
 {
     'name': 'HB Time Off — Xác thực Chứng từ Y tế Nghỉ Ốm',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Human Resources/Time Off',
-    'summary': 'Đính kèm chứng từ y tế (tùy chọn) cho đơn Nghỉ Ốm, cảnh báo HR khi thiếu (FUNC-TO-002)',
+    'summary': 'Validate chứng từ y tế (PDF/JPG/PNG ≤5MB) — HR Manager bypass BR-011 — re-validate BR-012 (FUNC-TO-002)',
     'author': 'Học Bá HRM Team',
     'license': 'LGPL-3',
     'depends': ['hr_holidays', 'hb_timeoff_config'],

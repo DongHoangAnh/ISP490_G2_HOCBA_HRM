@@ -56,4 +56,20 @@
         </field>
     </record>
 
+    <!-- ============================================================
+         BR-021: Ẩn nút Nghỉ phép (Time Off) cho Cộng tác viên (CTV).
+         Kế thừa trực tiếp view của hr_holidays để chắc chắn nút
+         action_time_off_dashboard đã tồn tại trong arch cha.
+    ============================================================ -->
+    <record id="view_employee_form_hb_hide_leave_ctv" model="ir.ui.view">
+        <field name="name">hr.employee.form.hb.hide.leave.ctv</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr_holidays.view_employee_form_leave_inherit"/>
+        <field name="arch" type="xml">
+            <button name="action_time_off_dashboard" position="attributes">
+                <attribute name="invisible">not show_leaves or company_id not in allowed_company_ids or x_employment_status == 'ctv'</attribute>
+            </button>
+        </field>
+    </record>
+
 </odoo>

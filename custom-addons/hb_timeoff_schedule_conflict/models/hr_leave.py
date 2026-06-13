@@ -33,6 +33,14 @@ class HrLeave(models.Model):
         copy=False,
         help='Danh sách buổi dạy xung đột (tự động điền bởi hệ thống).',
     )
+    # BR-030: cờ đánh dấu đơn nghỉ đang chờ kiểm tra xung đột bất đồng bộ.
+    # Việc dò xung đột chạy qua ir.cron (kích hoạt ngay bằng _trigger) để
+    # KHÔNG block giao diện khi nhân viên gửi đơn.
+    x_conflict_check_pending = fields.Boolean(
+        string='Chờ kiểm tra xung đột lịch dạy',
+        default=False,
+        copy=False,
+    )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -41,7 +49,7 @@ class HrLeave(models.Model):
             lambda l: getattr(l.employee_id, 'x_hb_leave_emp_type', False) in INSTRUCTOR_TYPES
         )
         if instructor_leaves:
-            instructor_leaves._check_schedule_conflict()
+            instructor_leaves._schedule_conflict_check_async()
         return leaves
 
     def write(self, vals):
@@ -51,8 +59,45 @@ class HrLeave(models.Model):
                 lambda l: getattr(l.employee_id, 'x_hb_leave_emp_type', False) in INSTRUCTOR_TYPES
             )
             if instructor_leaves:
-                instructor_leaves._check_schedule_conflict()
+                instructor_leaves._schedule_conflict_check_async()
         return result
+
+    def _schedule_conflict_check_async(self):
+        """BR-030: Lên lịch dò xung đột bất đồng bộ, không block UI.
+
+        Đặt cờ pending rồi kích hoạt ir.cron chạy ngay (_trigger). Cron sẽ
+        xử lý trong transaction riêng và post kết quả vào chatter trong vài giây.
+        """
+        self.filtered(lambda l: not l.x_conflict_check_pending).write(
+            {'x_conflict_check_pending': True}
+        )
+        cron = self.env.ref(
+            'hb_timeoff_schedule_conflict.ir_cron_schedule_conflict_check',
+            raise_if_not_found=False,
+        )
+        if cron:
+            cron.sudo()._trigger()
+
+    @api.model
+    def _cron_process_pending_conflict_checks(self, batch_limit=200):
+        """BR-030: Xử lý các đơn nghỉ đang chờ dò xung đột (chạy bởi ir.cron)."""
+        pending = self.search(
+            [('x_conflict_check_pending', '=', True)], limit=batch_limit
+        )
+        if not pending:
+            return
+        # Xóa cờ trước để write() bên trong _check_schedule_conflict không
+        # vô tình kích hoạt lại vòng lặp async.
+        pending.write({'x_conflict_check_pending': False})
+        pending._check_schedule_conflict()
+        # Nếu còn đơn chờ (vượt batch_limit), kích hoạt cron chạy tiếp.
+        if self.search_count([('x_conflict_check_pending', '=', True)]):
+            cron = self.env.ref(
+                'hb_timeoff_schedule_conflict.ir_cron_schedule_conflict_check',
+                raise_if_not_found=False,
+            )
+            if cron:
+                cron.sudo()._trigger()
 
     def action_approve(self, check_state=True):
         # BR-031: x_replacement_note required at final approval when conflict found
@@ -130,14 +175,14 @@ class HrLeave(models.Model):
                 recipients = self.env['res.partner']
                 if academic_group:
                     academic_users = self.env['res.users'].search([
-                        ('groups_id', 'in', academic_group.id),
+                        ('all_group_ids', 'in', academic_group.id),
                         ('active', '=', True),
                     ])
                     recipients = academic_users.mapped('partner_id')
 
                 if not recipients and hr_manager_group:
                     hr_managers = self.env['res.users'].search([
-                        ('groups_id', 'in', hr_manager_group.id),
+                        ('all_group_ids', 'in', hr_manager_group.id),
                         ('active', '=', True),
                     ])
                     recipients = hr_managers.mapped('partner_id')
