@@ -18,15 +18,6 @@
         
         <menuitem name="Attendance Records" id="hocba_attendance_menu_items" parent="hocba_attendance_menu" action="hocba_attendance_action" sequence="10"/>
 
-        <!-- My Attendance (kiosk client action: face + geo check-in) -->
-        <record id="hocba_my_attendance_action" model="ir.actions.client">
-            <field name="name">My Attendance</field>
-            <field name="tag">hocba_attendance_kiosk</field>
-        </record>
-        <menuitem name="My Attendance" id="hocba_my_attendance_menu"
-                  parent="hocba_attendance_menu_root"
-                  action="hocba_my_attendance_action" sequence="5"/>
-
         <!-- Work Assignments -->
         <menuitem name="Work Assignments" id="hocba_work_assignment_menu" parent="hocba_attendance_menu_root" sequence="20"/>
         
