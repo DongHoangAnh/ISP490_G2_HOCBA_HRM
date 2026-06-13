@@ -384,3 +384,66 @@ class HocBaHRM(http.Controller):
                 if s.x_cert_date or s.x_cert_expiry]
 
         return request.make_json_response(data)
+
+    # ------------------------------------------------------------------
+    # JSON API Chấm công (Attendance) — owner FE: Hoàng Anh.
+    # Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md
+    # Logic face/geo tái dùng hocba.attendance._do_check / enroll_self_face.
+    # ------------------------------------------------------------------
+
+    @http.route('/hocba-hrm/api/attendance/me', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_me(self, **kw):
+        info = _att_me_info(request.env)
+        if info is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(info)
+
+    @http.route('/hocba-hrm/api/attendance', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_day(self, date=None, **kw):
+        return request.make_json_response(_att_day_table(request.env, date))
+
+    @http.route('/hocba-hrm/api/attendance/me/history', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_history(self, month=None, **kw):
+        data = _att_me_history(request.env, month)
+        if data is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/enroll', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_attendance_enroll(self, **kw):
+        if not request.env.user.employee_id:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        payload = request.get_json_data()
+        request.env['hr.employee'].enroll_self_face({
+            'photo': payload.get('photo'),
+            'descriptor': payload.get('descriptor') or [],
+        })
+        return request.make_json_response({'ok': True})
+
+    @http.route(['/hocba-hrm/api/attendance/check-in',
+                 '/hocba-hrm/api/attendance/check-out'],
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_check(self, **kw):
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        if emp.x_employment_status != 'official':
+            return request.make_json_response({'error': 'not_official'}, status=403)
+        payload = request.get_json_data()
+        kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
+        method = 'action_check_out' if kind == 'out' else 'action_check_in'
+        res = getattr(request.env['hocba.attendance'], method)({
+            'photo': payload.get('photo'),
+            'descriptor': payload.get('descriptor') or [],
+            'latitude': payload.get('latitude') or 0.0,
+            'longitude': payload.get('longitude') or 0.0,
+        })
+        return request.make_json_response({
+            'recordId': res['record_id'], 'kind': res['kind'],
+            'faceSuspect': res['face_suspect'], 'outOfZone': res['out_of_zone'],
+            'outOfWindow': res['out_of_window'], 'faceScore': res['face_score'],
+        })
