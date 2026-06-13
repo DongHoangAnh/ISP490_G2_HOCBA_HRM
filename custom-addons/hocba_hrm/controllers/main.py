@@ -1,10 +1,12 @@
 from odoo import http
 from odoo.http import request, Response
+from odoo.tools import file_open
 
-# 12/06/2026: tạm ngắt SPA — test nghiệp vụ trên giao diện Odoo backend trước.
-# Mở lại: đặt True + bỏ comment menu trong views/menu.xml + upgrade hocba_hrm.
-# (xem docs/SPEC_HRM_SPA_API.md §2)
-SPA_ENABLED = False
+# 13/06/2026: SPA là frontend chính thức (FE/BE tách riêng qua API).
+# Dev:   cd frontend && npm run dev   (Vite :5173, proxy API về Odoo)
+# Build: cd frontend && npm run build → static/spa/, route này serve bản build.
+# (quy ước: docs/QUY_UOC_FRONTEND.md)
+SPA_ENABLED = True
 
 
 # Bảng màu gán cho phòng ban theo thứ tự id (SPA filter chips)
@@ -23,40 +25,14 @@ class HocBaHRM(http.Controller):
     def hrm_dashboard(self, **kw):
         if not SPA_ENABLED:
             return request.redirect('/odoo')
-        base = '/hocba_hrm/static/src'
-        html = f"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Học Bá HRM — Hệ thống Quản lý Nhân sự</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="{base}/css/hrm-styles.css" />
-</head>
-<body>
-<div id="root"></div>
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
-<script type="text/babel" src="{base}/js/hrm-data.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-shell.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-journey.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-dashboard.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-employees.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-onboarding.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-attendance.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-timeoff.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-payroll.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-contracts.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-recruitment.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-appraisal.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-reports.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-profile.jsx"></script>
-<script type="text/babel" src="{base}/js/hrm-app.jsx"></script>
-</body>
-</html>"""
+        try:
+            with file_open('hocba_hrm/static/spa/index.html', 'r') as f:
+                html = f.read()
+        except (FileNotFoundError, OSError):
+            html = ('<h3 style="font-family:sans-serif">SPA chưa được build.</h3>'
+                    '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
+                    'npm install &amp;&amp; npm run build</code> rồi tải lại trang '
+                    '(xem docs/QUY_UOC_FRONTEND.md §8).</p>')
         return Response(html, content_type='text/html; charset=utf-8')
 
     # ------------------------------------------------------------------
