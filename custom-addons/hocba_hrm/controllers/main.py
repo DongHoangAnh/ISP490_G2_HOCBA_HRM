@@ -29,8 +29,7 @@ def _fmt_hm(hour_float):
     return '%02d:%02d' % (h, m)
 
 
-def _att_policy_dict(env):
-    p = env['hocba.attendance.policy'].sudo().get_policy()
+def _policy_dict(p):
     return {
         'checkInStart': _fmt_hm(p.morning_start),
         'checkInEnd': _fmt_hm(p.morning_end),
@@ -38,6 +37,10 @@ def _att_policy_dict(env):
         'checkOutEnd': _fmt_hm(p.evening_end),
         'geofenceOn': bool(p.office_lat and p.office_lng),
     }
+
+
+def _att_policy_dict(env):
+    return _policy_dict(env['hocba.attendance.policy'].sudo().get_policy())
 
 
 def _dt_local(rec, dt):
@@ -97,20 +100,14 @@ def _att_me_info(env):
         'isOfficial': emp.x_employment_status == 'official',
         'isHr': env.user.has_group('hr.group_hr_user'),
         'isHrManager': env.user.has_group('hr.group_hr_manager'),
-        'policy': _att_policy_dict(env),
+        'policy': _policy_dict(policy),
         'today': None,
     }
     if rec:
-        info['today'] = {
-            'checkIn': _dt_local(rec, rec.check_in),
-            'checkOut': _dt_local(rec, rec.check_out),
-            'workingHours': round(rec.working_hours, 2),
-            'statusKey': rec.status_code or 'none',
-            'lateMinutes': _late_minutes(rec, policy),
-            'faceSuspect': rec.face_suspect,
-            'outOfZone': rec.out_of_zone,
-            'outOfWindow': rec.out_of_window,
-        }
+        row = _att_row(rec, policy)
+        info['today'] = {k: row[k] for k in (
+            'checkIn', 'checkOut', 'workingHours', 'statusKey',
+            'lateMinutes', 'faceSuspect', 'outOfZone', 'outOfWindow')}
     return info
 
 
@@ -132,14 +129,14 @@ def _att_day_table(env, date_str):
         'needsReview': sum(1 for r in rows if r['needsReview']),
         'missing': 0,
     }
-    if is_hr or is_mgr:
+    if (is_hr or is_mgr) and policy.is_workday(day):
         total = env['hr.employee'].sudo().search_count(
             [('x_employment_status', '=', 'official')])
         counts['missing'] = max(0, total - len(rows))
     return {
         'isHr': is_hr, 'isHrManager': is_mgr,
         'date': _d(day),
-        'policy': _att_policy_dict(env),
+        'policy': _policy_dict(policy),
         'counts': counts,
         'rows': rows,
     }

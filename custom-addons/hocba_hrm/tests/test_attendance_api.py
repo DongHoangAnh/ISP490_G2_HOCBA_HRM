@@ -45,6 +45,8 @@ class TestAttendanceApi(TransactionCase):
     def test_fmt_hm(self):
         self.assertEqual(_fmt_hm(8.0), '08:00')
         self.assertEqual(_fmt_hm(9.5), '09:30')
+        self.assertEqual(_fmt_hm(8.25), '08:15')
+        self.assertEqual(_fmt_hm(17.75), '17:45')
 
     def test_me_info_no_employee(self):
         user = self.env['res.users'].create({'name': 'NoEmp', 'login': 'noemp_att'})
@@ -84,6 +86,15 @@ class TestAttendanceApi(TransactionCase):
         self.assertFalse(data['isHr'])
         self.assertEqual(len(data['rows']), 1)
         self.assertEqual(data['rows'][0]['empId'], self.emp.id)
+
+    def test_day_table_no_employee_user_empty(self):
+        from odoo import fields
+        user = self.env['res.users'].create({'name': 'NoEmp3', 'login': 'noemp_att3'})
+        self._checkin(self.emp)
+        today = fields.Date.context_today(user)
+        data = _att_day_table(self.env(user=user), str(today))
+        self.assertFalse(data['isHr'])
+        self.assertEqual(data['rows'], [])
 
     def test_history_filters_employee(self):
         self._checkin(self.emp)
