@@ -1,6 +1,6 @@
 {
     'name': 'HR Holidays Modern UI',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Human Resources',
     'author': 'Modern UI Team',
     'license': 'LGPL-3',
@@ -12,6 +12,7 @@
         'web.assets_backend': [
             'hr_holidays_modern/static/src/css/hr_holidays_modern.css',
             'hr_holidays_modern/static/src/js/hr_holidays_modern.js',
+            'hr_holidays_modern/static/src/xml/dashboard.xml',
         ],
     },
     'installable': True,

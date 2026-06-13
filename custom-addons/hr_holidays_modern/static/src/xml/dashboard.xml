@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="hr_holidays_modern.Dashboard">
+        <div class="o_hhm">
+
+            <!-- Header -->
+            <div class="o_hhm_header">
+                <div class="o_hhm_title">
+                    <h1><i class="fa fa-calendar-check-o me-2"/>Bảng điều khiển Nghỉ phép</h1>
+                    <p>Tổng quan đơn xin nghỉ · năm <t t-esc="state.year"/></p>
+                </div>
+                <button class="btn o_hhm_refresh" t-on-click="() => this.load()">
+                    <i class="fa fa-refresh me-1"/>Làm mới
+                </button>
+            </div>
+
+            <!-- Loading -->
+            <div t-if="state.loading" class="o_hhm_loading">
+                <i class="fa fa-circle-o-notch fa-spin fa-2x"/>
+                <span>Đang tải dữ liệu…</span>
+            </div>
+
+            <div t-else="">
+                <!-- KPI cards -->
+                <div class="o_hhm_kpis">
+                    <div class="o_hhm_kpi o_hhm_kpi--blue" t-on-click="() => this.openYear()">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-list-alt"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.total"/>
+                            <span class="o_hhm_kpi_label">Tổng đơn nghỉ</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--amber" t-on-click="() => this.openPending()">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-clock-o"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.pending"/>
+                            <span class="o_hhm_kpi_label">Chờ duyệt</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--green" t-on-click="() => this.openApproved()">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-check-circle"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.approved"/>
+                            <span class="o_hhm_kpi_label">Đã duyệt</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--violet">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-calendar"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="fmtDays(state.kpi.approvedDays)"/>
+                            <span class="o_hhm_kpi_label">Ngày nghỉ đã duyệt</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--rose">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-plane"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.onLeaveToday"/>
+                            <span class="o_hhm_kpi_label">Đang nghỉ hôm nay</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Two-column analytics -->
+                <div class="o_hhm_grid">
+                    <!-- Leave by type -->
+                    <div class="o_hhm_panel">
+                        <div class="o_hhm_panel_head">
+                            <h2><i class="fa fa-pie-chart me-2"/>Nghỉ phép theo loại</h2>
+                            <span class="o_hhm_panel_sub">Năm <t t-esc="state.year"/> · đã duyệt</span>
+                        </div>
+                        <div t-if="!state.byType.length" class="o_hhm_empty">
+                            <i class="fa fa-inbox"/><span>Chưa có dữ liệu</span>
+                        </div>
+                        <div t-else="" class="o_hhm_bars">
+                            <div class="o_hhm_bar_row" t-foreach="state.byType" t-as="t" t-key="t.id"
+                                 t-on-click="() => this.openType(t.id, t.name)">
+                                <div class="o_hhm_bar_top">
+                                    <span class="o_hhm_bar_name" t-esc="t.name"/>
+                                    <span class="o_hhm_bar_val">
+                                        <t t-esc="fmtDays(t.days)"/> ngày
+                                        <span class="o_hhm_bar_cnt">(<t t-esc="t.count"/> đơn)</span>
+                                    </span>
+                                </div>
+                                <div class="o_hhm_bar_track">
+                                    <div class="o_hhm_bar_fill"
+                                         t-attf-style="width:{{t.pct}}%;background:{{t.color}};"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top employees -->
+                    <div class="o_hhm_panel">
+                        <div class="o_hhm_panel_head">
+                            <h2><i class="fa fa-trophy me-2"/>Top nhân viên nghỉ nhiều</h2>
+                            <span class="o_hhm_panel_sub">Năm <t t-esc="state.year"/> · top 5</span>
+                        </div>
+                        <div t-if="!state.topEmployees.length" class="o_hhm_empty">
+                            <i class="fa fa-inbox"/><span>Chưa có dữ liệu</span>
+                        </div>
+                        <div t-else="" class="o_hhm_rank">
+                            <div class="o_hhm_rank_row" t-foreach="state.topEmployees" t-as="e" t-key="e.id">
+                                <div class="o_hhm_rank_pos" t-esc="e_index + 1"/>
+                                <div class="o_hhm_rank_main">
+                                    <div class="o_hhm_rank_top">
+                                        <span class="o_hhm_rank_name" t-esc="e.name"/>
+                                        <span class="o_hhm_rank_val"><t t-esc="fmtDays(e.days)"/> ngày</span>
+                                    </div>
+                                    <div class="o_hhm_bar_track">
+                                        <div class="o_hhm_bar_fill o_hhm_bar_fill--rank"
+                                             t-attf-style="width:{{e.pct}}%;"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending table -->
+                <div class="o_hhm_panel">
+                    <div class="o_hhm_panel_head">
+                        <h2><i class="fa fa-hourglass-half me-2"/>Đơn chờ duyệt gần đây</h2>
+                        <button class="btn btn-sm o_hhm_link" t-on-click="() => this.openPending()">
+                            Xem tất cả <i class="fa fa-arrow-right ms-1"/>
+                        </button>
+                    </div>
+                    <div t-if="!state.pending.length" class="o_hhm_empty">
+                        <i class="fa fa-check-circle"/><span>Không có đơn nào đang chờ duyệt 🎉</span>
+                    </div>
+                    <table t-else="" class="o_hhm_table">
+                        <thead>
+                            <tr>
+                                <th>Nhân viên</th>
+                                <th>Loại nghỉ</th>
+                                <th>Từ ngày</th>
+                                <th>Đến ngày</th>
+                                <th class="text-end">Số ngày</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr t-foreach="state.pending" t-as="p" t-key="p.id"
+                                t-on-click="() => this.openLeave(p.id)">
+                                <td t-esc="p.employee"/>
+                                <td><span class="o_hhm_chip" t-esc="p.type"/></td>
+                                <td t-esc="p.from"/>
+                                <td t-esc="p.to"/>
+                                <td class="text-end fw-bold"><t t-esc="fmtDays(p.days)"/></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>
