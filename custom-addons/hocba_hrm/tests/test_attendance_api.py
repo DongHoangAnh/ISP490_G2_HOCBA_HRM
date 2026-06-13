@@ -33,7 +33,7 @@ class TestAttendanceApi(TransactionCase):
         self.emp.user_id = self.emp_user
         self.hr_user = self.env['res.users'].create({
             'name': 'HR User', 'login': 'hr_att_user',
-            'groups_id': [(4, self.env.ref('hr.group_hr_manager').id)],
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)],
         })
 
     def _checkin(self, emp):
