@@ -1,4 +1,7 @@
-from odoo import http
+import calendar
+from datetime import date
+
+from odoo import http, fields
 from odoo.http import request, Response
 from odoo.tools import file_open
 
@@ -17,6 +20,157 @@ DEP_PALETTE = ['#C8102E', '#D9A400', '#0F766E', '#1D4ED8', '#6D28D9',
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
     return v.isoformat() if v else None
+
+
+def _fmt_hm(hour_float):
+    """8.5 -> '08:30' (giờ float local -> chuỗi HH:MM)."""
+    h = int(hour_float)
+    m = int(round((hour_float - h) * 60))
+    return '%02d:%02d' % (h, m)
+
+
+def _att_policy_dict(env):
+    p = env['hocba.attendance.policy'].sudo().get_policy()
+    return {
+        'checkInStart': _fmt_hm(p.morning_start),
+        'checkInEnd': _fmt_hm(p.morning_end),
+        'checkOutStart': _fmt_hm(p.evening_start),
+        'checkOutEnd': _fmt_hm(p.evening_end),
+        'geofenceOn': bool(p.office_lat and p.office_lng),
+    }
+
+
+def _dt_local(rec, dt):
+    """Datetime UTC (stored) -> chuỗi ISO theo local tz của context."""
+    if not dt:
+        return None
+    local = fields.Datetime.context_timestamp(rec, dt)
+    return local.replace(tzinfo=None).isoformat()
+
+
+def _late_minutes(rec, policy):
+    """Số phút đi muộn so với morning_start; 0 nếu đúng giờ."""
+    if not rec.check_in or rec.status_code != 'late':
+        return 0
+    local = fields.Datetime.context_timestamp(rec, rec.check_in)
+    hour = local.hour + local.minute / 60.0
+    return max(0, int(round((hour - policy.morning_start) * 60)))
+
+
+def _att_row(rec, policy):
+    """Một dòng chấm công cho SPA (wire format camelCase)."""
+    return {
+        'id': rec.id,
+        'empId': rec.employee_id.id,
+        'code': rec.employee_id.x_employee_code or '—',
+        'name': rec.employee_id.name,
+        'depName': rec.employee_id.department_id.name or 'Chưa gán',
+        'hasImg': bool(rec.check_in_photo),
+        'date': _d(rec.date),
+        'checkIn': _dt_local(rec, rec.check_in),
+        'checkOut': _dt_local(rec, rec.check_out),
+        'workingHours': round(rec.working_hours, 2),
+        'statusKey': rec.status_code or 'none',
+        'lateMinutes': _late_minutes(rec, policy),
+        'faceSuspect': rec.face_suspect,
+        'outOfZone': rec.out_of_zone,
+        'outOfWindow': rec.out_of_window,
+        'needsReview': rec.needs_review,
+        'checkInMapUrl': rec.check_in_map_url or None,
+        'checkOutMapUrl': rec.check_out_map_url or None,
+    }
+
+
+def _att_me_info(env):
+    """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    today = fields.Date.context_today(env.user)
+    rec = env['hocba.attendance'].sudo().search(
+        [('employee_id', '=', emp.id), ('date', '=', today)], limit=1)
+    info = {
+        'employeeId': emp.id,
+        'name': emp.name,
+        'enrolled': bool(emp.x_face_descriptor),
+        'isOfficial': emp.x_employment_status == 'official',
+        'isHr': env.user.has_group('hr.group_hr_user'),
+        'isHrManager': env.user.has_group('hr.group_hr_manager'),
+        'policy': _att_policy_dict(env),
+        'today': None,
+    }
+    if rec:
+        info['today'] = {
+            'checkIn': _dt_local(rec, rec.check_in),
+            'checkOut': _dt_local(rec, rec.check_out),
+            'workingHours': round(rec.working_hours, 2),
+            'statusKey': rec.status_code or 'none',
+            'lateMinutes': _late_minutes(rec, policy),
+            'faceSuspect': rec.face_suspect,
+            'outOfZone': rec.out_of_zone,
+            'outOfWindow': rec.out_of_window,
+        }
+    return info
+
+
+def _att_day_table(env, date_str):
+    """Bảng chấm công theo ngày. HR/manager: tất cả; NV thường: chỉ của mình."""
+    is_hr = env.user.has_group('hr.group_hr_user')
+    is_mgr = env.user.has_group('hr.group_hr_manager')
+    day = fields.Date.from_string(date_str) if date_str else fields.Date.context_today(env.user)
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    domain = [('date', '=', day)]
+    if not (is_hr or is_mgr):
+        emp = env.user.employee_id
+        domain.append(('employee_id', '=', emp.id if emp else -1))
+    recs = env['hocba.attendance'].sudo().search(domain)
+    rows = [_att_row(r, policy) for r in recs]
+    counts = {
+        'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
+        'late': sum(1 for r in rows if r['statusKey'] == 'late'),
+        'needsReview': sum(1 for r in rows if r['needsReview']),
+        'missing': 0,
+    }
+    if is_hr or is_mgr:
+        total = env['hr.employee'].sudo().search_count(
+            [('x_employment_status', '=', 'official')])
+        counts['missing'] = max(0, total - len(rows))
+    return {
+        'isHr': is_hr, 'isHrManager': is_mgr,
+        'date': _d(day),
+        'policy': _att_policy_dict(env),
+        'counts': counts,
+        'rows': rows,
+    }
+
+
+def _att_me_history(env, month_str):
+    """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    recs = env['hocba.attendance'].sudo().search([
+        ('employee_id', '=', emp.id),
+        ('date', '>=', first), ('date', '<=', last),
+    ], order='date desc')
+    rows = [_att_row(r, policy) for r in recs]
+    summary = {
+        'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
+        'late': sum(1 for r in rows if r['statusKey'] == 'late'),
+        'needsReview': sum(1 for r in rows if r['needsReview']),
+        'daysPresent': len(rows),
+        'totalHours': round(sum(r['workingHours'] for r in rows), 2),
+    }
+    return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
 class HocBaHRM(http.Controller):
