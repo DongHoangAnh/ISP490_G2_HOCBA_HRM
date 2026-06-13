@@ -71,8 +71,9 @@ class TestAttendanceApi(TransactionCase):
         today = fields.Date.context_today(self.hr_user)
         data = _att_day_table(self.env(user=self.hr_user), str(today))
         self.assertTrue(data['isHrManager'])
-        self.assertEqual(len(data['rows']), 1)
-        self.assertEqual(data['rows'][0]['empId'], self.emp.id)
+        # HR sees the employee's record among all rows (don't assert an absolute
+        # count — a shared dev DB may hold other check-ins for the same day).
+        self.assertIn(self.emp.id, [r['empId'] for r in data['rows']])
 
     def test_day_table_employee_sees_only_own(self):
         other = self.env['hr.employee'].create({
