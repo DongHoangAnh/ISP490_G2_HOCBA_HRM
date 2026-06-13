@@ -46,7 +46,7 @@ export default function AttendanceDrawer({ rec, onClose }) {
               </figcaption>
             </figure>
           )}
-          {rec.checkOut && (
+          {rec.hasCheckOutImg && (
             <figure style={{ margin: 0 }}>
               <img src={img('check_out_photo')} alt="check-out" style={{ width: 200, borderRadius: 10, display: 'block' }} />
               <figcaption className="muted" style={{ fontSize: 12, marginTop: 4 }}>

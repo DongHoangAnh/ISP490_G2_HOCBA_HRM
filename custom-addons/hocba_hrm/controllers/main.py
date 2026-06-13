@@ -69,6 +69,7 @@ def _att_row(rec, policy):
         'name': rec.employee_id.name,
         'depName': rec.employee_id.department_id.name or 'Chưa gán',
         'hasImg': bool(rec.check_in_photo),
+        'hasCheckOutImg': bool(rec.check_out_photo),
         'date': _d(rec.date),
         'checkIn': _dt_local(rec, rec.check_in),
         'checkOut': _dt_local(rec, rec.check_out),

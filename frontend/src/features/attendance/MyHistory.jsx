@@ -41,7 +41,8 @@ export default function MyHistory() {
 
       {data && (
         <>
-          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(5,1fr)', marginBottom: 16 }}>
+            <Sum val={data.summary.daysPresent} lbl="Ngày có mặt" />
             <Sum val={data.summary.onTime} lbl="Đúng giờ" col="var(--green)" />
             <Sum val={data.summary.late} lbl="Đi muộn" col="var(--amber)" />
             <Sum val={data.summary.needsReview} lbl="Cần xem lại" col="var(--red-600)" />
