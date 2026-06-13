@@ -1,4 +1,5 @@
-from datetime import timedelta
+import calendar
+from datetime import date, timedelta
 
 from odoo import http, fields
 from odoo.http import request, Response
@@ -19,6 +20,155 @@ DEP_PALETTE = ['#C8102E', '#D9A400', '#0F766E', '#1D4ED8', '#6D28D9',
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
     return v.isoformat() if v else None
+
+
+def _fmt_hm(hour_float):
+    """8.5 -> '08:30' (giờ float local -> chuỗi HH:MM)."""
+    h = int(hour_float)
+    m = int(round((hour_float - h) * 60))
+    return '%02d:%02d' % (h, m)
+
+
+def _policy_dict(p):
+    return {
+        'checkInStart': _fmt_hm(p.morning_start),
+        'checkInEnd': _fmt_hm(p.morning_end),
+        'checkOutStart': _fmt_hm(p.evening_start),
+        'checkOutEnd': _fmt_hm(p.evening_end),
+        'geofenceOn': bool(p.office_lat and p.office_lng),
+    }
+
+
+def _att_policy_dict(env):
+    return _policy_dict(env['hocba.attendance.policy'].sudo().get_policy())
+
+
+def _dt_local(rec, dt):
+    """Datetime UTC (stored) -> chuỗi ISO theo local tz của context."""
+    if not dt:
+        return None
+    local = fields.Datetime.context_timestamp(rec, dt)
+    return local.replace(tzinfo=None).isoformat()
+
+
+def _late_minutes(rec, policy):
+    """Số phút đi muộn so với morning_start; 0 nếu đúng giờ."""
+    if not rec.check_in or rec.status_code != 'late':
+        return 0
+    local = fields.Datetime.context_timestamp(rec, rec.check_in)
+    hour = local.hour + local.minute / 60.0
+    return max(0, int(round((hour - policy.morning_start) * 60)))
+
+
+def _att_row(rec, policy):
+    """Một dòng chấm công cho SPA (wire format camelCase)."""
+    return {
+        'id': rec.id,
+        'empId': rec.employee_id.id,
+        'code': rec.employee_id.x_employee_code or '—',
+        'name': rec.employee_id.name,
+        'depName': rec.employee_id.department_id.name or 'Chưa gán',
+        'hasImg': bool(rec.check_in_photo),
+        'hasCheckOutImg': bool(rec.check_out_photo),
+        'date': _d(rec.date),
+        'checkIn': _dt_local(rec, rec.check_in),
+        'checkOut': _dt_local(rec, rec.check_out),
+        'workingHours': round(rec.working_hours, 2),
+        'statusKey': rec.status_code or 'none',
+        'lateMinutes': _late_minutes(rec, policy),
+        'faceSuspect': rec.face_suspect,
+        'outOfZone': rec.out_of_zone,
+        'outOfWindow': rec.out_of_window,
+        'needsReview': rec.needs_review,
+        'checkInMapUrl': rec.check_in_map_url or None,
+        'checkOutMapUrl': rec.check_out_map_url or None,
+    }
+
+
+def _att_me_info(env):
+    """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    today = fields.Date.context_today(env.user)
+    rec = env['hocba.attendance'].sudo().search(
+        [('employee_id', '=', emp.id), ('date', '=', today)], limit=1)
+    info = {
+        'employeeId': emp.id,
+        'name': emp.name,
+        'enrolled': bool(emp.x_face_descriptor),
+        'isOfficial': emp.x_employment_status == 'official',
+        'isHr': env.user.has_group('hr.group_hr_user'),
+        'isHrManager': env.user.has_group('hr.group_hr_manager'),
+        'policy': _policy_dict(policy),
+        'today': None,
+    }
+    if rec:
+        row = _att_row(rec, policy)
+        info['today'] = {k: row[k] for k in (
+            'checkIn', 'checkOut', 'workingHours', 'statusKey',
+            'lateMinutes', 'faceSuspect', 'outOfZone', 'outOfWindow')}
+    return info
+
+
+def _att_day_table(env, date_str):
+    """Bảng chấm công theo ngày. HR/manager: tất cả; NV thường: chỉ của mình."""
+    is_hr = env.user.has_group('hr.group_hr_user')
+    is_mgr = env.user.has_group('hr.group_hr_manager')
+    day = fields.Date.from_string(date_str) if date_str else fields.Date.context_today(env.user)
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    domain = [('date', '=', day)]
+    if not (is_hr or is_mgr):
+        emp = env.user.employee_id
+        domain.append(('employee_id', '=', emp.id if emp else -1))
+    recs = env['hocba.attendance'].sudo().search(domain)
+    rows = [_att_row(r, policy) for r in recs]
+    counts = {
+        'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
+        'late': sum(1 for r in rows if r['statusKey'] == 'late'),
+        'needsReview': sum(1 for r in rows if r['needsReview']),
+        'missing': 0,
+    }
+    if (is_hr or is_mgr) and policy.is_workday(day):
+        total = env['hr.employee'].sudo().search_count(
+            [('x_employment_status', '=', 'official')])
+        counts['missing'] = max(0, total - len(rows))
+    return {
+        'isHr': is_hr, 'isHrManager': is_mgr,
+        'date': _d(day),
+        'policy': _policy_dict(policy),
+        'counts': counts,
+        'rows': rows,
+    }
+
+
+def _att_me_history(env, month_str):
+    """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    recs = env['hocba.attendance'].sudo().search([
+        ('employee_id', '=', emp.id),
+        ('date', '>=', first), ('date', '<=', last),
+    ], order='date desc')
+    rows = [_att_row(r, policy) for r in recs]
+    summary = {
+        'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
+        'late': sum(1 for r in rows if r['statusKey'] == 'late'),
+        'needsReview': sum(1 for r in rows if r['needsReview']),
+        'daysPresent': len(rows),
+        'totalHours': round(sum(r['workingHours'] for r in rows), 2),
+    }
+    return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
 class HocBaHRM(http.Controller):
@@ -277,3 +427,66 @@ class HocBaHRM(http.Controller):
         # sắp xếp: hết hạn trước, rồi theo ngày hết hạn gần nhất
         alerts.sort(key=lambda a: (a['status'] != 'expired', a['expiry'] or '9999'))
         return request.make_json_response({'isHr': True, 'alerts': alerts})
+
+    # ------------------------------------------------------------------
+    # JSON API Chấm công (Attendance) — owner FE: Hoàng Anh.
+    # Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md
+    # Logic face/geo tái dùng hocba.attendance._do_check / enroll_self_face.
+    # ------------------------------------------------------------------
+
+    @http.route('/hocba-hrm/api/attendance/me', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_me(self, **kw):
+        info = _att_me_info(request.env)
+        if info is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(info)
+
+    @http.route('/hocba-hrm/api/attendance', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_day(self, date=None, **kw):
+        return request.make_json_response(_att_day_table(request.env, date))
+
+    @http.route('/hocba-hrm/api/attendance/me/history', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_history(self, month=None, **kw):
+        data = _att_me_history(request.env, month)
+        if data is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/enroll', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_attendance_enroll(self, **kw):
+        if not request.env.user.employee_id:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        payload = request.get_json_data()
+        request.env['hr.employee'].enroll_self_face({
+            'photo': payload.get('photo'),
+            'descriptor': payload.get('descriptor') or [],
+        })
+        return request.make_json_response({'ok': True})
+
+    @http.route(['/hocba-hrm/api/attendance/check-in',
+                 '/hocba-hrm/api/attendance/check-out'],
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_check(self, **kw):
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        if emp.x_employment_status != 'official':
+            return request.make_json_response({'error': 'not_official'}, status=403)
+        payload = request.get_json_data()
+        kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
+        method = 'action_check_out' if kind == 'out' else 'action_check_in'
+        res = getattr(request.env['hocba.attendance'], method)({
+            'photo': payload.get('photo'),
+            'descriptor': payload.get('descriptor') or [],
+            'latitude': payload.get('latitude') or 0.0,
+            'longitude': payload.get('longitude') or 0.0,
+        })
+        return request.make_json_response({
+            'recordId': res['record_id'], 'kind': res['kind'],
+            'faceSuspect': res['face_suspect'], 'outOfZone': res['out_of_zone'],
+            'outOfWindow': res['out_of_window'], 'faceScore': res['face_score'],
+        })

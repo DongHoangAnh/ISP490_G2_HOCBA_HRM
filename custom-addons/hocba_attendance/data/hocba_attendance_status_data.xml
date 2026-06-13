@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="status_on_time" model="hocba.attendance.status">
+            <field name="sequence">10</field>
+            <field name="name">Đúng giờ</field>
+            <field name="code">on_time</field>
+            <field name="color_code">#28a745</field>
+            <field name="description">Check-in trước/đúng giờ bắt đầu làm việc theo chính sách.</field>
+        </record>
+        <record id="status_late" model="hocba.attendance.status">
+            <field name="sequence">20</field>
+            <field name="name">Đi muộn</field>
+            <field name="code">late</field>
+            <field name="color_code">#dc3545</field>
+            <field name="description">Check-in sau giờ bắt đầu làm việc theo chính sách.</field>
+        </record>
+    </data>
+</odoo>

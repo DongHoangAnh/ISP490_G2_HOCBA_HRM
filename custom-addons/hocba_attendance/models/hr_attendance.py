@@ -101,24 +101,23 @@ class Attendance(models.Model):
             else:
                 record.working_hours = 0.0
 
-    @api.depends('check_in', 'working_hours')
+    @api.depends('check_in')
     def _compute_status(self):
-        on_time_status = self.env['hocba.attendance.status'].search(
-            [('code', '=', 'on_time')],
-            limit=1
-        )
-        late_status = self.env['hocba.attendance.status'].search(
-            [('code', '=', 'late')],
-            limit=1
-        )
-        
+        Status = self.env['hocba.attendance.status']
+        on_time_status = Status.search([('code', '=', 'on_time')], limit=1)
+        late_status = Status.search([('code', '=', 'late')], limit=1)
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        cutoff = policy.morning_start
+
         for record in self:
             if not record.check_in:
                 record.status_id = False
                 continue
-            
-            check_in_hour = record.check_in.hour
-            if check_in_hour <= 8:
+
+            # check_in is stored in UTC; lateness is judged in local time.
+            local_dt = fields.Datetime.context_timestamp(record, record.check_in)
+            check_in_hour = local_dt.hour + local_dt.minute / 60.0
+            if check_in_hour <= cutoff:
                 record.status_id = on_time_status
             else:
                 record.status_id = late_status
@@ -192,7 +191,12 @@ class Attendance(models.Model):
             face_score = dist
             face_suspect = dist > policy.face_threshold
 
-        out_of_zone = not policy.is_within_office(lat, lng)
+        # Only enforce the geofence when the office location is configured;
+        # otherwise we cannot judge the location and must not flag everyone.
+        if policy.office_lat and policy.office_lng:
+            out_of_zone = not policy.is_within_office(lat, lng)
+        else:
+            out_of_zone = False
         out_of_window = not policy.is_within_window(now_local, kind)
 
         # One record per employee per day
@@ -203,11 +207,13 @@ class Attendance(models.Model):
 
         if kind == 'in':
             vals = {
-                'check_in': now,
                 'check_in_photo': payload.get('photo'),
                 'check_in_lat': lat,
                 'check_in_lng': lng,
             }
+            # Keep the original check-in time on a repeated check-in the same day.
+            if not record or not record.check_in:
+                vals['check_in'] = now
             if not record:
                 vals['employee_id'] = employee.id
         else:  # out
@@ -242,7 +248,7 @@ class Attendance(models.Model):
             'face_suspect': face_suspect,
             'out_of_zone': out_of_zone,
             'out_of_window': out_of_window,
-            'face_score': face_score if face_score is not None else 0.0,
+            'face_score': face_score,
         }
 
     @api.model
@@ -253,7 +259,10 @@ class Attendance(models.Model):
         if not employee:
             raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
         payload['employee_id'] = employee.id
-        return self._do_check(payload, 'in')
+        # Self-service: regular employees aren't in the HR groups that own the
+        # ACL on attendance/policy/status, so run the write under sudo. The
+        # employee is already pinned to the caller above, preventing spoofing.
+        return self.sudo()._do_check(payload, 'in')
 
     @api.model
     def action_check_out(self, payload):
@@ -263,4 +272,4 @@ class Attendance(models.Model):
         if not employee:
             raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
         payload['employee_id'] = employee.id
-        return self._do_check(payload, 'out')
+        return self.sudo()._do_check(payload, 'out')

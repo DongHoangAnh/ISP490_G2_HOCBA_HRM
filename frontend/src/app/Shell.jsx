@@ -53,8 +53,12 @@ export function Sidebar({ view, setView }) {
           <div className="dot"></div>
           <div style={{ flex: 1 }}>
             <div className="t">Học Bá Education</div>
-            <div className="s">Odoo 19 · 360 Giải Phóng</div>
+            <div className="s">360 Giải Phóng</div>
           </div>
+          <button className="icon-btn" title="Đăng xuất"
+            onClick={() => { window.location.href = '/web/session/logout'; }}>
+            <Icon name="logout" size={18} />
+          </button>
         </div>
       </div>
     </aside>

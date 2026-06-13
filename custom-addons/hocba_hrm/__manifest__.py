@@ -10,7 +10,7 @@
     'category': 'Human Resources',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
-    'depends': ['base', 'hr', 'hocba_employees'],
+    'depends': ['base', 'hr', 'hocba_employees', 'hocba_attendance'],
     'data': [
         'views/menu.xml',
         'views/webclient_templates.xml',

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Sidebar, Topbar } from './Shell';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
+import Attendance from '../features/attendance/Attendance';
 import ComingSoon from '../components/ComingSoon';
 
 export default function App() {
@@ -17,7 +18,7 @@ export default function App() {
         <Topbar view={view} onSearch={setSearch} />
         {view === 'dashboard' && <Dashboard setView={setView} />}
         {view === 'employees' && <Employees search={search} />}
-        {view === 'attendance' && <ComingSoon title="Chấm công" owner="Hoàng Anh" api="/hocba-hrm/api/attendance/*" />}
+        {view === 'attendance' && <Attendance search={search} />}
         {view === 'timeoff' && <ComingSoon title="Nghỉ phép" owner="Nhật Anh" api="/hocba-hrm/api/timeoff/*" />}
         {view === 'payroll' && <ComingSoon title="Bảng lương" owner="Hùng" api="/hocba-hrm/api/payroll/*" />}
         {view === 'recruitment' && <ComingSoon title="Tuyển dụng" owner="Việt" api="/hocba-hrm/api/recruitment/*" />}

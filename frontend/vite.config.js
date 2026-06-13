@@ -12,6 +12,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/hocba-hrm/api': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/hocba_employees/static': { target: 'http://[::1]:8069', changeOrigin: false },
       '/web': { target: 'http://[::1]:8069', changeOrigin: false },
       '/odoo': { target: 'http://[::1]:8069', changeOrigin: false },
     },
