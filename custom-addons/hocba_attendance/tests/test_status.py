@@ -1,0 +1,45 @@
+import json
+
+from odoo.tests.common import TransactionCase
+from odoo.tests import tagged
+
+
+@tagged('post_install', '-at_install')
+class TestAttendanceStatus(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        # Default policy has morning_start = 8.0 (08:00 local is the late cutoff)
+        self.policy = self.env['hocba.attendance.policy'].get_policy()
+        self.policy.write({'morning_start': 8.0, 'morning_end': 9.5})
+        self.employee = self.env['hr.employee'].create({
+            'name': 'Nguyen Van A',
+            'x_employment_status': 'official',
+            'x_pit_code': '8765432109',
+            'x_social_insurance_no': '0123456789',
+        })
+
+    def test_status_records_are_seeded(self):
+        """Bug #1: on_time / late statuses must exist out of the box."""
+        Status = self.env['hocba.attendance.status']
+        self.assertTrue(Status.search([('code', '=', 'on_time')], limit=1))
+        self.assertTrue(Status.search([('code', '=', 'late')], limit=1))
+
+    def test_checkin_before_cutoff_is_on_time(self):
+        """Bug #3: status uses LOCAL time. 00:30 UTC = 07:30 +07 -> on_time."""
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({
+            'employee_id': self.employee.id,
+            'check_in': '2026-06-11 00:30:00',  # 07:30 local, before 08:00
+        })
+        self.assertEqual(rec.status_code, 'on_time')
+
+    def test_checkin_after_cutoff_is_late(self):
+        """Bug #3: 02:30 UTC = 09:30 +07 -> after 08:00 cutoff -> late.
+        The old UTC-hour logic (hour 2 <= 8) wrongly returned on_time."""
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({
+            'employee_id': self.employee.id,
+            'check_in': '2026-06-11 02:30:00',  # 09:30 local, after 08:00
+        })
+        self.assertEqual(rec.status_code, 'late')
