@@ -60,6 +60,13 @@ ME_SELF_FIELDS = {
     'currState': 'x_current_state_id',
 }
 
+# Field người phụ thuộc (F-003) cho form NPT trong SPA.
+DEP_FIELDS = {
+    'name': 'name', 'relationship': 'relationship', 'birthday': 'birthday',
+    'nationalId': 'national_id', 'dateStart': 'date_start',
+    'dateEnd': 'date_end', 'notes': 'notes',
+}
+
 
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
@@ -340,11 +347,15 @@ class HocBaHRM(http.Controller):
                                     e.x_current_street, e.x_current_ward,
                                     e.x_current_state_id.name) if p)),
                 'dependents': [{
+                    'id': dp.id,
                     'name': dp.name,
                     'relationship': labels['relationship'].get(dp.relationship, ''),
+                    'relationshipKey': dp.relationship or '',
                     'birthday': _d(dp.birthday),
+                    'nationalId': dp.national_id or '',
                     'from': _d(dp.date_start),
                     'to': _d(dp.date_end),
+                    'notes': dp.notes or '',
                 } for dp in e.x_dependent_ids],
             })
         if is_mgr:
@@ -477,6 +488,77 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 
+    # ------------------------------------------------------------------
+    # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
+    # trả về hồ sơ đã cập nhật để FE refresh tab Thông tin.
+    # ------------------------------------------------------------------
+    def _dep_vals(self, payload):
+        vals = {}
+        for key, field in DEP_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                vals[field] = v if v not in ('', None) else False
+        return vals
+
+    def _detail_response(self, e):
+        is_hr, is_mgr = self._hr_flags()
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/dependent', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_dependent_create(self, emp_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        vals = self._dep_vals(request.get_json_data())
+        vals['employee_id'] = emp_id
+        try:
+            request.env['hr.employee.dependent'].create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/dependent/<int:dep_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_dependent_update(self, dep_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        d = request.env['hr.employee.dependent'].browse(dep_id)
+        if not d.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            d.write(self._dep_vals(request.get_json_data()))
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(d.employee_id)
+
+    @http.route('/hocba-hrm/api/dependent/<int:dep_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_dependent_delete(self, dep_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        d = request.env['hr.employee.dependent'].browse(dep_id)
+        if not d.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = d.employee_id
+        try:
+            d.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
     @http.route('/hocba-hrm/api/form/meta', auth='user', type='http', methods=['GET'])
     def api_form_meta(self, **kw):
         """Metadata cho form Thêm/Sửa nhân viên: phòng ban, chức danh, các lựa
@@ -498,6 +580,8 @@ class HocBaHRM(http.Controller):
             'workForm': opts('x_work_form'),
             'status': opts('x_employment_status'),
             'position': opts('x_position_type'),
+            'relationship': list(env['hr.employee.dependent']._fields[
+                'relationship']._description_selection(env)),
             'canManager': is_mgr,
         })
 

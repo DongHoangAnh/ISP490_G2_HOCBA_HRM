@@ -16,6 +16,14 @@ export const postGate = (id, payload) =>
 
 /* Form Thêm/Sửa nhân viên (chỉ HR). */
 export const fetchFormMeta = () => hbGet('/hocba-hrm/api/form/meta');
+
+/* Người phụ thuộc (F-003) — CRUD inline, chỉ HR. Mỗi thao tác trả hồ sơ mới. */
+export const createDependent = (empId, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${empId}/dependent`, payload);
+export const updateDependent = (depId, payload) =>
+  hbPost(`/hocba-hrm/api/dependent/${depId}`, payload);
+export const deleteDependent = (depId) =>
+  hbPost(`/hocba-hrm/api/dependent/${depId}/delete`, {});
 export const createEmployee = (payload) => hbPost('/hocba-hrm/api/employees', payload);
 export const updateEmployee = (id, payload) =>
   hbPost(`/hocba-hrm/api/employee/${id}`, payload);
