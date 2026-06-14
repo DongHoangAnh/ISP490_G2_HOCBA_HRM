@@ -1,6 +1,8 @@
 import calendar
 from datetime import date, timedelta
 
+from psycopg2 import IntegrityError
+
 from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request, Response
@@ -16,6 +18,34 @@ SPA_ENABLED = True
 # Bảng màu gán cho phòng ban theo thứ tự id (SPA filter chips)
 DEP_PALETTE = ['#C8102E', '#D9A400', '#0F766E', '#1D4ED8', '#6D28D9',
                '#BE185D', '#B45309', '#334155']
+
+# Map field cho form Thêm/Sửa nhân viên (SPA). key payload camelCase ->
+# (field Odoo, tầng quyền). tier: 'core' (mọi HR) | 'hr' (group_hr_user) |
+# 'mgr' (group_hr_manager). Field nằm trên hr.employee.
+EMP_FORM_FIELDS = {
+    'name': ('name', 'core'),
+    'code': ('x_employee_code', 'core'),
+    'depId': ('department_id', 'core'),
+    'jobId': ('job_id', 'core'),
+    'workForm': ('x_work_form', 'core'),
+    'status': ('x_employment_status', 'core'),
+    'posType': ('x_position_type', 'core'),
+    'email': ('work_email', 'core'),
+    'phone': ('work_phone', 'core'),
+    'probStart': ('x_probation_start', 'core'),
+    'bday': ('birthday', 'hr'),
+    'idIssue': ('x_id_date_issue', 'hr'),
+    'idPlace': ('x_id_place_issue', 'hr'),
+    'hi': ('x_health_insurance_no', 'hr'),
+    'hiPlace': ('x_health_care_place', 'hr'),
+    'pit': ('x_pit_code', 'mgr'),
+    'si': ('x_social_insurance_no', 'mgr'),
+}
+# Field nằm trên hr.version (Odoo 19): CCCD + lương
+EMP_FORM_VERSION_FIELDS = {
+    'cccd': ('identification_id', 'hr'),
+    'wage': ('wage', 'mgr'),
+}
 
 
 def _d(v):
@@ -226,11 +256,14 @@ class HocBaHRM(http.Controller):
             'dep': e.department_id.id or 0,
             'depName': e.department_id.name or 'Chưa gán',
             'jobTitle': e.job_id.name or '—',
+            'jobId': e.job_id.id or False,
             'status': labels['status'].get(status_key, '—'),
             'statusKey': status_key,
             'type': etype,
+            'workFormKey': e.x_work_form or '',
             'posType': labels['position'].get(e.x_position_type, ''),
             'posTypeKey': e.x_position_type or '',
+            'probStart': _d(e.x_probation_start),
             'start': _d(e.x_probation_start) or _d(e.create_date and e.create_date.date()),
             'email': e.work_email or '',
             'phone': e.work_phone or '',
@@ -428,6 +461,115 @@ class HocBaHRM(http.Controller):
 
         # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
         is_hr, is_mgr = self._hr_flags()
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/form/meta', auth='user', type='http', methods=['GET'])
+    def api_form_meta(self, **kw):
+        """Metadata cho form Thêm/Sửa nhân viên: phòng ban, chức danh, các lựa
+        chọn (hình thức/tình trạng/loại vị trí). Chỉ HR."""
+        is_hr, is_mgr = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        env = request.env
+        Emp = env['hr.employee']
+
+        def opts(fname):
+            return list(Emp._fields[fname]._description_selection(env))
+
+        return request.make_json_response({
+            'departments': [{'id': d.id, 'name': d.name}
+                            for d in env['hr.department'].sudo().search([], order='name')],
+            'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id}
+                     for j in env['hr.job'].sudo().search([], order='name')],
+            'workForm': opts('x_work_form'),
+            'status': opts('x_employment_status'),
+            'position': opts('x_position_type'),
+            'canManager': is_mgr,
+        })
+
+    def _split_form_payload(self, payload, is_hr, is_mgr):
+        """Tách payload thành (vals hr.employee, vals hr.version) theo tầng quyền.
+        Field ngoài whitelist hoặc vượt quyền sẽ bị bỏ qua (không ghi)."""
+        def allowed(tier):
+            return tier == 'core' or (tier == 'hr' and is_hr) or (tier == 'mgr' and is_mgr)
+
+        def conv(field, val):
+            if field in ('department_id', 'job_id'):
+                return int(val) if val else False
+            if field == 'wage':
+                return float(val) if val not in ('', None) else 0.0
+            return val if val not in ('', None) else False
+
+        emp_vals, ver_vals = {}, {}
+        for key, (field, tier) in EMP_FORM_FIELDS.items():
+            if key in payload and allowed(tier):
+                emp_vals[field] = conv(field, payload[key])
+        for key, (field, tier) in EMP_FORM_VERSION_FIELDS.items():
+            if key in payload and allowed(tier):
+                ver_vals[field] = conv(field, payload[key])
+        return emp_vals, ver_vals
+
+    @http.route('/hocba-hrm/api/employees', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_employee_create(self, **kw):
+        """Tạo nhân viên mới từ SPA. Ghi KHÔNG sudo → model tự kiểm quyền tạo
+        + ràng buộc (CCCD 12 số, official cần MST/BHXH...)."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data()
+        emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
+        if not (emp_vals.get('name') or '').strip():
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên.'}, status=400)
+        try:
+            e = request.env['hr.employee'].create(emp_vals)
+            if ver_vals:
+                e.version_id.sudo().write(ver_vals)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự đã tồn tại. Vui lòng nhập mã khác.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_employee_update(self, emp_id, **kw):
+        """Cập nhật nhân viên từ SPA (POST cùng path với GET detail). Ghi KHÔNG
+        sudo → model tự kiểm quyền + ràng buộc."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        payload = request.get_json_data()
+        emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
+        try:
+            if emp_vals:
+                e.write(emp_vals)
+            if ver_vals:
+                e.version_id.sudo().write(ver_vals)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự đã tồn tại. Vui lòng nhập mã khác.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 

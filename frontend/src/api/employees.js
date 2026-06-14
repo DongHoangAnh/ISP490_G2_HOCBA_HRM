@@ -11,3 +11,9 @@ export const fetchMe = () => hbGet('/hocba-hrm/api/me');
    Trả về hồ sơ chi tiết đã cập nhật (status có thể đổi sang official/exiting). */
 export const postGate = (id, payload) =>
   hbPost(`/hocba-hrm/api/employee/${id}/gate`, payload);
+
+/* Form Thêm/Sửa nhân viên (chỉ HR). */
+export const fetchFormMeta = () => hbGet('/hocba-hrm/api/form/meta');
+export const createEmployee = (payload) => hbPost('/hocba-hrm/api/employees', payload);
+export const updateEmployee = (id, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${id}`, payload);

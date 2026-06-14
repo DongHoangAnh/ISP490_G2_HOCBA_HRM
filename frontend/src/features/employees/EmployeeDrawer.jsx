@@ -6,6 +6,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
 import Modal from '../../components/Modal';
+import EmployeeForm from './EmployeeForm';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
@@ -13,6 +14,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
   const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     fetchEmployee(emp.id).then(setDet).catch((e) => setDerr(e.message));
   }, [emp.id]);
@@ -40,8 +42,10 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
           </div>
         </div>
         <div className="modal-x" style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => window.open('/odoo/employees/' + emp.id, '_blank')}>
-            <Icon name="edit" size={15} />Sửa trong Odoo</button>
+          {isHr && det && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
+              <Icon name="edit" size={15} />Chỉnh sửa</button>
+          )}
           <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
         </div>
       </div>
@@ -62,6 +66,12 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         {det && tab === 'assets' && <AssetsTab det={det} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} />}
       </div>
+
+      {editing && det && (
+        <EmployeeForm emp={det} isMgr={isMgr}
+          onClose={() => setEditing(false)}
+          onSaved={(newDet) => { setDet(newDet); setEditing(false); }} />
+      )}
     </Modal>
   );
 }

@@ -10,6 +10,7 @@ import Avatar from '../../components/Avatar';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, hbTypeKind } from '../../utils/format';
 import EmployeeDrawer from './EmployeeDrawer';
+import EmployeeForm from './EmployeeForm';
 
 export default function Employees({ search }) {
   const [data, setData] = useState(null);
@@ -19,6 +20,7 @@ export default function Employees({ search }) {
   const [type, setType] = useState('all');
   const [sel, setSel] = useState(null);
   const [vmode, setVmode] = useState('table');
+  const [creating, setCreating] = useState(false);
 
   const load = () => {
     setErr(null); setData(null);
@@ -53,10 +55,10 @@ export default function Employees({ search }) {
           <p>{emps.length} nhân sự · {deps.length} phòng ban · dữ liệu trực tiếp từ Odoo</p>
         </div>
         <div className="actions">
-          <button className="btn btn-ghost" onClick={() => window.open('/odoo/employees', '_blank')}>
-            <Icon name="settings" size={16} />Mở Odoo backend</button>
-          <button className="btn btn-primary" onClick={() => window.open('/odoo/employees/new', '_blank')}>
-            <Icon name="plus" size={16} />Thêm nhân viên</button>
+          {data.isHr && (
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              <Icon name="plus" size={16} />Thêm nhân viên</button>
+          )}
         </div>
       </div>
 
@@ -145,7 +147,12 @@ export default function Employees({ search }) {
         </div>
       )}
 
-      {sel && <EmployeeDrawer emp={sel} onClose={() => setSel(null)} isHr={data.isHr} isMgr={data.isHrManager} />}
+      {sel && <EmployeeDrawer emp={sel} onClose={() => { setSel(null); load(); }} isHr={data.isHr} isMgr={data.isHrManager} />}
+      {creating && (
+        <EmployeeForm emp={null} isMgr={data.isHrManager}
+          onClose={() => setCreating(false)}
+          onSaved={() => { setCreating(false); load(); }} />
+      )}
     </div>
   );
 }
