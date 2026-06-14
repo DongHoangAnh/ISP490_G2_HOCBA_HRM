@@ -5,8 +5,8 @@
         <field name="name">Báo cáo Phân tích Nghỉ phép</field>
         <field name="model">hb.timeoff.export.wizard</field>
         <field name="report_type">qweb-pdf</field>
-        <field name="report_name">hb_timeoff_analytics.report_timeoff_analytics_pdf</field>
-        <field name="report_file">hb_timeoff_analytics.report_timeoff_analytics_pdf</field>
+        <field name="report_name">hocba_timeoff.report_timeoff_analytics_pdf</field>
+        <field name="report_file">hocba_timeoff.report_timeoff_analytics_pdf</field>
         <field name="binding_model_id" ref="model_hb_timeoff_export_wizard"/>
     </record>
 

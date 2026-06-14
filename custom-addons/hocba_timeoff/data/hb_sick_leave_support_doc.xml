@@ -2,7 +2,7 @@
 <odoo>
     <data>
         <!-- Bật yêu cầu chứng từ hỗ trợ cho Nghỉ Ốm (FUNC-TO-002) -->
-        <record id="hb_timeoff_config.hb_leave_type_sick" model="hr.leave.type">
+        <record id="hocba_timeoff.hb_leave_type_sick" model="hr.leave.type">
             <field name="support_document">True</field>
         </record>
     </data>

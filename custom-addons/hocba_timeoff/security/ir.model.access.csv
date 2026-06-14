@@ -1,4 +1,8 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hb_policy_rule_hr_user,hb.timeoff.policy.rule hr_user,model_hb_timeoff_policy_rule,hr_holidays.group_hr_holidays_user,1,0,0,0
+access_hb_policy_rule_hr_manager,hb.timeoff.policy.rule hr_manager,model_hb_timeoff_policy_rule,hr_holidays.group_hr_holidays_manager,1,1,1,1
+access_hb_leave_policy_log_hr_user,hb.leave.policy.log hr_user,model_hb_leave_policy_log,hr_holidays.group_hr_holidays_user,1,0,0,0
+access_hb_leave_policy_log_hr_manager,hb.leave.policy.log hr_manager,model_hb_leave_policy_log,hr_holidays.group_hr_holidays_manager,1,1,1,0
 access_hb_leave_analysis_hr_user,hb.timeoff.leave.analysis HR user,model_hb_timeoff_leave_analysis,hr_holidays.group_hr_holidays_user,1,0,0,0
 access_hb_leave_analysis_base_user,hb.timeoff.leave.analysis base user,model_hb_timeoff_leave_analysis,base.group_user,1,0,0,0
 access_hb_burnout_line_hr_user,hb.timeoff.burnout.line HR user,model_hb_timeoff_burnout_line,hr_holidays.group_hr_holidays_user,1,0,0,0

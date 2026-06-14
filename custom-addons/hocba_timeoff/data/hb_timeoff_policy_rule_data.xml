@@ -25,7 +25,7 @@
         ============================================================ -->
         <record id="hb_accrual_plan_annual_ta" model="hr.leave.accrual.plan">
             <field name="name">Phép Năm — Trợ Giảng</field>
-            <field name="time_off_type_id" ref="hb_timeoff_config.hb_leave_type_annual"/>
+            <field name="time_off_type_id" ref="hocba_timeoff.hb_leave_type_annual"/>
             <field name="accrued_gain_time">start</field>
             <field name="can_be_carryover">True</field>
             <field name="carryover_date">other</field>
@@ -58,14 +58,14 @@
             <field name="name">Chính sách — Nhân viên Toàn thời gian</field>
             <field name="employment_type">fulltime</field>
             <field name="leave_type_ids" eval="[
-                (4, ref('hb_timeoff_config.hb_leave_type_annual')),
-                (4, ref('hb_timeoff_config.hb_leave_type_sick')),
-                (4, ref('hb_timeoff_config.hb_leave_type_unpaid')),
-                (4, ref('hb_timeoff_config.hb_leave_type_maternity')),
-                (4, ref('hb_timeoff_config.hb_leave_type_emergency')),
+                (4, ref('hocba_timeoff.hb_leave_type_annual')),
+                (4, ref('hocba_timeoff.hb_leave_type_sick')),
+                (4, ref('hocba_timeoff.hb_leave_type_unpaid')),
+                (4, ref('hocba_timeoff.hb_leave_type_maternity')),
+                (4, ref('hocba_timeoff.hb_leave_type_emergency')),
             ]"/>
             <field name="allocation_mode">accrual</field>
-            <field name="accrual_plan_id" ref="hb_timeoff_config.hb_accrual_plan_annual_fulltime"/>
+            <field name="accrual_plan_id" ref="hocba_timeoff.hb_accrual_plan_annual_fulltime"/>
             <field name="annual_days">12</field>
             <field name="notes">
                 Toàn bộ 5 loại nghỉ phép. Phép năm tích lũy 1 ngày/tháng, tối đa 12 ngày.
@@ -79,13 +79,13 @@
             <field name="name">Chính sách — Giảng viên (Chính thức)</field>
             <field name="employment_type">teacher</field>
             <field name="leave_type_ids" eval="[
-                (4, ref('hb_timeoff_config.hb_leave_type_annual')),
-                (4, ref('hb_timeoff_config.hb_leave_type_sick')),
-                (4, ref('hb_timeoff_config.hb_leave_type_unpaid')),
-                (4, ref('hb_timeoff_config.hb_leave_type_emergency')),
+                (4, ref('hocba_timeoff.hb_leave_type_annual')),
+                (4, ref('hocba_timeoff.hb_leave_type_sick')),
+                (4, ref('hocba_timeoff.hb_leave_type_unpaid')),
+                (4, ref('hocba_timeoff.hb_leave_type_emergency')),
             ]"/>
             <field name="allocation_mode">accrual</field>
-            <field name="accrual_plan_id" ref="hb_timeoff_config.hb_accrual_plan_annual_fulltime"/>
+            <field name="accrual_plan_id" ref="hocba_timeoff.hb_accrual_plan_annual_fulltime"/>
             <field name="annual_days">12</field>
             <field name="notes">
                 4 loại nghỉ (không có Thai sản). Phép năm tích lũy 1 ngày/tháng, tối đa 12 ngày.
@@ -98,9 +98,9 @@
             <field name="name">Chính sách — Trợ giảng</field>
             <field name="employment_type">ta</field>
             <field name="leave_type_ids" eval="[
-                (4, ref('hb_timeoff_config.hb_leave_type_annual')),
-                (4, ref('hb_timeoff_config.hb_leave_type_sick')),
-                (4, ref('hb_timeoff_config.hb_leave_type_unpaid')),
+                (4, ref('hocba_timeoff.hb_leave_type_annual')),
+                (4, ref('hocba_timeoff.hb_leave_type_sick')),
+                (4, ref('hocba_timeoff.hb_leave_type_unpaid')),
             ]"/>
             <field name="allocation_mode">accrual</field>
             <field name="accrual_plan_id" ref="hb_accrual_plan_annual_ta"/>
@@ -116,7 +116,7 @@
             <field name="name">Chính sách — Nhân viên Bán thời gian</field>
             <field name="employment_type">parttime</field>
             <field name="leave_type_ids" eval="[
-                (4, ref('hb_timeoff_config.hb_leave_type_unpaid')),
+                (4, ref('hocba_timeoff.hb_leave_type_unpaid')),
             ]"/>
             <field name="allocation_mode">none</field>
             <field name="annual_days">0</field>
@@ -130,7 +130,7 @@
             <field name="name">Chính sách — Giảng viên Thỉnh giảng</field>
             <field name="employment_type">visiting</field>
             <field name="leave_type_ids" eval="[
-                (4, ref('hb_timeoff_config.hb_leave_type_unpaid')),
+                (4, ref('hocba_timeoff.hb_leave_type_unpaid')),
             ]"/>
             <field name="allocation_mode">none</field>
             <field name="annual_days">0</field>

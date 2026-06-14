@@ -214,7 +214,7 @@ class HbTimeoffExportWizard(models.TransientModel):
 
     def _export_pdf(self):
         return self.env.ref(
-            'hb_timeoff_analytics.action_report_hb_timeoff_analytics'
+            'hocba_timeoff.action_report_hb_timeoff_analytics'
         ).report_action(self)
 
     # ------------------------------------------------------------------ #

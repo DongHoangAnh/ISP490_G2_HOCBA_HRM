@@ -72,7 +72,7 @@ class HrLeave(models.Model):
             {'x_conflict_check_pending': True}
         )
         cron = self.env.ref(
-            'hb_timeoff_schedule_conflict.ir_cron_schedule_conflict_check',
+            'hocba_timeoff.ir_cron_schedule_conflict_check',
             raise_if_not_found=False,
         )
         if cron:
@@ -93,7 +93,7 @@ class HrLeave(models.Model):
         # Nếu còn đơn chờ (vượt batch_limit), kích hoạt cron chạy tiếp.
         if self.search_count([('x_conflict_check_pending', '=', True)]):
             cron = self.env.ref(
-                'hb_timeoff_schedule_conflict.ir_cron_schedule_conflict_check',
+                'hocba_timeoff.ir_cron_schedule_conflict_check',
                 raise_if_not_found=False,
             )
             if cron:
@@ -130,7 +130,7 @@ class HrLeave(models.Model):
             return
 
         academic_group = self.env.ref(
-            'hb_timeoff_schedule_conflict.group_academic_manager',
+            'hocba_timeoff.group_academic_manager',
             raise_if_not_found=False,
         )
         hr_manager_group = self.env.ref(

@@ -2,7 +2,7 @@
 <odoo>
     <data>
         <!-- Bật fast-track flag cho Nghỉ Khẩn Cấp (AUT-TO-001) -->
-        <record id="hb_timeoff_config.hb_leave_type_emergency" model="hr.leave.type">
+        <record id="hocba_timeoff.hb_leave_type_emergency" model="hr.leave.type">
             <field name="x_is_emergency_type">True</field>
         </record>
     </data>
