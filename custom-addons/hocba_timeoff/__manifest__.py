@@ -39,9 +39,17 @@
         'views/hr_leave_medical_views.xml',
         'views/hr_leave_schedule_conflict_views.xml',
         'views/hb_leave_analysis_views.xml',
+        'views/hr_holidays_dashboard_views.xml',
         'views/menu_policy.xml',
         'views/menu_analytics.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'hocba_timeoff/static/src/css/hr_holidays_modern.css',
+            'hocba_timeoff/static/src/js/hr_holidays_modern.js',
+            'hocba_timeoff/static/src/xml/dashboard.xml',
+        ],
+    },
     'installable': True,
     'auto_install': False,
     'application': False,
