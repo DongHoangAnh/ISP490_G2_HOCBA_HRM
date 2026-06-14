@@ -69,8 +69,8 @@ class HbTimeoffBurnoutLine(models.Model):
                                   AND hl.date_from >= CURRENT_DATE - INTERVAL '90 days'
                             ), 0
                         ) > 10                           THEN True
-                        WHEN COALESCE(rb.remaining_days, 0) < 2
-                             AND COALESCE(rb.remaining_days, 0) > -999
+                        WHEN rb.remaining_days IS NOT NULL
+                             AND rb.remaining_days < 2
                                                          THEN True
                         ELSE False
                     END                                                       AS burnout_risk,
@@ -90,8 +90,8 @@ class HbTimeoffBurnoutLine(models.Model):
                             ), 0
                         ) > 10
                             THEN 'Vắng nhiều (>10 ngày / 3 tháng)'
-                        WHEN COALESCE(rb.remaining_days, 0) < 2
-                             AND COALESCE(rb.remaining_days, 0) > -999
+                        WHEN rb.remaining_days IS NOT NULL
+                             AND rb.remaining_days < 2
                             THEN 'Số dư nghỉ phép thấp (<2 ngày)'
                         ELSE ''
                     END                                                       AS risk_reason
