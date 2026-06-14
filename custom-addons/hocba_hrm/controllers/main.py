@@ -47,6 +47,19 @@ EMP_FORM_VERSION_FIELDS = {
     'wage': ('wage', 'mgr'),
 }
 
+# Whitelist field nhân viên được TỰ SỬA trên hồ sơ của chính mình (self-service).
+# Chỉ liên hệ + địa chỉ — KHÔNG có lương/trạng thái/pháp lý/phòng ban.
+ME_SELF_FIELDS = {
+    'phone': 'work_phone',
+    'permStreet': 'x_permanent_street',
+    'permWard': 'x_permanent_ward',
+    'permState': 'x_permanent_state_id',
+    'currentSame': 'x_current_same_as_permanent',
+    'currStreet': 'x_current_street',
+    'currWard': 'x_current_ward',
+    'currState': 'x_current_state_id',
+}
+
 
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
@@ -573,20 +586,73 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 
+    def _me_payload(self, e):
+        """Dựng payload /api/me: hồ sơ đầy đủ (tự xem nên is_hr=is_mgr=True) +
+        danh sách tỉnh/thành + giá trị thô của field tự-sửa (cho form self-edit)."""
+        data = self._employee_detail(e.sudo(), self._labels(), True, True)
+        data['hasEmployee'] = True
+        states = request.env['res.country.state'].sudo().search(
+            [('country_id.code', '=', 'VN')], order='name')
+        data['provinces'] = [{'id': s.id, 'name': s.name} for s in states]
+        data['editable'] = {
+            'phone': e.work_phone or '',
+            'permStreet': e.x_permanent_street or '',
+            'permWard': e.x_permanent_ward or '',
+            'permState': e.x_permanent_state_id.id or False,
+            'currentSame': e.x_current_same_as_permanent,
+            'currStreet': e.x_current_street or '',
+            'currWard': e.x_current_ward or '',
+            'currState': e.x_current_state_id.id or False,
+        }
+        return data
+
     @http.route('/hocba-hrm/api/me', auth='user', type='http', methods=['GET'])
     def api_me(self, **kw):
-        """Hồ sơ self-service: user xem hồ sơ CỦA CHÍNH MÌNH. Vì là dữ liệu của
-        bản thân nên trả đầy đủ (truyền is_hr=is_mgr=True cho bộ dựng) — nhân
-        viên luôn được xem pháp lý/NPT/lương của chính mình."""
+        """Hồ sơ self-service: user xem hồ sơ CỦA CHÍNH MÌNH (đầy đủ pháp lý/
+        NPT/lương của bản thân)."""
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         e = request.env.user.employee_id
         if not e:
             return request.make_json_response({'hasEmployee': False})
-        labels = self._labels()
-        data = self._employee_detail(e.sudo(), labels, True, True)
-        data['hasEmployee'] = True
-        return request.make_json_response(data)
+        return request.make_json_response(self._me_payload(e.sudo()))
+
+    @http.route('/hocba-hrm/api/me', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_me_update(self, **kw):
+        """Nhân viên TỰ cập nhật liên hệ + địa chỉ của chính mình. Ghi sudo vào
+        hồ sơ của bản thân nhưng CHỈ field trong ME_SELF_FIELDS (không leo thang
+        sang lương/trạng thái/pháp lý)."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        e = request.env.user.employee_id
+        if not e:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        payload = request.get_json_data()
+        vals = {}
+        for key, field in ME_SELF_FIELDS.items():
+            if key not in payload:
+                continue
+            v = payload[key]
+            if field.endswith('state_id'):
+                v = int(v) if v else False
+            elif field == 'x_current_same_as_permanent':
+                v = bool(v)
+            else:
+                v = v if v not in ('', None) else False
+            vals[field] = v
+        # Nếu chọn "tạm trú giống thường trú" thì đồng bộ luôn (onchange không
+        # chạy qua write) để dữ liệu nhất quán.
+        if vals.get('x_current_same_as_permanent'):
+            vals['x_current_state_id'] = vals.get('x_permanent_state_id', e.x_permanent_state_id.id)
+            vals['x_current_ward'] = vals.get('x_permanent_ward', e.x_permanent_ward)
+            vals['x_current_street'] = vals.get('x_permanent_street', e.x_permanent_street)
+        try:
+            e.sudo().write(vals)
+        except (ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._me_payload(e.sudo()))
 
     @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',
                 type='http', methods=['GET'])

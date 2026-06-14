@@ -6,6 +6,8 @@ export const fetchEmployee = (id) => hbGet(`/hocba-hrm/api/employee/${id}`);
 export const fetchCertAlerts = () => hbGet('/hocba-hrm/api/employees/cert-alerts');
 export const fetchOnboarding = () => hbGet('/hocba-hrm/api/employees/onboarding');
 export const fetchMe = () => hbGet('/hocba-hrm/api/me');
+/* Nhân viên tự cập nhật liên hệ + địa chỉ của chính mình. */
+export const updateMe = (payload) => hbPost('/hocba-hrm/api/me', payload);
 
 /* Đánh giá cổng thử việc (F-004/005). gate: '2w'|'2m', result: 'pass'|'fail'.
    Trả về hồ sơ chi tiết đã cập nhật (status có thể đổi sang official/exiting). */

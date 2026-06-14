@@ -10,11 +10,13 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbStatusKind } from '../../utils/format';
 import { InfoTab, ProbationTab, AssetsTab, PromoTab } from './EmployeeDrawer';
+import ProfileEditForm from './ProfileEditForm';
 
 export default function Profile() {
   const [det, setDet] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState('info');
+  const [editing, setEditing] = useState(false);
 
   const load = () => {
     setErr(null); setDet(null);
@@ -62,8 +64,8 @@ export default function Profile() {
               {det.phone && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }} className="muted"><Icon name="phone" size={15} />{det.phone}</span>}
             </div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => window.open('/odoo/employees/' + det.id, '_blank')}>
-            <Icon name="edit" size={15} />Sửa trong Odoo</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
+            <Icon name="edit" size={15} />Cập nhật thông tin</button>
         </div>
         <div style={{ padding: '0 24px' }}>
           <div className="tabs" style={{ marginBottom: 0 }}>
@@ -81,6 +83,12 @@ export default function Profile() {
         {tab === 'assets' && <AssetsTab det={det} />}
         {tab === 'promo' && <PromoTab det={det} isMgr />}
       </div>
+
+      {editing && (
+        <ProfileEditForm det={det}
+          onClose={() => setEditing(false)}
+          onSaved={(d) => { setDet(d); setEditing(false); }} />
+      )}
     </div>
   );
 }
