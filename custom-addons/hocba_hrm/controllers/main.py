@@ -2,6 +2,7 @@ import calendar
 from datetime import date, timedelta
 
 from odoo import http, fields
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request, Response
 from odoo.tools import file_open
 
@@ -390,6 +391,45 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(
             self._employee_detail(e, labels, is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/gate', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_employee_gate(self, emp_id, **kw):
+        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2,
+        để model tự kiểm quyền (HR Manager / quản lý trực tiếp) + chạy automation
+        AUT-001/002. KHÔNG sudo cố tình — nhờ vậy AccessError của model phát huy."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        # browse KHÔNG sudo: write sẽ chạy qua kiểm quyền của model
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+
+        payload = request.get_json_data()
+        gate = payload.get('gate')
+        result = payload.get('result')
+        note = (payload.get('note') or '').strip()
+        if gate not in ('2w', '2m') or result not in ('pass', 'fail'):
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+
+        today = fields.Date.context_today(request.env.user)
+        vals = {
+            'x_eval_%s_result' % gate: result,
+            'x_eval_%s_date' % gate: today,
+            'x_eval_%s_evaluator_id' % gate: request.env.user.id,
+        }
+        if note:
+            vals['x_eval_%s_note' % gate] = note
+        try:
+            e.write(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=403)
+
+        # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
+        is_hr, is_mgr = self._hr_flags()
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 
     @http.route('/hocba-hrm/api/me', auth='user', type='http', methods=['GET'])
     def api_me(self, **kw):

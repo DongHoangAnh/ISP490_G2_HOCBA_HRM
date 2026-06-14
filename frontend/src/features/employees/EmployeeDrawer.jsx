@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee } from '../../api/employees';
+import { fetchEmployee, postGate } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
@@ -31,7 +31,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-.4px' }}>{emp.name}</h2>
-            <Badge kind={hbStatusKind(emp.statusKey)} dot>{emp.status}</Badge>
+            <Badge kind={hbStatusKind((det || emp).statusKey)} dot>{(det || emp).status}</Badge>
           </div>
           <div className="muted" style={{ fontSize: 13.5, marginTop: 3 }}>{emp.code} · {emp.jobTitle} · {emp.depName}</div>
           <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
@@ -58,7 +58,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         {derr && <EmptyState>Không tải được hồ sơ ({derr}).</EmptyState>}
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
         {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} />}
-        {det && tab === 'probation' && <ProbationTab det={det} />}
+        {det && tab === 'probation' && <ProbationTab det={det} isMgr={isMgr} onUpdated={setDet} />}
         {det && tab === 'assets' && <AssetsTab det={det} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} />}
       </div>
@@ -129,8 +129,47 @@ export function InfoTab({ det, isHr, isMgr }) {
   );
 }
 
+/* Nút đánh giá 1 cổng (chỉ HR Manager). Gọi API → BE chạy automation
+   (cấp thiết bị / lên chính thức / offboarding) → trả hồ sơ mới. */
+function GateAction({ empId, gate, onUpdated }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const submit = async (result) => {
+    if (result === 'fail' && !window.confirm(
+      'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding (không gia hạn). Tiếp tục?')) return;
+    setBusy(true); setErr(null);
+    try {
+      const det = await postGate(empId, { gate, result });
+      onUpdated(det);
+    } catch (e) {
+      setErr(e.status === 403 ? 'Không có quyền hoặc thao tác bị từ chối (kiểm tra điều kiện cổng).' : e.message);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 7 }}>
+        Đánh giá cổng
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy}
+          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
+          onClick={() => submit('pass')}>
+          <Icon name="checkCircle" size={14} />Đạt
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={busy}
+          style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
+          onClick={() => submit('fail')}>
+          <Icon name="x" size={14} />Không đạt
+        </button>
+        {busy && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Đang lưu…</span>}
+      </div>
+      {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
+    </div>
+  );
+}
+
 /* Timeline thử việc 5 điểm (Nhóm B) + thử giảng (Nhóm A) */
-export function ProbationTab({ det }) {
+export function ProbationTab({ det, isMgr, onUpdated }) {
   const p = det.probation || {};
   const steps = [
     ['Thử việc', p.start ? 'done' : 'pending', fmtDate(p.start)],
@@ -172,6 +211,9 @@ export function ProbationTab({ det }) {
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2wDue)}</div></div>
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2wDate)}</div></div>
               <div className="kv"><div className="k">Ghi chú</div><div className="v">{p.d2wNote || '—'}</div></div>
+              {isMgr && onUpdated && p.d2wResult === 'draft' && (
+                <GateAction empId={det.id} gate="2w" onUpdated={onUpdated} />
+              )}
             </div>
             <div className="card" style={{ padding: 16 }}>
               <div className="between" style={{ marginBottom: 10 }}>
@@ -181,6 +223,9 @@ export function ProbationTab({ det }) {
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2mDue)}</div></div>
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2mDate)}</div></div>
               <div className="kv"><div className="k">Ghi chú</div><div className="v">{p.d2mNote || '—'}</div></div>
+              {isMgr && onUpdated && p.d2wResult === 'pass' && p.d2mResult === 'draft' && (
+                <GateAction empId={det.id} gate="2m" onUpdated={onUpdated} />
+              )}
             </div>
           </div>
           {p.officialDate && (

@@ -148,7 +148,7 @@ export default function Onboarding({ search }) {
                  jobTitle: sel.jobTitle, hasImg: sel.hasImg, statusKey: 'probation', status: 'Thử việc' }}
           initialTab="probation"
           isHr={data.isHr} isMgr={data.isHrManager}
-          onClose={() => setSel(null)} />
+          onClose={() => { setSel(null); load(); }} />
       )}
     </div>
   );

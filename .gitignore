@@ -26,3 +26,6 @@ Thumbs.db
 
 # Claude Code (cau hinh ca nhan)
 .claude/
+
+# Local demo-data seed scripts (chứa mật khẩu test — không commit)
+_demo_seed/
