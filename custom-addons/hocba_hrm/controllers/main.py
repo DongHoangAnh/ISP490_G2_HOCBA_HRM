@@ -67,6 +67,20 @@ DEP_FIELDS = {
     'dateEnd': 'date_end', 'notes': 'notes',
 }
 
+# Field cấp tài sản (F-006) cho form Tài sản trong SPA.
+ASSET_FIELDS = {
+    'assetTypeId': 'asset_type_id', 'assetCode': 'asset_code',
+    'grantDate': 'grant_date', 'conditionIn': 'condition_in',
+}
+
+# Field thăng tiến (F-007) cho form Thăng tiến trong SPA.
+PROMO_FIELDS = {
+    'dateEffective': 'date_effective', 'toJobId': 'to_job_id',
+    'toDepartmentId': 'to_department_id', 'toWage': 'to_wage',
+    'allowanceNote': 'allowance_note', 'reason': 'reason',
+    'decisionRef': 'decision_ref',
+}
+
 
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
@@ -409,6 +423,7 @@ class HocBaHRM(http.Controller):
         promotions = []
         for p in e.x_promotion_ids.sorted('date_effective'):
             item = {
+                'id': p.id,
                 'date': _d(p.date_effective),
                 'fromJob': p.from_job_id.name or '—',
                 'toJob': p.to_job_id.name or '—',
@@ -559,6 +574,123 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
 
+    # ------------------------------------------------------------------
+    # Tài sản (F-006) — cấp / thu hồi / chuyển giao inline trong SPA (HR).
+    # KHÔNG xoá (model chặn unlink); state đổi qua action của model.
+    # ------------------------------------------------------------------
+    def _conv_id(self, v):
+        return int(v) if v not in ('', None, False) else False
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/asset', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_asset_create(self, emp_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        payload = request.get_json_data()
+        vals = {'employee_id': emp_id}
+        for key, field in ASSET_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                if field == 'asset_type_id':
+                    v = self._conv_id(v)
+                vals[field] = v if v not in ('', None) else False
+        try:
+            request.env['hr.employee.asset'].create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/asset/<int:asset_id>/return', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_asset_return(self, asset_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        a = request.env['hr.employee.asset'].browse(asset_id)
+        if not a.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = a.employee_id
+        payload = request.get_json_data() or {}
+        try:
+            a.write({
+                'return_date': payload.get('returnDate') or fields.Date.context_today(a),
+                'condition_out_note': (payload.get('note') or '').strip(),
+            })
+            a.action_mark_returned()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/asset/<int:asset_id>/transfer', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_asset_transfer(self, asset_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        a = request.env['hr.employee.asset'].browse(asset_id)
+        if not a.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = a.employee_id
+        payload = request.get_json_data() or {}
+        target = self._conv_id(payload.get('transferTo'))
+        if not target:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        try:
+            a.write({
+                'transferred_to': target,
+                'return_date': payload.get('returnDate') or fields.Date.context_today(a),
+            })
+            a.action_mark_transferred()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Thăng tiến (F-007) — thêm mốc thăng tiến inline (HR Manager). Tạo
+    # bản ghi sẽ tự cập nhật chức vụ/phòng ban NV (model). KHÔNG xoá.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/promotion', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_promotion_create(self, emp_id, **kw):
+        _, is_mgr = self._hr_flags()
+        if not is_mgr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        payload = request.get_json_data()
+        vals = {'employee_id': emp_id,
+                'from_job_id': e.job_id.id or False,
+                'from_wage': (e.version_id.wage if e.version_id
+                              and 'wage' in e.version_id._fields else 0) or 0}
+        for key, field in PROMO_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                if field in ('to_job_id', 'to_department_id'):
+                    v = self._conv_id(v)
+                elif field == 'to_wage':
+                    v = float(v) if v not in ('', None) else 0.0
+                else:
+                    v = v if v not in ('', None) else False
+                vals[field] = v
+        try:
+            request.env['hr.promotion.history'].create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
     @http.route('/hocba-hrm/api/form/meta', auth='user', type='http', methods=['GET'])
     def api_form_meta(self, **kw):
         """Metadata cho form Thêm/Sửa nhân viên: phòng ban, chức danh, các lựa
@@ -582,6 +714,13 @@ class HocBaHRM(http.Controller):
             'position': opts('x_position_type'),
             'relationship': list(env['hr.employee.dependent']._fields[
                 'relationship']._description_selection(env)),
+            'assetTypes': [{'id': t.id, 'name': t.name}
+                           for t in env['hocba.asset.type'].sudo().search([], order='name')],
+            'assetCondition': list(env['hr.employee.asset']._fields[
+                'condition_in']._description_selection(env)),
+            'employees': [{'id': em.id, 'name': em.name}
+                          for em in env['hr.employee'].sudo().search(
+                              [], order='name')],
             'canManager': is_mgr,
         })
 

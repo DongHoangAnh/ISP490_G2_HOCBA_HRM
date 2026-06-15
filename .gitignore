@@ -29,3 +29,6 @@ Thumbs.db
 
 # Local demo-data seed scripts (chứa mật khẩu test — không commit)
 _demo_seed/
+
+# Vite dev cache
+frontend/.vite/

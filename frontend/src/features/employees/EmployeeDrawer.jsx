@@ -8,6 +8,8 @@ import Avatar from '../../components/Avatar';
 import Modal from '../../components/Modal';
 import EmployeeForm from './EmployeeForm';
 import DependentForm from './DependentForm';
+import AssetForm from './AssetForm';
+import PromotionForm from './PromotionForm';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
@@ -64,8 +66,8 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
         {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={setDet} />}
         {det && tab === 'probation' && <ProbationTab det={det} isMgr={isMgr} onUpdated={setDet} />}
-        {det && tab === 'assets' && <AssetsTab det={det} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} />}
+        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={setDet} />}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={setDet} />}
       </div>
 
       {editing && det && (
@@ -297,29 +299,84 @@ export function ProbationTab({ det, isMgr, onUpdated }) {
   );
 }
 
-export function AssetsTab({ det }) {
-  if (!det.assets.length) return <EmptyState>Chưa có tài sản cấp phát.</EmptyState>;
+export function AssetsTab({ det, editable, onUpdated }) {
+  // form = null | { mode:'new' } | { mode:'return'|'transfer', asset }
+  const [form, setForm] = useState(null);
   const kind = (s) => s === 'assigned' ? 'green' : s === 'transferred' ? 'blue' : 'gray';
+  const canAct = editable && onUpdated;
   return (
-    <div className="card" style={{ padding: 0 }}>
-      <table className="tbl">
-        <thead><tr><th>Mã tài sản</th><th>Loại</th><th>Ngày cấp</th><th>Trạng thái</th><th>Ngày thu hồi</th></tr></thead>
-        <tbody>{det.assets.map((a) => (
-          <tr key={a.id} style={{ cursor: 'default' }}>
-            <td className="mono" style={{ fontWeight: 600 }}>{a.code}</td>
-            <td>{a.type}</td>
-            <td className="mono">{fmtDate(a.grant)}</td>
-            <td><Badge kind={kind(a.state)} dot>{a.stateLabel}</Badge></td>
-            <td className="mono">{a.returnDate ? fmtDate(a.returnDate) : '—'}</td>
-          </tr>))}</tbody>
-      </table>
+    <div>
+      {canAct && (
+        <div className="between" style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Tài sản cấp phát ({det.assets.length})</div>
+          <button className="btn btn-soft btn-sm" onClick={() => setForm({ mode: 'new' })}>
+            <Icon name="plus" size={13} />Cấp phát</button>
+        </div>
+      )}
+      {!det.assets.length ? (
+        <EmptyState>Chưa có tài sản cấp phát.</EmptyState>
+      ) : (
+        <div className="card" style={{ padding: 0 }}>
+          <table className="tbl">
+            <thead><tr><th>Mã tài sản</th><th>Loại</th><th>Ngày cấp</th><th>Trạng thái</th><th>Ngày thu hồi</th>{canAct && <th></th>}</tr></thead>
+            <tbody>{det.assets.map((a) => (
+              <tr key={a.id} style={{ cursor: 'default' }}>
+                <td className="mono" style={{ fontWeight: 600 }}>{a.code}</td>
+                <td>{a.type}</td>
+                <td className="mono">{fmtDate(a.grant)}</td>
+                <td><Badge kind={kind(a.state)} dot>{a.stateLabel}</Badge></td>
+                <td className="mono">{a.returnDate ? fmtDate(a.returnDate) : '—'}</td>
+                {canAct && (
+                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {a.state === 'assigned' ? (
+                      <>
+                        <button className="btn btn-ghost btn-sm" title="Thu hồi" onClick={() => setForm({ mode: 'return', asset: a })}>Thu hồi</button>
+                        <button className="btn btn-ghost btn-sm" title="Chuyển giao" style={{ marginLeft: 6 }} onClick={() => setForm({ mode: 'transfer', asset: a })}>Chuyển</button>
+                      </>
+                    ) : <span className="faint" style={{ fontSize: 12 }}>—</span>}
+                  </td>
+                )}
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+      {form && (
+        <AssetForm empId={det.id} mode={form.mode} asset={form.asset}
+          onClose={() => setForm(null)}
+          onSaved={(d) => { setForm(null); onUpdated(d); }} />
+      )}
     </div>
   );
 }
 
-export function PromoTab({ det, isMgr }) {
-  if (!det.promotions.length) return <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>;
+export function PromoTab({ det, isMgr, editable, onUpdated }) {
+  const [adding, setAdding] = useState(false);
+  const canAct = editable && onUpdated;
   const path = det.promotions;
+  return (
+    <div>
+      {canAct && (
+        <div className="between" style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Lịch sử thăng tiến ({path.length})</div>
+          <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
+            <Icon name="arrowUp" size={13} />Thêm mốc</button>
+        </div>
+      )}
+      {!path.length ? (
+        <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>
+      ) : (
+        <PromoTimeline path={path} isMgr={isMgr} />
+      )}
+      {adding && (
+        <PromotionForm det={det}
+          onClose={() => setAdding(false)}
+          onSaved={(d) => { setAdding(false); onUpdated(d); }} />
+      )}
+    </div>
+  );
+}
+
+function PromoTimeline({ path, isMgr }) {
   return (
     <div style={{ position: 'relative', paddingLeft: 8 }}>
       {path.map((p, i) => {
