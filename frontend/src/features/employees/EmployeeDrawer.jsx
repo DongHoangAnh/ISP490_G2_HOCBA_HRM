@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, postGate, deleteDependent } from '../../api/employees';
+import { fetchEmployee, postGate, postTrial, deleteDependent } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
@@ -65,7 +65,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         {derr && <EmptyState>Không tải được hồ sơ ({derr}).</EmptyState>}
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
         {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={setDet} />}
-        {det && tab === 'probation' && <ProbationTab det={det} isMgr={isMgr} onUpdated={setDet} />}
+        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={setDet} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={setDet} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={setDet} />}
       </div>
@@ -208,8 +208,69 @@ function GateAction({ empId, gate, onUpdated }) {
   );
 }
 
+/* Form chấm thử giảng (F-008) — HR nhập ngày/lớp/2 điểm/nhận xét rồi
+   chốt Đạt / Không đạt. Model áp ràng buộc (điểm 1–10, fail cần nhận xét). */
+function TrialAction({ empId, onUpdated }) {
+  const tinp = {
+    padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border-strong)',
+    background: '#fff', fontSize: 13, color: 'var(--ink)', outline: 'none',
+    fontFamily: 'inherit', width: '100%',
+  };
+  const [f, setF] = useState({
+    date: new Date().toISOString().slice(0, 10), cls: '', scoreMethod: '', scoreContent: '', note: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const submit = async (result) => {
+    setErr(null);
+    if (result === 'fail' && !f.note.trim()) { setErr('Cần nhập nhận xét khi Không đạt.'); return; }
+    for (const s of [f.scoreMethod, f.scoreContent]) {
+      if (s !== '' && (Number(s) < 1 || Number(s) > 10)) { setErr('Điểm phải trong thang 1–10.'); return; }
+    }
+    setBusy(true);
+    try { onUpdated(await postTrial(empId, { ...f, result })); }
+    catch (e) { setErr(e.status === 403 ? 'Không có quyền chấm thử giảng.' : e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 9 }}>
+        Chấm thử giảng
+      </div>
+      <div className="grid-2" style={{ rowGap: 10, columnGap: 12, marginBottom: 10 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Ngày thử giảng</span>
+          <input type="date" style={tinp} value={f.date} onChange={set('date')} /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Lớp</span>
+          <input style={tinp} value={f.cls} onChange={set('cls')} placeholder="VD: HSK3-T2" /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Điểm phương pháp (1–10)</span>
+          <input type="number" min="1" max="10" step="0.1" style={tinp} value={f.scoreMethod} onChange={set('scoreMethod')} /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Điểm chuyên môn (1–10)</span>
+          <input type="number" min="1" max="10" step="0.1" style={tinp} value={f.scoreContent} onChange={set('scoreContent')} /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, gridColumn: '1 / -1' }}>
+          <span className="faint" style={{ fontSize: 11 }}>Nhận xét (bắt buộc nếu Không đạt)</span>
+          <input style={tinp} value={f.note} onChange={set('note')} /></label>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy}
+          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
+          onClick={() => submit('pass')}><Icon name="checkCircle" size={14} />Đạt</button>
+        <button className="btn btn-ghost btn-sm" disabled={busy}
+          style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
+          onClick={() => submit('fail')}><Icon name="x" size={14} />Không đạt</button>
+        {busy && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Đang lưu…</span>}
+      </div>
+      {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
+    </div>
+  );
+}
+
 /* Timeline thử việc 5 điểm (Nhóm B) + thử giảng (Nhóm A) */
-export function ProbationTab({ det, isMgr, onUpdated }) {
+export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
   const p = det.probation || {};
   const steps = [
     ['Thử việc', p.start ? 'done' : 'pending', fmtDate(p.start)],
@@ -292,6 +353,9 @@ export function ProbationTab({ det, isMgr, onUpdated }) {
               <div className="kv"><div className="k">Điểm chuyên môn</div><div className="v mono">{det.trial.scoreContent || '—'} / 10</div></div>
             </div>
             {det.trial.note && <div style={{ marginTop: 12, fontSize: 12.5 }} className="muted">{det.trial.note}</div>}
+            {isHr && onUpdated && det.trial.result === 'draft' && (
+              <TrialAction empId={det.id} onUpdated={onUpdated} />
+            )}
           </div>
         </div>
       )}

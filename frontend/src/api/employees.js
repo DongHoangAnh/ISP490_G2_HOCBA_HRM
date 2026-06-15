@@ -14,6 +14,11 @@ export const updateMe = (payload) => hbPost('/hocba-hrm/api/me', payload);
 export const postGate = (id, payload) =>
   hbPost(`/hocba-hrm/api/employee/${id}/gate`, payload);
 
+/* Đánh giá thử giảng (F-008) cho giảng viên Nhóm A. result: 'pass'|'fail'.
+   Trả về hồ sơ chi tiết đã cập nhật. */
+export const postTrial = (id, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${id}/trial`, payload);
+
 /* Form Thêm/Sửa nhân viên (chỉ HR). */
 export const fetchFormMeta = () => hbGet('/hocba-hrm/api/form/meta');
 

@@ -503,6 +503,43 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/trial', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_employee_trial(self, emp_id, **kw):
+        """Đánh giá thử giảng (F-008) cho giảng viên Nhóm A từ SPA: ghi ngày,
+        lớp, 2 điểm, kết quả, nhận xét. KHÔNG sudo — model áp ràng buộc (điểm
+        1–10, ngày ≤ hôm nay, fail cần nhận xét) + activity nhắc HR."""
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+
+        payload = request.get_json_data()
+        result = payload.get('result')
+        if result not in ('pass', 'fail'):
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+
+        def num(v):
+            return float(v) if v not in ('', None) else 0.0
+        vals = {
+            'x_trial_lesson_date': payload.get('date')
+            or fields.Date.context_today(request.env.user),
+            'x_trial_lesson_class': (payload.get('cls') or '').strip(),
+            'x_trial_score_method': num(payload.get('scoreMethod')),
+            'x_trial_score_content': num(payload.get('scoreContent')),
+            'x_trial_lesson_note': (payload.get('note') or '').strip(),
+            'x_trial_lesson_result': result,
+        }
+        try:
+            e.write(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
     # ------------------------------------------------------------------
     # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
     # trả về hồ sơ đã cập nhật để FE refresh tab Thông tin.
