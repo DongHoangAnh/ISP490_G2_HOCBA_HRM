@@ -12,6 +12,9 @@ services:
       - PASSWORD=${DB_PASSWORD}
     env_file:
       - .env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./custom-addons:/mnt/extra-addons
       - odoo_data:/var/lib/odoo
@@ -19,7 +22,7 @@ services:
     command: >
       odoo
       --database=${DB_NAME:-neondb}
-      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
+      --init=hocba_timeoff
       --addons-path=/mnt/extra-addons
       --dev=xml
 

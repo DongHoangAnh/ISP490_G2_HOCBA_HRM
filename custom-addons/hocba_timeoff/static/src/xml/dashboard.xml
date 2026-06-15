@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="hr_holidays_modern.Dashboard">
+        <div class="o_hhm">
+
+            <!-- Header -->
+            <div class="o_hhm_header">
+                <div class="o_hhm_title">
+                    <t t-if="state.isManager">
+                        <h1><i class="fa fa-calendar-check-o me-2"/>Bảng điều khiển Nghỉ phép</h1>
+                        <p>Tổng quan đơn xin nghỉ · năm <t t-esc="state.year"/></p>
+                    </t>
+                    <t t-else="">
+                        <h1><i class="fa fa-user-circle-o me-2"/>Nghỉ phép của tôi</h1>
+                        <p>
+                            Xin chào<t t-if="state.empName">, <t t-esc="state.empName"/></t> ·
+                            năm <t t-esc="state.year"/>
+                        </p>
+                    </t>
+                </div>
+                <div class="o_hhm_actions">
+                    <button t-if="!state.isManager" class="btn o_hhm_btn_primary"
+                            t-on-click="() => this.openNewRequest()">
+                        <i class="fa fa-plus me-1"/>Tạo đơn nghỉ
+                    </button>
+                    <button class="btn o_hhm_refresh" t-on-click="() => this.refresh()">
+                        <i class="fa fa-refresh me-1"/>Làm mới
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading -->
+            <div t-if="state.loading" class="o_hhm_loading">
+                <i class="fa fa-circle-o-notch fa-spin fa-2x"/>
+                <span>Đang tải dữ liệu…</span>
+            </div>
+
+            <!-- ============================ MANAGER VIEW ======================= -->
+            <div t-elif="state.isManager">
+                <!-- KPI cards -->
+                <div class="o_hhm_kpis">
+                    <div class="o_hhm_kpi o_hhm_kpi--blue" t-on-click="() => this.openYear()">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-list-alt"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.total"/>
+                            <span class="o_hhm_kpi_label">Tổng đơn nghỉ</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--amber" t-on-click="() => this.openPending()">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-clock-o"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.pending"/>
+                            <span class="o_hhm_kpi_label">Chờ duyệt</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--green" t-on-click="() => this.openApproved()">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-check-circle"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.approved"/>
+                            <span class="o_hhm_kpi_label">Đã duyệt</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--violet">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-calendar"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="fmtDays(state.kpi.approvedDays)"/>
+                            <span class="o_hhm_kpi_label">Ngày nghỉ đã duyệt</span>
+                        </div>
+                    </div>
+
+                    <div class="o_hhm_kpi o_hhm_kpi--rose">
+                        <div class="o_hhm_kpi_icon"><i class="fa fa-plane"/></div>
+                        <div class="o_hhm_kpi_body">
+                            <span class="o_hhm_kpi_value" t-esc="state.kpi.onLeaveToday"/>
+                            <span class="o_hhm_kpi_label">Đang nghỉ hôm nay</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Two-column analytics -->
+                <div class="o_hhm_grid">
+                    <!-- Leave by type -->
+                    <div class="o_hhm_panel">
+                        <div class="o_hhm_panel_head">
+                            <h2><i class="fa fa-pie-chart me-2"/>Nghỉ phép theo loại</h2>
+                            <span class="o_hhm_panel_sub">Năm <t t-esc="state.year"/> · đã duyệt</span>
+                        </div>
+                        <div t-if="!state.byType.length" class="o_hhm_empty">
+                            <i class="fa fa-inbox"/><span>Chưa có dữ liệu</span>
+                        </div>
+                        <div t-else="" class="o_hhm_bars">
+                            <div class="o_hhm_bar_row" t-foreach="state.byType" t-as="t" t-key="t.id"
+                                 t-on-click="() => this.openType(t.id, t.name)">
+                                <div class="o_hhm_bar_top">
+                                    <span class="o_hhm_bar_name" t-esc="t.name"/>
+                                    <span class="o_hhm_bar_val">
+                                        <t t-esc="fmtDays(t.days)"/> ngày
+                                        <span class="o_hhm_bar_cnt">(<t t-esc="t.count"/> đơn)</span>
+                                    </span>
+                                </div>
+                                <div class="o_hhm_bar_track">
+                                    <div class="o_hhm_bar_fill"
+                                         t-attf-style="width:{{t.pct}}%;background:{{t.color}};"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top employees -->
+                    <div class="o_hhm_panel">
+                        <div class="o_hhm_panel_head">
+                            <h2><i class="fa fa-trophy me-2"/>Top nhân viên nghỉ nhiều</h2>
+                            <span class="o_hhm_panel_sub">Năm <t t-esc="state.year"/> · top 5</span>
+                        </div>
+                        <div t-if="!state.topEmployees.length" class="o_hhm_empty">
+                            <i class="fa fa-inbox"/><span>Chưa có dữ liệu</span>
+                        </div>
+                        <div t-else="" class="o_hhm_rank">
+                            <div class="o_hhm_rank_row" t-foreach="state.topEmployees" t-as="e" t-key="e.id">
+                                <div class="o_hhm_rank_pos" t-esc="e_index + 1"/>
+                                <div class="o_hhm_rank_main">
+                                    <div class="o_hhm_rank_top">
+                                        <span class="o_hhm_rank_name" t-esc="e.name"/>
+                                        <span class="o_hhm_rank_val"><t t-esc="fmtDays(e.days)"/> ngày</span>
+                                    </div>
+                                    <div class="o_hhm_bar_track">
+                                        <div class="o_hhm_bar_fill o_hhm_bar_fill--rank"
+                                             t-attf-style="width:{{e.pct}}%;"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leave by department -->
+                <div class="o_hhm_panel">
+                    <div class="o_hhm_panel_head">
+                        <h2><i class="fa fa-sitemap me-2"/>Nghỉ phép theo phòng ban</h2>
+                        <span class="o_hhm_panel_sub">Năm <t t-esc="state.year"/> · đã duyệt</span>
+                    </div>
+                    <div t-if="!state.byDept.length" class="o_hhm_empty">
+                        <i class="fa fa-inbox"/><span>Chưa có dữ liệu</span>
+                    </div>
+                    <div t-else="" class="o_hhm_bars">
+                        <div class="o_hhm_bar_row" t-foreach="state.byDept" t-as="d" t-key="d.id"
+                             t-on-click="() => this.openDept(d.id, d.name)">
+                            <div class="o_hhm_bar_top">
+                                <span class="o_hhm_bar_name" t-esc="d.name"/>
+                                <span class="o_hhm_bar_val">
+                                    <t t-esc="fmtDays(d.days)"/> ngày
+                                    <span class="o_hhm_bar_cnt">(<t t-esc="d.count"/> đơn)</span>
+                                </span>
+                            </div>
+                            <div class="o_hhm_bar_track">
+                                <div class="o_hhm_bar_fill"
+                                     t-attf-style="width:{{d.pct}}%;background:{{d.color}};"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending table -->
+                <div class="o_hhm_panel">
+                    <div class="o_hhm_panel_head">
+                        <h2><i class="fa fa-hourglass-half me-2"/>Đơn chờ duyệt gần đây</h2>
+                        <button class="btn btn-sm o_hhm_link" t-on-click="() => this.openPending()">
+                            Xem tất cả <i class="fa fa-arrow-right ms-1"/>
+                        </button>
+                    </div>
+                    <div t-if="!state.pending.length" class="o_hhm_empty">
+                        <i class="fa fa-check-circle"/><span>Không có đơn nào đang chờ duyệt 🎉</span>
+                    </div>
+                    <table t-else="" class="o_hhm_table">
+                        <thead>
+                            <tr>
+                                <th>Nhân viên</th>
+                                <th>Phòng ban</th>
+                                <th>Loại nghỉ</th>
+                                <th>Từ ngày</th>
+                                <th>Đến ngày</th>
+                                <th class="text-end">Số ngày</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr t-foreach="state.pending" t-as="p" t-key="p.id"
+                                t-on-click="() => this.openLeave(p.id)">
+                                <td t-esc="p.employee"/>
+                                <td t-esc="p.department"/>
+                                <td><span class="o_hhm_chip" t-esc="p.type"/></td>
+                                <td t-esc="p.from"/>
+                                <td t-esc="p.to"/>
+                                <td class="text-end fw-bold"><t t-esc="fmtDays(p.days)"/></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ============================ EMPLOYEE VIEW ====================== -->
+            <div t-else="">
+                <!-- No employee profile linked to this user -->
+                <div t-if="state.empMissing" class="o_hhm_empty">
+                    <i class="fa fa-user-times"/>
+                    <span>Tài khoản của bạn chưa được liên kết với hồ sơ nhân viên. Vui lòng liên hệ HR.</span>
+                </div>
+
+                <t t-else="">
+                    <!-- Personal KPI cards -->
+                    <div class="o_hhm_kpis">
+                        <div class="o_hhm_kpi o_hhm_kpi--green" t-on-click="() => this.openMyLeaves()">
+                            <div class="o_hhm_kpi_icon"><i class="fa fa-suitcase"/></div>
+                            <div class="o_hhm_kpi_body">
+                                <span class="o_hhm_kpi_value"><t t-esc="fmtDays(state.totalRemaining)"/></span>
+                                <span class="o_hhm_kpi_label">Ngày phép còn lại</span>
+                            </div>
+                        </div>
+
+                        <div class="o_hhm_kpi o_hhm_kpi--amber" t-on-click="() => this.openMyPending()">
+                            <div class="o_hhm_kpi_icon"><i class="fa fa-clock-o"/></div>
+                            <div class="o_hhm_kpi_body">
+                                <span class="o_hhm_kpi_value" t-esc="state.empKpi.pending"/>
+                                <span class="o_hhm_kpi_label">Đơn chờ duyệt</span>
+                            </div>
+                        </div>
+
+                        <div class="o_hhm_kpi o_hhm_kpi--blue" t-on-click="() => this.openMyLeaves()">
+                            <div class="o_hhm_kpi_icon"><i class="fa fa-check-circle"/></div>
+                            <div class="o_hhm_kpi_body">
+                                <span class="o_hhm_kpi_value" t-esc="state.empKpi.approved"/>
+                                <span class="o_hhm_kpi_label">Đơn đã duyệt (năm)</span>
+                            </div>
+                        </div>
+
+                        <div class="o_hhm_kpi o_hhm_kpi--violet">
+                            <div class="o_hhm_kpi_icon"><i class="fa fa-calendar"/></div>
+                            <div class="o_hhm_kpi_body">
+                                <span class="o_hhm_kpi_value"><t t-esc="fmtDays(state.empKpi.approvedDays)"/></span>
+                                <span class="o_hhm_kpi_label">Ngày đã nghỉ (năm)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Balance per leave type — the focus of the employee view -->
+                    <div class="o_hhm_panel">
+                        <div class="o_hhm_panel_head">
+                            <h2><i class="fa fa-balance-scale me-2"/>Số dư phép theo loại</h2>
+                            <span class="o_hhm_panel_sub">Còn lại / Đã cấp</span>
+                        </div>
+                        <div t-if="!state.balances.length" class="o_hhm_empty">
+                            <i class="fa fa-inbox"/><span>Bạn chưa được cấp loại phép nào</span>
+                        </div>
+                        <div t-else="" class="o_hhm_bal_grid">
+                            <div class="o_hhm_bal" t-foreach="state.balances" t-as="b" t-key="b.id"
+                                 t-att-class="{ 'o_hhm_bal--low': b.low }">
+                                <div class="o_hhm_bal_top">
+                                    <span class="o_hhm_bal_name" t-esc="b.name"/>
+                                    <span class="o_hhm_bal_remain">
+                                        <t t-esc="fmtDays(b.remaining)"/>
+                                        <small>ngày còn lại</small>
+                                    </span>
+                                </div>
+                                <div class="o_hhm_bar_track">
+                                    <div class="o_hhm_bar_fill"
+                                         t-attf-style="width:{{b.pct}}%;background:{{b.color}};"/>
+                                </div>
+                                <div class="o_hhm_bal_meta">
+                                    <span>Đã dùng <b><t t-esc="fmtDays(b.taken)"/></b></span>
+                                    <span>Được cấp <b><t t-esc="fmtDays(b.allocated)"/></b></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two-column: upcoming + my requests -->
+                    <div class="o_hhm_grid">
+                        <!-- Upcoming approved leaves -->
+                        <div class="o_hhm_panel">
+                            <div class="o_hhm_panel_head">
+                                <h2><i class="fa fa-plane me-2"/>Lịch nghỉ sắp tới</h2>
+                                <span class="o_hhm_panel_sub">đã duyệt</span>
+                            </div>
+                            <div t-if="!state.upcoming.length" class="o_hhm_empty">
+                                <i class="fa fa-calendar-o"/><span>Chưa có lịch nghỉ nào sắp tới</span>
+                            </div>
+                            <div t-else="" class="o_hhm_bars">
+                                <div class="o_hhm_bar_row" t-foreach="state.upcoming" t-as="u" t-key="u.id"
+                                     t-on-click="() => this.openLeave(u.id)">
+                                    <div class="o_hhm_bar_top">
+                                        <span class="o_hhm_bar_name">
+                                            <i class="fa fa-circle me-1" style="font-size:7px;vertical-align:middle;"/>
+                                            <t t-esc="u.type"/>
+                                        </span>
+                                        <span class="o_hhm_bar_val"><t t-esc="fmtDays(u.days)"/> ngày</span>
+                                    </div>
+                                    <div class="o_hhm_bar_cnt">
+                                        <t t-esc="u.from"/> → <t t-esc="u.to"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- My recent requests -->
+                        <div class="o_hhm_panel">
+                            <div class="o_hhm_panel_head">
+                                <h2><i class="fa fa-history me-2"/>Đơn gần đây của tôi</h2>
+                                <button class="btn btn-sm o_hhm_link" t-on-click="() => this.openMyLeaves()">
+                                    Xem tất cả <i class="fa fa-arrow-right ms-1"/>
+                                </button>
+                            </div>
+                            <div t-if="!state.myRequests.length" class="o_hhm_empty">
+                                <i class="fa fa-inbox"/><span>Bạn chưa có đơn nghỉ nào</span>
+                            </div>
+                            <table t-else="" class="o_hhm_table">
+                                <thead>
+                                    <tr>
+                                        <th>Loại nghỉ</th>
+                                        <th>Từ ngày</th>
+                                        <th>Đến ngày</th>
+                                        <th class="text-end">Ngày</th>
+                                        <th>Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="state.myRequests" t-as="r" t-key="r.id"
+                                        t-on-click="() => this.openLeave(r.id)">
+                                        <td><span class="o_hhm_chip" t-esc="r.type"/></td>
+                                        <td t-esc="r.from"/>
+                                        <td t-esc="r.to"/>
+                                        <td class="text-end fw-bold"><t t-esc="fmtDays(r.days)"/></td>
+                                        <td><span class="o_hhm_st" t-att-class="r.stateCls" t-esc="r.stateLabel"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>
