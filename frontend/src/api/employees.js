@@ -44,3 +44,13 @@ export const transferAsset = (assetId, payload) =>
 /* Thăng tiến (F-007) — thêm mốc thăng tiến inline (chỉ HR Manager). */
 export const createPromotion = (empId, payload) =>
   hbPost(`/hocba-hrm/api/employee/${empId}/promotion`, payload);
+
+/* Chứng chỉ (F-008) — thêm/sửa/xác minh/xoá inline (chỉ HR). */
+export const createCert = (empId, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${empId}/cert`, payload);
+export const updateCert = (certId, payload) =>
+  hbPost(`/hocba-hrm/api/cert/${certId}`, payload);
+export const verifyCert = (certId, verified) =>
+  hbPost(`/hocba-hrm/api/cert/${certId}/verify`, { verified });
+export const deleteCert = (certId) =>
+  hbPost(`/hocba-hrm/api/cert/${certId}/delete`, {});

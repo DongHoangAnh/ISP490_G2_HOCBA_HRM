@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, postGate, postTrial, deleteDependent } from '../../api/employees';
+import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
@@ -10,6 +10,7 @@ import EmployeeForm from './EmployeeForm';
 import DependentForm from './DependentForm';
 import AssetForm from './AssetForm';
 import PromotionForm from './PromotionForm';
+import CertForm from './CertForm';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
@@ -81,9 +82,19 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
 
 export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
   const [depForm, setDepForm] = useState(null); // null | 'new' | <dependent>
+  const [certForm, setCertForm] = useState(null); // null | 'new' | <cert>
   const delDep = async (d) => {
     if (!window.confirm(`Xoá người phụ thuộc "${d.name}"?`)) return;
     try { onUpdated && onUpdated(await deleteDependent(d.id)); }
+    catch (e) { alert(e.message); }
+  };
+  const toggleVerify = async (c) => {
+    try { onUpdated && onUpdated(await verifyCert(c.id, !c.verified)); }
+    catch (e) { alert(e.message); }
+  };
+  const delCert = async (c) => {
+    if (!window.confirm(`Xoá chứng chỉ "${c.skill}"?`)) return;
+    try { onUpdated && onUpdated(await deleteCert(c.id)); }
     catch (e) { alert(e.message); }
   };
   const rows = [
@@ -145,24 +156,51 @@ export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
           )}
         </div>
       )}
-      {isHr && det.certs && det.certs.length > 0 && (
+      {isHr && (det.certs?.length > 0 || editable) && (
         <div style={{ marginTop: 22 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Chứng chỉ ({det.certs.length})</div>
-          <div className="card" style={{ padding: 0 }}>
-            <table className="tbl"><thead><tr><th>Kỹ năng</th><th>Cấp độ</th><th>Ngày cấp</th><th>Hết hạn</th><th>Trạng thái</th><th>Xác minh</th></tr></thead>
-              <tbody>{det.certs.map((c, i) => {
-                const [lbl, kind] = HB_CERT[c.status] || HB_CERT.none;
-                return (
-                  <tr key={i} style={{ cursor: 'default' }}>
-                    <td>{c.skill}</td><td>{c.level}</td>
-                    <td className="mono">{fmtDate(c.date)}</td>
-                    <td className="mono">{c.expiry ? fmtDate(c.expiry) : '—'}</td>
-                    <td><Badge kind={kind} dot>{lbl}</Badge></td>
-                    <td>{c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa</Badge>}</td>
-                  </tr>);
-              })}</tbody>
-            </table>
+          <div className="between" style={{ marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Chứng chỉ ({det.certs?.length || 0})</div>
+            {editable && (
+              <button className="btn btn-soft btn-sm" onClick={() => setCertForm('new')}>
+                <Icon name="plus" size={13} />Thêm chứng chỉ</button>
+            )}
           </div>
+          {det.certs?.length > 0 ? (
+            <div className="card" style={{ padding: 0 }}>
+              <table className="tbl"><thead><tr><th>Kỹ năng</th><th>Cấp độ</th><th>Ngày cấp</th><th>Hết hạn</th><th>Trạng thái</th><th>Xác minh</th>{editable && <th></th>}</tr></thead>
+                <tbody>{det.certs.map((c) => {
+                  const [lbl, kind] = HB_CERT[c.status] || HB_CERT.none;
+                  return (
+                    <tr key={c.id} style={{ cursor: 'default' }}>
+                      <td>{c.skill}</td><td>{c.level}</td>
+                      <td className="mono">{fmtDate(c.date)}</td>
+                      <td className="mono">{c.expiry ? fmtDate(c.expiry) : '—'}</td>
+                      <td><Badge kind={kind} dot>{lbl}</Badge></td>
+                      <td>
+                        {editable ? (
+                          <button className="btn btn-ghost btn-sm" title="Bật/tắt xác minh" onClick={() => toggleVerify(c)}>
+                            {c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa · xác minh?</Badge>}
+                          </button>
+                        ) : (c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa</Badge>)}
+                      </td>
+                      {editable && (
+                        <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          <button className="icon-btn" title="Sửa" onClick={() => setCertForm(c)}><Icon name="edit" size={15} className="faint" /></button>
+                          <button className="icon-btn" title="Xoá" onClick={() => delCert(c)}><Icon name="trash" size={15} className="faint" /></button>
+                        </td>
+                      )}
+                    </tr>);
+                })}</tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="muted" style={{ fontSize: 12.5 }}>Chưa có chứng chỉ.</div>
+          )}
+          {certForm && (
+            <CertForm empId={det.id} cert={certForm === 'new' ? null : certForm}
+              onClose={() => setCertForm(null)}
+              onSaved={(d) => { setCertForm(null); onUpdated && onUpdated(d); }} />
+          )}
         </div>
       )}
     </div>

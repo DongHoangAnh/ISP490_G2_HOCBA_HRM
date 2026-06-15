@@ -81,6 +81,13 @@ PROMO_FIELDS = {
     'decisionRef': 'decision_ref',
 }
 
+# Field chứng chỉ (F-008) cho form Chứng chỉ trong SPA (hr.employee.skill).
+CERT_FIELDS = {
+    'skillTypeId': 'skill_type_id', 'skillId': 'skill_id',
+    'levelId': 'skill_level_id', 'certDate': 'x_cert_date',
+    'certExpiry': 'x_cert_expiry', 'verified': 'x_cert_verified',
+}
+
 
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
@@ -440,12 +447,16 @@ class HocBaHRM(http.Controller):
         # --- Chứng chỉ (F-008/009): chỉ HR ---
         if is_hr:
             data['certs'] = [{
+                'id': s.id,
                 'skill': s.skill_id.name or '',
                 'level': s.skill_level_id.name or '',
                 'date': _d(s.x_cert_date),
                 'expiry': _d(s.x_cert_expiry),
                 'status': s.x_cert_status or 'none',
                 'verified': s.x_cert_verified,
+                'skillTypeId': s.skill_type_id.id or False,
+                'skillId': s.skill_id.id or False,
+                'levelId': s.skill_level_id.id or False,
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
 
@@ -728,6 +739,124 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
 
+    # ------------------------------------------------------------------
+    # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
+    # Bản ghi nằm trên hr.employee.skill (đã gắn x_cert_* của hocba).
+    # ------------------------------------------------------------------
+    def _cert_vals(self, payload):
+        vals = {}
+        for key, field in CERT_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                if field in ('skill_type_id', 'skill_id', 'skill_level_id'):
+                    v = self._conv_id(v)
+                elif field == 'x_cert_verified':
+                    v = bool(v)
+                else:
+                    v = v if v not in ('', None) else False
+                vals[field] = v
+        return vals
+
+    def _cert_error(self, ex):
+        """Đổi lỗi trùng kỹ năng (Odoo báo dài dòng tiếng Anh) thành thông
+        điệp gọn tiếng Việt; còn lại giữ nguyên."""
+        msg = str(ex)
+        if 'overlap' in msg or 'match existing' in msg:
+            msg = 'Nhân viên đã có chứng chỉ này.'
+        request.env.cr.rollback()
+        return request.make_json_response(
+            {'error': 'rejected', 'message': msg}, status=400)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/cert', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_create(self, emp_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        vals = self._cert_vals(request.get_json_data())
+        vals['employee_id'] = emp_id
+        try:
+            request.env['hr.employee.skill'].create(vals)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Nhân viên đã có chứng chỉ này.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            return self._cert_error(ex)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/cert/<int:cert_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_update(self, cert_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        c = request.env['hr.employee.skill'].browse(cert_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            c.write(self._cert_vals(request.get_json_data()))
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Nhân viên đã có chứng chỉ này.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            return self._cert_error(ex)
+        return self._detail_response(c.employee_id)
+
+    @http.route('/hocba-hrm/api/cert/<int:cert_id>/verify', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_verify(self, cert_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        c = request.env['hr.employee.skill'].browse(cert_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        verified = bool((request.get_json_data() or {}).get('verified'))
+        try:
+            c.write({'x_cert_verified': verified})
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(c.employee_id)
+
+    @http.route('/hocba-hrm/api/cert/<int:cert_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_delete(self, cert_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        c = request.env['hr.employee.skill'].browse(cert_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = c.employee_id
+        try:
+            c.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    def _cert_skill_types(self, env):
+        """Chỉ trả 2 loại kỹ năng của Học Bá (Tiếng Trung + Sư phạm) — ẩn
+        skill type demo của Odoo (Languages/Soft Skills). Fallback: tất cả."""
+        ids = []
+        for xmlid in ('hocba_employees.skill_type_chinese',
+                      'hocba_employees.skill_type_pedagogy'):
+            rec = env.ref(xmlid, raise_if_not_found=False)
+            if rec:
+                ids.append(rec.id)
+        domain = [('id', 'in', ids)] if ids else []
+        return env['hr.skill.type'].sudo().search(domain, order='name')
+
     @http.route('/hocba-hrm/api/form/meta', auth='user', type='http', methods=['GET'])
     def api_form_meta(self, **kw):
         """Metadata cho form Thêm/Sửa nhân viên: phòng ban, chức danh, các lựa
@@ -758,6 +887,11 @@ class HocBaHRM(http.Controller):
             'employees': [{'id': em.id, 'name': em.name}
                           for em in env['hr.employee'].sudo().search(
                               [], order='name')],
+            'skillTypes': [{
+                'id': t.id, 'name': t.name,
+                'skills': [{'id': sk.id, 'name': sk.name} for sk in t.skill_ids],
+                'levels': [{'id': lv.id, 'name': lv.name} for lv in t.skill_level_ids],
+            } for t in self._cert_skill_types(env)],
             'canManager': is_mgr,
         })
 
