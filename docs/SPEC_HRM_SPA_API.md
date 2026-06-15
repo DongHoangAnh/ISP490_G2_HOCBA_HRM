@@ -1,24 +1,27 @@
-# ĐẶC TẢ MODULE `hocba_hrm` — THEME BACKEND, SPA DEMO & JSON API
+# ĐẶC TẢ MODULE `hocba_hrm` — SPA FRONTEND, THEME BACKEND & JSON API
 
-**Phiên bản:** 1.1 · **Ngày:** 12/06/2026 · **Trạng thái SPA: ⛔ TẠM NGẮT** (test trên giao diện Odoo backend trước — quyết định 12/06/2026)
+**Phiên bản:** 2.0 · **Ngày:** 13/06/2026 · **Trạng thái SPA: ✅ FRONTEND CHÍNH THỨC** (FE/BE tách riêng qua API — team chốt 12/06, triển khai G1 ngày 13/06)
+
+> Đây là spec API của domain **Employees** (Tân) + vai trò module `hocba_hrm`.
+> Domain khác: copy `SPEC_API_TEMPLATE.md`. Quy ước FE: `QUY_UOC_FRONTEND.md`.
 
 ---
 
 ## 1. Vai trò của module
 
-`hocba_hrm` gồm 3 phần độc lập:
+`hocba_hrm` gồm 3 phần:
 
-1. **Theme backend Odoo** (đang dùng — định hướng UI chốt 11/06): SCSS đỏ Học Bá `#C8102E` + font Be Vietnam Pro nạp qua assets `web._assets_primary_variables` (`primary_variables.scss`) và `web.assets_backend` (`hocba_backend.scss`); font nhúng qua `views/webclient_templates.xml`.
-2. **SPA React demo** tại `/hocba-hrm` (⛔ tạm ngắt): trang HTML nhúng React 18 UMD + Babel standalone, render các màn Dashboard/Employees/… từ `static/src/js/*.jsx`. Màn Employees đã nối API thật; các màn khác còn mock data. SPA là **bản đề xuất UI**, không phải giao diện vận hành.
-3. **JSON API** phục vụ SPA (⛔ tạm ngắt cùng SPA): 2 endpoint đọc dữ liệu thật từ `hocba_employees`.
+1. **SPA React (frontend chính thức)** tại `/hocba-hrm`: build từ thư mục `frontend/` (Vite + React 18) → `static/spa/`. Route serve bản build; dev chạy `npm run dev` (Vite :5173, proxy API về Odoo). Đây là **giao diện vận hành chính**, nối backend chỉ qua JSON API.
+2. **Theme backend Odoo** (vai trò admin/nhập liệu): SCSS đỏ Học Bá `#C8102E` + font Be Vietnam Pro nạp qua `web._assets_primary_variables` (`primary_variables.scss`) và `web.assets_backend` (`hocba_backend.scss`); font nhúng qua `views/webclient_templates.xml`. Form phức tạp (face enrollment, cấu hình policy…) ở lại backend, không xây lại trong SPA.
+3. **JSON API** phục vụ SPA: hiện có 2 endpoint Employees (§3); mỗi domain khác tự thêm endpoint trong module của mình theo `SPEC_API_TEMPLATE.md`.
 
-## 2. Cơ chế ngắt/mở SPA
+## 2. Cơ chế serve SPA
 
-- Cờ **`SPA_ENABLED`** (hằng số trong `controllers/main.py`). Khi `False`:
-  - `GET /hocba-hrm` → redirect `/odoo` (vào backend Odoo).
-  - 2 endpoint API → HTTP **410** `{"error": "spa_disabled"}`.
-- Menu gốc "Học Bá HRM" (act_url → `/hocba-hrm`) được comment trong `views/menu.xml`.
-- **Mở lại:** đặt `SPA_ENABLED = True`, bỏ comment menu, upgrade module `hocba_hrm` + restart. Theme backend KHÔNG bị ảnh hưởng khi ngắt SPA.
+- Cờ **`SPA_ENABLED = True`** (hằng số trong `controllers/main.py`).
+  - `GET /hocba-hrm` → đọc `static/spa/index.html` (bản build). Chưa build → trang nhắc chạy `npm run build`.
+  - Chưa đăng nhập → redirect `/web/login?redirect=/hocba-hrm` (auth=user).
+- Menu gốc "Học Bá HRM" (act_url → `/hocba-hrm`) bật trong `views/menu.xml`.
+- **Build:** `cd frontend && npm run build` → xuất `static/spa/` (đã commit để demo không cần Node). Sau khi build, upgrade `hocba_hrm` nếu cần (`-u hocba_hrm`).
 
 ## 3. Đặc tả API (giữ nguyên hợp đồng để dùng lại khi mở SPA)
 
@@ -52,12 +55,11 @@ Trả về:
 
 **Nguyên tắc bảo mật:** ORM gọi `sudo()` để đọc, nhưng việc ẩn/hiện field nhạy cảm quyết định bằng `has_group` ở tầng controller — đã có test HTTP xác nhận (API-1..12, xem `TEST_BACKEND_2026-06-12.md`).
 
-## 4. Lý do tạm ngắt SPA (12/06/2026)
-- Ưu tiên xây chắc backend + nghiệp vụ trên giao diện Odoo chuẩn (views `hocba_employees` đã polish theo wireframe F-001).
-- SPA dùng Babel standalone compile JSX runtime — chỉ phù hợp demo, không production.
-- Giảm 1 bề mặt phải test/regression mỗi lần đổi backend.
+## 4. Trạng thái triển khai (13/06/2026)
+- ✅ Babel standalone đã bỏ — chuyển sang Vite build (`frontend/`, G1 xong).
+- ✅ Màn Employees nối API thật, đã verify đăng nhập + phân quyền.
+- ⏳ 4 màn còn lại (attendance/timeoff/payroll/recruitment) là stub `ComingSoon` — chờ từng owner viết spec (G2) + nối API (G3).
 
-## 5. Nợ kỹ thuật khi mở lại SPA
-- Chuyển JSX sang build tооl (bỏ Babel standalone), hoặc chuyển hẳn các màn SPA thành view Odoo theo theme.
-- Các màn ngoài Employees vẫn mock — cần nối API như màn Employees hoặc cắt bỏ.
+## 5. Nợ kỹ thuật / điểm cần chốt
 - API list trả toàn bộ nhân viên cho mọi user đăng nhập (ẩn field nhạy cảm nhưng vẫn thấy danh bạ) — xác nhận với khách mức lộ thông tin chấp nhận được cho role Employee/Contractor.
+- Dashboard tổng hợp (`features/dashboard/`) hiện chỉ điều hướng — hoàn thiện ở G4 khi API các domain sẵn sàng.

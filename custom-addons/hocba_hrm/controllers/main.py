@@ -1,7 +1,10 @@
 import calendar
-from datetime import date
+from datetime import date, timedelta
+
+from psycopg2 import IntegrityError
 
 from odoo import http, fields
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request, Response
 from odoo.tools import file_open
 
@@ -15,6 +18,75 @@ SPA_ENABLED = True
 # Bảng màu gán cho phòng ban theo thứ tự id (SPA filter chips)
 DEP_PALETTE = ['#C8102E', '#D9A400', '#0F766E', '#1D4ED8', '#6D28D9',
                '#BE185D', '#B45309', '#334155']
+
+# Map field cho form Thêm/Sửa nhân viên (SPA). key payload camelCase ->
+# (field Odoo, tầng quyền). tier: 'core' (mọi HR) | 'hr' (group_hr_user) |
+# 'mgr' (group_hr_manager). Field nằm trên hr.employee.
+EMP_FORM_FIELDS = {
+    'name': ('name', 'core'),
+    'code': ('x_employee_code', 'core'),
+    'depId': ('department_id', 'core'),
+    'jobId': ('job_id', 'core'),
+    'workForm': ('x_work_form', 'core'),
+    'status': ('x_employment_status', 'core'),
+    'posType': ('x_position_type', 'core'),
+    'email': ('work_email', 'core'),
+    'phone': ('work_phone', 'core'),
+    'probStart': ('x_probation_start', 'core'),
+    'bday': ('birthday', 'hr'),
+    'idIssue': ('x_id_date_issue', 'hr'),
+    'idPlace': ('x_id_place_issue', 'hr'),
+    'hi': ('x_health_insurance_no', 'hr'),
+    'hiPlace': ('x_health_care_place', 'hr'),
+    'pit': ('x_pit_code', 'mgr'),
+    'si': ('x_social_insurance_no', 'mgr'),
+}
+# Field nằm trên hr.version (Odoo 19): CCCD + lương
+EMP_FORM_VERSION_FIELDS = {
+    'cccd': ('identification_id', 'hr'),
+    'wage': ('wage', 'mgr'),
+}
+
+# Whitelist field nhân viên được TỰ SỬA trên hồ sơ của chính mình (self-service).
+# Chỉ liên hệ + địa chỉ — KHÔNG có lương/trạng thái/pháp lý/phòng ban.
+ME_SELF_FIELDS = {
+    'phone': 'work_phone',
+    'permStreet': 'x_permanent_street',
+    'permWard': 'x_permanent_ward',
+    'permState': 'x_permanent_state_id',
+    'currentSame': 'x_current_same_as_permanent',
+    'currStreet': 'x_current_street',
+    'currWard': 'x_current_ward',
+    'currState': 'x_current_state_id',
+}
+
+# Field người phụ thuộc (F-003) cho form NPT trong SPA.
+DEP_FIELDS = {
+    'name': 'name', 'relationship': 'relationship', 'birthday': 'birthday',
+    'nationalId': 'national_id', 'dateStart': 'date_start',
+    'dateEnd': 'date_end', 'notes': 'notes',
+}
+
+# Field cấp tài sản (F-006) cho form Tài sản trong SPA.
+ASSET_FIELDS = {
+    'assetTypeId': 'asset_type_id', 'assetCode': 'asset_code',
+    'grantDate': 'grant_date', 'conditionIn': 'condition_in',
+}
+
+# Field thăng tiến (F-007) cho form Thăng tiến trong SPA.
+PROMO_FIELDS = {
+    'dateEffective': 'date_effective', 'toJobId': 'to_job_id',
+    'toDepartmentId': 'to_department_id', 'toWage': 'to_wage',
+    'allowanceNote': 'allowance_note', 'reason': 'reason',
+    'decisionRef': 'decision_ref',
+}
+
+# Field chứng chỉ (F-008) cho form Chứng chỉ trong SPA (hr.employee.skill).
+CERT_FIELDS = {
+    'skillTypeId': 'skill_type_id', 'skillId': 'skill_id',
+    'levelId': 'skill_level_id', 'certDate': 'x_cert_date',
+    'certExpiry': 'x_cert_expiry', 'verified': 'x_cert_verified',
+}
 
 
 def _d(v):
@@ -225,11 +297,14 @@ class HocBaHRM(http.Controller):
             'dep': e.department_id.id or 0,
             'depName': e.department_id.name or 'Chưa gán',
             'jobTitle': e.job_id.name or '—',
+            'jobId': e.job_id.id or False,
             'status': labels['status'].get(status_key, '—'),
             'statusKey': status_key,
             'type': etype,
+            'workFormKey': e.x_work_form or '',
             'posType': labels['position'].get(e.x_position_type, ''),
             'posTypeKey': e.x_position_type or '',
+            'probStart': _d(e.x_probation_start),
             'start': _d(e.x_probation_start) or _d(e.create_date and e.create_date.date()),
             'email': e.work_email or '',
             'phone': e.work_phone or '',
@@ -271,17 +346,9 @@ class HocBaHRM(http.Controller):
             'employees': rows,
         })
 
-    @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
-                type='http', methods=['GET'])
-    def api_employee_detail(self, emp_id, **kw):
-        if not SPA_ENABLED:
-            return request.make_json_response({'error': 'spa_disabled'}, status=410)
-        is_hr, is_mgr = self._hr_flags()
-        labels = self._labels()
-        e = request.env['hr.employee'].sudo().browse(emp_id)
-        if not e.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-
+    def _employee_detail(self, e, labels, is_hr, is_mgr):
+        """Dựng dict hồ sơ chi tiết theo quyền — dùng chung cho
+        /api/employee/<id> (HR xem người khác) và /api/me (tự xem hồ sơ mình)."""
         data = self._emp_base(e, labels, is_mgr)
 
         # --- Pháp lý (F-002) + NPT (F-003): chỉ HR ---
@@ -301,11 +368,15 @@ class HocBaHRM(http.Controller):
                                     e.x_current_street, e.x_current_ward,
                                     e.x_current_state_id.name) if p)),
                 'dependents': [{
+                    'id': dp.id,
                     'name': dp.name,
                     'relationship': labels['relationship'].get(dp.relationship, ''),
+                    'relationshipKey': dp.relationship or '',
                     'birthday': _d(dp.birthday),
+                    'nationalId': dp.national_id or '',
                     'from': _d(dp.date_start),
                     'to': _d(dp.date_end),
+                    'notes': dp.notes or '',
                 } for dp in e.x_dependent_ids],
             })
         if is_mgr:
@@ -359,6 +430,7 @@ class HocBaHRM(http.Controller):
         promotions = []
         for p in e.x_promotion_ids.sorted('date_effective'):
             item = {
+                'id': p.id,
                 'date': _d(p.date_effective),
                 'fromJob': p.from_job_id.name or '—',
                 'toJob': p.to_job_id.name or '—',
@@ -375,16 +447,688 @@ class HocBaHRM(http.Controller):
         # --- Chứng chỉ (F-008/009): chỉ HR ---
         if is_hr:
             data['certs'] = [{
+                'id': s.id,
                 'skill': s.skill_id.name or '',
                 'level': s.skill_level_id.name or '',
                 'date': _d(s.x_cert_date),
                 'expiry': _d(s.x_cert_expiry),
                 'status': s.x_cert_status or 'none',
                 'verified': s.x_cert_verified,
+                'skillTypeId': s.skill_type_id.id or False,
+                'skillId': s.skill_id.id or False,
+                'levelId': s.skill_level_id.id or False,
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
 
-        return request.make_json_response(data)
+        return data
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
+                type='http', methods=['GET'])
+    def api_employee_detail(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        labels = self._labels()
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(
+            self._employee_detail(e, labels, is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/gate', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_employee_gate(self, emp_id, **kw):
+        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2,
+        để model tự kiểm quyền (HR Manager / quản lý trực tiếp) + chạy automation
+        AUT-001/002. KHÔNG sudo cố tình — nhờ vậy AccessError của model phát huy."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        # browse KHÔNG sudo: write sẽ chạy qua kiểm quyền của model
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+
+        payload = request.get_json_data()
+        gate = payload.get('gate')
+        result = payload.get('result')
+        note = (payload.get('note') or '').strip()
+        if gate not in ('2w', '2m') or result not in ('pass', 'fail'):
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+
+        today = fields.Date.context_today(request.env.user)
+        vals = {
+            'x_eval_%s_result' % gate: result,
+            'x_eval_%s_date' % gate: today,
+            'x_eval_%s_evaluator_id' % gate: request.env.user.id,
+        }
+        if note:
+            vals['x_eval_%s_note' % gate] = note
+        try:
+            e.write(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=403)
+
+        # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
+        is_hr, is_mgr = self._hr_flags()
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/trial', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_employee_trial(self, emp_id, **kw):
+        """Đánh giá thử giảng (F-008) cho giảng viên Nhóm A từ SPA: ghi ngày,
+        lớp, 2 điểm, kết quả, nhận xét. KHÔNG sudo — model áp ràng buộc (điểm
+        1–10, ngày ≤ hôm nay, fail cần nhận xét) + activity nhắc HR."""
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+
+        payload = request.get_json_data()
+        result = payload.get('result')
+        if result not in ('pass', 'fail'):
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+
+        def num(v):
+            return float(v) if v not in ('', None) else 0.0
+        vals = {
+            'x_trial_lesson_date': payload.get('date')
+            or fields.Date.context_today(request.env.user),
+            'x_trial_lesson_class': (payload.get('cls') or '').strip(),
+            'x_trial_score_method': num(payload.get('scoreMethod')),
+            'x_trial_score_content': num(payload.get('scoreContent')),
+            'x_trial_lesson_note': (payload.get('note') or '').strip(),
+            'x_trial_lesson_result': result,
+        }
+        try:
+            e.write(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
+    # trả về hồ sơ đã cập nhật để FE refresh tab Thông tin.
+    # ------------------------------------------------------------------
+    def _dep_vals(self, payload):
+        vals = {}
+        for key, field in DEP_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                vals[field] = v if v not in ('', None) else False
+        return vals
+
+    def _detail_response(self, e):
+        is_hr, is_mgr = self._hr_flags()
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/dependent', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_dependent_create(self, emp_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        vals = self._dep_vals(request.get_json_data())
+        vals['employee_id'] = emp_id
+        try:
+            request.env['hr.employee.dependent'].create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/dependent/<int:dep_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_dependent_update(self, dep_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        d = request.env['hr.employee.dependent'].browse(dep_id)
+        if not d.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            d.write(self._dep_vals(request.get_json_data()))
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(d.employee_id)
+
+    @http.route('/hocba-hrm/api/dependent/<int:dep_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_dependent_delete(self, dep_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        d = request.env['hr.employee.dependent'].browse(dep_id)
+        if not d.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = d.employee_id
+        try:
+            d.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Tài sản (F-006) — cấp / thu hồi / chuyển giao inline trong SPA (HR).
+    # KHÔNG xoá (model chặn unlink); state đổi qua action của model.
+    # ------------------------------------------------------------------
+    def _conv_id(self, v):
+        return int(v) if v not in ('', None, False) else False
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/asset', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_asset_create(self, emp_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        payload = request.get_json_data()
+        vals = {'employee_id': emp_id}
+        for key, field in ASSET_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                if field == 'asset_type_id':
+                    v = self._conv_id(v)
+                vals[field] = v if v not in ('', None) else False
+        try:
+            request.env['hr.employee.asset'].create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/asset/<int:asset_id>/return', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_asset_return(self, asset_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        a = request.env['hr.employee.asset'].browse(asset_id)
+        if not a.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = a.employee_id
+        payload = request.get_json_data() or {}
+        try:
+            a.write({
+                'return_date': payload.get('returnDate') or fields.Date.context_today(a),
+                'condition_out_note': (payload.get('note') or '').strip(),
+            })
+            a.action_mark_returned()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/asset/<int:asset_id>/transfer', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_asset_transfer(self, asset_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        a = request.env['hr.employee.asset'].browse(asset_id)
+        if not a.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = a.employee_id
+        payload = request.get_json_data() or {}
+        target = self._conv_id(payload.get('transferTo'))
+        if not target:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        try:
+            a.write({
+                'transferred_to': target,
+                'return_date': payload.get('returnDate') or fields.Date.context_today(a),
+            })
+            a.action_mark_transferred()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Thăng tiến (F-007) — thêm mốc thăng tiến inline (HR Manager). Tạo
+    # bản ghi sẽ tự cập nhật chức vụ/phòng ban NV (model). KHÔNG xoá.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/promotion', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_promotion_create(self, emp_id, **kw):
+        _, is_mgr = self._hr_flags()
+        if not is_mgr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        payload = request.get_json_data()
+        vals = {'employee_id': emp_id,
+                'from_job_id': e.job_id.id or False,
+                'from_wage': (e.version_id.wage if e.version_id
+                              and 'wage' in e.version_id._fields else 0) or 0}
+        for key, field in PROMO_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                if field in ('to_job_id', 'to_department_id'):
+                    v = self._conv_id(v)
+                elif field == 'to_wage':
+                    v = float(v) if v not in ('', None) else 0.0
+                else:
+                    v = v if v not in ('', None) else False
+                vals[field] = v
+        try:
+            request.env['hr.promotion.history'].create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
+    # Bản ghi nằm trên hr.employee.skill (đã gắn x_cert_* của hocba).
+    # ------------------------------------------------------------------
+    def _cert_vals(self, payload):
+        vals = {}
+        for key, field in CERT_FIELDS.items():
+            if key in payload:
+                v = payload[key]
+                if field in ('skill_type_id', 'skill_id', 'skill_level_id'):
+                    v = self._conv_id(v)
+                elif field == 'x_cert_verified':
+                    v = bool(v)
+                else:
+                    v = v if v not in ('', None) else False
+                vals[field] = v
+        return vals
+
+    def _cert_error(self, ex):
+        """Đổi lỗi trùng kỹ năng (Odoo báo dài dòng tiếng Anh) thành thông
+        điệp gọn tiếng Việt; còn lại giữ nguyên."""
+        msg = str(ex)
+        if 'overlap' in msg or 'match existing' in msg:
+            msg = 'Nhân viên đã có chứng chỉ này.'
+        request.env.cr.rollback()
+        return request.make_json_response(
+            {'error': 'rejected', 'message': msg}, status=400)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/cert', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_create(self, emp_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        vals = self._cert_vals(request.get_json_data())
+        vals['employee_id'] = emp_id
+        try:
+            request.env['hr.employee.skill'].create(vals)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Nhân viên đã có chứng chỉ này.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            return self._cert_error(ex)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/cert/<int:cert_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_update(self, cert_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        c = request.env['hr.employee.skill'].browse(cert_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            c.write(self._cert_vals(request.get_json_data()))
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Nhân viên đã có chứng chỉ này.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            return self._cert_error(ex)
+        return self._detail_response(c.employee_id)
+
+    @http.route('/hocba-hrm/api/cert/<int:cert_id>/verify', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_verify(self, cert_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        c = request.env['hr.employee.skill'].browse(cert_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        verified = bool((request.get_json_data() or {}).get('verified'))
+        try:
+            c.write({'x_cert_verified': verified})
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(c.employee_id)
+
+    @http.route('/hocba-hrm/api/cert/<int:cert_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_cert_delete(self, cert_id, **kw):
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        c = request.env['hr.employee.skill'].browse(cert_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = c.employee_id
+        try:
+            c.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    def _cert_skill_types(self, env):
+        """Chỉ trả 2 loại kỹ năng của Học Bá (Tiếng Trung + Sư phạm) — ẩn
+        skill type demo của Odoo (Languages/Soft Skills). Fallback: tất cả."""
+        ids = []
+        for xmlid in ('hocba_employees.skill_type_chinese',
+                      'hocba_employees.skill_type_pedagogy'):
+            rec = env.ref(xmlid, raise_if_not_found=False)
+            if rec:
+                ids.append(rec.id)
+        domain = [('id', 'in', ids)] if ids else []
+        return env['hr.skill.type'].sudo().search(domain, order='name')
+
+    @http.route('/hocba-hrm/api/form/meta', auth='user', type='http', methods=['GET'])
+    def api_form_meta(self, **kw):
+        """Metadata cho form Thêm/Sửa nhân viên: phòng ban, chức danh, các lựa
+        chọn (hình thức/tình trạng/loại vị trí). Chỉ HR."""
+        is_hr, is_mgr = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        env = request.env
+        Emp = env['hr.employee']
+
+        def opts(fname):
+            return list(Emp._fields[fname]._description_selection(env))
+
+        return request.make_json_response({
+            'departments': [{'id': d.id, 'name': d.name}
+                            for d in env['hr.department'].sudo().search([], order='name')],
+            'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id}
+                     for j in env['hr.job'].sudo().search([], order='name')],
+            'workForm': opts('x_work_form'),
+            'status': opts('x_employment_status'),
+            'position': opts('x_position_type'),
+            'relationship': list(env['hr.employee.dependent']._fields[
+                'relationship']._description_selection(env)),
+            'assetTypes': [{'id': t.id, 'name': t.name}
+                           for t in env['hocba.asset.type'].sudo().search([], order='name')],
+            'assetCondition': list(env['hr.employee.asset']._fields[
+                'condition_in']._description_selection(env)),
+            'employees': [{'id': em.id, 'name': em.name}
+                          for em in env['hr.employee'].sudo().search(
+                              [], order='name')],
+            'skillTypes': [{
+                'id': t.id, 'name': t.name,
+                'skills': [{'id': sk.id, 'name': sk.name} for sk in t.skill_ids],
+                'levels': [{'id': lv.id, 'name': lv.name} for lv in t.skill_level_ids],
+            } for t in self._cert_skill_types(env)],
+            'canManager': is_mgr,
+        })
+
+    def _split_form_payload(self, payload, is_hr, is_mgr):
+        """Tách payload thành (vals hr.employee, vals hr.version) theo tầng quyền.
+        Field ngoài whitelist hoặc vượt quyền sẽ bị bỏ qua (không ghi)."""
+        def allowed(tier):
+            return tier == 'core' or (tier == 'hr' and is_hr) or (tier == 'mgr' and is_mgr)
+
+        def conv(field, val):
+            if field in ('department_id', 'job_id'):
+                return int(val) if val else False
+            if field == 'wage':
+                return float(val) if val not in ('', None) else 0.0
+            return val if val not in ('', None) else False
+
+        emp_vals, ver_vals = {}, {}
+        for key, (field, tier) in EMP_FORM_FIELDS.items():
+            if key in payload and allowed(tier):
+                emp_vals[field] = conv(field, payload[key])
+        for key, (field, tier) in EMP_FORM_VERSION_FIELDS.items():
+            if key in payload and allowed(tier):
+                ver_vals[field] = conv(field, payload[key])
+        return emp_vals, ver_vals
+
+    @http.route('/hocba-hrm/api/employees', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_employee_create(self, **kw):
+        """Tạo nhân viên mới từ SPA. Ghi KHÔNG sudo → model tự kiểm quyền tạo
+        + ràng buộc (CCCD 12 số, official cần MST/BHXH...)."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data()
+        emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
+        if not (emp_vals.get('name') or '').strip():
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên.'}, status=400)
+        try:
+            e = request.env['hr.employee'].create(emp_vals)
+            if ver_vals:
+                e.version_id.sudo().write(ver_vals)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự đã tồn tại. Vui lòng nhập mã khác.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_employee_update(self, emp_id, **kw):
+        """Cập nhật nhân viên từ SPA (POST cùng path với GET detail). Ghi KHÔNG
+        sudo → model tự kiểm quyền + ràng buộc."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        payload = request.get_json_data()
+        emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
+        try:
+            if emp_vals:
+                e.write(emp_vals)
+            if ver_vals:
+                e.version_id.sudo().write(ver_vals)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự đã tồn tại. Vui lòng nhập mã khác.'}, status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(
+            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    def _me_payload(self, e):
+        """Dựng payload /api/me: hồ sơ đầy đủ (tự xem nên is_hr=is_mgr=True) +
+        danh sách tỉnh/thành + giá trị thô của field tự-sửa (cho form self-edit)."""
+        data = self._employee_detail(e.sudo(), self._labels(), True, True)
+        data['hasEmployee'] = True
+        states = request.env['res.country.state'].sudo().search(
+            [('country_id.code', '=', 'VN')], order='name')
+        data['provinces'] = [{'id': s.id, 'name': s.name} for s in states]
+        data['editable'] = {
+            'phone': e.work_phone or '',
+            'permStreet': e.x_permanent_street or '',
+            'permWard': e.x_permanent_ward or '',
+            'permState': e.x_permanent_state_id.id or False,
+            'currentSame': e.x_current_same_as_permanent,
+            'currStreet': e.x_current_street or '',
+            'currWard': e.x_current_ward or '',
+            'currState': e.x_current_state_id.id or False,
+        }
+        return data
+
+    @http.route('/hocba-hrm/api/me', auth='user', type='http', methods=['GET'])
+    def api_me(self, **kw):
+        """Hồ sơ self-service: user xem hồ sơ CỦA CHÍNH MÌNH (đầy đủ pháp lý/
+        NPT/lương của bản thân)."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        e = request.env.user.employee_id
+        if not e:
+            return request.make_json_response({'hasEmployee': False})
+        return request.make_json_response(self._me_payload(e.sudo()))
+
+    @http.route('/hocba-hrm/api/me', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_me_update(self, **kw):
+        """Nhân viên TỰ cập nhật liên hệ + địa chỉ của chính mình. Ghi sudo vào
+        hồ sơ của bản thân nhưng CHỈ field trong ME_SELF_FIELDS (không leo thang
+        sang lương/trạng thái/pháp lý)."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        e = request.env.user.employee_id
+        if not e:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        payload = request.get_json_data()
+        vals = {}
+        for key, field in ME_SELF_FIELDS.items():
+            if key not in payload:
+                continue
+            v = payload[key]
+            if field.endswith('state_id'):
+                v = int(v) if v else False
+            elif field == 'x_current_same_as_permanent':
+                v = bool(v)
+            else:
+                v = v if v not in ('', None) else False
+            vals[field] = v
+        # Nếu chọn "tạm trú giống thường trú" thì đồng bộ luôn (onchange không
+        # chạy qua write) để dữ liệu nhất quán.
+        if vals.get('x_current_same_as_permanent'):
+            vals['x_current_state_id'] = vals.get('x_permanent_state_id', e.x_permanent_state_id.id)
+            vals['x_current_ward'] = vals.get('x_permanent_ward', e.x_permanent_ward)
+            vals['x_current_street'] = vals.get('x_permanent_street', e.x_permanent_street)
+        try:
+            e.sudo().write(vals)
+        except (ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._me_payload(e.sudo()))
+
+    @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',
+                type='http', methods=['GET'])
+    def api_cert_alerts(self, **kw):
+        """F-009: chứng chỉ sắp/đã hết hạn — widget cảnh báo dashboard.
+        Cert là dữ liệu HR → non-HR nhận danh sách rỗng (không phải 403) để
+        dashboard tự ẩn widget."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, _ = self._hr_flags()
+        if not is_hr:
+            return request.make_json_response({'isHr': False, 'alerts': []})
+
+        # Khớp đúng tập cảnh báo của CRON F-009 (_cron_cert_expiry_alerts):
+        # chỉ cert ĐÃ XÁC MINH + nhân viên active; search trên x_cert_expiry
+        # (stored) vì x_cert_status là computed non-stored, không search được.
+        days = int(request.env['ir.config_parameter'].sudo().get_param(
+            'hoc_ba.cert_alert_days', '60'))
+        today = fields.Date.today()
+        skills = request.env['hr.employee.skill'].sudo().search([
+            ('x_cert_verified', '=', True),
+            ('employee_id.active', '=', True),
+            ('x_cert_expiry', '!=', False),
+            ('x_cert_expiry', '<=', today + timedelta(days=days)),
+        ])
+        alerts = []
+        for s in skills:
+            e = s.employee_id
+            alerts.append({
+                'empId': e.id,
+                'empName': e.name,
+                'empCode': e.x_employee_code or '—',
+                'dep': e.department_id.name or 'Chưa gán',
+                'hasImg': bool(e.image_1920),
+                'skill': s.skill_id.name or '',
+                'level': s.skill_level_id.name or '',
+                'expiry': _d(s.x_cert_expiry),
+                'status': 'expired' if s.x_cert_expiry < today else 'expiring',
+            })
+        # sắp xếp: hết hạn trước, rồi theo ngày hết hạn gần nhất
+        alerts.sort(key=lambda a: (a['status'] != 'expired', a['expiry'] or '9999'))
+        return request.make_json_response({'isHr': True, 'alerts': alerts})
+
+    @http.route('/hocba-hrm/api/employees/onboarding', auth='user',
+                type='http', methods=['GET'])
+    def api_onboarding(self, **kw):
+        """Bảng theo dõi nhập việc: nhân viên đang thử việc + tình trạng 2 cổng
+        (F-004/005) và thử giảng (F-008). Dữ liệu cổng không nhạy cảm → trả cho
+        mọi user đăng nhập; FE tự suy ra phase/quá hạn từ ngày trả về."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        is_hr, is_mgr = self._hr_flags()
+        emps = request.env['hr.employee'].sudo().search(
+            [('x_employment_status', '=', 'probation')],
+            order='x_probation_start desc, id')
+        items = []
+        for e in emps:
+            items.append({
+                'id': e.id,
+                'code': e.x_employee_code or '—',
+                'name': e.name,
+                'depName': e.department_id.name or 'Chưa gán',
+                'jobTitle': e.job_id.name or '—',
+                'hasImg': bool(e.image_1920),
+                'start': _d(e.x_probation_start),
+                'isGroupB': (e.x_position_type in ('staff', 'manager')
+                             and e.x_work_form == 'offline'),
+                # Cổng tuần-2 (cấp thiết bị)
+                'g1Due': _d(e.x_eval_2w_due),
+                'g1Result': e.x_eval_2w_result or 'draft',
+                'g1Date': _d(e.x_eval_2w_date),
+                'equipDate': _d(e.x_equip_grant_date),
+                # Cổng tháng-2 (lên chính thức)
+                'g2Due': _d(e.x_eval_2m_due),
+                'g2Result': e.x_eval_2m_result or 'draft',
+                'g2Date': _d(e.x_eval_2m_date),
+                # Thử giảng (Nhóm A)
+                'trialDate': _d(e.x_trial_lesson_date),
+                'trialResult': e.x_trial_lesson_result or 'draft',
+            })
+        return request.make_json_response({
+            'isHr': is_hr, 'isHrManager': is_mgr, 'items': items})
 
     # ------------------------------------------------------------------
     # JSON API Chấm công (Attendance) — owner FE: Hoàng Anh.

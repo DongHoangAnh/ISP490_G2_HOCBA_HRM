@@ -1,18 +1,24 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee } from '../../api/employees';
+import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
 import Modal from '../../components/Modal';
+import EmployeeForm from './EmployeeForm';
+import DependentForm from './DependentForm';
+import AssetForm from './AssetForm';
+import PromotionForm from './PromotionForm';
+import CertForm from './CertForm';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
-export default function EmployeeDrawer({ emp, onClose, isHr, isMgr }) {
-  const [tab, setTab] = useState('info');
+export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab = 'info' }) {
+  const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     fetchEmployee(emp.id).then(setDet).catch((e) => setDerr(e.message));
   }, [emp.id]);
@@ -31,7 +37,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr }) {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-.4px' }}>{emp.name}</h2>
-            <Badge kind={hbStatusKind(emp.statusKey)} dot>{emp.status}</Badge>
+            <Badge kind={hbStatusKind((det || emp).statusKey)} dot>{(det || emp).status}</Badge>
           </div>
           <div className="muted" style={{ fontSize: 13.5, marginTop: 3 }}>{emp.code} · {emp.jobTitle} · {emp.depName}</div>
           <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
@@ -40,8 +46,10 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr }) {
           </div>
         </div>
         <div className="modal-x" style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => window.open('/odoo/employees/' + emp.id, '_blank')}>
-            <Icon name="edit" size={15} />Sửa trong Odoo</button>
+          {isHr && det && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
+              <Icon name="edit" size={15} />Chỉnh sửa</button>
+          )}
           <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
         </div>
       </div>
@@ -57,16 +65,38 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr }) {
       <div style={{ padding: '22px 24px', maxHeight: '52vh', overflowY: 'auto' }}>
         {derr && <EmptyState>Không tải được hồ sơ ({derr}).</EmptyState>}
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
-        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} />}
-        {det && tab === 'probation' && <ProbationTab det={det} />}
-        {det && tab === 'assets' && <AssetsTab det={det} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} />}
+        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={setDet} />}
+        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={setDet} />}
+        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={setDet} />}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={setDet} />}
       </div>
+
+      {editing && det && (
+        <EmployeeForm emp={det} isMgr={isMgr}
+          onClose={() => setEditing(false)}
+          onSaved={(newDet) => { setDet(newDet); setEditing(false); }} />
+      )}
     </Modal>
   );
 }
 
-function InfoTab({ det, isHr, isMgr }) {
+export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
+  const [depForm, setDepForm] = useState(null); // null | 'new' | <dependent>
+  const [certForm, setCertForm] = useState(null); // null | 'new' | <cert>
+  const delDep = async (d) => {
+    if (!window.confirm(`Xoá người phụ thuộc "${d.name}"?`)) return;
+    try { onUpdated && onUpdated(await deleteDependent(d.id)); }
+    catch (e) { alert(e.message); }
+  };
+  const toggleVerify = async (c) => {
+    try { onUpdated && onUpdated(await verifyCert(c.id, !c.verified)); }
+    catch (e) { alert(e.message); }
+  };
+  const delCert = async (c) => {
+    if (!window.confirm(`Xoá chứng chỉ "${c.skill}"?`)) return;
+    try { onUpdated && onUpdated(await deleteCert(c.id)); }
+    catch (e) { alert(e.message); }
+  };
   const rows = [
     ['Mã nhân sự', det.code], ['Họ và tên', det.name],
     ['Phòng ban', det.depName], ['Chức danh', det.jobTitle],
@@ -89,48 +119,196 @@ function InfoTab({ det, isHr, isMgr }) {
           <div className="kv" key={i}><div className="k">{k}</div><div className="v">{v || '—'}</div></div>
         ))}
       </div>
-      {isHr && det.dependents && det.dependents.length > 0 && (
+      {isHr && (det.dependents?.length > 0 || editable) && (
         <div style={{ marginTop: 22 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Người phụ thuộc ({det.dependents.length})</div>
-          <div className="card" style={{ padding: 0 }}>
-            <table className="tbl"><thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th>Giảm trừ từ</th><th>Đến</th></tr></thead>
-              <tbody>{det.dependents.map((d, i) => (
-                <tr key={i} style={{ cursor: 'default' }}>
-                  <td>{d.name}</td><td>{d.relationship}</td>
-                  <td className="mono">{fmtDate(d.birthday)}</td>
-                  <td className="mono">{fmtDate(d.from)}</td>
-                  <td className="mono">{d.to ? fmtDate(d.to) : '—'}</td>
-                </tr>))}</tbody>
-            </table>
+          <div className="between" style={{ marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Người phụ thuộc ({det.dependents?.length || 0})</div>
+            {editable && (
+              <button className="btn btn-soft btn-sm" onClick={() => setDepForm('new')}>
+                <Icon name="plus" size={13} />Thêm NPT</button>
+            )}
           </div>
+          {det.dependents?.length > 0 ? (
+            <div className="card" style={{ padding: 0 }}>
+              <table className="tbl"><thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th>Giảm trừ từ</th><th>Đến</th>{editable && <th></th>}</tr></thead>
+                <tbody>{det.dependents.map((d) => (
+                  <tr key={d.id} style={{ cursor: 'default' }}>
+                    <td>{d.name}</td><td>{d.relationship}</td>
+                    <td className="mono">{fmtDate(d.birthday)}</td>
+                    <td className="mono">{fmtDate(d.from)}</td>
+                    <td className="mono">{d.to ? fmtDate(d.to) : '—'}</td>
+                    {editable && (
+                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        <button className="icon-btn" title="Sửa" onClick={() => setDepForm(d)}><Icon name="edit" size={15} className="faint" /></button>
+                        <button className="icon-btn" title="Xoá" onClick={() => delDep(d)}><Icon name="trash" size={15} className="faint" /></button>
+                      </td>
+                    )}
+                  </tr>))}</tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="muted" style={{ fontSize: 12.5 }}>Chưa có người phụ thuộc.</div>
+          )}
+          {depForm && (
+            <DependentForm empId={det.id} dep={depForm === 'new' ? null : depForm}
+              onClose={() => setDepForm(null)}
+              onSaved={(d) => { setDepForm(null); onUpdated && onUpdated(d); }} />
+          )}
         </div>
       )}
-      {isHr && det.certs && det.certs.length > 0 && (
+      {isHr && (det.certs?.length > 0 || editable) && (
         <div style={{ marginTop: 22 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Chứng chỉ ({det.certs.length})</div>
-          <div className="card" style={{ padding: 0 }}>
-            <table className="tbl"><thead><tr><th>Kỹ năng</th><th>Cấp độ</th><th>Ngày cấp</th><th>Hết hạn</th><th>Trạng thái</th><th>Xác minh</th></tr></thead>
-              <tbody>{det.certs.map((c, i) => {
-                const [lbl, kind] = HB_CERT[c.status] || HB_CERT.none;
-                return (
-                  <tr key={i} style={{ cursor: 'default' }}>
-                    <td>{c.skill}</td><td>{c.level}</td>
-                    <td className="mono">{fmtDate(c.date)}</td>
-                    <td className="mono">{c.expiry ? fmtDate(c.expiry) : '—'}</td>
-                    <td><Badge kind={kind} dot>{lbl}</Badge></td>
-                    <td>{c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa</Badge>}</td>
-                  </tr>);
-              })}</tbody>
-            </table>
+          <div className="between" style={{ marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Chứng chỉ ({det.certs?.length || 0})</div>
+            {editable && (
+              <button className="btn btn-soft btn-sm" onClick={() => setCertForm('new')}>
+                <Icon name="plus" size={13} />Thêm chứng chỉ</button>
+            )}
           </div>
+          {det.certs?.length > 0 ? (
+            <div className="card" style={{ padding: 0 }}>
+              <table className="tbl"><thead><tr><th>Kỹ năng</th><th>Cấp độ</th><th>Ngày cấp</th><th>Hết hạn</th><th>Trạng thái</th><th>Xác minh</th>{editable && <th></th>}</tr></thead>
+                <tbody>{det.certs.map((c) => {
+                  const [lbl, kind] = HB_CERT[c.status] || HB_CERT.none;
+                  return (
+                    <tr key={c.id} style={{ cursor: 'default' }}>
+                      <td>{c.skill}</td><td>{c.level}</td>
+                      <td className="mono">{fmtDate(c.date)}</td>
+                      <td className="mono">{c.expiry ? fmtDate(c.expiry) : '—'}</td>
+                      <td><Badge kind={kind} dot>{lbl}</Badge></td>
+                      <td>
+                        {editable ? (
+                          <button className="btn btn-ghost btn-sm" title="Bật/tắt xác minh" onClick={() => toggleVerify(c)}>
+                            {c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa · xác minh?</Badge>}
+                          </button>
+                        ) : (c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa</Badge>)}
+                      </td>
+                      {editable && (
+                        <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          <button className="icon-btn" title="Sửa" onClick={() => setCertForm(c)}><Icon name="edit" size={15} className="faint" /></button>
+                          <button className="icon-btn" title="Xoá" onClick={() => delCert(c)}><Icon name="trash" size={15} className="faint" /></button>
+                        </td>
+                      )}
+                    </tr>);
+                })}</tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="muted" style={{ fontSize: 12.5 }}>Chưa có chứng chỉ.</div>
+          )}
+          {certForm && (
+            <CertForm empId={det.id} cert={certForm === 'new' ? null : certForm}
+              onClose={() => setCertForm(null)}
+              onSaved={(d) => { setCertForm(null); onUpdated && onUpdated(d); }} />
+          )}
         </div>
       )}
     </div>
   );
 }
 
+/* Nút đánh giá 1 cổng (chỉ HR Manager). Gọi API → BE chạy automation
+   (cấp thiết bị / lên chính thức / offboarding) → trả hồ sơ mới. */
+function GateAction({ empId, gate, onUpdated }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const submit = async (result) => {
+    if (result === 'fail' && !window.confirm(
+      'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding (không gia hạn). Tiếp tục?')) return;
+    setBusy(true); setErr(null);
+    try {
+      const det = await postGate(empId, { gate, result });
+      onUpdated(det);
+    } catch (e) {
+      setErr(e.status === 403 ? 'Không có quyền hoặc thao tác bị từ chối (kiểm tra điều kiện cổng).' : e.message);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 7 }}>
+        Đánh giá cổng
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy}
+          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
+          onClick={() => submit('pass')}>
+          <Icon name="checkCircle" size={14} />Đạt
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={busy}
+          style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
+          onClick={() => submit('fail')}>
+          <Icon name="x" size={14} />Không đạt
+        </button>
+        {busy && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Đang lưu…</span>}
+      </div>
+      {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
+    </div>
+  );
+}
+
+/* Form chấm thử giảng (F-008) — HR nhập ngày/lớp/2 điểm/nhận xét rồi
+   chốt Đạt / Không đạt. Model áp ràng buộc (điểm 1–10, fail cần nhận xét). */
+function TrialAction({ empId, onUpdated }) {
+  const tinp = {
+    padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border-strong)',
+    background: '#fff', fontSize: 13, color: 'var(--ink)', outline: 'none',
+    fontFamily: 'inherit', width: '100%',
+  };
+  const [f, setF] = useState({
+    date: new Date().toISOString().slice(0, 10), cls: '', scoreMethod: '', scoreContent: '', note: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const submit = async (result) => {
+    setErr(null);
+    if (result === 'fail' && !f.note.trim()) { setErr('Cần nhập nhận xét khi Không đạt.'); return; }
+    for (const s of [f.scoreMethod, f.scoreContent]) {
+      if (s !== '' && (Number(s) < 1 || Number(s) > 10)) { setErr('Điểm phải trong thang 1–10.'); return; }
+    }
+    setBusy(true);
+    try { onUpdated(await postTrial(empId, { ...f, result })); }
+    catch (e) { setErr(e.status === 403 ? 'Không có quyền chấm thử giảng.' : e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 9 }}>
+        Chấm thử giảng
+      </div>
+      <div className="grid-2" style={{ rowGap: 10, columnGap: 12, marginBottom: 10 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Ngày thử giảng</span>
+          <input type="date" style={tinp} value={f.date} onChange={set('date')} /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Lớp</span>
+          <input style={tinp} value={f.cls} onChange={set('cls')} placeholder="VD: HSK3-T2" /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Điểm phương pháp (1–10)</span>
+          <input type="number" min="1" max="10" step="0.1" style={tinp} value={f.scoreMethod} onChange={set('scoreMethod')} /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Điểm chuyên môn (1–10)</span>
+          <input type="number" min="1" max="10" step="0.1" style={tinp} value={f.scoreContent} onChange={set('scoreContent')} /></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, gridColumn: '1 / -1' }}>
+          <span className="faint" style={{ fontSize: 11 }}>Nhận xét (bắt buộc nếu Không đạt)</span>
+          <input style={tinp} value={f.note} onChange={set('note')} /></label>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy}
+          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
+          onClick={() => submit('pass')}><Icon name="checkCircle" size={14} />Đạt</button>
+        <button className="btn btn-ghost btn-sm" disabled={busy}
+          style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
+          onClick={() => submit('fail')}><Icon name="x" size={14} />Không đạt</button>
+        {busy && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Đang lưu…</span>}
+      </div>
+      {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
+    </div>
+  );
+}
+
 /* Timeline thử việc 5 điểm (Nhóm B) + thử giảng (Nhóm A) */
-function ProbationTab({ det }) {
+export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
   const p = det.probation || {};
   const steps = [
     ['Thử việc', p.start ? 'done' : 'pending', fmtDate(p.start)],
@@ -172,6 +350,9 @@ function ProbationTab({ det }) {
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2wDue)}</div></div>
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2wDate)}</div></div>
               <div className="kv"><div className="k">Ghi chú</div><div className="v">{p.d2wNote || '—'}</div></div>
+              {isMgr && onUpdated && p.d2wResult === 'draft' && (
+                <GateAction empId={det.id} gate="2w" onUpdated={onUpdated} />
+              )}
             </div>
             <div className="card" style={{ padding: 16 }}>
               <div className="between" style={{ marginBottom: 10 }}>
@@ -181,6 +362,9 @@ function ProbationTab({ det }) {
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2mDue)}</div></div>
               <div className="kv" style={{ marginBottom: 8 }}><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2mDate)}</div></div>
               <div className="kv"><div className="k">Ghi chú</div><div className="v">{p.d2mNote || '—'}</div></div>
+              {isMgr && onUpdated && p.d2wResult === 'pass' && p.d2mResult === 'draft' && (
+                <GateAction empId={det.id} gate="2m" onUpdated={onUpdated} />
+              )}
             </div>
           </div>
           {p.officialDate && (
@@ -207,6 +391,9 @@ function ProbationTab({ det }) {
               <div className="kv"><div className="k">Điểm chuyên môn</div><div className="v mono">{det.trial.scoreContent || '—'} / 10</div></div>
             </div>
             {det.trial.note && <div style={{ marginTop: 12, fontSize: 12.5 }} className="muted">{det.trial.note}</div>}
+            {isHr && onUpdated && det.trial.result === 'draft' && (
+              <TrialAction empId={det.id} onUpdated={onUpdated} />
+            )}
           </div>
         </div>
       )}
@@ -214,29 +401,84 @@ function ProbationTab({ det }) {
   );
 }
 
-function AssetsTab({ det }) {
-  if (!det.assets.length) return <EmptyState>Chưa có tài sản cấp phát.</EmptyState>;
+export function AssetsTab({ det, editable, onUpdated }) {
+  // form = null | { mode:'new' } | { mode:'return'|'transfer', asset }
+  const [form, setForm] = useState(null);
   const kind = (s) => s === 'assigned' ? 'green' : s === 'transferred' ? 'blue' : 'gray';
+  const canAct = editable && onUpdated;
   return (
-    <div className="card" style={{ padding: 0 }}>
-      <table className="tbl">
-        <thead><tr><th>Mã tài sản</th><th>Loại</th><th>Ngày cấp</th><th>Trạng thái</th><th>Ngày thu hồi</th></tr></thead>
-        <tbody>{det.assets.map((a) => (
-          <tr key={a.id} style={{ cursor: 'default' }}>
-            <td className="mono" style={{ fontWeight: 600 }}>{a.code}</td>
-            <td>{a.type}</td>
-            <td className="mono">{fmtDate(a.grant)}</td>
-            <td><Badge kind={kind(a.state)} dot>{a.stateLabel}</Badge></td>
-            <td className="mono">{a.returnDate ? fmtDate(a.returnDate) : '—'}</td>
-          </tr>))}</tbody>
-      </table>
+    <div>
+      {canAct && (
+        <div className="between" style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Tài sản cấp phát ({det.assets.length})</div>
+          <button className="btn btn-soft btn-sm" onClick={() => setForm({ mode: 'new' })}>
+            <Icon name="plus" size={13} />Cấp phát</button>
+        </div>
+      )}
+      {!det.assets.length ? (
+        <EmptyState>Chưa có tài sản cấp phát.</EmptyState>
+      ) : (
+        <div className="card" style={{ padding: 0 }}>
+          <table className="tbl">
+            <thead><tr><th>Mã tài sản</th><th>Loại</th><th>Ngày cấp</th><th>Trạng thái</th><th>Ngày thu hồi</th>{canAct && <th></th>}</tr></thead>
+            <tbody>{det.assets.map((a) => (
+              <tr key={a.id} style={{ cursor: 'default' }}>
+                <td className="mono" style={{ fontWeight: 600 }}>{a.code}</td>
+                <td>{a.type}</td>
+                <td className="mono">{fmtDate(a.grant)}</td>
+                <td><Badge kind={kind(a.state)} dot>{a.stateLabel}</Badge></td>
+                <td className="mono">{a.returnDate ? fmtDate(a.returnDate) : '—'}</td>
+                {canAct && (
+                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {a.state === 'assigned' ? (
+                      <>
+                        <button className="btn btn-ghost btn-sm" title="Thu hồi" onClick={() => setForm({ mode: 'return', asset: a })}>Thu hồi</button>
+                        <button className="btn btn-ghost btn-sm" title="Chuyển giao" style={{ marginLeft: 6 }} onClick={() => setForm({ mode: 'transfer', asset: a })}>Chuyển</button>
+                      </>
+                    ) : <span className="faint" style={{ fontSize: 12 }}>—</span>}
+                  </td>
+                )}
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+      {form && (
+        <AssetForm empId={det.id} mode={form.mode} asset={form.asset}
+          onClose={() => setForm(null)}
+          onSaved={(d) => { setForm(null); onUpdated(d); }} />
+      )}
     </div>
   );
 }
 
-function PromoTab({ det, isMgr }) {
-  if (!det.promotions.length) return <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>;
+export function PromoTab({ det, isMgr, editable, onUpdated }) {
+  const [adding, setAdding] = useState(false);
+  const canAct = editable && onUpdated;
   const path = det.promotions;
+  return (
+    <div>
+      {canAct && (
+        <div className="between" style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Lịch sử thăng tiến ({path.length})</div>
+          <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
+            <Icon name="arrowUp" size={13} />Thêm mốc</button>
+        </div>
+      )}
+      {!path.length ? (
+        <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>
+      ) : (
+        <PromoTimeline path={path} isMgr={isMgr} />
+      )}
+      {adding && (
+        <PromotionForm det={det}
+          onClose={() => setAdding(false)}
+          onSaved={(d) => { setAdding(false); onUpdated(d); }} />
+      )}
+    </div>
+  );
+}
+
+function PromoTimeline({ path, isMgr }) {
   return (
     <div style={{ position: 'relative', paddingLeft: 8 }}>
       {path.map((p, i) => {
