@@ -58,4 +58,32 @@
             <field name="code">trash_bin</field>
         </record>
     </data>
+    <!-- Bộ tài sản mặc định tự cấp khi onboarding (khách họp #2).
+         noupdate="0" để áp được cả trên DB đã cài khi nâng cấp. -->
+    <data noupdate="0">
+        <record id="asset_type_monitor" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_pc" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_keyboard" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_mouse" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_keyboard_pad" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_headset_big" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_chair" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+        <record id="asset_type_desk" model="hocba.asset.type">
+            <field name="x_is_default" eval="True"/>
+        </record>
+    </data>
 </odoo>

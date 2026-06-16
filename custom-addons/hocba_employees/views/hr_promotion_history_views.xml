@@ -10,21 +10,26 @@
                         <group>
                             <group string="Nhân viên &amp; hiệu lực">
                                 <field name="employee_id"/>
+                                <field name="x_change_type"/>
                                 <field name="date_effective"/>
                                 <field name="decision_ref"/>
                                 <field name="approved_by"/>
                             </group>
-                            <group string="Thay đổi">
+                            <group string="Thay đổi (snapshot tại thời điểm)">
                                 <field name="from_job_id"/>
                                 <field name="to_job_id"/>
                                 <field name="to_department_id"/>
-                                <field name="from_wage"/>
-                                <field name="to_wage"/>
+                                <field name="x_work_form"/>
+                                <field name="x_employment_status"/>
+                                <field name="from_wage" groups="hr.group_hr_manager"/>
+                                <field name="to_wage" groups="hr.group_hr_manager"/>
                             </group>
                         </group>
                         <group string="Phụ cấp &amp; lý do">
                             <field name="allowance_note" nolabel="1" placeholder="Phụ cấp (tóm tắt)..."/>
-                            <field name="reason" nolabel="1" placeholder="Lý do / Căn cứ (bắt buộc khi đổi lương)..."/>
+                            <field name="reason" placeholder="Lý do / Căn cứ (bắt buộc khi đổi lương)..."/>
+                            <field name="x_evidence_url" widget="url"
+                                   placeholder="https://... (link đánh giá/KPI — bắt buộc khi đổi lương)"/>
                         </group>
                     </sheet>
                 </form>
@@ -38,11 +43,12 @@
                 <list>
                     <field name="date_effective"/>
                     <field name="employee_id"/>
-                    <field name="from_job_id"/>
+                    <field name="x_change_type"/>
                     <field name="to_job_id"/>
-                    <field name="from_wage" optional="show"/>
-                    <field name="to_wage" optional="show"/>
-                    <field name="decision_ref" optional="show"/>
+                    <field name="x_employment_status" optional="show"/>
+                    <field name="from_wage" optional="hide" groups="hr.group_hr_manager"/>
+                    <field name="to_wage" optional="show" groups="hr.group_hr_manager"/>
+                    <field name="decision_ref" optional="hide"/>
                     <field name="approved_by" optional="hide"/>
                 </list>
             </field>

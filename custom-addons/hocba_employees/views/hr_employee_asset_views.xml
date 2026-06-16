@@ -83,6 +83,7 @@
                     <field name="sequence" widget="handle"/>
                     <field name="name"/>
                     <field name="code"/>
+                    <field name="x_is_default"/>
                     <field name="active"/>
                 </list>
             </field>
