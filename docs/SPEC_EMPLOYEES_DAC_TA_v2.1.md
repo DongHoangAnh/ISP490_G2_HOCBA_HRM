@@ -2,7 +2,7 @@
 # **TÀI LIỆU ĐẶC TẢ HỆ THỐNG ERP ODOO 19.0**
 ## **PHÂN HỆ: EMPLOYEES (QUẢN LÝ NHÂN SỰ) — TRUNG TÂM TIẾNG TRUNG HỌC BÁ**
 
-> **Phiên bản:** 2.1 — Tổng hợp sau buổi họp xác nhận yêu cầu với khách hàng.  
+> **Phiên bản:** 2.2 — Cập nhật sau **Họp #2 (2026-06-16)**. Xem **Biên bản cập nhật (v2.1 → v2.2)** ngay dưới; các điều khoản bị thay thế được ghi rõ ở đó và có ưu tiên cao hơn nội dung cũ trong thân tài liệu.  
 > **Phạm vi:** Phân hệ *Employees* — Hồ sơ & Vòng đời nhân sự. Payroll, Attendance, Recruitment chỉ nêu ở mức ranh giới liên thông.  
 > **Cơ sở khảo sát:** Lark hiện hành (`Học bá education.xlsx`, 168 hồ sơ thực tế), 02 sơ đồ BPMN (AS-IS & TO-BE), tài liệu đặc tả v1.0.
 
@@ -21,6 +21,28 @@
 | C-07 | Bổ sung Phụ lục Data Dictionary (Lark → Odoo) | Phục vụ dev migrate dữ liệu |
 | C-08 | Bổ sung Chương 7 — Functional Specification (9 chức năng custom) | Làm rõ chi tiết để dev implement ngay |
 | C-09 | Cập nhật BPMN TO-BE thành sơ đồ end-to-end 2 hàng cuộn (v2.1) | Gộp 5 khối rời thành 1 sơ đồ liền mạch theo phản hồi |
+
+---
+
+## **BIÊN BẢN CẬP NHẬT (v2.1 → v2.2) — Họp #2 (2026-06-16)**
+
+> Các thay đổi dưới đây **đã được khách xác nhận và đã implement** trên nhánh `Tan/Employee`. Khi mâu thuẫn với thân tài liệu cũ, **ưu tiên bảng này**. Chi tiết phân tích: `docs/BAOCAO_HOP2_EMPLOYEES_2026-06-16.md`.
+
+| # | Hạng mục thay đổi | Thay thế / Bổ sung | Trạng thái |
+|---|---|---|---|
+| **M-01** | **Cổng thử việc có thêm kết quả "Gia hạn"** (`Đạt` / `Không đạt` / `Gia hạn`) cho cả 3 cổng. Gia hạn → tiếp tục thử việc, hẹn tái đánh giá, KHÔNG kết thúc. | **Đảo ngược GĐ-03** ("tuần-2 Không đạt → nghỉ, không gia hạn"). Mở rộng AUT-001/002. | ✅ Implement |
+| **M-02** | **Thêm cổng đánh giá tháng-1** (`x_eval_1m_*`, mặc định +30 ngày). Luồng: tuần-2 Đạt → mở tháng-1; **tháng-1 Đạt → lên chính thức sớm**; tháng-1 Gia hạn → tiếp tục tới cổng tháng-2. | **Thay mô hình "2 cổng"** (C-02/G-13) thành **3 mốc** (tuần-2 / tháng-1 / tháng-2). Timeline 5 điểm → **6 điểm**. | ✅ Implement |
+| **M-03** | **Lịch sử thăng tiến** lưu snapshot đầy đủ (ngày, chức danh, **hình thức**, **trạng thái**, phòng ban, lương) và **tự sinh** khi *nhận việc* + *lên chính thức* ("nhận việc/lên chính thức cũng là thăng tiến"). | Mở rộng FUNC-EMP-007 (`x_change_type`, `x_work_form`, `x_employment_status`). | ✅ Implement |
+| **M-04** | **Đổi lương bắt buộc Lý do + Link bằng chứng** (đánh giá/KPI/kết quả). | Bổ sung `x_evidence_url` (FUNC-EMP-007). | ✅ Implement |
+| **M-05** | **Bảo mật lương:** chỉ HR (+admin to) xem lương mọi người; mỗi người xem lương của mình; người khác không xem của ai. Field lương ẩn ngoài `hr.group_hr_manager`. | Làm rõ BR phân quyền lương. | ✅ Implement |
+| **M-06** | **Tài sản 2 nhóm:** *mặc định* (tự cấp khi qua cổng tuần-2) vs *tự thêm* (HR thêm sau); HR thêm được loại tài sản mới. | Bổ sung `hocba.asset.type.x_is_default` (FUNC-EMP-006). | ✅ Implement |
+| **M-07** | **Chứng chỉ gom 2 nhóm:** *"Bằng ngôn ngữ"* + *"Bằng chuyên môn"* (giữ "ngôn ngữ" vì GV tiếng Trung; **không** thêm IELTS — công ty khác). **Phân cấp** sơ/trung/cao cho cả NV lẫn GV (GV dùng lọc xếp lớp). | **Đổi CONF-EMP-04/§5.2.2** ("Tiếng Trung"/"Sư phạm" → "Bằng ngôn ngữ"/"Bằng chuyên môn"); thêm `x_seniority_level`. | ✅ Implement |
+| **M-08** | **Lên chính thức bắt buộc CCCD + MST + BHXH.** Nhân viên chỉ cung cấp thông tin đầu vào; chức vụ/vị trí/lương/trạng thái do HR update. | **Mở rộng BR-010** (thêm CCCD). | ✅ Implement |
+| **M-09** | **Đổi thuật ngữ "Nhập việc" → "Nhận việc".** Thêm **vai trò "Giáo vụ"** (chỉ xem/quản lý giáo viên). | Thuật ngữ + group `hocba_employees.group_hocba_giaovu` + record rule. | ✅ Implement |
+| **M-10** | **Tách tài khoản quản lý ↔ cá nhân:** màn quản lý chỉ hiển thị menu quản lý; nhân viên thường chỉ thấy luồng cá nhân ("Hồ sơ của tôi"); vai trò gắn theo group Odoo (bàn giao được). | Bổ sung nav theo vai trò trong SPA + endpoint `/hocba-hrm/api/me/roles`. | ✅ Nav theo vai trò; chấm công/nghỉ self & scope phòng ban còn lại |
+| **M-11** | Người phụ thuộc & ảnh hồ sơ: nhân viên **tự thêm/tự up**, không cần duyệt. | FUNC-EMP-003 (self-service). | ⏳ Phần SPA cá nhân |
+
+> **Còn treo cần khách làm rõ:** chi tiết **nghỉ phép / lịch sử nghỉ** (cuối Họp #2 bị gián đoạn kỹ thuật).
 
 ---
 
@@ -46,7 +68,7 @@ Bản v1.0 chia 3 nhóm cứng (Academic / Sales / Back-office). Khảo sát d�
 | Hình thức điển hình | Phần lớn `Online`, thỉnh giảng / `Freelancer` / `Part-time` | Phần lớn `Offline`, `Full-time` |
 | Loại hợp đồng | HĐ thỉnh giảng / cộng tác | HĐ thử việc → HĐ chính thức |
 | Cấp tài nguyên | Tài khoản dạy (Zoom Pro/ClassIn), kho slide — **cấp sớm ngay đầu** | Thiết bị văn phòng — **cấp sau khi đạt cổng tuần-2** |
-| Cổng đánh giá | Đánh giá thử giảng (phương pháp) trong tuần đầu | Cổng tuần-2 (cấp thiết bị) + Cổng tháng-2 (lên chính thức) |
+| Cổng đánh giá | Đánh giá thử giảng (phương pháp) trong tuần đầu | Cổng tuần-2 (cấp thiết bị) + **Cổng tháng-1 (có thể lên chính thức sớm)** + Cổng tháng-2 (lên chính thức) — *xem M-02* |
 | Nghiệp vụ trọng tâm | Ma trận kỹ năng (HSK/HSKK/Sư phạm), cảnh báo hạn chứng chỉ | Thử việc theo mốc, tài sản, KPI, luân chuyển cơ sở |
 
 > **Giả định GĐ-01 cần khách xác nhận:** GV có áp dụng cổng thử việc theo mốc không, hay chỉ đánh giá thử giảng một lần? Thời hạn HĐ thỉnh giảng?
@@ -260,8 +282,8 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 
 ### **5.2.2. Chi tiết cấu hình cây danh mục kỹ năng (CONF-EMP-04)**
 
-* **Skill Type: Tiếng Trung** → Skills: HSK 1/2/3/4/5/6 (cũ), HSK 5–6 (mô hình 9 bậc mới), HSKK Trung/Cao cấp, TOCFL A2/B1/B2/C1/C2.
-* **Skill Type: Sư phạm ngoại ngữ** → Skills: Bằng ĐH Sư phạm tiếng Trung, Chứng chỉ NVSP (Bộ GD VN), CTCSOL Quốc tế.
+* **Skill Type: Bằng ngôn ngữ** *(đổi tên từ "Tiếng Trung" — M-07)* → Skills: HSK 1/2/3/4/5/6 (cũ), HSK 5–6 (mô hình 9 bậc mới), HSKK Trung/Cao cấp, TOCFL A2/B1/B2/C1/C2.
+* **Skill Type: Bằng chuyên môn** *(đổi tên từ "Sư phạm ngoại ngữ" — M-07)* → Skills: Bằng ĐH Sư phạm tiếng Trung, Chứng chỉ NVSP (Bộ GD VN), CTCSOL Quốc tế.
 * *Mỗi kỹ năng khi gán vào hồ sơ GV kèm `x_cert_expiry`. Hệ thống tự alert trước 60 ngày.*
 
 ### **5.2.3. Validation Rules Offboarding**
@@ -464,7 +486,7 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 | Số nhà/Đường tạm trú | `x_current_street` | Char(200) | ° | Hiện khi checkbox = False |
 
 **Business Rules:**
-* BR-010: MST TNCN và Số BHXH bắt buộc trước khi tạo HĐ chính thức.
+* BR-010: **CCCD**, MST TNCN và Số BHXH bắt buộc trước khi lên chính thức *(mở rộng theo M-08)*.
 * BR-011: CCCD, MST, BHXH ẩn với `hr.group_hr_user`; chỉ hiển thị đầy đủ với HR Manager và Kế toán.
 * BR-012: Khi `x_current_same_as_permanent = True`, trường tạm trú readonly và mirror thường trú.
 
@@ -508,7 +530,9 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 
 ---
 
-## **7.4. FUNC-EMP-004 — Dòng Thời gian Thử việc & 2 Cổng Đánh giá**
+## **7.4. FUNC-EMP-004 — Dòng Thời gian Thử việc & Cổng Đánh giá**
+
+> ⚠️ **Cập nhật v2.2 (M-01, M-02):** mô hình nay là **3 mốc** (tuần-2 / tháng-1 / tháng-2), mỗi cổng có thêm kết quả **"Gia hạn"**. Tháng-1 Đạt → lên chính thức sớm. Nội dung "2 cổng" bên dưới đọc theo bản mở rộng này.
 
 **Function ID:** FUNC-EMP-004 | **Module:** `hr.employee` — custom block | **Actor:** TBP (điền kết quả), HR (xem tổng quan)
 
