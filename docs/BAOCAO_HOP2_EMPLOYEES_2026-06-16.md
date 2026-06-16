@@ -151,14 +151,16 @@ Ký hiệu: ✅ đã đúng · ⚠️ cần sửa · ➕ làm mới · 🔁 đ�
 - **CCCD bắt buộc** khi lên chính thức (cùng MST + BHXH).
 - **Group "Giáo vụ"** + record rule chỉ xem giáo viên (`x_employee_type_id.code='teacher'`) + ACL.
 - **Đổi nhãn "Nhập việc" → "Nhận việc"** trong SPA (`frontend/src/` + `hocba_hrm/static/src/js/`).
+- **Tách tài khoản quản lý ↔ cá nhân (SPA)**: nav theo vai trò + endpoint `/hocba-hrm/api/me/roles` — nhân viên thường chỉ thấy "Hồ sơ của tôi". *(verify: admin/hrmanager canManage=true, employee/ctv=false)*
+- **Self-service**: nhân viên **tự thêm/sửa/xoá người phụ thuộc** + **tự up ảnh** đại diện của mình (`/api/me/photo`, NPT nới quyền self). *(verify trên test_employee)*
+- **Giáo vụ chỉ thấy giáo viên trong SPA**: `api_employees` lọc domain theo loại NV (vì api dùng sudo).
+- **Cập nhật spec → v2.2** (biên bản M-01..M-11 trong `SPEC_EMPLOYEES_DAC_TA_v2.1.md`).
 
 ## 7. ⏭️ Chưa làm (cần đợt sau / cross-team)
 
-- 🔴 **Tách tài khoản quản lý ↔ cá nhân** (mục 1) — việc lớn ở **SPA** (`frontend/src/`), chưa đụng tới.
 - Ẩn panel/duyệt chấm công ở giao diện HR (phối hợp `hocba_attendance`).
 - Mở rộng scope duyệt nghỉ/đi sớm về muộn **theo phòng ban** cho Quản lý (mục 22).
-- Self-upload ảnh + người phụ thuộc ở "Hồ sơ của tôi" (cần phần SPA cá nhân ở trên).
+- **Dashboard cá nhân + lịch sử đơn của mình** cho nhân viên thường (hiện mới có "Hồ sơ của tôi").
 - Nghỉ phép / lịch sử (cuối họp gián đoạn — chưa rõ yêu cầu).
-- **Cập nhật spec v2.1** để khớp 2 thay đổi đảo ngược (gia hạn + mốc 1 tháng).
 
 > ⚠️ Lưu ý migration: vài seed dùng `noupdate="0"` (tên nhóm chứng chỉ, cờ tài sản mặc định) để áp được trên DB đã cài khi `-u hocba_employees`. Constraint CCCD/MST/BHXH khi lên chính thức sẽ **chặn** NV cũ thiếu giấy tờ — cần bổ sung dữ liệu trước khi chuyển chính thức.
