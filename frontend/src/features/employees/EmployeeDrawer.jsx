@@ -80,7 +80,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
   );
 }
 
-export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
+export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, onUpdated }) {
   const [depForm, setDepForm] = useState(null); // null | 'new' | <dependent>
   const [certForm, setCertForm] = useState(null); // null | 'new' | <cert>
   const delDep = async (d) => {
@@ -119,25 +119,25 @@ export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
           <div className="kv" key={i}><div className="k">{k}</div><div className="v">{v || '—'}</div></div>
         ))}
       </div>
-      {isHr && (det.dependents?.length > 0 || editable) && (
+      {isHr && (det.dependents?.length > 0 || depEditable) && (
         <div style={{ marginTop: 22 }}>
           <div className="between" style={{ marginBottom: 8 }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>Người phụ thuộc ({det.dependents?.length || 0})</div>
-            {editable && (
+            {depEditable && (
               <button className="btn btn-soft btn-sm" onClick={() => setDepForm('new')}>
                 <Icon name="plus" size={13} />Thêm NPT</button>
             )}
           </div>
           {det.dependents?.length > 0 ? (
             <div className="card" style={{ padding: 0 }}>
-              <table className="tbl"><thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th>Giảm trừ từ</th><th>Đến</th>{editable && <th></th>}</tr></thead>
+              <table className="tbl"><thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th>Giảm trừ từ</th><th>Đến</th>{depEditable && <th></th>}</tr></thead>
                 <tbody>{det.dependents.map((d) => (
                   <tr key={d.id} style={{ cursor: 'default' }}>
                     <td>{d.name}</td><td>{d.relationship}</td>
                     <td className="mono">{fmtDate(d.birthday)}</td>
                     <td className="mono">{fmtDate(d.from)}</td>
                     <td className="mono">{d.to ? fmtDate(d.to) : '—'}</td>
-                    {editable && (
+                    {depEditable && (
                       <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                         <button className="icon-btn" title="Sửa" onClick={() => setDepForm(d)}><Icon name="edit" size={15} className="faint" /></button>
                         <button className="icon-btn" title="Xoá" onClick={() => delDep(d)}><Icon name="trash" size={15} className="faint" /></button>

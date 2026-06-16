@@ -320,8 +320,17 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         is_hr, is_mgr = self._hr_flags()
+        user = request.env.user
+        is_admin = user.has_group('base.group_system')
+        is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
         labels = self._labels()
-        emps = request.env['hr.employee'].sudo().search([], order='x_employee_code, id')
+        # Giáo vụ (không kiêm HR/Admin) chỉ thấy giáo viên (họp #2). Domain áp
+        # tay vì api dùng sudo (bỏ qua record rule của backend).
+        domain = []
+        if is_giaovu and not (is_hr or is_admin):
+            domain = [('x_employee_type_id.code', '=', 'teacher')]
+        emps = request.env['hr.employee'].sudo().search(
+            domain, order='x_employee_code, id')
 
         deps = {}
         for i, d in enumerate(emps.mapped('department_id').sorted('id')):
@@ -568,51 +577,58 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 
+    def _dep_response(self, e, is_hr):
+        """Self (non-HR) cần payload đầy đủ kèm dependents → dùng _me_payload."""
+        if not is_hr and e == request.env.user.employee_id:
+            return request.make_json_response(self._me_payload(e.sudo()))
+        return self._detail_response(e)
+
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/dependent', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_dependent_create(self, emp_id, **kw):
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        e = request.env['hr.employee'].browse(emp_id)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        is_hr, _ = self._hr_flags()
+        # Họp #2: cho chính chủ tự thêm NPT của mình (không cần HR duyệt).
+        if not (is_hr or e == request.env.user.employee_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         vals = self._dep_vals(request.get_json_data())
         vals['employee_id'] = emp_id
         try:
-            request.env['hr.employee.dependent'].create(vals)
+            request.env['hr.employee.dependent'].sudo().create(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(e)
+        return self._dep_response(e, is_hr)
 
     @http.route('/hocba-hrm/api/dependent/<int:dep_id>', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_dependent_update(self, dep_id, **kw):
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        d = request.env['hr.employee.dependent'].browse(dep_id)
+        d = request.env['hr.employee.dependent'].sudo().browse(dep_id)
         if not d.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        is_hr, _ = self._hr_flags()
+        if not (is_hr or d.employee_id == request.env.user.employee_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             d.write(self._dep_vals(request.get_json_data()))
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(d.employee_id)
+        return self._dep_response(d.employee_id, is_hr)
 
     @http.route('/hocba-hrm/api/dependent/<int:dep_id>/delete', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_dependent_delete(self, dep_id, **kw):
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        d = request.env['hr.employee.dependent'].browse(dep_id)
+        d = request.env['hr.employee.dependent'].sudo().browse(dep_id)
         if not d.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        is_hr, _ = self._hr_flags()
+        if not (is_hr or d.employee_id == request.env.user.employee_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         e = d.employee_id
         try:
             d.unlink()
@@ -620,7 +636,7 @@ class HocBaHRM(http.Controller):
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(e)
+        return self._dep_response(e, is_hr)
 
     # ------------------------------------------------------------------
     # Tài sản (F-006) — cấp / thu hồi / chuyển giao inline trong SPA (HR).
@@ -1096,6 +1112,27 @@ class HocBaHRM(http.Controller):
         except (ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._me_payload(e.sudo()))
+
+    @http.route('/hocba-hrm/api/me/photo', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_me_photo(self, **kw):
+        """Nhân viên TỰ cập nhật ảnh đại diện của chính mình (image_1920).
+        Nhận base64 (có/không tiền tố data:URI); gửi rỗng để xoá ảnh."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        e = request.env.user.employee_id
+        if not e:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        img = (request.get_json_data() or {}).get('image') or ''
+        if isinstance(img, str) and img.startswith('data:') and ',' in img:
+            img = img.split(',', 1)[1]
+        try:
+            e.sudo().write({'image_1920': img or False})
+        except (ValidationError, UserError, OSError, ValueError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': 'Ảnh không hợp lệ.'}, status=400)
         return request.make_json_response(self._me_payload(e.sudo()))
 
     @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',
