@@ -59,7 +59,7 @@ export default function Onboarding({ search }) {
   useEffect(load, []);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
-  if (!data) return <LoadingState label="Đang tải dữ liệu nhập việc…" />;
+  if (!data) return <LoadingState label="Đang tải dữ liệu nhận việc…" />;
 
   const items = data.items;
   const filtered = items.filter((o) => {
@@ -84,7 +84,7 @@ export default function Onboarding({ search }) {
     <div className="content fade-in">
       <div className="page-head">
         <div>
-          <h1>Nhập việc</h1>
+          <h1>Nhận việc</h1>
           <p>Thử việc 2 cổng (tuần-2 → cấp thiết bị → tháng-2) · thử giảng cho giảng viên · dữ liệu trực tiếp từ Odoo</p>
         </div>
       </div>
