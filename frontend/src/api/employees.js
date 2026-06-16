@@ -6,6 +6,8 @@ export const fetchEmployee = (id) => hbGet(`/hocba-hrm/api/employee/${id}`);
 export const fetchCertAlerts = () => hbGet('/hocba-hrm/api/employees/cert-alerts');
 export const fetchOnboarding = () => hbGet('/hocba-hrm/api/employees/onboarding');
 export const fetchMe = () => hbGet('/hocba-hrm/api/me');
+/* Danh tính + cờ vai trò (nhẹ) để dựng nav theo vai trò (tách tài khoản — họp #2). */
+export const fetchRoles = () => hbGet('/hocba-hrm/api/me/roles');
 /* Nhân viên tự cập nhật liên hệ + địa chỉ của chính mình. */
 export const updateMe = (payload) => hbPost('/hocba-hrm/api/me', payload);
 

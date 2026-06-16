@@ -1,22 +1,42 @@
 /* Shell: Sidebar + Topbar — file CHUNG, sửa phải qua review (quy ước §2) */
 import Icon from '../components/Icon';
 
+/* Nav theo vai trò (họp #2 — tách tài khoản quản lý ↔ cá nhân).
+   need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; không gắn need = mọi nhân viên. */
 const NAV = [
   { sec: 'Tổng quan', items: [
-    { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
+    { id: 'dashboard', label: 'Dashboard', icon: 'grid', need: 'manage' },
   ]},
-  { sec: 'Quản lý nhân sự', items: [
-    { id: 'employees', label: 'Nhân viên', icon: 'users' },
-    { id: 'onboarding', label: 'Nhận việc', icon: 'checkCircle' },
-    { id: 'attendance', label: 'Chấm công', icon: 'clock' },
-    { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar' },
-    { id: 'payroll', label: 'Bảng lương', icon: 'wallet' },
-    { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase' },
+  { sec: 'Quản lý nhân sự', need: 'manage', items: [
+    { id: 'employees', label: 'Nhân viên', icon: 'users', need: 'manage' },
+    { id: 'onboarding', label: 'Nhận việc', icon: 'checkCircle', need: 'manage' },
+    { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'manage' },
+    { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'manage' },
+    { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
+    { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
   ]},
   { sec: 'Cá nhân', items: [
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user' },
   ]},
 ];
+
+const allow = (need, me) => need !== 'manage' || !!(me && me.canManage);
+
+/* Danh sách section/item user được thấy theo vai trò. */
+export function visibleNav(me) {
+  return NAV
+    .filter((g) => allow(g.need, me))
+    .map((g) => ({ ...g, items: g.items.filter((it) => allow(it.need, me)) }))
+    .filter((g) => g.items.length);
+}
+
+/* Tập id view hợp lệ với vai trò hiện tại (để chặn truy cập view quản lý). */
+export function allowedViews(me) {
+  return new Set(visibleNav(me).flatMap((g) => g.items.map((it) => it.id)));
+}
+
+/* View mặc định: quản lý → dashboard; nhân viên thường → hồ sơ của tôi. */
+export const defaultView = (me) => (me && me.canManage ? 'dashboard' : 'profile');
 
 export const PAGE_META = {
   dashboard: { t: 'Dashboard nhân sự', c: 'Tổng quan' },
@@ -29,7 +49,8 @@ export const PAGE_META = {
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
 };
 
-export function Sidebar({ view, setView }) {
+export function Sidebar({ view, setView, me }) {
+  const groups = visibleNav(me);
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -40,7 +61,7 @@ export function Sidebar({ view, setView }) {
         </div>
       </div>
       <nav className="nav">
-        {NAV.map((grp) => (
+        {groups.map((grp) => (
           <div key={grp.sec}>
             <div className="nav-label">{grp.sec}</div>
             {grp.items.map((it) => (
@@ -57,9 +78,11 @@ export function Sidebar({ view, setView }) {
       <div className="sidebar-foot">
         <div className="org-card">
           <div className="dot"></div>
-          <div style={{ flex: 1 }}>
-            <div className="t">Học Bá Education</div>
-            <div className="s">360 Giải Phóng</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {me ? me.name : 'Học Bá Education'}
+            </div>
+            <div className="s">{me ? me.roleLabel : '360 Giải Phóng'}</div>
           </div>
           <button className="icon-btn" title="Đăng xuất"
             onClick={() => { window.location.href = '/web/session/logout'; }}>

@@ -1011,6 +1011,56 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'hasEmployee': False})
         return request.make_json_response(self._me_payload(e.sudo()))
 
+    def _role_payload(self):
+        """Cờ vai trò để SPA dựng nav (tách tài khoản quản lý ↔ cá nhân — họp #2).
+        Robust kể cả khi user chưa gắn hồ sơ nhân viên."""
+        user = request.env.user
+        emp = user.employee_id
+        is_admin = user.has_group('base.group_system')
+        is_hr_mgr = user.has_group('hr.group_hr_manager')
+        is_hr_user = user.has_group('hr.group_hr_user')
+        is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
+        is_manager = bool(emp) and (
+            bool(emp.child_ids)
+            or bool(request.env['hr.department'].sudo().search_count(
+                [('manager_id', '=', emp.id)])))
+        can_manage = (is_admin or is_hr_mgr or is_hr_user
+                      or is_giaovu or is_manager)
+        roles = []
+        if is_admin:
+            roles.append('Admin')
+        if is_hr_mgr:
+            roles.append('HR Manager')
+        elif is_hr_user:
+            roles.append('HR')
+        if is_giaovu:
+            roles.append('Giáo vụ')
+        if is_manager:
+            roles.append('Quản lý')
+        if not roles:
+            roles.append('Nhân viên')
+        return {
+            'name': user.name,
+            'login': user.login,
+            'employeeId': emp.id if emp else False,
+            'hasEmployee': bool(emp),
+            'roleLabel': ' · '.join(roles),
+            'isAdmin': is_admin,
+            'isHrManager': is_hr_mgr,
+            'isHrUser': is_hr_user,
+            'isGiaovu': is_giaovu,
+            'isManager': is_manager,
+            'canManage': can_manage,
+        }
+
+    @http.route('/hocba-hrm/api/me/roles', auth='user', type='http',
+                methods=['GET'])
+    def api_me_roles(self, **kw):
+        """Danh tính + cờ vai trò (nhẹ) để SPA quyết định menu/quyền hiển thị."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        return request.make_json_response(self._role_payload())
+
     @http.route('/hocba-hrm/api/me', auth='user', type='http',
                 methods=['POST'], csrf=False)
     def api_me_update(self, **kw):
