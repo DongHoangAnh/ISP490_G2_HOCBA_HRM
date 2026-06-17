@@ -398,6 +398,34 @@ def _request_create(env, body):
     return _req_row(req)
 
 
+def _request_decide(env, req_id, approve, body):
+    """Manager duyệt/từ chối 1 đơn trong phạm vi (Gói 3).
+    Trả _req_row; None nếu không tồn tại; AccessError nếu vượt quyền;
+    UserError('already_decided') nếu đơn đã quyết định.
+    Khi duyệt: giờ áp dụng = body override (nếu gửi) ELSE proposed_* của đơn."""
+    req = env['hocba.attendance.request'].sudo().browse(req_id)
+    if not req.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, req.employee_id)):
+        raise AccessError('forbidden')
+    if req.state != 'pending':
+        raise UserError('already_decided')
+    vals = {
+        'reviewer_id': env.user.id,
+        'decision_date': fields.Datetime.now(),
+        'review_note': (body.get('reviewNote') or '').strip() or False,
+    }
+    if approve:
+        ci = _to_utc(env, body['checkIn']) if 'checkIn' in body else req.proposed_check_in
+        co = _to_utc(env, body['checkOut']) if 'checkOut' in body else req.proposed_check_out
+        _request_apply(env, req, ci or None, co or None)
+        vals['state'] = 'approved'
+    else:
+        vals['state'] = 'rejected'
+    req.write(vals)
+    return _req_row(req)
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:

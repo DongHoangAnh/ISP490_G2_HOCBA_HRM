@@ -5,7 +5,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply, _request_create
+from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply, _request_create, _request_decide
 
 
 @tagged('post_install', '-at_install')
@@ -136,3 +136,63 @@ class TestAttendanceRequest(TransactionCase):
         self.assertEqual(row['attendanceId'], rec.id)
         req = env['hocba.attendance.request'].browse(row['id'])
         self.assertEqual(req.request_date, rec.date)
+
+    def test_decide_approve_applies_manager_override(self):
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': self.emp.id,
+                          'check_in': '2026-06-12 02:00:00',
+                          'check_out': '2026-06-12 07:00:00'})  # thiếu 180
+        req = self._make_req(attendance_id=rec.id,
+                             proposed_check_out=_to_utc(
+                                 self.env(user=self.user), '2026-06-12T16:00'))
+        env = self.env(user=self.hrm)
+        # manager chỉnh khác giờ user đề xuất: 17:00
+        row = _request_decide(env, req.id, True, {'checkOut': '2026-06-12T17:00'})
+        self.assertEqual(row['state'], 'approved')
+        self.assertEqual(row['reviewer'], self.hrm.name)
+        self.assertEqual(rec.missing_minutes, 0)  # 09:00->17:00 = 8h
+
+    def test_decide_approve_creates_for_missing_day(self):
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        env = self.env(user=self.hrm)
+        req = self._make_req(
+            request_date='2026-06-13',
+            proposed_check_in=_to_utc(self.env(user=self.user), '2026-06-13T09:00'),
+            proposed_check_out=_to_utc(self.env(user=self.user), '2026-06-13T17:00'))
+        row = _request_decide(env, req.id, True, {})
+        self.assertEqual(row['state'], 'approved')
+        self.assertIsNotNone(row['attendanceId'])
+
+    def test_decide_approve_missing_day_no_checkin_raises(self):
+        env = self.env(user=self.hrm)
+        req = self._make_req(request_date='2026-06-14')  # không proposed giờ nào
+        with self.assertRaises(ValidationError):
+            _request_decide(env, req.id, True, {})
+
+    def test_decide_reject_sets_state_and_note(self):
+        env = self.env(user=self.hrm)
+        req = self._make_req()
+        row = _request_decide(env, req.id, False, {'reviewNote': 'Không hợp lệ'})
+        self.assertEqual(row['state'], 'rejected')
+        self.assertEqual(row['reviewNote'], 'Không hợp lệ')
+
+    def test_decide_out_of_scope_forbidden(self):
+        # NV ngoài phạm vi của 1 trưởng phòng (không HR)
+        dept = self.env['hr.department'].create({'name': 'Phòng X'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP X'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPX', 'login': 'tpx_req'})
+        mgr_emp.user_id = mgr_user
+        req = self._make_req()  # emp KHÔNG thuộc Phòng X
+        with self.assertRaises(AccessError):
+            _request_decide(self.env(user=mgr_user), req.id, True, {})
+
+    def test_decide_already_decided_raises(self):
+        env = self.env(user=self.hrm)
+        req = self._make_req(state='approved')
+        with self.assertRaises(UserError):
+            _request_decide(env, req.id, False, {})
+
+    def test_decide_missing_returns_none(self):
+        self.assertIsNone(_request_decide(self.env(user=self.hrm), 999999, False, {}))
