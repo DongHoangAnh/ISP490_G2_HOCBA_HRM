@@ -1251,8 +1251,10 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         is_hr, is_mgr = self._hr_flags()
+        # Phạm vi theo vai trò (giống danh sách NV): Quản lý chỉ thấy phòng mình,
+        # Giáo vụ chỉ giáo viên, HR/Admin thấy tất cả.
         emps = request.env['hr.employee'].sudo().search(
-            [('x_employment_status', '=', 'probation')],
+            [('x_employment_status', '=', 'probation')] + self._emp_scope_domain(),
             order='x_probation_start desc, id')
         items = []
         for e in emps:
