@@ -79,6 +79,8 @@ class TestAttendanceRequest(TransactionCase):
         self.assertTrue(rec.exists())
         self.assertEqual(rec.employee_id, self.emp)
         self.assertEqual(req.attendance_id, rec)
+        self.assertEqual(rec.check_in, ci)
+        self.assertEqual(rec.check_out, co)
 
     def test_apply_missing_day_without_checkin_raises(self):
         req = self._make_req(request_date='2026-06-14')

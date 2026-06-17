@@ -339,9 +339,11 @@ def _attendance_delete(env, rec_id):
 
 def _request_apply(env, req, check_in_utc, check_out_utc):
     """Áp đơn đã duyệt vào bản ghi chấm công (Gói 3). Trả bản ghi.
-    check_in_utc/check_out_utc: Datetime UTC naive đã resolve (None = bỏ qua).
-    - Có attendance_id (hoặc tìm thấy bản ghi cùng ngày): ghi các giờ != None.
-    - Ngày thiếu: cần check_in_utc để tạo; thiếu -> ValidationError."""
+    check_in_utc/check_out_utc: Datetime UTC naive, hoặc None để bỏ qua (giờ đó
+    giữ nguyên). Người gọi (_request_decide) chuẩn hóa False -> None trước khi
+    truyền, nên None là giá trị "không cung cấp" chính thức.
+    - Có attendance_id (hoặc tìm thấy bản ghi cùng ngày): chỉ ghi giờ khác None.
+    - Ngày thiếu (không bản ghi): cần check_in_utc để tạo; thiếu -> ValidationError."""
     Att = env['hocba.attendance'].sudo()
     rec = req.attendance_id
     if not rec:
