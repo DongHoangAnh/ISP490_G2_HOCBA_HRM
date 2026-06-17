@@ -1637,3 +1637,62 @@ class HocBaHRM(http.Controller):
         if res is None:
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(res)
+
+    # ------------------------------------------------------------------
+    # Đơn chấm công (Gói 3): user gửi đơn sửa/tạo bản ghi → manager duyệt
+    # (chỉnh giờ được) & áp dụng, hoặc từ chối. Spec:
+    # docs/superpowers/specs/2026-06-17-attendance-correction-request-design.md
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/attendance/requests', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_attendance_request_create(self, **kw):
+        try:
+            row = _request_create(request.env, request.get_json_data() or {})
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/attendance/requests/mine', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_requests_mine(self, **kw):
+        rows = _att_requests_mine(request.env)
+        if rows is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response({'rows': rows})
+
+    @http.route('/hocba-hrm/api/attendance/requests/pending', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_requests_pending(self, **kw):
+        return request.make_json_response(
+            {'rows': _att_requests_pending(request.env)})
+
+    def _decide_request(self, req_id, approve):
+        try:
+            row = _request_decide(request.env, req_id, approve,
+                                  request.get_json_data() or {})
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response({'error': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/attendance/requests/<int:req_id>/approve',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_request_approve(self, req_id, **kw):
+        return self._decide_request(req_id, True)
+
+    @http.route('/hocba-hrm/api/attendance/requests/<int:req_id>/reject',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_request_reject(self, req_id, **kw):
+        return self._decide_request(req_id, False)
