@@ -198,6 +198,7 @@ def _att_day_table(env, date_str):
         'late': sum(1 for r in rows if r['statusKey'] == 'late'),
         'needsReview': sum(1 for r in rows if r['needsReview']),
         'missing': 0,
+        'totalCredit': round(sum(r['workCredit'] for r in rows), 2),
     }
     if (is_hr or is_mgr) and policy.is_workday(day):
         total = env['hr.employee'].sudo().search_count(
@@ -230,12 +231,23 @@ def _att_me_history(env, month_str):
         ('date', '>=', first), ('date', '<=', last),
     ], order='date desc')
     rows = [_att_row(r, policy) for r in recs]
+    total_credit = sum(r['workCredit'] for r in rows)
+    violations = sorted(
+        [r for r in rows if r['missingMinutes'] > 0], key=lambda r: r['date'])
+    counted = violations[policy.violation_free_days:]
+    std = policy.std_work_hours or 8.0
+    deficit_credit = round(
+        (sum(r['missingMinutes'] for r in counted) / 60.0) / std, 2)
     summary = {
         'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
         'late': sum(1 for r in rows if r['statusKey'] == 'late'),
         'needsReview': sum(1 for r in rows if r['needsReview']),
         'daysPresent': len(rows),
         'totalHours': round(sum(r['workingHours'] for r in rows), 2),
+        'totalCredit': round(total_credit, 2),
+        'deficitCredit': deficit_credit,
+        'netCredit': round(total_credit - deficit_credit, 2),
+        'violationDays': len(violations),
     }
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
