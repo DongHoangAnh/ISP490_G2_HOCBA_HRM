@@ -271,6 +271,49 @@ class HocBaHRM(http.Controller):
         return (user.has_group('hr.group_hr_user'),
                 user.has_group('hr.group_hr_manager'))
 
+    def _managed_department_ids(self, emp):
+        """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
+        if not emp:
+            return []
+        Dept = request.env['hr.department'].sudo()
+        managed = Dept.search([('manager_id', '=', emp.id)])
+        if not managed:
+            return []
+        result, frontier = set(managed.ids), managed
+        while frontier:
+            children = Dept.search([('parent_id', 'in', frontier.ids)])
+            frontier = children.filtered(lambda d: d.id not in result)
+            result.update(frontier.ids)
+        return list(result)
+
+    def _emp_scope_domain(self):
+        """Domain giới hạn danh sách NV theo vai trò (họp #2):
+        HR/Admin = tất cả; Giáo vụ = giáo viên; Quản lý = phòng ban mình;
+        còn lại = rỗng."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return []
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            return [('x_employee_type_id.code', '=', 'teacher')]
+        dept_ids = self._managed_department_ids(user.employee_id)
+        if dept_ids:
+            return [('department_id', 'in', dept_ids)]
+        return [('id', '=', 0)]  # không thuộc nhóm quản lý nào → rỗng
+
+    def _emp_in_scope(self, e):
+        """Người dùng hiện tại có được xem/quản lý hồ sơ e không."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return True
+        if e == user.employee_id:  # luôn xem được hồ sơ của chính mình
+            return True
+        return bool(request.env['hr.employee'].sudo().search_count(
+            [('id', '=', e.id)] + self._emp_scope_domain()))
+
     def _labels(self):
         env = request.env
         Emp = env['hr.employee']
@@ -320,15 +363,10 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         is_hr, is_mgr = self._hr_flags()
-        user = request.env.user
-        is_admin = user.has_group('base.group_system')
-        is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
         labels = self._labels()
-        # Giáo vụ (không kiêm HR/Admin) chỉ thấy giáo viên (họp #2). Domain áp
-        # tay vì api dùng sudo (bỏ qua record rule của backend).
-        domain = []
-        if is_giaovu and not (is_hr or is_admin):
-            domain = [('x_employee_type_id.code', '=', 'teacher')]
+        # Phạm vi theo vai trò (họp #2): HR/Admin = tất cả; Giáo vụ = giáo viên;
+        # Quản lý = phòng ban mình. Domain áp tay vì api dùng sudo (bỏ record rule).
+        domain = self._emp_scope_domain()
         emps = request.env['hr.employee'].sudo().search(
             domain, order='x_employee_code, id')
 
@@ -481,6 +519,8 @@ class HocBaHRM(http.Controller):
         e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._emp_in_scope(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         return request.make_json_response(
             self._employee_detail(e, labels, is_hr, is_mgr))
 

@@ -535,13 +535,19 @@ class HrEmployee(models.Model):
                         '%(codes)s') % {
                             'emp': emp.name, 'n': len(pending),
                             'codes': ', '.join(pending.mapped('asset_code'))})
-        # Quyền điền kết quả: HR Manager hoặc quản lý trực tiếp (spec F-004)
+        # Quyền điền kết quả: HR Manager, quản lý trực tiếp, hoặc trưởng phòng
+        # ban của nhân viên (phân theo phòng ban — họp #2).
         if any(f in vals for f in self.GATE_EDIT_FIELDS) and not self.env.su \
                 and not self.env.user.has_group('hr.group_hr_manager'):
+            user = self.env.user
             for emp in self:
-                if emp.parent_id.user_id != self.env.user:
-                    raise AccessError(_(
-                        'Chỉ HR Manager hoặc quản lý trực tiếp được điền kết quả thử việc.'))
+                if emp.parent_id.user_id == user:
+                    continue
+                if emp._hocba_user_manages_dept(user):
+                    continue
+                raise AccessError(_(
+                    'Chỉ HR Manager, quản lý trực tiếp hoặc trưởng phòng ban '
+                    'được điền kết quả thử việc.'))
         # F-001: không sửa tay probation→official ngoài automation (trừ HR Manager)
         if vals.get('x_employment_status') == 'official' \
                 and not self.env.context.get('hocba_gate_automation') \
@@ -593,6 +599,18 @@ class HrEmployee(models.Model):
                 if emp.x_eval_2m_result != old_2m and emp.x_eval_2m_result != 'draft':
                     emp._hocba_aut_002()
         return res
+
+    def _hocba_user_manages_dept(self, user):
+        """True nếu user là trưởng phòng ban của NV (hoặc phòng ban cha)."""
+        self.ensure_one()
+        dept = self.department_id
+        seen = set()
+        while dept and dept.id not in seen:
+            seen.add(dept.id)
+            if dept.manager_id and dept.manager_id.user_id == user:
+                return True
+            dept = dept.parent_id
+        return False
 
     def _hocba_gate_activity(self, summary, date_deadline, user=None):
         """Tạo Activity nếu chưa có activity cùng summary đang mở (BR-041)."""
