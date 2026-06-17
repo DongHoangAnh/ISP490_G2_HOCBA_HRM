@@ -271,6 +271,61 @@ class HocBaHRM(http.Controller):
         return (user.has_group('hr.group_hr_user'),
                 user.has_group('hr.group_hr_manager'))
 
+    def _managed_department_ids(self, emp):
+        """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
+        if not emp:
+            return []
+        Dept = request.env['hr.department'].sudo()
+        managed = Dept.search([('manager_id', '=', emp.id)])
+        if not managed:
+            return []
+        result, frontier = set(managed.ids), managed
+        while frontier:
+            children = Dept.search([('parent_id', 'in', frontier.ids)])
+            frontier = children.filtered(lambda d: d.id not in result)
+            result.update(frontier.ids)
+        return list(result)
+
+    def _emp_scope_domain(self):
+        """Domain giới hạn danh sách NV theo vai trò (họp #2):
+        HR/Admin = tất cả; Giáo vụ = giáo viên; Quản lý = phòng ban mình;
+        còn lại = rỗng."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return []
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            return [('x_employee_type_id.code', '=', 'teacher')]
+        dept_ids = self._managed_department_ids(user.employee_id)
+        if dept_ids:
+            return [('department_id', 'in', dept_ids)]
+        return [('id', '=', 0)]  # không thuộc nhóm quản lý nào → rỗng
+
+    def _emp_in_scope(self, e):
+        """Người dùng hiện tại có được xem/quản lý hồ sơ e không."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return True
+        if e == user.employee_id:  # luôn xem được hồ sơ của chính mình
+            return True
+        return bool(request.env['hr.employee'].sudo().search_count(
+            [('id', '=', e.id)] + self._emp_scope_domain()))
+
+    def _can_eval_emp(self, e):
+        """Người đang đăng nhập có quyền duyệt cổng thử việc của NV e không:
+        HR Manager / quản lý trực tiếp (parent_id) / trưởng phòng ban của e."""
+        user = request.env.user
+        if user.has_group('hr.group_hr_manager'):
+            return True
+        if e.parent_id and e.parent_id.user_id == user:
+            return True
+        return bool(e.department_id
+                    and e.department_id.id
+                    in self._managed_department_ids(user.employee_id))
+
     def _labels(self):
         env = request.env
         Emp = env['hr.employee']
@@ -321,7 +376,11 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         is_hr, is_mgr = self._hr_flags()
         labels = self._labels()
-        emps = request.env['hr.employee'].sudo().search([], order='x_employee_code, id')
+        # Phạm vi theo vai trò (họp #2): HR/Admin = tất cả; Giáo vụ = giáo viên;
+        # Quản lý = phòng ban mình. Domain áp tay vì api dùng sudo (bỏ record rule).
+        domain = self._emp_scope_domain()
+        emps = request.env['hr.employee'].sudo().search(
+            domain, order='x_employee_code, id')
 
         deps = {}
         for i, d in enumerate(emps.mapped('department_id').sorted('id')):
@@ -389,12 +448,17 @@ class HocBaHRM(http.Controller):
         data['probation'] = {
             'isGroupB': (e.x_position_type in ('staff', 'manager')
                          and e.x_work_form == 'offline'),
+            'canEval': self._can_eval_emp(e),
             'start': _d(e.x_probation_start),
             'd2wDue': _d(e.x_eval_2w_due),
             'd2wResult': e.x_eval_2w_result or 'draft',
             'd2wDate': _d(e.x_eval_2w_date),
             'd2wNote': e.x_eval_2w_note or '',
             'equipDate': _d(e.x_equip_grant_date),
+            'd1mDue': _d(e.x_eval_1m_due),
+            'd1mResult': e.x_eval_1m_result or 'draft',
+            'd1mDate': _d(e.x_eval_1m_date),
+            'd1mNote': e.x_eval_1m_note or '',
             'd2mDue': _d(e.x_eval_2m_due),
             'd2mResult': e.x_eval_2m_result or 'draft',
             'd2mDate': _d(e.x_eval_2m_date),
@@ -472,27 +536,34 @@ class HocBaHRM(http.Controller):
         e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._emp_in_scope(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         return request.make_json_response(
             self._employee_detail(e, labels, is_hr, is_mgr))
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/gate', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_employee_gate(self, emp_id, **kw):
-        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2,
-        để model tự kiểm quyền (HR Manager / quản lý trực tiếp) + chạy automation
-        AUT-001/002. KHÔNG sudo cố tình — nhờ vậy AccessError của model phát huy."""
+        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2.
+        Kiểm phạm vi TRONG CODE (HR Manager / quản lý trực tiếp / trưởng phòng
+        ban) RỒI mới sudo ghi — nhờ vậy Quản lý không có nhóm HR vẫn duyệt được
+        nhưng CHỈ nhân viên thuộc phòng ban mình. Chạy automation AUT-001/002."""
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
-        # browse KHÔNG sudo: write sẽ chạy qua kiểm quyền của model
-        e = request.env['hr.employee'].browse(emp_id)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        # Gác cổng tại controller: chỉ người có thẩm quyền với NV này mới được duyệt
+        if not self._can_eval_emp(e):
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Bạn không có quyền duyệt nhân viên này.'}, status=403)
 
         payload = request.get_json_data()
         gate = payload.get('gate')
         result = payload.get('result')
         note = (payload.get('note') or '').strip()
-        if gate not in ('2w', '2m') or result not in ('pass', 'fail'):
+        if gate not in ('2w', '1m', '2m') or result not in ('pass', 'fail', 'extend'):
             return request.make_json_response({'error': 'bad_request'}, status=400)
 
         today = fields.Date.context_today(request.env.user)
@@ -503,9 +574,12 @@ class HocBaHRM(http.Controller):
         }
         if note:
             vals['x_eval_%s_note' % gate] = note
+        # Đã kiểm phạm vi ở trên → sudo để Quản lý không-HR vẫn ghi được; chỉ
+        # ghi đúng các field cổng (vals), không mở rộng field khác.
         try:
-            e.write(vals)
+            e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
@@ -568,51 +642,58 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
 
+    def _dep_response(self, e, is_hr):
+        """Self (non-HR) cần payload đầy đủ kèm dependents → dùng _me_payload."""
+        if not is_hr and e == request.env.user.employee_id:
+            return request.make_json_response(self._me_payload(e.sudo()))
+        return self._detail_response(e)
+
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/dependent', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_dependent_create(self, emp_id, **kw):
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        e = request.env['hr.employee'].browse(emp_id)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        is_hr, _ = self._hr_flags()
+        # Họp #2: cho chính chủ tự thêm NPT của mình (không cần HR duyệt).
+        if not (is_hr or e == request.env.user.employee_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         vals = self._dep_vals(request.get_json_data())
         vals['employee_id'] = emp_id
         try:
-            request.env['hr.employee.dependent'].create(vals)
+            request.env['hr.employee.dependent'].sudo().create(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(e)
+        return self._dep_response(e, is_hr)
 
     @http.route('/hocba-hrm/api/dependent/<int:dep_id>', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_dependent_update(self, dep_id, **kw):
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        d = request.env['hr.employee.dependent'].browse(dep_id)
+        d = request.env['hr.employee.dependent'].sudo().browse(dep_id)
         if not d.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        is_hr, _ = self._hr_flags()
+        if not (is_hr or d.employee_id == request.env.user.employee_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             d.write(self._dep_vals(request.get_json_data()))
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(d.employee_id)
+        return self._dep_response(d.employee_id, is_hr)
 
     @http.route('/hocba-hrm/api/dependent/<int:dep_id>/delete', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_dependent_delete(self, dep_id, **kw):
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        d = request.env['hr.employee.dependent'].browse(dep_id)
+        d = request.env['hr.employee.dependent'].sudo().browse(dep_id)
         if not d.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        is_hr, _ = self._hr_flags()
+        if not (is_hr or d.employee_id == request.env.user.employee_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
         e = d.employee_id
         try:
             d.unlink()
@@ -620,7 +701,7 @@ class HocBaHRM(http.Controller):
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(e)
+        return self._dep_response(e, is_hr)
 
     # ------------------------------------------------------------------
     # Tài sản (F-006) — cấp / thu hồi / chuyển giao inline trong SPA (HR).
@@ -1011,6 +1092,56 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'hasEmployee': False})
         return request.make_json_response(self._me_payload(e.sudo()))
 
+    def _role_payload(self):
+        """Cờ vai trò để SPA dựng nav (tách tài khoản quản lý ↔ cá nhân — họp #2).
+        Robust kể cả khi user chưa gắn hồ sơ nhân viên."""
+        user = request.env.user
+        emp = user.employee_id
+        is_admin = user.has_group('base.group_system')
+        is_hr_mgr = user.has_group('hr.group_hr_manager')
+        is_hr_user = user.has_group('hr.group_hr_user')
+        is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
+        is_manager = bool(emp) and (
+            bool(emp.child_ids)
+            or bool(request.env['hr.department'].sudo().search_count(
+                [('manager_id', '=', emp.id)])))
+        can_manage = (is_admin or is_hr_mgr or is_hr_user
+                      or is_giaovu or is_manager)
+        roles = []
+        if is_admin:
+            roles.append('Admin')
+        if is_hr_mgr:
+            roles.append('HR Manager')
+        elif is_hr_user:
+            roles.append('HR')
+        if is_giaovu:
+            roles.append('Giáo vụ')
+        if is_manager:
+            roles.append('Quản lý')
+        if not roles:
+            roles.append('Nhân viên')
+        return {
+            'name': user.name,
+            'login': user.login,
+            'employeeId': emp.id if emp else False,
+            'hasEmployee': bool(emp),
+            'roleLabel': ' · '.join(roles),
+            'isAdmin': is_admin,
+            'isHrManager': is_hr_mgr,
+            'isHrUser': is_hr_user,
+            'isGiaovu': is_giaovu,
+            'isManager': is_manager,
+            'canManage': can_manage,
+        }
+
+    @http.route('/hocba-hrm/api/me/roles', auth='user', type='http',
+                methods=['GET'])
+    def api_me_roles(self, **kw):
+        """Danh tính + cờ vai trò (nhẹ) để SPA quyết định menu/quyền hiển thị."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        return request.make_json_response(self._role_payload())
+
     @http.route('/hocba-hrm/api/me', auth='user', type='http',
                 methods=['POST'], csrf=False)
     def api_me_update(self, **kw):
@@ -1046,6 +1177,27 @@ class HocBaHRM(http.Controller):
         except (ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._me_payload(e.sudo()))
+
+    @http.route('/hocba-hrm/api/me/photo', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_me_photo(self, **kw):
+        """Nhân viên TỰ cập nhật ảnh đại diện của chính mình (image_1920).
+        Nhận base64 (có/không tiền tố data:URI); gửi rỗng để xoá ảnh."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        e = request.env.user.employee_id
+        if not e:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        img = (request.get_json_data() or {}).get('image') or ''
+        if isinstance(img, str) and img.startswith('data:') and ',' in img:
+            img = img.split(',', 1)[1]
+        try:
+            e.sudo().write({'image_1920': img or False})
+        except (ValidationError, UserError, OSError, ValueError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': 'Ảnh không hợp lệ.'}, status=400)
         return request.make_json_response(self._me_payload(e.sudo()))
 
     @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',
@@ -1099,8 +1251,10 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         is_hr, is_mgr = self._hr_flags()
+        # Phạm vi theo vai trò (giống danh sách NV): Quản lý chỉ thấy phòng mình,
+        # Giáo vụ chỉ giáo viên, HR/Admin thấy tất cả.
         emps = request.env['hr.employee'].sudo().search(
-            [('x_employment_status', '=', 'probation')],
+            [('x_employment_status', '=', 'probation')] + self._emp_scope_domain(),
             order='x_probation_start desc, id')
         items = []
         for e in emps:
@@ -1119,8 +1273,13 @@ class HocBaHRM(http.Controller):
                 'g1Result': e.x_eval_2w_result or 'draft',
                 'g1Date': _d(e.x_eval_2w_date),
                 'equipDate': _d(e.x_equip_grant_date),
+                # Cổng tháng-1 (có thể lên chính thức sớm)
+                'g1mDue': _d(e.x_eval_1m_due),
+                'g1mResult': e.x_eval_1m_result or 'draft',
+                'g1mDate': _d(e.x_eval_1m_date),
                 # Cổng tháng-2 (lên chính thức)
                 'g2Due': _d(e.x_eval_2m_due),
+                'officialDate': _d(e.x_official_date),
                 'g2Result': e.x_eval_2m_result or 'draft',
                 'g2Date': _d(e.x_eval_2m_date),
                 # Thử giảng (Nhóm A)

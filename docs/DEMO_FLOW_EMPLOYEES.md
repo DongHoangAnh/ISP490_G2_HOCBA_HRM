@@ -24,10 +24,10 @@
 ### 0.3. Dữ liệu demo có sẵn (Neon)
 - **10 nhân viên / 6 phòng ban** (Marketing, Sản phẩm R&D_SP, Kinh doanh, Vận hành, Kế toán_HCNS, BOD).
 - **Nguyễn Thị Thu Hà (HB.01, Kinh doanh):** đã qua 2 cổng → Chính thức, có **1 mốc thăng tiến** (→ Chuyên viên R&D, 18tr) + **2 bản ghi tài sản** (đã chuyển giao/thu hồi). → Demo hồ sơ "đầy đủ vòng đời".
-- **Lý Gia Hân (HB.02, R&D_SP, giảng viên Online part-time):** **thử giảng đang chờ (draft)** + **chứng chỉ HSK 5 (đã xác minh, sắp hết hạn)**. → Demo chấm thử giảng (F-008) trực tiếp + cảnh báo hết hạn chứng chỉ (F-009).
-- **Trần Quốc Việt (HB.03), Lê Minh Khôi (HB.04), Vũ Thị Mai (HB.05), Nguyễn Hoàng Nam (HB.06):** nhóm B (Offline), 2 cổng chưa đánh giá (draft) → có thể demo đánh giá cổng.
-
-> ⚠️ **Lưu ý dữ liệu (xem mục 6):** Màn **Nhập việc hiện trống** vì tất cả NV đang ở trạng thái "Chính thức". Để demo trọn vẹn luồng thử việc 2 cổng trên màn Nhập việc, cần 1–2 NV ở trạng thái "Thử việc" (xem mục 6.1).
+- **Màn Nhập việc đã có sẵn 3 NV thử việc ở 3 giai đoạn** (để demo live cả 2 luồng):
+  - **Trần Quốc Việt (HB.03, Kinh doanh, Nhóm B Offline):** mới vào (08/06), **chờ cổng tuần-2** → demo đánh giá cổng tuần-2 live.
+  - **Lê Minh Khôi (HB.04, Marketing, Nhóm B Offline):** đã **đạt cổng tuần-2 + được cấp thiết bị** (AUT-001), **chờ cổng tháng-2** → demo đánh giá cổng tháng-2 → lên Chính thức (AUT-002).
+  - **Lý Gia Hân (HB.02, R&D_SP, giảng viên Online — Nhóm A):** **chờ thử giảng** + có **chứng chỉ HSK 5 (đã xác minh, sắp hết hạn)** → demo chấm thử giảng (F-008) + cảnh báo hết hạn chứng chỉ (F-009).
 
 ---
 
@@ -91,18 +91,21 @@
 
 ## 5. Luồng Nhập việc — Thử việc 2 cổng & Thử giảng (4 phút)
 
+**Tài khoản:** `hr.manager` → menu **Nhập việc**
+- Bảng theo dõi 3 NV thử việc + 4 ô thống kê (Đang thử việc / Chờ cổng tuần-2 / Chờ cổng tháng-2 / Quá hạn). Cột Cổng tuần-2, Cổng tháng-2, Thử giảng, Giai đoạn.
+
 ### 5.1. Thử việc 2 cổng — Nhóm B (F-004/005)
-**Tài khoản:** `hr.manager` → mở **Trần Quốc Việt (HB.03)** → tab **Thử việc**
+Bấm vào dòng **Trần Quốc Việt (HB.03)** → drawer mở tab **Thử việc**:
 
 1. Xem **timeline 5 mốc** (Thử việc → ĐG tuần-2 → Cấp thiết bị → ĐG tháng-2 → Chính thức).
 2. Ở thẻ **Cổng tuần-2**: bấm **Đạt** → hệ thống tự **cấp thiết bị (AUT-001)** + ghi ngày đánh giá.
-3. Ở thẻ **Cổng tháng-2**: bấm **Đạt** → hệ thống tự **chuyển NV sang Chính thức (AUT-002)**.
+3. Đóng drawer, bấm vào **Lê Minh Khôi (HB.04)** (đã qua tuần-2) → thẻ **Cổng tháng-2**: bấm **Đạt** → hệ thống tự **chuyển NV sang Chính thức (AUT-002)**.
 4. (Tuỳ chọn) Demo **Không đạt** → cảnh báo offboarding (không gia hạn).
 
-**Điểm nhấn:** đánh giá ngay trong SPA, automation chạy nền (cấp thiết bị / lên chính thức).
+**Điểm nhấn:** đánh giá ngay trong SPA, automation chạy nền (cấp thiết bị / lên chính thức). Sau khi đánh giá, danh sách Nhập việc cập nhật giai đoạn ngay.
 
 ### 5.2. Thử giảng — Nhóm A / giảng viên (F-008)
-**Tài khoản:** `hr.manager` → mở **Lý Gia Hân (HB.02)** → tab **Thử việc**
+**Tài khoản:** `hr.manager` → màn **Nhập việc** → bấm dòng **Lý Gia Hân (HB.02)** → tab **Thử việc**
 
 1. Thấy mục **Đánh giá thử giảng (Nhóm A)** đang **Chưa đánh giá**.
 2. Điền **ngày, lớp, điểm phương pháp, điểm chuyên môn, nhận xét** → bấm **Đạt** (hoặc **Không đạt**).
@@ -132,10 +135,10 @@
 
 | # | Vấn đề | Xử lý đề xuất |
 |---|---|---|
-| 7.1 | **Màn Nhập việc trống** (mọi NV đang "Chính thức") → không có danh sách thử việc để demo luồng end-to-end trên màn này | Đặt 1–2 NV về trạng thái **Thử việc** (vd HB.04/HB.05) trước buổi demo. *Cần xác nhận vì ghi vào DB team.* Hoặc demo cổng trực tiếp từ hồ sơ HB.03 (mục 5.1) |
-| 7.2 | HB.03–HB.06 đang "Chính thức" nhưng 2 cổng vẫn "draft" (chưa đánh giá) — hơi mâu thuẫn khi soi kỹ | Nếu set lại trạng thái thử việc (7.1) sẽ nhất quán |
-| 7.3 | NPT: tài khoản `hr.user` **chưa** thêm/sửa được người phụ thuộc (chỉ Manager) — nếu demo phần NPT bằng hr.user sẽ báo lỗi quyền | Demo NPT bằng `hr.manager`; hoặc chốt mở quyền cho HR User (1 dòng cấu hình) — xem [Câu hỏi verify](CUSTOMER_VERIFY_QUESTIONS.md) |
-| 7.4 | HB.06 (Nguyễn Hoàng Nam, BOD) chưa có chức danh | Bổ sung chức danh nếu cần ảnh đẹp |
+| 7.1 | ✅ **Đã xử lý:** màn Nhập việc đã có 3 NV thử việc (HB.02/03/04) ở 3 giai đoạn (chờ tuần-2 / chờ tháng-2 / chờ thử giảng) | Không cần làm gì thêm. Nếu demo lại nhiều lần, đánh giá cổng sẽ làm NV "lên Chính thức" → cần seed lại trạng thái thử việc (script ở `_demo_seed/`) |
+| 7.2 | NPT: tài khoản `hr.user` **chưa** thêm/sửa được người phụ thuộc (chỉ Manager) — nếu demo phần NPT bằng hr.user sẽ báo lỗi quyền | Demo NPT bằng `hr.manager`; hoặc chốt mở quyền cho HR User (1 dòng cấu hình) — xem [Câu hỏi verify](CUSTOMER_VERIFY_QUESTIONS.md) G1 |
+| 7.3 | HB.06 (Nguyễn Hoàng Nam, BOD) chưa có chức danh | Bổ sung chức danh nếu cần ảnh đẹp |
+| 7.4 | Đánh giá cổng/thử giảng là thao tác **ghi thật** (1 chiều) — NV sẽ lên Chính thức / ghi kết quả. Nếu cần demo lặp lại, seed lại trước mỗi lần | Giữ script seed ở `_demo_seed/` |
 
 ---
 

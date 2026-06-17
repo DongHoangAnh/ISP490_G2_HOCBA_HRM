@@ -63,7 +63,7 @@ const NAV = [
   ]},
   { sec:'Quản lý nhân sự', items:[
     { id:'employees', label:'Nhân viên', icon:'users', badge:'53' },
-    { id:'onboarding', label:'Nhập việc', icon:'checkCircle', badge:'7' },
+    { id:'onboarding', label:'Nhận việc', icon:'checkCircle', badge:'7' },
     { id:'attendance', label:'Chấm công', icon:'clock', badge:'5' },
     { id:'timeoff', label:'Nghỉ phép', icon:'calendar', badge:'7' },
     { id:'payroll', label:'Bảng lương', icon:'wallet' },
@@ -124,7 +124,7 @@ function Sidebar({ view, setView }) {
 const PAGE_META = {
   dashboard: { t:'Dashboard nhân sự', c:'Tổng quan' },
   employees: { t:'Nhân viên', c:'Quản lý nhân sự / Hồ sơ' },
-  onboarding:{ t:'Nhập việc', c:'Quản lý nhân sự / Onboarding' },
+  onboarding:{ t:'Nhận việc', c:'Quản lý nhân sự / Onboarding' },
   attendance:{ t:'Chấm công', c:'Quản lý nhân sự / Attendance' },
   timeoff:   { t:'Nghỉ phép & Làm online', c:'Quản lý nhân sự / Time Off' },
   payroll:   { t:'Bảng lương', c:'Quản lý nhân sự / Payroll' },

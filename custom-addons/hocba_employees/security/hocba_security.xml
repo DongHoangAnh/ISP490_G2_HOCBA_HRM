@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Nhóm "Giáo vụ" (khách họp #2): chỉ quản lý giáo viên -->
+    <record id="group_hocba_giaovu" model="res.groups">
+        <field name="name">Giáo vụ (Quản lý giáo viên)</field>
+        <field name="comment">Quản lý hồ sơ giáo viên; chỉ xem được nhân sự loại "Giáo viên".</field>
+    </record>
+
+    <!-- Record rule: phạm vi chỉ giới hạn ở nhân sự loại giáo viên.
+         Dùng .code='teacher' để không phụ thuộc thứ tự nạp dữ liệu (tránh ref). -->
+    <record id="hocba_rule_giaovu_teacher_only" model="ir.rule">
+        <field name="name">Giáo vụ chỉ xem giáo viên</field>
+        <field name="model_id" ref="hr.model_hr_employee"/>
+        <field name="groups" eval="[(4, ref('group_hocba_giaovu'))]"/>
+        <field name="domain_force">[('x_employee_type_id.code', '=', 'teacher')]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+</odoo>
