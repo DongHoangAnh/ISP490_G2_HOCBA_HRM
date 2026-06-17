@@ -96,7 +96,8 @@ export default function AttendanceTable({ search }) {
         {rows.length === 0 && <EmptyState>Không có bản ghi chấm công cho ngày này.</EmptyState>}
       </div>
 
-      {sel && <AttendanceDrawer rec={sel} onClose={() => setSel(null)} />}
+      {sel && <AttendanceDrawer rec={sel} canManage={data.canManage}
+        onClose={() => setSel(null)} onChanged={() => { setSel(null); load(); }} />}
     </div>
   );
 }

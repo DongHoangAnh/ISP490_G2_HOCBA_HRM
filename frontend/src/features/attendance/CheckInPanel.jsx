@@ -48,7 +48,14 @@ export default function CheckInPanel({ me, onChanged }) {
       });
       onChanged && onChanged();
     } catch (e) {
-      setMsg({ kind: 'err', text: 'Điểm danh thất bại (' + e.message + ').' });
+      const M = {
+        manager_no_checkin: 'Tài khoản quản lý không điểm danh.',
+        not_workday: 'Hôm nay không phải ngày làm việc.',
+        already_checked_in: 'Bạn đã check-in hôm nay rồi.',
+        not_checked_in: 'Bạn chưa check-in nên không thể check-out.',
+        already_checked_out: 'Bạn đã check-out hôm nay rồi.',
+      };
+      setMsg({ kind: 'err', text: M[e.code] || ('Điểm danh thất bại (' + e.message + ').') });
     } finally { setBusy(false); }
   }
 
@@ -88,14 +95,28 @@ export default function CheckInPanel({ me, onChanged }) {
           <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
             <Icon name="user" size={16} />Đăng ký khuôn mặt
           </button>
+        ) : !me.isWorkdayToday ? (
+          <div className="empty">Hôm nay không phải ngày làm việc — không điểm danh.</div>
         ) : (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-primary" disabled={busy || !ready} onClick={() => doCheck('in')}>
-              <Icon name="checkCircle" size={16} />Check-in
-            </button>
-            <button className="btn btn-ghost" disabled={busy || !ready} onClick={() => doCheck('out')}>
-              <Icon name="logout" size={16} />Check-out
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {t && t.checkIn ? (
+              <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
+                <Icon name="checkCircle" size={15} /> Đã check-in lúc {fmtTime(t.checkIn)}
+              </div>
+            ) : (
+              <button className="btn btn-primary" disabled={busy || !ready} onClick={() => doCheck('in')}>
+                <Icon name="checkCircle" size={16} />Check-in
+              </button>
+            )}
+            {t && t.checkOut ? (
+              <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
+                <Icon name="logout" size={15} /> Đã check-out lúc {fmtTime(t.checkOut)}
+              </div>
+            ) : (
+              <button className="btn btn-ghost" disabled={busy || !ready || !(t && t.checkIn)} onClick={() => doCheck('out')}>
+                <Icon name="logout" size={16} />Check-out
+              </button>
+            )}
           </div>
         )}
         {!ready && !camError && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Đang khởi tạo camera…</div>}

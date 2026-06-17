@@ -13,3 +13,7 @@ export const checkIn = (payload) =>
   hbPost('/hocba-hrm/api/attendance/check-in', payload);
 export const checkOut = (payload) =>
   hbPost('/hocba-hrm/api/attendance/check-out', payload);
+export const editAttendance = (id, body) =>
+  hbPost(`/hocba-hrm/api/attendance/${id}`, body);
+export const deleteAttendance = (id) =>
+  hbPost(`/hocba-hrm/api/attendance/${id}/delete`, {});

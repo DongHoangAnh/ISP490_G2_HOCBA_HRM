@@ -15,7 +15,7 @@ import { USE_MOCK, FORGOT_REQUESTS, OT_LOG } from './mock';
 export default function Attendance({ search }) {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
-  const [tab, setTab] = useState('me');
+  const [tab, setTab] = useState(null);
 
   const load = () => {
     setErr(null); setMe(null);
@@ -26,9 +26,11 @@ export default function Attendance({ search }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!me) return <LoadingState label="Đang tải dữ liệu chấm công…" />;
 
-  const isStaff = me.isHr || me.isHrManager;
-  const tabs = [['me', 'Chấm công của tôi']];
-  if (isStaff) tabs.push(['day', 'Bảng chấm công'], ['forgot', 'Đơn quên chấm công'], ['ot', 'Tăng ca (OT)']);
+  const isManager = me.canManage;
+  const tabs = isManager
+    ? [['day', 'Bảng chấm công'], ['forgot', 'Đơn quên chấm công'], ['ot', 'Tăng ca (OT)']]
+    : [['me', 'Chấm công của tôi']];
+  const activeTab = tab || (isManager ? 'day' : 'me');
 
   return (
     <div className="content fade-in">
@@ -41,19 +43,19 @@ export default function Attendance({ search }) {
 
       <div className="tabs">
         {tabs.map(([id, l]) => (
-          <button key={id} className={'tab' + (tab === id ? ' active' : '')} onClick={() => setTab(id)}>{l}</button>
+          <button key={id} className={'tab' + (activeTab === id ? ' active' : '')} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
 
-      {tab === 'me' && (
+      {activeTab === 'me' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <CheckInPanel me={me} onChanged={load} />
           <MyHistory />
         </div>
       )}
-      {tab === 'day' && <AttendanceTable search={search} />}
-      {tab === 'forgot' && <ForgotMock />}
-      {tab === 'ot' && <OtMock />}
+      {activeTab === 'day' && <AttendanceTable search={search} />}
+      {activeTab === 'forgot' && <ForgotMock />}
+      {activeTab === 'ot' && <OtMock />}
     </div>
   );
 }
