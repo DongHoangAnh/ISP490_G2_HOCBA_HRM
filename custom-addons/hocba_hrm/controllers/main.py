@@ -448,12 +448,17 @@ class HocBaHRM(http.Controller):
         data['probation'] = {
             'isGroupB': (e.x_position_type in ('staff', 'manager')
                          and e.x_work_form == 'offline'),
+            'canEval': self._can_eval_emp(e),
             'start': _d(e.x_probation_start),
             'd2wDue': _d(e.x_eval_2w_due),
             'd2wResult': e.x_eval_2w_result or 'draft',
             'd2wDate': _d(e.x_eval_2w_date),
             'd2wNote': e.x_eval_2w_note or '',
             'equipDate': _d(e.x_equip_grant_date),
+            'd1mDue': _d(e.x_eval_1m_due),
+            'd1mResult': e.x_eval_1m_result or 'draft',
+            'd1mDate': _d(e.x_eval_1m_date),
+            'd1mNote': e.x_eval_1m_note or '',
             'd2mDue': _d(e.x_eval_2m_due),
             'd2mResult': e.x_eval_2m_result or 'draft',
             'd2mDate': _d(e.x_eval_2m_date),
@@ -558,7 +563,7 @@ class HocBaHRM(http.Controller):
         gate = payload.get('gate')
         result = payload.get('result')
         note = (payload.get('note') or '').strip()
-        if gate not in ('2w', '2m') or result not in ('pass', 'fail'):
+        if gate not in ('2w', '1m', '2m') or result not in ('pass', 'fail', 'extend'):
             return request.make_json_response({'error': 'bad_request'}, status=400)
 
         today = fields.Date.context_today(request.env.user)
@@ -1266,8 +1271,13 @@ class HocBaHRM(http.Controller):
                 'g1Result': e.x_eval_2w_result or 'draft',
                 'g1Date': _d(e.x_eval_2w_date),
                 'equipDate': _d(e.x_equip_grant_date),
+                # Cổng tháng-1 (có thể lên chính thức sớm)
+                'g1mDue': _d(e.x_eval_1m_due),
+                'g1mResult': e.x_eval_1m_result or 'draft',
+                'g1mDate': _d(e.x_eval_1m_date),
                 # Cổng tháng-2 (lên chính thức)
                 'g2Due': _d(e.x_eval_2m_due),
+                'officialDate': _d(e.x_official_date),
                 'g2Result': e.x_eval_2m_result or 'draft',
                 'g2Date': _d(e.x_eval_2m_date),
                 # Thử giảng (Nhóm A)

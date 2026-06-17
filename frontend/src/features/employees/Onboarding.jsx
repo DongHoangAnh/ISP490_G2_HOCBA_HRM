@@ -16,10 +16,14 @@ const TODAY = new Date().toISOString().slice(0, 10);
 /* Suy ra giai đoạn hiện tại + hạn kế tiếp từ trạng thái 2 cổng / thử giảng */
 function phaseOf(o) {
   if (o.isGroupB) {
+    if (o.g1Result === 'fail' || o.g1mResult === 'fail' || o.g2Result === 'fail')
+      return { key: 'fail', label: 'Không đạt thử việc', due: null };
+    if (o.officialDate) return { key: 'done', label: 'Đã lên chính thức', due: null };
     if (o.g1Result !== 'pass') return { key: 'gate1', label: 'Chờ cổng tuần-2', due: o.g1Due };
     if (!o.equipDate) return { key: 'equip', label: 'Chờ cấp thiết bị', due: null };
+    if (o.g1mResult === 'draft') return { key: 'gateMid', label: 'Chờ cổng tháng-1', due: o.g1mDue };
     if (o.g2Result !== 'pass') return { key: 'gate2', label: 'Chờ cổng tháng-2', due: o.g2Due };
-    return { key: 'done', label: 'Đã qua 2 cổng', due: null };
+    return { key: 'done', label: 'Đã qua các cổng', due: null };
   }
   if (o.trialResult === 'pass') return { key: 'done', label: 'Thử giảng đạt', due: null };
   if (o.trialResult === 'fail') return { key: 'fail', label: 'Thử giảng không đạt', due: o.trialDate };
@@ -70,13 +74,14 @@ export default function Onboarding({ search }) {
   });
 
   const waitG1 = items.filter((o) => o.isGroupB && o.g1Result === 'draft').length;
-  const waitG2 = items.filter((o) => o.isGroupB && o.g1Result === 'pass' && o.g2Result === 'draft').length;
+  const waitMid = items.filter((o) => o.isGroupB && o.g1Result === 'pass' && o.g1mResult === 'draft').length;
+  const waitG2 = items.filter((o) => o.isGroupB && o.g1mResult === 'extend' && o.g2Result === 'draft').length;
   const overdue = items.filter((o) => isOverdue(phaseOf(o))).length;
 
   const stats = [
     { ico: 'users', col: 'var(--blue)', bg: 'var(--blue-bg)', val: items.length, lbl: 'Đang thử việc' },
     { ico: 'checkCircle', col: 'var(--gold-600)', bg: 'var(--gold-50)', val: waitG1, lbl: 'Chờ cổng tuần-2' },
-    { ico: 'award', col: 'var(--teal)', bg: 'var(--teal-bg)', val: waitG2, lbl: 'Chờ cổng tháng-2' },
+    { ico: 'award', col: 'var(--teal)', bg: 'var(--teal-bg)', val: waitMid + waitG2, lbl: 'Chờ cổng tháng-1/2' },
     { ico: 'bell', col: 'var(--red-600)', bg: 'var(--red-50)', val: overdue, lbl: 'Quá hạn đánh giá' },
   ];
 
@@ -85,7 +90,7 @@ export default function Onboarding({ search }) {
       <div className="page-head">
         <div>
           <h1>Nhận việc</h1>
-          <p>Thử việc 2 cổng (tuần-2 → cấp thiết bị → tháng-2) · thử giảng cho giảng viên · dữ liệu trực tiếp từ Odoo</p>
+          <p>Thử việc 3 mốc (tuần-2 → cấp thiết bị → tháng-1 → tháng-2) · có thể Gia hạn · thử giảng cho giảng viên</p>
         </div>
       </div>
 
@@ -108,7 +113,7 @@ export default function Onboarding({ search }) {
           <table className="tbl">
             <thead><tr>
               <th>Nhân viên</th><th>Nhóm</th><th>Ngày bắt đầu</th>
-              <th>Cổng tuần-2</th><th>Cổng tháng-2</th><th>Thử giảng</th><th>Giai đoạn</th>
+              <th>Cổng tuần-2</th><th>Cổng tháng-1</th><th>Cổng tháng-2</th><th>Thử giảng</th><th>Giai đoạn</th>
             </tr></thead>
             <tbody>
               {filtered.map((o) => {
@@ -127,6 +132,7 @@ export default function Onboarding({ search }) {
                     <td><Badge kind={o.isGroupB ? 'teal' : 'blue'}>{o.isGroupB ? 'B · Offline' : 'A · Giảng viên'}</Badge></td>
                     <td className="muted mono">{fmtDate(o.start)}</td>
                     <td>{o.isGroupB ? <GateCell result={o.g1Result} due={o.g1Due} date={o.g1Date} /> : <span className="faint">—</span>}</td>
+                    <td>{o.isGroupB ? <GateCell result={o.g1mResult} due={o.g1mDue} date={o.g1mDate} /> : <span className="faint">—</span>}</td>
                     <td>{o.isGroupB ? <GateCell result={o.g2Result} due={o.g2Due} date={o.g2Date} /> : <span className="faint">—</span>}</td>
                     <td>{!o.isGroupB ? <GateCell result={o.trialResult} due={o.trialDate} date={o.trialResult !== 'draft' ? o.trialDate : null} /> : <span className="faint">—</span>}</td>
                     <td>
