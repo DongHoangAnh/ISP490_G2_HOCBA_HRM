@@ -382,7 +382,7 @@ def _request_create(env, body):
     if not reason:
         raise ValidationError('Cần lý do.')
     Att = env['hocba.attendance'].sudo()
-    att_id = body.get('attendanceId')
+    att_id = body.get('attendanceId') or None
     attendance = Att.browse(int(att_id)) if att_id else Att.browse()
     if att_id and (not attendance.exists() or attendance.employee_id != emp):
         raise ValidationError('Bản ghi không hợp lệ.')

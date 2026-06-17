@@ -124,3 +124,15 @@ class TestAttendanceRequest(TransactionCase):
         with self.assertRaises(ValidationError):
             _request_create(env, {'requestDate': '2026-06-12',
                                   'attendanceId': rec.id, 'reason': 'x'})
+
+    def test_create_derives_date_from_attendance(self):
+        # Đính kèm bản ghi của chính mình, KHÔNG gửi requestDate -> lấy theo
+        # ngày của bản ghi (attendance.date).
+        rec = self.env['hocba.attendance'].with_context(
+            tz='Asia/Ho_Chi_Minh').create({
+                'employee_id': self.emp.id, 'check_in': '2026-06-12 02:00:00'})
+        env = self.env(user=self.user)
+        row = _request_create(env, {'attendanceId': rec.id, 'reason': 'Sửa giờ'})
+        self.assertEqual(row['attendanceId'], rec.id)
+        req = env['hocba.attendance.request'].browse(row['id'])
+        self.assertEqual(req.request_date, rec.date)
