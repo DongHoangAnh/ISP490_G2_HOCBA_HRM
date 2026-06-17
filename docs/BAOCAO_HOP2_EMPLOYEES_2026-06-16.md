@@ -155,11 +155,12 @@ Ký hiệu: ✅ đã đúng · ⚠️ cần sửa · ➕ làm mới · 🔁 đ�
 - **Self-service**: nhân viên **tự thêm/sửa/xoá người phụ thuộc** + **tự up ảnh** đại diện của mình (`/api/me/photo`, NPT nới quyền self). *(verify trên test_employee)*
 - **Giáo vụ chỉ thấy giáo viên trong SPA**: `api_employees` lọc domain theo loại NV (vì api dùng sudo).
 - **Cập nhật spec → v2.2** (biên bản M-01..M-11 trong `SPEC_EMPLOYEES_DAC_TA_v2.1.md`).
+- **Phân quyền theo phòng ban (Quản lý)**: danh sách NV + xem hồ sơ giới hạn theo phòng ban mình quản lý (`manager_id`, gồm phòng con); quyền điền kết quả cổng thử việc mở cho **trưởng phòng ban**. *(verify: dept-walk cha→con OK)*
 
 ## 7. ⏭️ Chưa làm (cần đợt sau / cross-team)
 
 - Ẩn panel/duyệt chấm công ở giao diện HR (phối hợp `hocba_attendance`).
-- Mở rộng scope duyệt nghỉ/đi sớm về muộn **theo phòng ban** cho Quản lý (mục 22).
+- Duyệt **nghỉ/đi sớm về muộn** theo phòng ban → thuộc module **timeoff** (đã làm scope ở Employees: danh sách + duyệt cổng; phần đơn nghỉ là cross-team).
 - **Dashboard cá nhân + lịch sử đơn của mình** cho nhân viên thường (hiện mới có "Hồ sơ của tôi").
 - Nghỉ phép / lịch sử (cuối họp gián đoạn — chưa rõ yêu cầu).
 
