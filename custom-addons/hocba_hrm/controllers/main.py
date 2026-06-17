@@ -123,15 +123,6 @@ def _dt_local(rec, dt):
     return local.replace(tzinfo=None).isoformat()
 
 
-def _late_minutes(rec, policy):
-    """Số phút đi muộn so với morning_start; 0 nếu đúng giờ."""
-    if not rec.check_in or rec.status_code != 'late':
-        return 0
-    local = fields.Datetime.context_timestamp(rec, rec.check_in)
-    hour = local.hour + local.minute / 60.0
-    return max(0, int(round((hour - policy.morning_start) * 60)))
-
-
 def _att_row(rec, policy):
     """Một dòng chấm công cho SPA (wire format camelCase)."""
     return {
@@ -147,7 +138,13 @@ def _att_row(rec, policy):
         'checkOut': _dt_local(rec, rec.check_out),
         'workingHours': round(rec.working_hours, 2),
         'statusKey': rec.status_code or 'none',
-        'lateMinutes': _late_minutes(rec, policy),
+        'lateMinutes': rec.late_minutes,
+        'earlyLeaveMinutes': rec.early_leave_minutes,
+        'missingMinutes': rec.missing_minutes,
+        'workCredit': rec.work_credit,
+        'morningCredit': rec.morning_credit,
+        'afternoonCredit': rec.afternoon_credit,
+        'expectedCheckOut': _dt_local(rec, rec.expected_check_out),
         'faceSuspect': rec.face_suspect,
         'outOfZone': rec.out_of_zone,
         'outOfWindow': rec.out_of_window,

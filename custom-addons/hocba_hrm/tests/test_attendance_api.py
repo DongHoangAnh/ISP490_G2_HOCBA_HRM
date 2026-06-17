@@ -23,6 +23,7 @@ class TestAttendanceApi(TransactionCase):
         self.emp = self.env['hr.employee'].create({
             'name': 'NV Chinh Thuc',
             'x_employment_status': 'official',
+            'identification_id': '012345678901',
             'x_pit_code': '8765432109',
             'x_social_insurance_no': '0123456789',
             'x_face_descriptor': json.dumps([0.0] * 128),
@@ -78,6 +79,7 @@ class TestAttendanceApi(TransactionCase):
     def test_day_table_employee_sees_only_own(self):
         other = self.env['hr.employee'].create({
             'name': 'Other', 'x_employment_status': 'official',
+            'identification_id': '098765432109',
             'x_pit_code': '1112223334', 'x_social_insurance_no': '9998887776',
         })
         self._checkin(self.emp)
