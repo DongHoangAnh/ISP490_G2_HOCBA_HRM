@@ -314,6 +314,18 @@ class HocBaHRM(http.Controller):
         return bool(request.env['hr.employee'].sudo().search_count(
             [('id', '=', e.id)] + self._emp_scope_domain()))
 
+    def _can_eval_emp(self, e):
+        """Người đang đăng nhập có quyền duyệt cổng thử việc của NV e không:
+        HR Manager / quản lý trực tiếp (parent_id) / trưởng phòng ban của e."""
+        user = request.env.user
+        if user.has_group('hr.group_hr_manager'):
+            return True
+        if e.parent_id and e.parent_id.user_id == user:
+            return True
+        return bool(e.department_id
+                    and e.department_id.id
+                    in self._managed_department_ids(user.employee_id))
+
     def _labels(self):
         env = request.env
         Emp = env['hr.employee']
@@ -527,15 +539,20 @@ class HocBaHRM(http.Controller):
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/gate', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_employee_gate(self, emp_id, **kw):
-        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2,
-        để model tự kiểm quyền (HR Manager / quản lý trực tiếp) + chạy automation
-        AUT-001/002. KHÔNG sudo cố tình — nhờ vậy AccessError của model phát huy."""
+        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2.
+        Kiểm phạm vi TRONG CODE (HR Manager / quản lý trực tiếp / trưởng phòng
+        ban) RỒI mới sudo ghi — nhờ vậy Quản lý không có nhóm HR vẫn duyệt được
+        nhưng CHỈ nhân viên thuộc phòng ban mình. Chạy automation AUT-001/002."""
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
-        # browse KHÔNG sudo: write sẽ chạy qua kiểm quyền của model
-        e = request.env['hr.employee'].browse(emp_id)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        # Gác cổng tại controller: chỉ người có thẩm quyền với NV này mới được duyệt
+        if not self._can_eval_emp(e):
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Bạn không có quyền duyệt nhân viên này.'}, status=403)
 
         payload = request.get_json_data()
         gate = payload.get('gate')
@@ -552,9 +569,12 @@ class HocBaHRM(http.Controller):
         }
         if note:
             vals['x_eval_%s_note' % gate] = note
+        # Đã kiểm phạm vi ở trên → sudo để Quản lý không-HR vẫn ghi được; chỉ
+        # ghi đúng các field cổng (vals), không mở rộng field khác.
         try:
-            e.write(vals)
+            e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
