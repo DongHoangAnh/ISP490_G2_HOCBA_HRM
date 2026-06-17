@@ -19,6 +19,7 @@ class TestAttendanceApi(TransactionCase):
             'morning_start': 8.0, 'morning_end': 9.5,
             'evening_start': 16.0, 'evening_end': 17.5,
             'office_lat': 0.0, 'office_lng': 0.0,
+            'std_work_hours': 8.0, 'violation_free_days': 2,
         })
         self.emp = self.env['hr.employee'].create({
             'name': 'NV Chinh Thuc',

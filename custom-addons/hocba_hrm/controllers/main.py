@@ -232,6 +232,8 @@ def _att_me_history(env, month_str):
     ], order='date desc')
     rows = [_att_row(r, policy) for r in recs]
     total_credit = sum(r['workCredit'] for r in rows)
+    # Công thiếu tính theo PHÚT thiếu so với giờ chuẩn (độc lập với work_credit
+    # nửa-ngày): bỏ N ngày vi phạm đầu tháng, phần còn lại ÷60 ÷ giờ chuẩn.
     violations = sorted(
         [r for r in rows if r['missingMinutes'] > 0], key=lambda r: r['date'])
     counted = violations[policy.violation_free_days:]
