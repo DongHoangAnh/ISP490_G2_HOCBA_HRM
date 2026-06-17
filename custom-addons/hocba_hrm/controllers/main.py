@@ -337,6 +337,38 @@ def _attendance_delete(env, rec_id):
     return {'ok': True}
 
 
+def _request_apply(env, req, check_in_utc, check_out_utc):
+    """Áp đơn đã duyệt vào bản ghi chấm công (Gói 3). Trả bản ghi.
+    check_in_utc/check_out_utc: Datetime UTC naive đã resolve (None = bỏ qua).
+    - Có attendance_id (hoặc tìm thấy bản ghi cùng ngày): ghi các giờ != None.
+    - Ngày thiếu: cần check_in_utc để tạo; thiếu -> ValidationError."""
+    Att = env['hocba.attendance'].sudo()
+    rec = req.attendance_id
+    if not rec:
+        rec = Att.search([
+            ('employee_id', '=', req.employee_id.id),
+            ('date', '=', req.request_date),
+        ], limit=1)
+    if rec:
+        vals = {}
+        if check_in_utc is not None:
+            vals['check_in'] = check_in_utc
+        if check_out_utc is not None:
+            vals['check_out'] = check_out_utc
+        if vals:
+            rec.write(vals)
+    else:
+        if not check_in_utc:
+            raise ValidationError('Cần giờ check-in để tạo bản ghi.')
+        rec = Att.create({
+            'employee_id': req.employee_id.id,
+            'check_in': check_in_utc,
+            'check_out': check_out_utc or False,
+        })
+    req.attendance_id = rec
+    return rec
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:

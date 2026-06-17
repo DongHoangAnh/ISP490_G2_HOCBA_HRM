@@ -5,7 +5,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _req_row
+from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply
 
 
 @tagged('post_install', '-at_install')
@@ -53,3 +53,35 @@ class TestAttendanceRequest(TransactionCase):
         self.assertIsNone(row['attendanceId'])
         self.assertIsNone(row['reviewer'])
         self.assertEqual(row['reason'], 'Quên bấm')
+
+    def test_apply_updates_existing_record(self):
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': self.emp.id,
+                          'check_in': '2026-06-12 02:00:00',    # 09:00 local
+                          'check_out': '2026-06-12 07:00:00'})  # 5h -> thiếu 180
+        self.assertEqual(rec.missing_minutes, 180)
+        req = self._make_req(attendance_id=rec.id)
+        # 09:00 -> 17:00 local = 8h đủ công. _to_utc nhận local ISO.
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        env = self.env(user=self.hrm)
+        out = _request_apply(env, req.with_env(env), None,
+                             _to_utc(env, '2026-06-12T17:00'))
+        self.assertEqual(out, rec)
+        self.assertEqual(rec.missing_minutes, 0)
+
+    def test_apply_creates_record_for_missing_day(self):
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        req = self._make_req(request_date='2026-06-13')
+        env = self.env(user=self.hrm)
+        ci = _to_utc(env, '2026-06-13T09:00')
+        co = _to_utc(env, '2026-06-13T17:00')
+        rec = _request_apply(env, req.with_env(env), ci, co)
+        self.assertTrue(rec.exists())
+        self.assertEqual(rec.employee_id, self.emp)
+        self.assertEqual(req.attendance_id, rec)
+
+    def test_apply_missing_day_without_checkin_raises(self):
+        req = self._make_req(request_date='2026-06-14')
+        env = self.env(user=self.hrm)
+        with self.assertRaises(ValidationError):
+            _request_apply(env, req.with_env(env), None, None)
