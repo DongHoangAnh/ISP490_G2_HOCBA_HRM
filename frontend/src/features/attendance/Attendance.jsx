@@ -10,12 +10,24 @@ import { fetchMyAttendance } from '../../api/attendance';
 import CheckInPanel from './CheckInPanel';
 import MyHistory from './MyHistory';
 import AttendanceTable from './AttendanceTable';
-import { USE_MOCK, FORGOT_REQUESTS, OT_LOG } from './mock';
+import { USE_MOCK, OT_LOG } from './mock';
+import { fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
+import RequestForm from './RequestForm';
+import RequestList from './RequestList';
 
 export default function Attendance({ search }) {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
+  const [reqs, setReqs] = useState({ rows: null, loading: false, error: null });
+  const [showForm, setShowForm] = useState(false);
+
+  const loadReqs = (manager) => {
+    setReqs({ rows: null, loading: true, error: null });
+    const fn = manager ? fetchPendingRequests : fetchMyRequests;
+    fn().then((d) => setReqs({ rows: d.rows, loading: false, error: null }))
+      .catch((e) => setReqs({ rows: null, loading: false, error: e.message }));
+  };
 
   const load = () => {
     setErr(null); setMe(null);
@@ -28,9 +40,14 @@ export default function Attendance({ search }) {
 
   const isManager = me.canManage;
   const tabs = isManager
-    ? [['day', 'Bảng chấm công'], ['forgot', 'Đơn quên chấm công'], ['ot', 'Tăng ca (OT)']]
-    : [['me', 'Chấm công của tôi']];
+    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Tăng ca (OT)']]
+    : [['me', 'Chấm công của tôi'], ['requests', 'Đơn của tôi']];
   const activeTab = tab || (isManager ? 'day' : 'me');
+
+  const goTab = (id) => {
+    setTab(id);
+    if (id === 'requests') loadReqs(isManager);
+  };
 
   return (
     <div className="content fade-in">
@@ -43,7 +60,7 @@ export default function Attendance({ search }) {
 
       <div className="tabs">
         {tabs.map(([id, l]) => (
-          <button key={id} className={'tab' + (activeTab === id ? ' active' : '')} onClick={() => setTab(id)}>{l}</button>
+          <button key={id} className={'tab' + (activeTab === id ? ' active' : '')} onClick={() => goTab(id)}>{l}</button>
         ))}
       </div>
 
@@ -54,8 +71,24 @@ export default function Attendance({ search }) {
         </div>
       )}
       {activeTab === 'day' && <AttendanceTable search={search} />}
-      {activeTab === 'forgot' && <ForgotMock />}
+      {activeTab === 'requests' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {!isManager && (
+            <div>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>
+                Gửi đơn quên chấm công
+              </button>
+            </div>
+          )}
+          <RequestList rows={reqs.rows} loading={reqs.loading} error={reqs.error}
+            onReload={() => loadReqs(isManager)} canReview={isManager} />
+        </div>
+      )}
       {activeTab === 'ot' && <OtMock />}
+
+      {showForm && (
+        <RequestForm onClose={() => setShowForm(false)} onSaved={() => loadReqs(false)} />
+      )}
     </div>
   );
 }
@@ -66,32 +99,6 @@ function MockBanner() {
       Dữ liệu mẫu — chờ backend
     </div>
   ) : null;
-}
-
-function ForgotMock() {
-  return (
-    <div className="card">
-      <div className="card-head"><h3>Đơn quên chấm công</h3></div>
-      <div style={{ padding: '8px 12px' }}>
-        <MockBanner />
-        {FORGOT_REQUESTS.map((f) => (
-          <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 4px', borderBottom: '1px solid var(--border)' }}>
-            <Avatar emp={{ id: f.id, name: f.name, hasImg: false }} size={40} />
-            <div style={{ minWidth: 200 }}>
-              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{f.name}</div>
-              <div className="muted" style={{ fontSize: 12 }}>{f.code} · {f.depName}</div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <Badge kind="red">{f.missType}</Badge>
-              <span className="mono" style={{ fontWeight: 600, fontSize: 13, marginLeft: 8 }}>{fmtDate(f.date)} · {f.proposed}</span>
-              <div className="muted" style={{ fontSize: 12.5 }}>"{f.reason}"</div>
-            </div>
-            <Badge kind="amber" dot>{f.state}</Badge>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function OtMock() {
