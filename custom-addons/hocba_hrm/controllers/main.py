@@ -267,6 +267,27 @@ def _att_me_history(env, month_str):
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
+def _req_row(req):
+    """Một đơn chấm công cho SPA (wire format camelCase)."""
+    emp = req.employee_id
+    return {
+        'id': req.id,
+        'empId': emp.id,
+        'empName': emp.name,
+        'code': emp.x_employee_code or '—',
+        'depName': emp.department_id.name or 'Chưa gán',
+        'requestDate': _d(req.request_date),
+        'attendanceId': req.attendance_id.id or None,
+        'checkIn': _dt_local(req, req.proposed_check_in),
+        'checkOut': _dt_local(req, req.proposed_check_out),
+        'reason': req.reason or '',
+        'state': req.state,
+        'reviewer': req.reviewer_id.name or None,
+        'reviewNote': req.review_note or None,
+        'decisionDate': _dt_local(req, req.decision_date),
+    }
+
+
 def _to_utc(env, s):
     """Chuỗi datetime local ('YYYY-MM-DDTHH:MM[:SS]') -> Datetime UTC naive.
     None/'' -> False. Dùng tz của user."""
