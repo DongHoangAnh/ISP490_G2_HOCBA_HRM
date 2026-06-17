@@ -1,0 +1,78 @@
+/* Màn Tuyển dụng — điều phối tab (mẫu chuẩn: màn Nhân viên / Chấm công).
+   Owner: Việt. API: /hocba-hrm/api/recruitment/* (đang chờ spec).
+   Giai đoạn này mới dựng khung tab; nội dung từng tab nối API sau. */
+import { useState } from 'react';
+import CvList from './CvList';
+import Jobs from './Jobs';
+import Requests from './Requests';
+import MailTemplates from './MailTemplates';
+import InterviewSlots from './InterviewSlots';
+import Offers from './Offers';
+import MailLogs from './MailLogs';
+
+const TABS = [
+  ['cv',         'Danh sách CV'],
+  ['jobs',       'Vị trí tuyển dụng / JD'],
+  ['requests',   'Phiếu yêu cầu'],
+  ['interviews', 'Danh sách PV'],
+  ['offers',     'Offer & Nhận việc'],
+  ['mails',      'Mail mẫu tuyển dụng'],
+  ['maillog',    'Lịch sử gửi mail'],
+];
+
+const TAB_DESC = {
+  cv:         'Tổng hợp & lọc CV ứng viên, kết quả lọc và trạng thái gọi điện.',
+  jobs:       'Danh sách vị trí tuyển dụng và mô tả công việc (JD).',
+  requests:   'Phiếu yêu cầu tuyển dụng từ các bộ phận.',
+  interviews: 'Ứng viên đang ở bước phỏng vấn, trạng thái đã đến / không đến.',
+  offers:     'Ứng viên ở bước Gửi Offer & Onboarding, nội dung offer và ngày nhận việc.',
+  mails:      'Mẫu email dùng trong quy trình tuyển dụng.',
+};
+
+export default function Recruitment({ search }) {
+  const [tab, setTab] = useState(() => localStorage.getItem('hocba_rec_tab') || 'cv');
+
+  const select = (id) => { setTab(id); localStorage.setItem('hocba_rec_tab', id); };
+  const label = TABS.find(([id]) => id === tab)?.[1] || '';
+
+  return (
+    <div className="content fade-in">
+      <div className="page-head">
+        <div>
+          <h1>Tuyển dụng</h1>
+          <p>Quản lý quy trình tuyển dụng Học Bá · dữ liệu trực tiếp từ Odoo</p>
+        </div>
+      </div>
+
+      <div className="tabs">
+        {TABS.map(([id, l]) => (
+          <button key={id} className={'tab' + (tab === id ? ' active' : '')} onClick={() => select(id)}>{l}</button>
+        ))}
+      </div>
+
+      {tab === 'cv' ? (
+        <CvList search={search} />
+      ) : tab === 'jobs' ? (
+        <Jobs search={search} />
+      ) : tab === 'requests' ? (
+        <Requests search={search} />
+      ) : tab === 'interviews' ? (
+        <InterviewSlots />
+      ) : tab === 'offers' ? (
+        <Offers search={search} />
+      ) : tab === 'mails' ? (
+        <MailTemplates search={search} />
+      ) : tab === 'maillog' ? (
+        <MailLogs search={search} />
+      ) : (
+        <div className="card" style={{ padding: 36, textAlign: 'center' }}>
+          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 8 }}>{label}</div>
+          <p className="muted" style={{ margin: 0 }}>
+            {TAB_DESC[tab]}
+            <br />Đang chờ nối API <code>/hocba-hrm/api/recruitment/*</code>.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

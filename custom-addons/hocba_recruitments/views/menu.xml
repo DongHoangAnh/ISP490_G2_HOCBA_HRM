@@ -35,28 +35,29 @@
         </field>
     </record>
 
-    <!-- 7.5 Danh sách phỏng vấn (hr.applicant list, filter by interview_date set) -->
+    <!-- 7.5 Danh sách phỏng vấn (hr.applicant list, chỉ stage "Phỏng vấn") -->
     <record id="hb_action_interview_list" model="ir.actions.act_window">
         <field name="name">Danh sách phỏng vấn</field>
         <field name="res_model">hr.applicant</field>
         <field name="view_mode">list,calendar,form</field>
         <field name="views" eval="[(ref('hocba_recruitments.hb_view_applicant_interview_list'), 'list'), (False, 'calendar'), (False, 'form')]"/>
-        <field name="domain">[('interview_date','!=',False)]</field>
+        <field name="domain">[('stage_id.name', '=', 'Phỏng vấn')]</field>
         <field name="context">{'search_default_applicants': 1}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">Chưa có phỏng vấn nào được ghi nhận</p>
+            <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào ở bước Phỏng vấn</p>
         </field>
     </record>
 
-    <!-- 7.6 Offer & Nhận việc (hr.applicant đã chốt — date_closed set) -->
+    <!-- 7.6 Offer & Nhận việc (hr.applicant ở stage "Gửi Offer" & "Onboarding") -->
     <record id="hb_action_offer_hire" model="ir.actions.act_window">
         <field name="name">Offer &amp; Nhận việc</field>
         <field name="res_model">hr.applicant</field>
         <field name="view_mode">list,kanban,form</field>
-        <field name="domain">[('date_closed', '!=', False)]</field>
-        <field name="context">{'active_test': False}</field>
+        <field name="views" eval="[(ref('hocba_recruitments.hb_view_applicant_offer_list'), 'list'), (False, 'kanban'), (False, 'form')]"/>
+        <field name="domain">[('stage_id.name', 'in', ['Gửi Offer', 'Onboarding'])]</field>
+        <field name="context">{'search_default_applicants': 1}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào được chốt offer</p>
+            <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào ở bước Gửi Offer / Onboarding</p>
         </field>
     </record>
 
@@ -103,26 +104,13 @@
               25 Offer & NV → 30 Báo cáo | Config: 10 Vị trí/JD, 45 Mail mẫu
          ════════════════════════════════════════════════════════════════════ -->
 
-    <!-- 7.1 + 7.4 ── Ứng viên (parent, seq 10) -->
+    <!-- 7.4 ── Ứng viên — Danh sách CV (seq 10) -->
     <menuitem id="hb_menu_applicants"
         name="Ứng viên"
         parent="hr_recruitment.menu_hr_recruitment_root"
+        action="hb_action_applicants_list"
         groups="hr_recruitment.group_hr_recruitment_user,hr_recruitment.group_hr_recruitment_interviewer"
         sequence="10"/>
-
-        <!-- 7.1 Pipeline Kanban -->
-        <menuitem id="hb_menu_applicants_pipeline"
-            name="Pipeline Kanban"
-            parent="hb_menu_applicants"
-            action="hocba_recruitments.hb_action_pipeline_kanban"
-            sequence="1"/>
-
-        <!-- 7.4 Danh sách CV -->
-        <menuitem id="hb_menu_applicants_list"
-            name="Danh sách CV"
-            parent="hb_menu_applicants"
-            action="hb_action_applicants_list"
-            sequence="2"/>
 
     <!-- 7.2 ── Phiếu yêu cầu tuyển dụng (seq 15) -->
     <menuitem id="hb_menu_recruitment_request"
