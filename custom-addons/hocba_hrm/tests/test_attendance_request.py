@@ -5,7 +5,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply
+from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply, _request_create
 
 
 @tagged('post_install', '-at_install')
@@ -87,3 +87,40 @@ class TestAttendanceRequest(TransactionCase):
         env = self.env(user=self.hrm)
         with self.assertRaises(ValidationError):
             _request_apply(env, req.with_env(env), None, None)
+
+    def test_create_pins_employee_and_converts_utc(self):
+        env = self.env(user=self.user)
+        row = _request_create(env, {
+            'requestDate': '2026-06-12',
+            'checkIn': '2026-06-12T08:10',
+            'reason': 'Điện thoại hết pin',
+        })
+        self.assertEqual(row['empId'], self.emp.id)
+        self.assertEqual(row['state'], 'pending')
+        req = env['hocba.attendance.request'].browse(row['id'])
+        # 08:10 local (+07) -> 01:10 UTC stored
+        self.assertEqual(str(req.proposed_check_in), '2026-06-12 01:10:00')
+
+    def test_create_empty_reason_raises(self):
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _request_create(env, {'requestDate': '2026-06-12', 'reason': '  '})
+
+    def test_create_no_employee_returns_none(self):
+        u = self.env['res.users'].create({'name': 'NoEmp', 'login': 'noemp_req'})
+        self.assertIsNone(_request_create(self.env(user=u),
+                                          {'requestDate': '2026-06-12',
+                                           'reason': 'x'}))
+
+    def test_create_foreign_attendance_rejected(self):
+        other = self.env['hr.employee'].create({
+            'name': 'NV Khac', 'x_employment_status': 'official',
+            'identification_id': '012345678902',
+            'x_pit_code': '1112223334', 'x_social_insurance_no': '9998887776'})
+        rec = self.env['hocba.attendance'].with_context(
+            tz='Asia/Ho_Chi_Minh').create({
+                'employee_id': other.id, 'check_in': '2026-06-12 02:00:00'})
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _request_create(env, {'requestDate': '2026-06-12',
+                                  'attendanceId': rec.id, 'reason': 'x'})

@@ -371,6 +371,33 @@ def _request_apply(env, req, check_in_utc, check_out_utc):
     return rec
 
 
+def _request_create(env, body):
+    """User tạo đơn chấm công cho CHÍNH MÌNH (pin employee, chống giả mạo).
+    Trả _req_row; None nếu user chưa có hồ sơ NV; ValidationError nếu thiếu lý
+    do / bản ghi đính kèm không thuộc về user."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    reason = (body.get('reason') or '').strip()
+    if not reason:
+        raise ValidationError('Cần lý do.')
+    Att = env['hocba.attendance'].sudo()
+    att_id = body.get('attendanceId')
+    attendance = Att.browse(int(att_id)) if att_id else Att.browse()
+    if att_id and (not attendance.exists() or attendance.employee_id != emp):
+        raise ValidationError('Bản ghi không hợp lệ.')
+    request_date = body.get('requestDate') or (attendance.date if att_id else False)
+    req = env['hocba.attendance.request'].sudo().create({
+        'employee_id': emp.id,
+        'request_date': request_date,
+        'attendance_id': attendance.id or False,
+        'proposed_check_in': _to_utc(env, body.get('checkIn')),
+        'proposed_check_out': _to_utc(env, body.get('checkOut')),
+        'reason': reason,
+    })
+    return _req_row(req)
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:
