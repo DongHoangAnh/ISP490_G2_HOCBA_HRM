@@ -1,5 +1,6 @@
 import json
 import math
+from datetime import timedelta
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
@@ -59,6 +60,28 @@ class Attendance(models.Model):
         store=True,
         help='Number of hours worked'
     )
+    expected_check_out = fields.Datetime(
+        string='Giờ ra mong đợi',
+        compute='_compute_work_metrics', store=True)
+    late_minutes = fields.Integer(
+        string='Phút đi trễ',
+        compute='_compute_work_metrics', store=True)
+    early_leave_minutes = fields.Integer(
+        string='Phút về sớm',
+        compute='_compute_work_metrics', store=True)
+    missing_minutes = fields.Integer(
+        string='Phút thiếu',
+        compute='_compute_work_metrics', store=True)
+    morning_credit = fields.Float(
+        string='Công sáng',
+        compute='_compute_work_metrics', store=True)
+    afternoon_credit = fields.Float(
+        string='Công chiều',
+        compute='_compute_work_metrics', store=True)
+    work_credit = fields.Float(
+        string='Công ngày',
+        compute='_compute_work_metrics', store=True,
+        help='0 / 0.5 / 1.0 = công sáng + công chiều.')
     active = fields.Boolean(default=True)
 
     # --- Face + geolocation check-in (F: face attendance) ---
@@ -101,13 +124,46 @@ class Attendance(models.Model):
             else:
                 record.working_hours = 0.0
 
+    @api.depends('check_in', 'check_out')
+    def _compute_work_metrics(self):
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        std = policy.std_work_hours or 8.0
+        late_cut = policy.late_cutoff or 9.5
+        morn_cut = policy.morning_credit_cutoff or 10.0
+        aft_margin = policy.afternoon_margin_hours or 2.0
+        for rec in self:
+            ci, co = rec.check_in, rec.check_out
+            rec.expected_check_out = (ci + timedelta(hours=std)) if ci else False
+            if ci:
+                local_in = fields.Datetime.context_timestamp(rec, ci)
+                in_hour = (local_in.hour + local_in.minute / 60.0
+                           + local_in.second / 3600.0)
+                rec.late_minutes = max(0, int(round((in_hour - late_cut) * 60)))
+                rec.morning_credit = 0.5 if in_hour <= morn_cut else 0.0
+            else:
+                rec.late_minutes = 0
+                rec.morning_credit = 0.0
+            if ci and co:
+                worked_min = (co - ci).total_seconds() / 60.0
+                rec.missing_minutes = max(0, int(round(std * 60 - worked_min)))
+                expected = ci + timedelta(hours=std)
+                rec.early_leave_minutes = max(
+                    0, int(round((expected - co).total_seconds() / 60.0)))
+                aft_threshold = ci + timedelta(hours=std - aft_margin)
+                rec.afternoon_credit = 0.5 if co >= aft_threshold else 0.0
+            else:
+                rec.missing_minutes = 0
+                rec.early_leave_minutes = 0
+                rec.afternoon_credit = 0.0
+            rec.work_credit = rec.morning_credit + rec.afternoon_credit
+
     @api.depends('check_in')
     def _compute_status(self):
         Status = self.env['hocba.attendance.status']
         on_time_status = Status.search([('code', '=', 'on_time')], limit=1)
         late_status = Status.search([('code', '=', 'late')], limit=1)
         policy = self.env['hocba.attendance.policy'].get_policy()
-        cutoff = policy.morning_start
+        cutoff = policy.late_cutoff
 
         for record in self:
             if not record.check_in:
