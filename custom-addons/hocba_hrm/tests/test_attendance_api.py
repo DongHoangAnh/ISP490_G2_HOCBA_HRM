@@ -204,3 +204,24 @@ class TestScopeHelpers(TransactionCase):
     def test_department_head_scope_is_own_department(self):
         dom = _emp_scope_domain(self.env(user=self.mgr_user))
         self.assertIn(('department_id', 'in', [self.dept.id]), dom)
+
+    def test_day_table_department_head_sees_only_dept(self):
+        in_dept = self.env['hr.employee'].create({
+            'name': 'NV trong phòng', 'department_id': self.dept.id,
+            'x_employment_status': 'official', 'x_pit_code': '1110002221',
+            'x_social_insurance_no': '2220001112',
+            'identification_id': '012345670021'})
+        out_dept = self.env['hr.employee'].create({
+            'name': 'NV ngoài phòng', 'x_employment_status': 'official',
+            'x_pit_code': '3330004445', 'x_social_insurance_no': '4440003332',
+            'identification_id': '012345670022'})
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        today = fields.Date.context_today(self.mgr_user)
+        for e in (in_dept, out_dept):
+            Att.create({'employee_id': e.id,
+                        'check_in': '%s 02:00:00' % today})
+        data = _att_day_table(self.env(user=self.mgr_user), str(today))
+        self.assertTrue(data['canManage'])
+        emp_ids = [r['empId'] for r in data['rows']]
+        self.assertIn(in_dept.id, emp_ids)
+        self.assertNotIn(out_dept.id, emp_ids)

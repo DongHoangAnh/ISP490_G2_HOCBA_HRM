@@ -186,13 +186,21 @@ def _att_me_info(env):
 
 
 def _att_day_table(env, date_str):
-    """Bảng chấm công theo ngày. HR/manager: tất cả; NV thường: chỉ của mình."""
+    """Bảng chấm công theo ngày. Phạm vi theo vai trò (giống danh sách NV):
+    HR/Admin=tất cả; trưởng phòng=phòng mình; giáo vụ=giáo viên; NV thường=của mình."""
     is_hr = env.user.has_group('hr.group_hr_user')
     is_mgr = env.user.has_group('hr.group_hr_manager')
+    can_manage = _user_can_manage(env)
     day = fields.Date.from_string(date_str) if date_str else fields.Date.context_today(env.user)
     policy = env['hocba.attendance.policy'].sudo().get_policy()
     domain = [('date', '=', day)]
-    if not (is_hr or is_mgr):
+    if can_manage:
+        for field, op, val in _emp_scope_domain(env):  # domain trên hr.employee
+            if field == 'id':            # ('id','=',0): không thuộc nhóm nào
+                domain.append(('employee_id', op, val))
+            else:                         # department_id / x_employee_type_id.code
+                domain.append(('employee_id.%s' % field, op, val))
+    else:
         emp = env.user.employee_id
         domain.append(('employee_id', '=', emp.id if emp else -1))
     recs = env['hocba.attendance'].sudo().search(domain)
@@ -209,7 +217,7 @@ def _att_day_table(env, date_str):
             [('x_employment_status', '=', 'official')])
         counts['missing'] = max(0, total - len(rows))
     return {
-        'isHr': is_hr, 'isHrManager': is_mgr,
+        'isHr': is_hr, 'isHrManager': is_mgr, 'canManage': can_manage,
         'date': _d(day),
         'policy': _policy_dict(policy),
         'counts': counts,
