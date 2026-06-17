@@ -28,4 +28,4 @@ class AttendanceRequest(models.Model):
     decision_date = fields.Datetime(string='Thời điểm quyết định', readonly=True)
     department_id = fields.Many2one(
         'hr.department', string='Phòng ban',
-        related='employee_id.department_id', store=True)
+        related='employee_id.department_id', store=True, readonly=True)
