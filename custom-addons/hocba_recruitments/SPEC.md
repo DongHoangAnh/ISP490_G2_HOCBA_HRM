@@ -1,11 +1,17 @@
 ﻿# SPEC — Module `hocba_recruitments` (v19.0.2.0.0)
 
 > **Trạng thái:** Đã implement — branch `Viet/Recruitment`  
-> **Cập nhật:** 2026-06-12 (thêm 7.3 — hb.interview.slot)  
+> **Cập nhật:** 2026-06-16 (SPA Tuyển dụng + API domain `recruitment`)  
 > **Odoo version:** 19.0-20260609  
 > **Depends:** `hr_recruitment` (Odoo 19 core)
 
-Module mở rộng tuyển dụng Odoo cho Học Bá Education. Không có SPA riêng — toàn bộ UI nằm trong menu **Recruitment** của Odoo. (Controller `/hocba-tuyen-dung` vẫn tồn tại nhưng là legacy React app chưa dùng.)
+Module mở rộng tuyển dụng Odoo cho Học Bá Education. UI có **2 lớp**:
+1. **Backend Odoo** — menu **Recruitment** (models/views mô tả §1–§9 bên dưới).
+2. **SPA Tuyển dụng** (React, trong `frontend/` build vào `hocba_hrm`) — 7 tab, gọi
+   **API domain `recruitment`** (`/hocba-hrm/api/recruitment/*`) do controller
+   `controllers/main.py` cung cấp. Chi tiết hợp đồng API: **`docs/SPEC_API_RECRUITMENT.md`**.
+
+> Controller React legacy `/hocba-tuyen-dung` đã bỏ; `controllers/main.py` giờ là controller API thật cho SPA.
 
 ---
 
@@ -110,22 +116,20 @@ Model mới. Inherit `mail.thread`, `mail.activity.mixin`. Order: `create_date d
 ### 3.2 State Machine
 
 ```
-                    ┌──────────────────────────────┐
-                    │                              │
-          draft ──► submitted ──► manager_approved ──► hr_approved ──► recruiting ──► closed
-            ▲           │                │                  │
-            │         refused          refused            refused
-            │           │
-            └───── reset_draft
+            ┌────────────────────┐
+            │                    │
+  draft ──► submitted ──► recruiting ──► closed
+    ▲           │
+    │         refused
+    │           │
+    └───── reset_draft
 ```
 
 | State | Label | Màu badge |
 |-------|-------|-----------|
 | `draft` | Nháp | — |
-| `submitted` | Chờ TBP duyệt | info (xanh dương) |
-| `manager_approved` | TBP đã duyệt | warning (vàng) |
-| `hr_approved` | HR đã duyệt | success (xanh lá) |
-| `recruiting` | Đang tuyển | success |
+| `submitted` | Chờ BP duyệt | info (xanh dương) |
+| `recruiting` | Đang tuyển | success (xanh lá) |
 | `closed` | Đã đóng | muted (xám) |
 | `refused` | Từ chối | danger (đỏ) |
 
@@ -134,11 +138,9 @@ Model mới. Inherit `mail.thread`, `mail.activity.mixin`. Order: `create_date d
 | Nút | Hiển thị khi | Action |
 |-----|-------------|--------|
 | Gửi duyệt | state = draft | `action_submit` |
-| TBP Duyệt | state = submitted | `action_manager_approve` |
-| HR Duyệt | state = manager_approved | `action_hr_approve` |
-| Bắt đầu tuyển | state = hr_approved | `action_start_recruiting` |
+| BP Duyệt | state = submitted | `action_approve` |
 | Đóng phiếu | state = recruiting | `action_close` |
-| Từ chối | state ∉ (draft, recruiting, closed, refused) | `action_refuse` |
+| Từ chối | state = submitted | `action_refuse` |
 | Trả về nháp | state = refused | `action_reset_draft` |
 
 **Smart button Job Position:** Nếu chưa có `job_id` → tạo mới `hr.job` từ `job_title + department_id`. Nếu đã có → mở xem.
@@ -374,17 +376,28 @@ Tất cả template dùng cú pháp **Jinja2 chuẩn** (Odoo 17+): `{{ object.pa
 
 ---
 
-## 10. Controller (legacy)
+## 10. Controller — API domain `recruitment` (cho SPA)
 
-**Route:** `GET /hocba-tuyen-dung` (auth=user)
+`controllers/main.py` cung cấp REST-ish API prefix `/hocba-hrm/api/recruitment/*`
+(`auth='user'`, `type='http'`, JSON camelCase). Thao tác ghi chặn theo
+`group_hr_recruitment_user`. **Hợp đồng đầy đủ:** `docs/SPEC_API_RECRUITMENT.md`.
 
-Trả về HTML shell chứa React app (CDN React 18.3.1 + Babel standalone). Load 4 file JS/JSX:
-- `rec-data.jsx` — data layer
-- `rec-shell.jsx` — layout shell
-- `rec-dashboard.jsx` — dashboard component
-- `rec-app.jsx` — root app
+Nhóm endpoint:
+- **CV/Ứng viên:** `GET /cv`, `GET /applicant/<id>`, `POST /cv`, `POST /applicant/<id>`,
+  `POST /applicant/<id>/cv-file` (upload PDF → `ir.attachment` `description='hb_cv'`),
+  `POST /applicant/<id>/stage`.
+- **Vị trí/JD:** `GET /jobs` (+ `requests`, `hired`), `GET /job/<id>`, `POST /jobs`, `POST /job/<id>`.
+  Ghi `published` đồng bộ `is_published` + `x_published` + `recruitment_status`, và tự
+  sinh `website_description` (toàn bộ thông tin) cho trang `/jobs` công khai.
+- **Phiếu yêu cầu:** `GET /requests`, `GET /request/<id>`, `POST /requests`, `POST /request/<id>`, `POST /request/<id>/action`.
+- **Mail mẫu:** `GET /mail-templates`, `GET /mail-template/<id>`, `POST /mail-templates`,
+  `POST /mail-template/<id>`, `POST /mail-template/<id>/preview`, `POST /mail-template/<id>/send`.
+  Render bằng **inline_template engine** (vì `body_html` qweb không thay `{{ }}`); send hỗ trợ ghi đè `subject`/`bodyHtml` đã sửa.
+- **Lịch sử mail:** `GET /mail-logs` (nguồn `mail.message` + `mail.notification`).
+- **Lịch rảnh PV:** `GET /interview-slots`, `POST /interview-slots`, `POST /interview-slot/<id>/delete`.
+  Đọc/ghi datetime dùng `_user_tz()` đối xứng (fallback `Asia/Ho_Chi_Minh`) — tránh lệch giờ.
 
-> **Trạng thái:** Chưa dùng trong flow hiện tại. Menu `menu_hocba_recruitments_root` đã bị `active=False`.
+> **Lưu ý môi trường:** Odoo 19 — `hr.applicant` không còn field `name`; gửi mail thật cần cấu hình `ir.mail_server` (hiện hàng đợi, chế độ soạn + xem trước).
 
 ---
 
@@ -395,5 +408,6 @@ Trả về HTML shell chứa React app (CDN React 18.3.1 + Babel standalone). Lo
 | 1 | Nút TBP Duyệt và HR Duyệt đều dùng `group_hr_recruitment_user` — chưa tách role | Trung bình |
 | 2 | `jd_google_link` trên `hb_job_positions.xml` bỏ trống — cần điền URL thực | Thấp |
 | 3 | Mail templates có thông tin liên hệ hardcode — cần cập nhật khi thay nhân sự | Thấp |
-| 4 | Controller React legacy còn tồn tại nhưng chưa dùng — quyết định giữ hay xóa | Thấp |
+| 4 | Chưa cấu hình `ir.mail_server` (SMTP) — mail gửi nằm hàng đợi; đang chạy chế độ soạn + xem trước | Trung bình |
 | 5 | Sample data (`hb_applicant_data*.xml`, `hb_interview_results.xml`) — chưa kiểm tra nội dung | Cần xác nhận |
+| 6 | `cv_link` seed là tên file (không phải URL) → cột Link CV chỉ hiện text; dùng upload PDF hoặc URL đầy đủ | Thấp |

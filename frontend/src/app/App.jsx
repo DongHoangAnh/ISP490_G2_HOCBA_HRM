@@ -5,6 +5,7 @@ import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
+import Recruitment from '../features/recruitment/Recruitment';
 import ComingSoon from '../components/ComingSoon';
 
 export default function App() {
@@ -24,7 +25,7 @@ export default function App() {
         {view === 'attendance' && <Attendance search={search} />}
         {view === 'timeoff' && <ComingSoon title="Nghỉ phép" owner="Nhật Anh" api="/hocba-hrm/api/timeoff/*" />}
         {view === 'payroll' && <ComingSoon title="Bảng lương" owner="Hùng" api="/hocba-hrm/api/payroll/*" />}
-        {view === 'recruitment' && <ComingSoon title="Tuyển dụng" owner="Việt" api="/hocba-hrm/api/recruitment/*" />}
+        {view === 'recruitment' && <Recruitment search={search} />}
         {view === 'profile' && <Profile />}
       </div>
     </div>

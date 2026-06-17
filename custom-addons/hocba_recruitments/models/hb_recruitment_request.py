@@ -87,12 +87,15 @@ class HbRecruitmentRequest(models.Model):
     # ── Ghi chú ───────────────────────────────────────────────────────────────
     note = fields.Html(string='Ghi chú nội bộ', sanitize=True)
 
+    # Cờ chống cộng trùng chỉ tiêu vào vị trí (đã cộng khi duyệt → recruiting)
+    headcount_synced = fields.Boolean(
+        string='Đã cộng chỉ tiêu vào vị trí', default=False, copy=False,
+    )
+
     # ── Trạng thái ────────────────────────────────────────────────────────────
     state = fields.Selection([
         ('draft', 'Nháp'),
-        ('submitted', 'Chờ TBP duyệt'),
-        ('manager_approved', 'TBP đã duyệt'),
-        ('hr_approved', 'HR đã duyệt'),
+        ('submitted', 'Chờ BP duyệt'),
         ('recruiting', 'Đang tuyển'),
         ('closed', 'Đã đóng'),
         ('refused', 'Từ chối'),
@@ -109,6 +112,21 @@ class HbRecruitmentRequest(models.Model):
                 )
         return super().create(vals_list)
 
+    # ── Onchange: lọc & tự điền vị trí theo phòng ban ──────────────────────────
+    @api.onchange('department_id')
+    def _onchange_department_id(self):
+        """Đổi phòng ban → bỏ chọn vị trí cũ nếu không thuộc phòng ban mới."""
+        if self.job_id and self.job_id.department_id != self.department_id:
+            self.job_id = False
+
+    @api.onchange('job_id')
+    def _onchange_job_id(self):
+        """Chọn vị trí theo JD → tự điền tên vị trí + link JD nếu còn trống."""
+        if self.job_id:
+            self.job_title = self.job_id.name
+            if not self.jd_link and self.job_id.jd_google_link:
+                self.jd_link = self.job_id.jd_google_link
+
     # ── State transitions ─────────────────────────────────────────────────────
     def action_submit(self):
         for rec in self:
@@ -116,34 +134,28 @@ class HbRecruitmentRequest(models.Model):
                 raise UserError('Chỉ có thể gửi duyệt phiếu đang ở trạng thái Nháp.')
             rec.state = 'submitted'
 
-    def action_manager_approve(self):
+    def action_approve(self):
         for rec in self:
             if rec.state != 'submitted':
-                raise UserError('Phiếu chưa ở trạng thái chờ Trưởng phòng duyệt.')
-            rec.state = 'manager_approved'
-
-    def action_hr_approve(self):
-        for rec in self:
-            if rec.state != 'manager_approved':
-                raise UserError('Phiếu chưa được Trưởng phòng phê duyệt.')
-            rec.state = 'hr_approved'
-
-    def action_start_recruiting(self):
-        for rec in self:
-            if rec.state != 'hr_approved':
-                raise UserError('Phiếu chưa được HR phê duyệt.')
+                raise UserError('Phiếu chưa ở trạng thái chờ bộ phận duyệt.')
             rec.state = 'recruiting'
+            # Cộng dồn số lượng cần tuyển vào chỉ tiêu của vị trí (1 lần / phiếu)
+            if rec.job_id and not rec.headcount_synced:
+                rec.job_id.no_of_recruitment = (
+                    (rec.job_id.no_of_recruitment or 0) + rec.qty_expected
+                )
+                rec.headcount_synced = True
 
     def action_close(self):
         for rec in self:
-            if rec.state not in ('recruiting', 'hr_approved'):
-                raise UserError('Chỉ đóng phiếu khi đang tuyển hoặc đã HR duyệt.')
+            if rec.state != 'recruiting':
+                raise UserError('Chỉ đóng phiếu khi đang tuyển.')
             rec.state = 'closed'
 
     def action_refuse(self):
         for rec in self:
-            if rec.state in ('draft', 'closed', 'refused'):
-                raise UserError('Không thể từ chối phiếu ở trạng thái hiện tại.')
+            if rec.state != 'submitted':
+                raise UserError('Chỉ từ chối phiếu đang chờ bộ phận duyệt.')
             rec.state = 'refused'
 
     def action_reset_draft(self):

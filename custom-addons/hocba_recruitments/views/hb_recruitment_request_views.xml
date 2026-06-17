@@ -18,25 +18,11 @@
                         class="btn-primary"
                         invisible="state != 'draft'"/>
 
-                    <button name="action_manager_approve"
-                        string="TBP Duyệt"
-                        type="object"
-                        class="btn-primary"
-                        invisible="state != 'submitted'"
-                        groups="hr_recruitment.group_hr_recruitment_user"/>
-
-                    <button name="action_hr_approve"
-                        string="HR Duyệt"
-                        type="object"
-                        class="btn-primary"
-                        invisible="state != 'manager_approved'"
-                        groups="hr_recruitment.group_hr_recruitment_user"/>
-
-                    <button name="action_start_recruiting"
-                        string="Bắt đầu tuyển"
+                    <button name="action_approve"
+                        string="BP Duyệt"
                         type="object"
                         class="btn-success"
-                        invisible="state != 'hr_approved'"
+                        invisible="state != 'submitted'"
                         groups="hr_recruitment.group_hr_recruitment_user"/>
 
                     <button name="action_close"
@@ -49,7 +35,7 @@
                         string="Từ chối"
                         type="object"
                         class="btn-danger"
-                        invisible="state in ('draft', 'recruiting', 'closed', 'refused')"
+                        invisible="state != 'submitted'"
                         groups="hr_recruitment.group_hr_recruitment_user"/>
 
                     <button name="action_reset_draft"
@@ -58,7 +44,7 @@
                         invisible="state != 'refused'"/>
 
                     <field name="state" widget="statusbar"
-                        statusbar_visible="draft,submitted,manager_approved,hr_approved,recruiting,closed"/>
+                        statusbar_visible="draft,submitted,recruiting,closed"/>
                 </header>
 
                 <sheet>
@@ -187,8 +173,7 @@
         <field name="arch" type="xml">
             <list string="Phiếu Yêu Cầu Tuyển Dụng"
                 decoration-info="state == 'submitted'"
-                decoration-warning="state == 'manager_approved'"
-                decoration-success="state in ('hr_approved', 'recruiting')"
+                decoration-success="state == 'recruiting'"
                 decoration-muted="state in ('closed', 'refused')">
                 <field name="name" string="Mã phiếu"/>
                 <field name="date_request" string="Ngày order"/>
@@ -201,8 +186,7 @@
                 <field name="jd_link" string="Link JD" widget="url" optional="show"/>
                 <field name="state" string="Trạng thái" widget="badge"
                     decoration-info="state == 'submitted'"
-                    decoration-warning="state == 'manager_approved'"
-                    decoration-success="state in ('hr_approved', 'recruiting')"
+                    decoration-success="state == 'recruiting'"
                     decoration-danger="state == 'refused'"
                     decoration-muted="state == 'closed'"/>
             </list>
@@ -222,10 +206,8 @@
                 <separator/>
                 <filter name="filter_draft" string="Nháp"
                     domain="[('state', '=', 'draft')]"/>
-                <filter name="filter_submitted" string="Chờ duyệt"
-                    domain="[('state', 'in', ('submitted', 'manager_approved'))]"/>
-                <filter name="filter_approved" string="Đã duyệt"
-                    domain="[('state', '=', 'hr_approved')]"/>
+                <filter name="filter_submitted" string="Chờ BP duyệt"
+                    domain="[('state', '=', 'submitted')]"/>
                 <filter name="filter_recruiting" string="Đang tuyển"
                     domain="[('state', '=', 'recruiting')]"/>
                 <filter name="filter_closed" string="Đã đóng"

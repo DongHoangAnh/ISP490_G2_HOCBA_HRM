@@ -5,7 +5,8 @@ class HrApplicantHocBaExt(models.Model):
     _inherit = 'hr.applicant'
 
     # ── Sheet 7.4 — Danh sách CV ─────────────────────────────────────────────
-    date_received = fields.Date(string='Thời gian nhận CV', index=True)
+    date_received = fields.Date(string='Thời gian nhận CV', index=True,
+                                default=fields.Date.context_today)
     ctv_tuyen_dung = fields.Char(string='CTV tuyển dụng')
     cv_link = fields.Char(string='Link CV / Tên file')
     cv_filter_result = fields.Selection([

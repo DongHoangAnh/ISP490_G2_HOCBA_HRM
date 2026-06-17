@@ -24,7 +24,7 @@
                 <field name="interview_date"       string="Ngày hẹn PV"/>
                 <field name="interview_time"       string="Giờ PV"/>
                 <field name="interviewer_name"     string="Người PV"/>
-                <field name="attendance_status"    string="Tham gia PV" widget="badge"
+                <field name="attendance_status"    string="Trạng thái" widget="badge"
                     decoration-success="attendance_status == 'present'"
                     decoration-danger="attendance_status == 'absent'"/>
                 <field name="interview_result"     string="Kết quả PV" widget="badge"

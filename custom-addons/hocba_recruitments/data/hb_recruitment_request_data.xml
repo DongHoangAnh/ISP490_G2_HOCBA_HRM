@@ -2,9 +2,9 @@
 <odoo noupdate="1">
 
     <!--
-        13 phiếu yêu cầu tuyển dụng thực tế của Học Bá (2025–2026).
+        10 phiếu yêu cầu tuyển dụng thực tế của Học Bá (2025–2026).
         noupdate="1": tạo lần đầu khi install, không ghi đè khi upgrade.
-        Trạng thái: 2025 + Feb/2026 → closed | May/2026 → recruiting
+        Trạng thái: 2025 + Feb/2026 → closed
     -->
 
     <!-- ── Tháng 8/2025 ────────────────────────────────────────────── -->
@@ -18,6 +18,7 @@
         <field name="expected_start_date">2025-08-13</field>
         <field name="salary_range">5–20 triệu</field>
         <field name="reason">new</field>
+        <field name="jd_link">https://docs.google.com/document/d/1DB5HIdU5zA1KsSbCmw8JwAavBMoESZUaVoSWqVja0fM/edit?tab=t.0</field>
         <field name="note"><![CDATA[<p>Lý do: Nhận lớp theo kế hoạch</p>]]></field>
         <field name="state">closed</field>
     </record>
@@ -31,6 +32,7 @@
         <field name="expected_start_date">2025-09-03</field>
         <field name="salary_range">8–40 triệu</field>
         <field name="reason">new</field>
+        <field name="jd_link">https://docs.google.com/document/d/1ogsC-a1cR5-PUkttJ1MlkWeDu_eydbQl/edit?tab=t.0</field>
         <field name="note"><![CDATA[<p>Lý do: Tuyển theo mục tiêu DT tháng 9</p><p>Tuyển PV trước lễ, sau lễ đi làm</p>]]></field>
         <field name="state">closed</field>
     </record>
@@ -44,6 +46,7 @@
         <field name="expected_start_date">2025-08-28</field>
         <field name="salary_range">10–15 triệu+</field>
         <field name="reason">new</field>
+        <field name="jd_link">http://JD content Marketing</field>
         <field name="note"><![CDATA[<p>Lý do: Đảm bảo mục tiêu kinh doanh</p><p>Tuyển PV trước lễ, sau lễ đi làm</p>]]></field>
         <field name="state">closed</field>
     </record>
@@ -99,7 +102,7 @@
         <field name="expected_start_date">2026-03-01</field>
         <field name="salary_range">TV 8–9tr / Tổng 20–50tr</field>
         <field name="reason">expansion</field>
-        <field name="jd_link">JD Tư vấn tuyển sinh</field>
+        <field name="jd_link">https://docs.google.com/document/d/1ogsC-a1cR5-PUkttJ1MlkWeDu_eydbQl/edit</field>
         <field name="note"><![CDATA[<p>Lương thử việc 8–9 triệu (cao hơn năm 2025 khoảng 1–2 triệu). Tổng thu nhập 20–50 triệu.</p>]]></field>
         <field name="state">closed</field>
     </record>
@@ -113,7 +116,7 @@
         <field name="expected_start_date">2026-03-01</field>
         <field name="salary_range">10–15 triệu+</field>
         <field name="reason">expansion</field>
-        <field name="jd_link">JD Content Performance</field>
+        <field name="jd_link">https://docs.google.com/document/d/1Bk5zgytCA5uoE-Em19qKjqRY0di-KI7vkr9NhDSnL64/edit?tab=t.0</field>
         <field name="state">closed</field>
     </record>
 
@@ -126,7 +129,7 @@
         <field name="expected_start_date">2026-03-01</field>
         <field name="salary_range">10–15 triệu+</field>
         <field name="reason">expansion</field>
-        <field name="jd_link">JD Digital Ads Marketing</field>
+        <field name="jd_link">https://docs.google.com/document/d/1eKiV6_njGiy0KBCdyZ96vOsXLyUBAAxs/edit</field>
         <field name="state">closed</field>
     </record>
 
@@ -139,46 +142,8 @@
         <field name="expected_start_date">2026-03-01</field>
         <field name="salary_range">8–15 triệu+</field>
         <field name="reason">expansion</field>
-        <field name="jd_link">JD Social Marketing</field>
+        <field name="jd_link">https://docs.google.com/document/d/1mNMLN8uRfzAU6QNbXpCpqvSeJi8AukYRykMxYTM4L-s/edit?tab=t.0</field>
         <field name="state">closed</field>
-    </record>
-
-    <!-- ── Tháng 05/2026 ───────────────────────────────────────────── -->
-
-    <!-- 11. Nhân viên R&D -->
-    <record id="hb_rr_011" model="hb.recruitment.request">
-        <field name="date_request">2026-05-04</field>
-        <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
-        <field name="job_title">Nhân viên R&amp;D</field>
-        <field name="qty_expected">1</field>
-        <field name="expected_start_date">2026-05-16</field>
-        <field name="salary_range">10–15 triệu</field>
-        <field name="reason">expansion</field>
-        <field name="state">recruiting</field>
-    </record>
-
-    <!-- 12. Nhân viên Editor -->
-    <record id="hb_rr_012" model="hb.recruitment.request">
-        <field name="date_request">2026-05-04</field>
-        <field name="department_id" ref="hocba_employees.dept_marketing"/>
-        <field name="job_title">Nhân viên Editor</field>
-        <field name="qty_expected">1</field>
-        <field name="expected_start_date">2026-05-01</field>
-        <field name="salary_range">10–15 triệu</field>
-        <field name="reason">expansion</field>
-        <field name="state">recruiting</field>
-    </record>
-
-    <!-- 13. Nhân viên Social Marketing (May 2026) -->
-    <record id="hb_rr_013" model="hb.recruitment.request">
-        <field name="date_request">2026-05-04</field>
-        <field name="department_id" ref="hocba_employees.dept_marketing"/>
-        <field name="job_title">Nhân viên Social Marketing</field>
-        <field name="qty_expected">1</field>
-        <field name="expected_start_date">2026-05-01</field>
-        <field name="salary_range">8–15 triệu</field>
-        <field name="reason">expansion</field>
-        <field name="state">recruiting</field>
     </record>
 
 </odoo>

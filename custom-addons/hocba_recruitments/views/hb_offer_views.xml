@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Sheet 7.6 — Offer & Nhận việc (hr.applicant extended)
+         Hiển thị ứng viên đang ở stage "Gửi Offer" và "Onboarding".
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Custom List View ── -->
+    <record id="hb_view_applicant_offer_list" model="ir.ui.view">
+        <field name="name">hr.applicant.hocba.offer.list</field>
+        <field name="model">hr.applicant</field>
+        <field name="arch" type="xml">
+            <list string="Offer &amp; Nhận việc">
+                <field name="partner_name"   string="Họ tên ứng viên"/>
+                <field name="partner_phone"  string="Số điện thoại ứng viên"/>
+                <field name="email_from"     string="Email ứng viên ứng tuyển"/>
+                <field name="job_id"         string="Vị trí ứng tuyển"/>
+                <field name="offer_content"  string="Offer"/>
+                <field name="start_date"     string="Ngày nhận việc"/>
+            </list>
+        </field>
+    </record>
+
+</odoo>

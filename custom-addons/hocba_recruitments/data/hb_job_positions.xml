@@ -2,7 +2,7 @@
 <odoo noupdate="1">
 
     <!--
-        Sheet 7.8 — 8 vị trí tuyển dụng Học Bá
+        Sheet 7.8 — 8 vị trí tuyển dụng Học Bá - Các Loại vị trí để tạo phiếu yêu cầu tuyển dụng, "Thêm vị trí" = khai báo danh mục (catalog)
         noupdate="1": chỉ tạo lần đầu, không ghi đè khi upgrade.
         jd_google_link: điền URL Google Drive sau khi có link thực.
     -->
@@ -14,7 +14,7 @@
         <field name="department_id" ref="hocba_employees.dept_kinh_doanh"/>
         <field name="recruitment_status">recruiting</field>
         <field name="x_published" eval="True"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1ogsC-a1cR5-PUkttJ1MlkWeDu_eydbQl/edit</field>
     </record>
 
     <record id="hb_job_giao_vien_tieng_trung" model="hr.job">
@@ -22,7 +22,7 @@
         <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
         <field name="recruitment_status">recruiting</field>
         <field name="x_published" eval="True"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1DB5HIdU5zA1KsSbCmw8JwAavBMoESZUaVoSWqVja0fM/edit?tab=t.0</field>
     </record>
 
     <record id="hb_job_chuyen_vien_rd" model="hr.job">
@@ -30,7 +30,7 @@
         <field name="department_id" ref="hocba_employees.dept_rd_sp"/>
         <field name="recruitment_status">recruiting</field>
         <field name="x_published" eval="True"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1dnxGJS77C-ZVsG0RmmB-Kj9cjpXsuIi3cLiWGWPWybQ/edit?tab=t.0</field>
     </record>
 
     <record id="hb_job_quan_ly_hoc_vien" model="hr.job">
@@ -38,7 +38,7 @@
         <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
         <field name="recruitment_status">recruiting</field>
         <field name="x_published" eval="True"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1QVojI-3Qg0EMQaCMuAVlTZRXmnntp3Kw/edit?tab=t.0</field>
     </record>
 
     <record id="hb_job_content_marketing" model="hr.job">
@@ -46,7 +46,7 @@
         <field name="department_id" ref="hocba_employees.dept_marketing"/>
         <field name="recruitment_status">recruiting</field>
         <field name="x_published" eval="True"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1mNMLN8uRfzAU6QNbXpCpqvSeJi8AukYRykMxYTM4L-s/edit?tab=t.0</field>
     </record>
 
     <!-- ── Dừng tuyển ─────────────────────────────────────────────── -->
@@ -56,7 +56,7 @@
         <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
         <field name="recruitment_status">stopped</field>
         <field name="x_published" eval="False"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1VYX4GcWvCz_77BC_uyuNOCMhFxN7vzPsPFIsFi_xBoM/edit?tab=t.0</field>
     </record>
 
     <record id="hb_job_giao_vu" model="hr.job">
@@ -64,7 +64,7 @@
         <field name="department_id" ref="hocba_employees.dept_van_hanh"/>
         <field name="recruitment_status">stopped</field>
         <field name="x_published" eval="False"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1_hb2L1eOeL2ZAe0Hi3CFofaWfcLEGPCQtlCLnQYw-PE/edit?usp=sharing</field>
     </record>
 
     <record id="hb_job_hanh_chinh_nhan_su" model="hr.job">
@@ -72,7 +72,7 @@
         <field name="department_id" ref="hocba_employees.dept_ketoan_hcns"/>
         <field name="recruitment_status">stopped</field>
         <field name="x_published" eval="False"/>
-        <field name="jd_google_link"></field>
+        <field name="jd_google_link">https://docs.google.com/document/d/1Kx4uy4ZPW2ajRJRG6xxSpwrhnqyf0NFJsX_RUSLZFFM/edit?tab=t.0</field>
     </record>
 
 </odoo>
