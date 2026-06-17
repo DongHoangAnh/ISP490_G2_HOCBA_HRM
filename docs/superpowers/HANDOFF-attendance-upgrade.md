@@ -13,29 +13,29 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 |---|---|---|
 | **Gói 1** | Tính công (công sáng/chiều, lương theo ngày) + phút trễ/về sớm/thiếu + tổng hợp công tháng (trừ công thiếu, bỏ 2 ngày vi phạm đầu) + chuẩn hóa policy 8h, mốc trễ 9:30 | ✅ **XONG** (đã merge main) |
 | **Gói 2** | Tách tài khoản manager (chỉ quản lý, không check-in) ↔ user (tự chấm) + khóa check-in/out 1 lần/ngày, chỉ ngày làm việc + manager sửa/xóa bản ghi theo phạm vi | ✅ **XONG** (đã merge main) |
-| **Gói 3** | Luồng **đơn**: user gửi đơn sửa/tạo bản ghi → manager duyệt (chỉnh giờ được) & áp dụng, hoặc từ chối | 🟡 **ĐANG DỞ** — spec xong, **chưa có plan, chưa code** |
+| **Gói 3** | Luồng **đơn**: user gửi đơn sửa/tạo bản ghi → manager duyệt (chỉnh giờ được) & áp dụng, hoặc từ chối | ✅ **XONG** (nhánh `feature/attendance-correction-request`; chờ merge main) |
 | **Gói 4** | Đăng ký ca **CTV/OT** + lịch tuần + manager thêm/duyệt ca + check-in cửa sổ ±15' quanh giờ ca | 🔴 **CHƯA bắt đầu** |
 
 ---
 
-## 2. Đang dở ở đâu (Gói 3)
+## 2. Gói 3 — đã hoàn tất (nhánh `feature/attendance-correction-request`)
 
-- **Spec đã xong & commit:** [docs/superpowers/specs/2026-06-17-attendance-correction-request-design.md](specs/2026-06-17-attendance-correction-request-design.md). Đã chốt:
-  - Đơn bao trùm: (a) sửa bản ghi đã có; (b) ngày thiếu (chưa có bản ghi) → duyệt thì TẠO bản ghi.
-  - Luồng: user nhập giờ đề xuất + lý do → manager xem, **chỉnh được giờ** rồi Duyệt (ghi/tạo bản ghi, công tự tính lại) hoặc Từ chối kèm lý do.
-  - Model mới `hocba.attendance.request` (gọn, không mail.thread).
-- **CHƯA làm:** plan triển khai + code + test. Tab "Đơn quên chấm công" hiện vẫn là **mock** (`FORGOT_REQUESTS` trong `frontend/src/features/attendance/mock.js`) — Gói 3 sẽ thay bằng luồng thật.
+- **Spec:** [docs/superpowers/specs/2026-06-17-attendance-correction-request-design.md](specs/2026-06-17-attendance-correction-request-design.md). **Plan:** [docs/superpowers/plans/2026-06-17-attendance-correction-request.md](plans/2026-06-17-attendance-correction-request.md) (14 task TDD).
+- **Đã làm (test xanh 46/46 suite `hocba_hrm`, build SPA sạch):**
+  - Model `hocba.attendance.request` + ACL (`hocba_attendance`).
+  - Helper backend module-level trong `controllers/main.py`: `_req_row`, `_request_apply` (duyệt → ghi/tạo bản ghi), `_request_create` (user gửi, pin employee), `_request_decide` (manager duyệt/từ chối, chỉnh giờ override), `_att_requests_mine`, `_att_requests_pending` (theo phạm vi vai trò).
+  - 5 endpoint: `POST /api/attendance/requests`, `GET .../requests/mine`, `GET .../requests/pending`, `POST .../requests/<id>/approve|reject`.
+  - FE: `RequestForm.jsx` (gửi đơn 2 chế độ), `RequestList.jsx` (user xem / manager duyệt), tab "Đơn của tôi" (user) + "Đơn chấm công" (manager) trong `Attendance.jsx`, nút "Gửi đơn sửa" trong `AttendanceDrawer.jsx`. Đã bỏ mock `FORGOT_REQUESTS` (giữ `OT_LOG` cho Gói 4).
+- **Còn lại:** merge nhánh về `main`; kiểm thử thủ công SPA (xem spec §4) trên DB demo.
 
 ---
 
 ## 3. Bước tiếp theo (làm đúng thứ tự)
 
-### A. Hoàn tất Gói 3
-1. **Viết plan** từ spec Gói 3: dùng skill `superpowers:writing-plans`, lưu vào `docs/superpowers/plans/2026-06-17-attendance-correction-request.md`. (Tham khảo 2 plan đã có của Gói 1/2 trong `docs/superpowers/plans/` làm mẫu cấu trúc + cách viết task TDD.)
-2. **Thực thi** plan: skill `superpowers:subagent-driven-development` (giao từng task cho subagent + 2 vòng review spec/chất lượng) — hoặc tự làm theo `superpowers:executing-plans`. Tạo nhánh `feature/attendance-correction-request` trước (đừng code thẳng trên main).
-3. **Test** cả 2 suite + build FE (lệnh ở §5), rồi merge về `main` (skill `superpowers:finishing-a-development-branch`).
+### A. Gói 3 — ĐÃ XONG (xem §2)
+Nhánh `feature/attendance-correction-request`, plan + code + test hoàn tất, test 46/46 xanh, build SPA sạch. Việc còn lại: merge về `main` (`superpowers:finishing-a-development-branch`) + kiểm thử thủ công SPA (spec §4).
 
-### B. Làm Gói 4
+### B. Làm Gói 4 (bước kế tiếp)
 Bắt đầu bằng `superpowers:brainstorming` (chưa có spec). Yêu cầu gốc của Gói 4 (từ khách):
 > CTV và OT tự đăng ký ca làm việc, hiển thị **lịch theo tuần** và cho tự đăng ký. Manager có thể vào thêm ca và **duyệt** ca cho user; ca CTV/OT chỉ **hiển thị sau khi manager duyệt**. Họ cần **check-in trong cửa sổ ±15'** quanh giờ ca (vd ca 9h → mở check-in 8h45–9h15, ngoài thời gian khóa nút); **checkout** có cơ chế tương tự. Cơ chế cửa sổ này CHỈ cho CTV/OT. Vẫn dùng luồng **đơn** (Gói 3) để gửi manager.
 
@@ -52,7 +52,7 @@ Lưu ý: hiện check-in chỉ mở cho NV `official` (CTV bị chặn — xem `
 - Phạm vi vai trò: HR/Admin = tất cả; trưởng phòng (`hr.department.manager_id`) = phòng mình; giáo vụ = giáo viên; user thường = của mình. `canManage` = bất kỳ nhóm quản lý nào.
 
 **Frontend** (SPA React/Vite, build → `custom-addons/hocba_hrm/static/spa`)
-- `frontend/src/features/attendance/`: `Attendance.jsx` (điều phối tab theo `me.canManage`), `CheckInPanel.jsx` (khóa nút + map lỗi), `MyHistory.jsx`, `AttendanceTable.jsx` (bảng ngày manager), `AttendanceDrawer.jsx` (chi tiết + manager Sửa/Xóa), `useFaceApi.js`, `util.js` (`fmtCredit`...), `mock.js` (còn `FORGOT_REQUESTS`+`OT_LOG`).
+- `frontend/src/features/attendance/`: `Attendance.jsx` (điều phối tab theo `me.canManage`), `CheckInPanel.jsx` (khóa nút + map lỗi), `MyHistory.jsx`, `AttendanceTable.jsx` (bảng ngày manager), `AttendanceDrawer.jsx` (chi tiết + manager Sửa/Xóa + nút Gửi đơn sửa), `RequestForm.jsx`/`RequestList.jsx` (Gói 3), `useFaceApi.js`, `util.js` (`fmtCredit`...), `mock.js` (chỉ còn `OT_LOG` cho Gói 4).
 - `frontend/src/api/attendance.js` — hàm gọi API (`editAttendance`, `deleteAttendance`...). Client `frontend/src/api/client.js` ném `ApiError` có `.code` = field `error` của response.
 
 ---
@@ -86,7 +86,7 @@ Dòng kết quả cần thấy: `0 failed, 0 error(s) of N tests` với **N > 0*
 ## 6. Tài liệu tham chiếu
 
 - Specs: `docs/superpowers/specs/2026-06-17-attendance-work-credit-design.md` (Gói 1), `...account-split-lock-design.md` (Gói 2), `...correction-request-design.md` (Gói 3).
-- Plans: `docs/superpowers/plans/2026-06-17-attendance-work-credit.md` (Gói 1), `...account-split-lock.md` (Gói 2). **Gói 3 plan: chưa có — cần viết.**
+- Plans: `docs/superpowers/plans/2026-06-17-attendance-work-credit.md` (Gói 1), `...account-split-lock.md` (Gói 2), `...correction-request.md` (Gói 3).
 - Tài khoản test (vai trò): admin / hr_manager / hr / giáo vụ / trưởng phòng / employee / ctv — xem `docs/MANUAL_TEST_GUIDE.md`, `docs/SPEC_USERS_AUTH.md`.
 - Quy ước frontend: `docs/QUY_UOC_FRONTEND.md`.
 
