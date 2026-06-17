@@ -50,9 +50,16 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml exec -T odoo \
   < _demo_seed/seed_test_accounts.py
 ```
 
-**Trên Neon** (lấy creds từ `.env`; cần `--db_sslmode=require`): _chưa chạy được do
-container local-override không egress tới Neon — dùng base compose hoặc máy có
-psql nối Neon._
+**Trên Neon** (base compose tự dùng creds `.env` + `sslmode=require`):
+```bash
+docker compose -f docker-compose.yml run --rm --no-deps -T odoo \
+  odoo shell -d neondb --addons-path=/mnt/extra-addons --no-http \
+  < _demo_seed/seed_test_accounts.py
+```
+> ⚠️ **Đang BỊ CHẶN MẠNG (2026-06-17):** cả máy host lẫn container đều không
+> kết nối được Neon cổng **5432** (DNS phân giải OK nhưng **TCP timeout**) — mạng
+> hiện tại chặn outbound 5432. Cần chạy từ **mạng khác / VPN / hotspot** cho phép
+> 5432, hoặc nhờ thành viên kết nối được Neon chạy giúp script trên.
 
 > Lưu ý Odoo 19: `res.users` dùng field **`group_ids`** (không phải `groups_id`);
 > `res.groups` **không còn `category_id`**.
@@ -65,4 +72,4 @@ psql nối Neon._
 |---|---|---|---|
 | 2026-06-17 | Local `hocba_hrm` | Seed 7 tài khoản test + phòng "Phòng Test (QA)" + NV test (script `seed_test_accounts.py`) | Vu/Claude |
 | 2026-06-17 | Local `hocba_hrm` | Seed 5 bản ghi chấm công hôm nay (3 đúng giờ, 2 muộn) — script `_demo_seed/seed_attendance_demo.py` | Vu/Claude |
-| 2026-06-17 | Neon `neondb` | _CHƯA seed tài khoản test (đang chờ)_ | — |
+| 2026-06-17 | Neon `neondb` | **CHƯA seed** — máy hiện tại chặn TCP cổng 5432 tới Neon (host + container đều timeout). Chờ mạng/VPN cho phép 5432 | — |
