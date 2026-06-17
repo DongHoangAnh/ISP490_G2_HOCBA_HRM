@@ -167,6 +167,7 @@ def _att_me_info(env):
     rec = env['hocba.attendance'].sudo().search(
         [('employee_id', '=', emp.id), ('date', '=', today)], limit=1)
     info = {
+        'hasEmployee': True,
         'employeeId': emp.id,
         'name': emp.name,
         'enrolled': bool(emp.x_face_descriptor),
@@ -1300,7 +1301,13 @@ class HocBaHRM(http.Controller):
     def api_attendance_me(self, **kw):
         info = _att_me_info(request.env)
         if info is None:
-            return request.make_json_response({'error': 'no_employee'}, status=400)
+            # Tài khoản chưa gắn hồ sơ NV (HR/Admin): vẫn trả vai trò để FE hiện
+            # bảng chấm công quản lý, chỉ ẩn panel check-in cá nhân.
+            return request.make_json_response({
+                'hasEmployee': False,
+                'isHr': request.env.user.has_group('hr.group_hr_user'),
+                'isHrManager': request.env.user.has_group('hr.group_hr_manager'),
+            })
         return request.make_json_response(info)
 
     @http.route('/hocba-hrm/api/attendance', auth='user',

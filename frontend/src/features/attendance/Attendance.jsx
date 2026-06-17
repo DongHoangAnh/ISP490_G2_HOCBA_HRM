@@ -27,8 +27,12 @@ export default function Attendance({ search }) {
   if (!me) return <LoadingState label="Đang tải dữ liệu chấm công…" />;
 
   const isStaff = me.isHr || me.isHrManager;
-  const tabs = [['me', 'Chấm công của tôi']];
+  const hasEmp = me.hasEmployee !== false;
+  const tabs = [];
+  if (hasEmp) tabs.push(['me', 'Chấm công của tôi']);
   if (isStaff) tabs.push(['day', 'Bảng chấm công'], ['forgot', 'Đơn quên chấm công'], ['ot', 'Tăng ca (OT)']);
+  const ids = tabs.map((t) => t[0]);
+  const cur = ids.includes(tab) ? tab : (ids[0] || 'me');
 
   return (
     <div className="content fade-in">
@@ -39,21 +43,27 @@ export default function Attendance({ search }) {
         </div>
       </div>
 
+      {!hasEmp && (
+        <div style={{ padding: '9px 13px', background: 'var(--amber-bg)', color: 'var(--amber)', borderRadius: 9, fontSize: 12.5, marginBottom: 14, fontWeight: 600 }}>
+          Tài khoản này chưa gắn hồ sơ nhân viên — chỉ xem bảng chấm công quản lý, không tự điểm danh được.
+        </div>
+      )}
+
       <div className="tabs">
         {tabs.map(([id, l]) => (
-          <button key={id} className={'tab' + (tab === id ? ' active' : '')} onClick={() => setTab(id)}>{l}</button>
+          <button key={id} className={'tab' + (cur === id ? ' active' : '')} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
 
-      {tab === 'me' && (
+      {cur === 'me' && hasEmp && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <CheckInPanel me={me} onChanged={load} />
           <MyHistory />
         </div>
       )}
-      {tab === 'day' && <AttendanceTable search={search} />}
-      {tab === 'forgot' && <ForgotMock />}
-      {tab === 'ot' && <OtMock />}
+      {cur === 'day' && <AttendanceTable search={search} />}
+      {cur === 'forgot' && <ForgotMock />}
+      {cur === 'ot' && <OtMock />}
     </div>
   );
 }
