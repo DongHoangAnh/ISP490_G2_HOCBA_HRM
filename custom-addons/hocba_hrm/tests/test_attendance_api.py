@@ -7,6 +7,7 @@ from odoo.tests import tagged
 from odoo.addons.hocba_hrm.controllers.main import (
     _fmt_hm, _att_me_info, _att_day_table, _att_me_history,
     _user_can_manage, _emp_scope_domain, _emp_in_scope,
+    _attendance_edit, _attendance_delete, _to_utc,
 )
 
 
@@ -225,3 +226,62 @@ class TestScopeHelpers(TransactionCase):
         emp_ids = [r['empId'] for r in data['rows']]
         self.assertIn(in_dept.id, emp_ids)
         self.assertNotIn(out_dept.id, emp_ids)
+
+    def test_edit_recomputes_credit(self):
+        e = self.env['hr.employee'].create({
+            'name': 'NV Sửa', 'department_id': self.dept.id,
+            'x_employment_status': 'official', 'x_pit_code': '5550006661',
+            'x_social_insurance_no': '6660005551',
+            'identification_id': '012345670031'})
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': e.id,
+                          'check_in': '2026-06-17 02:00:00',
+                          'check_out': '2026-06-17 07:00:00'})  # 5h -> thiếu 180
+        self.assertEqual(rec.missing_minutes, 180)
+        row = _attendance_edit(self.env(user=self.mgr_user), rec.id,
+                               {'checkOut': '2026-06-17T17:00'})  # 09:00->17:00 = 8h
+        self.assertEqual(row['missingMinutes'], 0)
+        self.assertEqual(rec.missing_minutes, 0)
+
+    def test_edit_out_of_scope_forbidden(self):
+        from odoo.exceptions import AccessError
+        out = self.env['hr.employee'].create({
+            'name': 'NV ngoài', 'x_employment_status': 'official',
+            'x_pit_code': '7770008881', 'x_social_insurance_no': '8880007771',
+            'identification_id': '012345670032'})
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': out.id,
+                          'check_in': '2026-06-17 02:00:00'})
+        with self.assertRaises(AccessError):
+            _attendance_edit(self.env(user=self.mgr_user), rec.id, {'notes': 'x'})
+
+    def test_edit_non_manager_forbidden(self):
+        from odoo.exceptions import AccessError
+        e = self.env['hr.employee'].create({
+            'name': 'NV self', 'x_employment_status': 'official',
+            'x_pit_code': '9990001112', 'x_social_insurance_no': '1110009992',
+            'identification_id': '012345670033'})
+        e.user_id = self.plain_user
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': e.id,
+                          'check_in': '2026-06-17 02:00:00'})
+        with self.assertRaises(AccessError):
+            _attendance_edit(self.env(user=self.plain_user), rec.id, {'notes': 'x'})
+
+    def test_delete_in_scope(self):
+        e = self.env['hr.employee'].create({
+            'name': 'NV Xóa', 'department_id': self.dept.id,
+            'x_employment_status': 'official', 'x_pit_code': '2223334445',
+            'x_social_insurance_no': '5554443332',
+            'identification_id': '012345670034'})
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': e.id,
+                          'check_in': '2026-06-17 02:00:00'})
+        res = _attendance_delete(self.env(user=self.mgr_user), rec.id)
+        self.assertEqual(res, {'ok': True})
+        self.assertFalse(rec.exists())
+
+    def test_to_utc_roundtrip(self):
+        # 17:00 local (+07, mgr_user.tz đặt ở setUp) -> 10:00 UTC
+        dt = _to_utc(self.env(user=self.mgr_user), '2026-06-17T17:00')
+        self.assertEqual(str(dt), '2026-06-17 10:00:00')

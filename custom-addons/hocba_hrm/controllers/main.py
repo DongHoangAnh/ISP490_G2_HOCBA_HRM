@@ -2,6 +2,7 @@ import calendar
 from datetime import date, timedelta
 
 from psycopg2 import IntegrityError
+from pytz import timezone, utc
 
 from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -264,6 +265,50 @@ def _att_me_history(env, month_str):
         'violationDays': len(violations),
     }
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
+
+
+def _to_utc(env, s):
+    """Chuỗi datetime local ('YYYY-MM-DDTHH:MM[:SS]') -> Datetime UTC naive.
+    None/'' -> False. Dùng tz của user."""
+    if not s:
+        return False
+    s2 = s.replace('T', ' ')
+    if len(s2) == 16:          # thiếu giây
+        s2 += ':00'
+    naive = fields.Datetime.to_datetime(s2)
+    tz = timezone(env.user.tz or 'UTC')
+    return tz.localize(naive).astimezone(utc).replace(tzinfo=None)
+
+
+def _attendance_edit(env, rec_id, body):
+    """Manager sửa check_in/check_out/notes của 1 bản ghi trong phạm vi.
+    Trả row đã cập nhật; None nếu không tồn tại; raise AccessError nếu vượt quyền."""
+    rec = env['hocba.attendance'].sudo().browse(rec_id)
+    if not rec.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, rec.employee_id)):
+        raise AccessError('forbidden')
+    vals = {}
+    if 'checkIn' in body:
+        vals['check_in'] = _to_utc(env, body.get('checkIn'))
+    if 'checkOut' in body:
+        vals['check_out'] = _to_utc(env, body.get('checkOut'))
+    if 'notes' in body:
+        vals['notes'] = body.get('notes') or False
+    rec.sudo().write(vals)
+    return _att_row(rec, env['hocba.attendance.policy'].sudo().get_policy())
+
+
+def _attendance_delete(env, rec_id):
+    """Manager xóa 1 bản ghi trong phạm vi. {'ok':True}; None nếu không tồn tại;
+    raise AccessError nếu vượt quyền."""
+    rec = env['hocba.attendance'].sudo().browse(rec_id)
+    if not rec.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, rec.employee_id)):
+        raise AccessError('forbidden')
+    rec.sudo().unlink()
+    return {'ok': True}
 
 
 def _managed_department_ids(env, emp):
@@ -1424,3 +1469,30 @@ class HocBaHRM(http.Controller):
             'faceSuspect': res['face_suspect'], 'outOfZone': res['out_of_zone'],
             'outOfWindow': res['out_of_window'], 'faceScore': res['face_score'],
         })
+
+    @http.route('/hocba-hrm/api/attendance/<int:rec_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_attendance_edit(self, rec_id, **kw):
+        try:
+            row = _attendance_edit(request.env, rec_id,
+                                   request.get_json_data() or {})
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/attendance/<int:rec_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_attendance_delete(self, rec_id, **kw):
+        try:
+            res = _attendance_delete(request.env, rec_id)
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        if res is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(res)
