@@ -38,6 +38,13 @@
                         <group string="Nhận diện khuôn mặt">
                             <field name="face_threshold"/>
                         </group>
+                        <group string="Tính công">
+                            <field name="late_cutoff"/>
+                            <field name="morning_credit_cutoff"/>
+                            <field name="std_work_hours"/>
+                            <field name="afternoon_margin_hours"/>
+                            <field name="violation_free_days"/>
+                        </group>
                     </sheet>
                 </form>
             </field>

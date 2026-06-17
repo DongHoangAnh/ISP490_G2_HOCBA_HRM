@@ -34,6 +34,23 @@ class AttendancePolicy(models.Model):
     # Face matching: euclidean distance threshold; distance > threshold => suspect
     face_threshold = fields.Float(string='Face match threshold', default=0.6)
 
+    # --- Tính công (Gói 1): mốc trễ + công sáng/chiều + công thiếu ---
+    late_cutoff = fields.Float(
+        string='Mốc đi trễ (giờ)', default=9.5,
+        help='Check-in sau giờ này (9.5 = 09:30) tính là đi trễ.')
+    morning_credit_cutoff = fields.Float(
+        string='Hạn công sáng (giờ)', default=10.0,
+        help='Check-in sau giờ này mất công sáng (½ công).')
+    std_work_hours = fields.Float(
+        string='Giờ làm chuẩn/ngày', default=8.0,
+        help='Mốc giờ ra mong đợi = check-in + số giờ này.')
+    afternoon_margin_hours = fields.Float(
+        string='Biên về sớm mất công chiều (giờ)', default=2.0,
+        help='Check-out sớm hơn (giờ chuẩn − biên này) so mốc vào → mất công chiều.')
+    violation_free_days = fields.Integer(
+        string='Số ngày vi phạm miễn trừ/tháng', default=2,
+        help='Số ngày vi phạm đầu tháng không tính vào công thiếu.')
+
     @api.model
     def get_policy(self):
         """Return the active policy, creating a default one if none exists."""
