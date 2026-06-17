@@ -299,15 +299,20 @@ def _emp_in_scope(env, e):
         [('id', '=', e.id)] + _emp_scope_domain(env)))
 
 
+def _is_dept_manager(env, emp):
+    """True nếu emp là quản lý trực tiếp (có cấp dưới) hoặc trưởng phòng ban."""
+    return bool(emp) and (
+        bool(emp.child_ids)
+        or bool(env['hr.department'].sudo().search_count(
+            [('manager_id', '=', emp.id)])))
+
+
 def _user_can_manage(env):
     """True nếu user thuộc bất kỳ nhóm quản lý nào (Admin/HR Mgr/HR/Giáo vụ/
     Trưởng phòng) — dùng để tách UI manager↔user và chặn manager check-in."""
     user = env.user
     emp = user.employee_id
-    is_manager = bool(emp) and (
-        bool(emp.child_ids)
-        or bool(env['hr.department'].sudo().search_count(
-            [('manager_id', '=', emp.id)])))
+    is_manager = _is_dept_manager(env, emp)
     return (user.has_group('base.group_system')
             or user.has_group('hr.group_hr_manager')
             or user.has_group('hr.group_hr_user')
@@ -1144,10 +1149,7 @@ class HocBaHRM(http.Controller):
         is_hr_mgr = user.has_group('hr.group_hr_manager')
         is_hr_user = user.has_group('hr.group_hr_user')
         is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
-        is_manager = bool(emp) and (
-            bool(emp.child_ids)
-            or bool(request.env['hr.department'].sudo().search_count(
-                [('manager_id', '=', emp.id)])))
+        is_manager = _is_dept_manager(request.env, emp)
         can_manage = _user_can_manage(request.env)
         roles = []
         if is_admin:
