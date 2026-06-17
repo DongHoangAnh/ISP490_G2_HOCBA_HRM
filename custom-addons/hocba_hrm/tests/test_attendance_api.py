@@ -268,6 +268,20 @@ class TestScopeHelpers(TransactionCase):
         with self.assertRaises(AccessError):
             _attendance_edit(self.env(user=self.plain_user), rec.id, {'notes': 'x'})
 
+    def test_edit_bad_datetime_raises_validation(self):
+        from odoo.exceptions import ValidationError
+        e = self.env['hr.employee'].create({
+            'name': 'NV BadDT', 'department_id': self.dept.id,
+            'x_employment_status': 'official', 'x_pit_code': '6667778881',
+            'x_social_insurance_no': '8887776661',
+            'identification_id': '012345670041'})
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': e.id,
+                          'check_in': '2026-06-17 02:00:00'})
+        with self.assertRaises(ValidationError):
+            _attendance_edit(self.env(user=self.mgr_user), rec.id,
+                             {'checkIn': 'garbage'})
+
     def test_delete_in_scope(self):
         e = self.env['hr.employee'].create({
             'name': 'NV Xóa', 'department_id': self.dept.id,

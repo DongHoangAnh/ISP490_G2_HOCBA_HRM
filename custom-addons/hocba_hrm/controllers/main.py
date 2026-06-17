@@ -275,7 +275,10 @@ def _to_utc(env, s):
     s2 = s.replace('T', ' ')
     if len(s2) == 16:          # thiếu giây
         s2 += ':00'
-    naive = fields.Datetime.to_datetime(s2)
+    try:
+        naive = fields.Datetime.to_datetime(s2)
+    except (ValueError, TypeError):
+        raise ValidationError('Định dạng thời gian không hợp lệ.')
     tz = timezone(env.user.tz or 'UTC')
     return tz.localize(naive).astimezone(utc).replace(tzinfo=None)
 
