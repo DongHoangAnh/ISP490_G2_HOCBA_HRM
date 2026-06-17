@@ -298,6 +298,8 @@ def _attendance_edit(env, rec_id, body):
         vals['check_out'] = _to_utc(env, body.get('checkOut'))
     if 'notes' in body:
         vals['notes'] = body.get('notes') or False
+    if 'check_in' in vals and not vals['check_in']:
+        raise ValidationError('Giờ check-in là bắt buộc.')
     rec.sudo().write(vals)
     return _att_row(rec, env['hocba.attendance.policy'].sudo().get_policy())
 

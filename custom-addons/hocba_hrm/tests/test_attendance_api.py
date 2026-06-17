@@ -282,6 +282,20 @@ class TestScopeHelpers(TransactionCase):
             _attendance_edit(self.env(user=self.mgr_user), rec.id,
                              {'checkIn': 'garbage'})
 
+    def test_edit_clear_checkin_rejected(self):
+        from odoo.exceptions import ValidationError
+        e = self.env['hr.employee'].create({
+            'name': 'NV ClearCI', 'department_id': self.dept.id,
+            'x_employment_status': 'official', 'x_pit_code': '4445556667',
+            'x_social_insurance_no': '7776665554',
+            'identification_id': '012345670051'})
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': e.id,
+                          'check_in': '2026-06-17 02:00:00'})
+        with self.assertRaises(ValidationError):
+            _attendance_edit(self.env(user=self.mgr_user), rec.id,
+                             {'checkIn': ''})
+
     def test_delete_in_scope(self):
         e = self.env['hr.employee'].create({
             'name': 'NV Xóa', 'department_id': self.dept.id,
