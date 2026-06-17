@@ -6,12 +6,11 @@ import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchMyAttendance } from '../../api/attendance';
+import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
 import CheckInPanel from './CheckInPanel';
 import MyHistory from './MyHistory';
 import AttendanceTable from './AttendanceTable';
 import { USE_MOCK, OT_LOG } from './mock';
-import { fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
 import RequestForm from './RequestForm';
 import RequestList from './RequestList';
 
