@@ -5,7 +5,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply, _request_create, _request_decide
+from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply, _request_create, _request_decide, _att_requests_mine, _att_requests_pending
 
 
 @tagged('post_install', '-at_install')
@@ -196,3 +196,48 @@ class TestAttendanceRequest(TransactionCase):
 
     def test_decide_missing_returns_none(self):
         self.assertIsNone(_request_decide(self.env(user=self.hrm), 999999, False, {}))
+
+    def test_mine_only_own(self):
+        other = self.env['hr.employee'].create({
+            'name': 'NV Khac2', 'x_employment_status': 'official',
+            'identification_id': '012345678903',
+            'x_pit_code': '2223334445', 'x_social_insurance_no': '5554443332'})
+        self._make_req()
+        self.env['hocba.attendance.request'].create({
+            'employee_id': other.id, 'request_date': '2026-06-12',
+            'reason': 'khac'})
+        rows = _att_requests_mine(self.env(user=self.user))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['empId'], self.emp.id)
+
+    def test_mine_no_employee_none(self):
+        u = self.env['res.users'].create({'name': 'NoEmp2', 'login': 'noemp_req2'})
+        self.assertIsNone(_att_requests_mine(self.env(user=u)))
+
+    def test_pending_hr_manager_sees_all_pending(self):
+        self._make_req()
+        rows = _att_requests_pending(self.env(user=self.hrm))
+        self.assertIn(self.emp.id, [r['empId'] for r in rows])
+
+    def test_pending_non_manager_empty(self):
+        self._make_req()
+        rows = _att_requests_pending(self.env(user=self.user))
+        self.assertEqual(rows, [])
+
+    def test_pending_dept_head_scope(self):
+        dept = self.env['hr.department'].create({'name': 'Phòng P'})
+        in_emp = self.env['hr.employee'].create({
+            'name': 'NV trong P', 'department_id': dept.id,
+            'x_employment_status': 'official', 'identification_id': '012345670099',
+            'x_pit_code': '3334445556', 'x_social_insurance_no': '6665554443'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP P'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPP', 'login': 'tpp_req'})
+        mgr_emp.user_id = mgr_user
+        self.env['hocba.attendance.request'].create({
+            'employee_id': in_emp.id, 'request_date': '2026-06-12', 'reason': 'a'})
+        self._make_req()  # emp ngoài Phòng P
+        rows = _att_requests_pending(self.env(user=mgr_user))
+        emp_ids = [r['empId'] for r in rows]
+        self.assertIn(in_emp.id, emp_ids)
+        self.assertNotIn(self.emp.id, emp_ids)

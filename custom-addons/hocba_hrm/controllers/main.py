@@ -426,6 +426,32 @@ def _request_decide(env, req_id, approve, body):
     return _req_row(req)
 
 
+def _att_requests_mine(env):
+    """Đơn chấm công của chính user (mọi state), mới nhất trước.
+    None nếu user chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    reqs = env['hocba.attendance.request'].sudo().search(
+        [('employee_id', '=', emp.id)])
+    return [_req_row(r) for r in reqs]
+
+
+def _att_requests_pending(env):
+    """Đơn đang chờ duyệt trong phạm vi vai trò của manager. [] nếu không phải
+    manager. Áp _emp_scope_domain lên employee_id (prefix như bảng ngày Gói 2)."""
+    if not _user_can_manage(env):
+        return []
+    domain = [('state', '=', 'pending')]
+    for field, op, val in _emp_scope_domain(env):
+        if field == 'id':
+            domain.append(('employee_id', op, val))
+        else:
+            domain.append(('employee_id.%s' % field, op, val))
+    reqs = env['hocba.attendance.request'].sudo().search(domain)
+    return [_req_row(r) for r in reqs]
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:
