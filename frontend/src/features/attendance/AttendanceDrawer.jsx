@@ -6,11 +6,13 @@ import Modal from '../../components/Modal';
 import { fmtDate } from '../../utils/format';
 import { fmtTime, attStatus, fmtCredit } from './util';
 import { editAttendance, deleteAttendance } from '../../api/attendance';
+import RequestForm from './RequestForm';
 
 export default function AttendanceDrawer({ rec, onClose, canManage, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [reqForm, setReqForm] = useState(false);
   const dtLocal = (iso) => (iso ? iso.slice(0, 16) : '');
   const [form, setForm] = useState({
     checkIn: dtLocal(rec.checkIn), checkOut: dtLocal(rec.checkOut),
@@ -121,6 +123,17 @@ export default function AttendanceDrawer({ rec, onClose, canManage, onChanged })
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setEditing(false)}>Hủy</button>
             </div>
           </div>
+        )}
+        {!canManage && (
+          <div style={{ display: 'flex', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setReqForm(true)}>Gửi đơn sửa</button>
+          </div>
+        )}
+        {reqForm && (
+          <RequestForm attendanceId={rec.id} requestDate={rec.date}
+            checkIn={rec.checkIn} checkOut={rec.checkOut}
+            onClose={() => setReqForm(false)}
+            onSaved={() => { setReqForm(false); onChanged && onChanged(); }} />
         )}
     </Modal>
   );
