@@ -136,8 +136,7 @@ class Attendance(models.Model):
             rec.expected_check_out = (ci + timedelta(hours=std)) if ci else False
             if ci:
                 local_in = fields.Datetime.context_timestamp(rec, ci)
-                in_hour = (local_in.hour + local_in.minute / 60.0
-                           + local_in.second / 3600.0)
+                in_hour = local_in.hour + local_in.minute / 60.0
                 rec.late_minutes = max(0, int(round((in_hour - late_cut) * 60)))
                 rec.morning_credit = 0.5 if in_hour <= morn_cut else 0.0
             else:

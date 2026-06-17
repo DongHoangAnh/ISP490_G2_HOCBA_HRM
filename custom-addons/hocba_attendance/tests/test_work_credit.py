@@ -78,3 +78,9 @@ class TestWorkCreditFields(TransactionCase):
         self.assertEqual(rec.early_leave_minutes, 0)
         self.assertEqual(rec.afternoon_credit, 0.0)
         self.assertEqual(rec.work_credit, 0.5)  # chỉ có công sáng
+
+    def test_checkin_exactly_at_cutoff_not_late(self):
+        # 09:30:00 local = 02:30:00 UTC = đúng mốc 09:30 -> không trễ
+        rec = self._rec('2026-06-17 02:30:00', '2026-06-17 10:30:00')
+        self.assertEqual(rec.late_minutes, 0)
+        self.assertEqual(rec.status_code, 'on_time')
