@@ -444,7 +444,7 @@ def _att_requests_pending(env):
         return []
     domain = [('state', '=', 'pending')]
     for field, op, val in _emp_scope_domain(env):
-        if field == 'id':
+        if field == 'id':            # ('id','=',0): không thuộc nhóm nào
             domain.append(('employee_id', op, val))
         else:
             domain.append(('employee_id.%s' % field, op, val))

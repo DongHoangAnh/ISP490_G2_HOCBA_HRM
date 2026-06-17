@@ -202,22 +202,27 @@ class TestAttendanceRequest(TransactionCase):
             'name': 'NV Khac2', 'x_employment_status': 'official',
             'identification_id': '012345678903',
             'x_pit_code': '2223334445', 'x_social_insurance_no': '5554443332'})
-        self._make_req()
+        self._make_req()                      # pending của self.emp
+        self._make_req(state='approved')      # approved của self.emp (mọi state)
         self.env['hocba.attendance.request'].create({
             'employee_id': other.id, 'request_date': '2026-06-12',
             'reason': 'khac'})
         rows = _att_requests_mine(self.env(user=self.user))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['empId'], self.emp.id)
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r['empId'] == self.emp.id for r in rows))
+        self.assertEqual({r['state'] for r in rows}, {'pending', 'approved'})
 
     def test_mine_no_employee_none(self):
         u = self.env['res.users'].create({'name': 'NoEmp2', 'login': 'noemp_req2'})
         self.assertIsNone(_att_requests_mine(self.env(user=u)))
 
     def test_pending_hr_manager_sees_all_pending(self):
-        self._make_req()
+        pending = self._make_req()
+        decided = self._make_req(state='rejected')
         rows = _att_requests_pending(self.env(user=self.hrm))
-        self.assertIn(self.emp.id, [r['empId'] for r in rows])
+        ids = [r['id'] for r in rows]
+        self.assertIn(pending.id, ids)
+        self.assertNotIn(decided.id, ids)  # chỉ lấy pending
 
     def test_pending_non_manager_empty(self):
         self._make_req()
