@@ -170,6 +170,10 @@ def _att_me_info(env):
         'isOfficial': emp.x_employment_status == 'official',
         'isHr': env.user.has_group('hr.group_hr_user'),
         'isHrManager': env.user.has_group('hr.group_hr_manager'),
+        'canManage': _user_can_manage(env),
+        'isWorkdayToday': policy.is_workday(
+            fields.Datetime.context_timestamp(
+                env.user, fields.Datetime.now()).replace(tzinfo=None)),
         'policy': _policy_dict(policy),
         'today': None,
     }
@@ -318,6 +322,14 @@ def _user_can_manage(env):
             or user.has_group('hr.group_hr_user')
             or user.has_group('hocba_employees.group_hocba_giaovu')
             or is_manager)
+
+
+_CHECK_ERR_STATUS = {
+    'not_workday': 403,
+    'already_checked_in': 409,
+    'not_checked_in': 409,
+    'already_checked_out': 409,
+}
 
 
 class HocBaHRM(http.Controller):
@@ -1379,17 +1391,26 @@ class HocBaHRM(http.Controller):
         emp = request.env.user.employee_id
         if not emp:
             return request.make_json_response({'error': 'no_employee'}, status=400)
+        if _user_can_manage(request.env):
+            return request.make_json_response(
+                {'error': 'manager_no_checkin'}, status=403)
         if emp.x_employment_status != 'official':
             return request.make_json_response({'error': 'not_official'}, status=403)
         payload = request.get_json_data()
         kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
         method = 'action_check_out' if kind == 'out' else 'action_check_in'
-        res = getattr(request.env['hocba.attendance'], method)({
-            'photo': payload.get('photo'),
-            'descriptor': payload.get('descriptor') or [],
-            'latitude': payload.get('latitude') or 0.0,
-            'longitude': payload.get('longitude') or 0.0,
-        })
+        try:
+            res = getattr(request.env['hocba.attendance'], method)({
+                'photo': payload.get('photo'),
+                'descriptor': payload.get('descriptor') or [],
+                'latitude': payload.get('latitude') or 0.0,
+                'longitude': payload.get('longitude') or 0.0,
+            })
+        except UserError as ex:
+            code = str(ex)
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': code}, status=_CHECK_ERR_STATUS.get(code, 400))
         return request.make_json_response({
             'recordId': res['record_id'], 'kind': res['kind'],
             'faceSuspect': res['face_suspect'], 'outOfZone': res['out_of_zone'],

@@ -38,6 +38,10 @@ class TestAttendanceApi(TransactionCase):
             'name': 'HR User', 'login': 'hr_att_user',
             'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)],
         })
+        if not self.hr_user.employee_id:
+            self.env['hr.employee'].create({
+                'name': 'HR Manager', 'user_id': self.hr_user.id,
+            })
 
     def _checkin(self, emp):
         return self.env['hocba.attendance']._do_check({
@@ -68,6 +72,16 @@ class TestAttendanceApi(TransactionCase):
         info = _att_me_info(self.env(user=self.emp_user))
         self.assertIsNotNone(info['today'])
         self.assertIn(info['today']['statusKey'], ('on_time', 'late'))
+
+    def test_me_info_flags(self):
+        info = _att_me_info(self.env(user=self.emp_user))
+        self.assertIn('canManage', info)
+        self.assertIn('isWorkdayToday', info)
+        self.assertFalse(info['canManage'])  # emp_user là NV thường
+
+    def test_me_info_manager_can_manage(self):
+        info = _att_me_info(self.env(user=self.hr_user))
+        self.assertTrue(info['canManage'])
 
     def test_day_table_hr_sees_all(self):
         self._checkin(self.emp)
