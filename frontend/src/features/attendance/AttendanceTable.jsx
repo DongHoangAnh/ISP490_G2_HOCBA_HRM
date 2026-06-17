@@ -5,7 +5,7 @@ import Badge from '../../components/Badge';
 import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchAttendanceDay } from '../../api/attendance';
-import { fmtTime, attStatus, today as todayStr } from './util';
+import { fmtTime, attStatus, today as todayStr, fmtCredit } from './util';
 import AttendanceDrawer from './AttendanceDrawer';
 
 function Metric({ ico, col, bg, val, lbl }) {
@@ -62,7 +62,9 @@ export default function AttendanceTable({ search }) {
           <table className="tbl">
             <thead><tr>
               <th>Nhân viên</th><th>Phòng ban</th><th>Check-in</th><th>Check-out</th>
-              <th className="tbl-num">Giờ công</th><th className="tbl-num">Đi trễ</th><th>Trạng thái</th><th></th>
+              <th className="tbl-num">Giờ công</th><th className="tbl-num">Đi trễ</th>
+              <th className="tbl-num">Thiếu</th><th className="tbl-num">Ngày công</th>
+              <th>Trạng thái</th><th></th>
             </tr></thead>
             <tbody>
               {rows.map((r) => {
@@ -78,6 +80,8 @@ export default function AttendanceTable({ search }) {
                     <td className="mono" style={{ fontWeight: 600 }}>{fmtTime(r.checkOut)}</td>
                     <td className="tbl-num mono">{r.workingHours || '—'}</td>
                     <td className="tbl-num mono">{r.lateMinutes > 0 ? <span style={{ color: 'var(--amber)', fontWeight: 600 }}>+{r.lateMinutes}'</span> : <span className="faint">—</span>}</td>
+                    <td className="tbl-num mono">{r.missingMinutes > 0 ? <span style={{ color: 'var(--red-600)', fontWeight: 600 }}>{r.missingMinutes}'</span> : <span className="faint">—</span>}</td>
+                    <td className="tbl-num mono" style={{ fontWeight: 600 }}>{fmtCredit(r.workCredit)}</td>
                     <td><span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                       <Badge kind={kind} dot>{lbl}</Badge>
                       {r.needsReview && <Badge kind="amber">!</Badge>}
