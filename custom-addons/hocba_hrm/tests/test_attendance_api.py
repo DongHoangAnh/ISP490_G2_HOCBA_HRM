@@ -6,6 +6,7 @@ from odoo.tests import tagged
 
 from odoo.addons.hocba_hrm.controllers.main import (
     _fmt_hm, _att_me_info, _att_day_table, _att_me_history,
+    _user_can_manage, _emp_scope_domain, _emp_in_scope,
 )
 
 
@@ -157,3 +158,35 @@ class TestAttendanceApi(TransactionCase):
         data = _att_me_history(self.env(user=u3), '2026-06')
         self.assertEqual(data['summary']['violationDays'], 2)
         self.assertEqual(data['summary']['deficitCredit'], 0.0)
+
+
+@tagged('post_install', '-at_install')
+class TestScopeHelpers(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.dept = self.env['hr.department'].create({'name': 'Phòng A'})
+        self.mgr_emp = self.env['hr.employee'].create({'name': 'Quản lý A'})
+        self.dept.manager_id = self.mgr_emp
+        self.mgr_user = self.env['res.users'].create(
+            {'name': 'MgrA', 'login': 'mgra_scope'})
+        self.mgr_user.tz = 'Asia/Ho_Chi_Minh'
+        self.mgr_emp.user_id = self.mgr_user
+        self.plain_user = self.env['res.users'].create(
+            {'name': 'Plain', 'login': 'plain_scope'})
+
+    def test_hr_manager_can_manage(self):
+        u = self.env['res.users'].create({
+            'name': 'HRM', 'login': 'hrm_scope',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        self.assertTrue(_user_can_manage(self.env(user=u)))
+
+    def test_department_head_can_manage(self):
+        self.assertTrue(_user_can_manage(self.env(user=self.mgr_user)))
+
+    def test_plain_user_cannot_manage(self):
+        self.assertFalse(_user_can_manage(self.env(user=self.plain_user)))
+
+    def test_department_head_scope_is_own_department(self):
+        dom = _emp_scope_domain(self.env(user=self.mgr_user))
+        self.assertIn(('department_id', 'in', [self.dept.id]), dom)

@@ -254,6 +254,67 @@ def _att_me_history(env, month_str):
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
+def _managed_department_ids(env, emp):
+    """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
+    if not emp:
+        return []
+    Dept = env['hr.department'].sudo()
+    managed = Dept.search([('manager_id', '=', emp.id)])
+    if not managed:
+        return []
+    result, frontier = set(managed.ids), managed
+    while frontier:
+        children = Dept.search([('parent_id', 'in', frontier.ids)])
+        frontier = children.filtered(lambda d: d.id not in result)
+        result.update(frontier.ids)
+    return list(result)
+
+
+def _emp_scope_domain(env):
+    """Domain giới hạn NV theo vai trò: HR/Admin=tất cả; Giáo vụ=giáo viên;
+    Trưởng phòng=phòng mình; còn lại=rỗng (id=0)."""
+    user = env.user
+    if (user.has_group('base.group_system')
+            or user.has_group('hr.group_hr_user')
+            or user.has_group('hr.group_hr_manager')):
+        return []
+    if user.has_group('hocba_employees.group_hocba_giaovu'):
+        return [('x_employee_type_id.code', '=', 'teacher')]
+    dept_ids = _managed_department_ids(env, user.employee_id)
+    if dept_ids:
+        return [('department_id', 'in', dept_ids)]
+    return [('id', '=', 0)]
+
+
+def _emp_in_scope(env, e):
+    """User hiện tại có được xem/quản lý hồ sơ e không."""
+    user = env.user
+    if (user.has_group('base.group_system')
+            or user.has_group('hr.group_hr_user')
+            or user.has_group('hr.group_hr_manager')):
+        return True
+    if e == user.employee_id:
+        return True
+    return bool(env['hr.employee'].sudo().search_count(
+        [('id', '=', e.id)] + _emp_scope_domain(env)))
+
+
+def _user_can_manage(env):
+    """True nếu user thuộc bất kỳ nhóm quản lý nào (Admin/HR Mgr/HR/Giáo vụ/
+    Trưởng phòng) — dùng để tách UI manager↔user và chặn manager check-in."""
+    user = env.user
+    emp = user.employee_id
+    is_manager = bool(emp) and (
+        bool(emp.child_ids)
+        or bool(env['hr.department'].sudo().search_count(
+            [('manager_id', '=', emp.id)])))
+    return (user.has_group('base.group_system')
+            or user.has_group('hr.group_hr_manager')
+            or user.has_group('hr.group_hr_user')
+            or user.has_group('hocba_employees.group_hocba_giaovu')
+            or is_manager)
+
+
 class HocBaHRM(http.Controller):
 
     @http.route('/hocba-hrm', auth='user', type='http', csrf=False)
@@ -284,46 +345,17 @@ class HocBaHRM(http.Controller):
 
     def _managed_department_ids(self, emp):
         """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
-        if not emp:
-            return []
-        Dept = request.env['hr.department'].sudo()
-        managed = Dept.search([('manager_id', '=', emp.id)])
-        if not managed:
-            return []
-        result, frontier = set(managed.ids), managed
-        while frontier:
-            children = Dept.search([('parent_id', 'in', frontier.ids)])
-            frontier = children.filtered(lambda d: d.id not in result)
-            result.update(frontier.ids)
-        return list(result)
+        return _managed_department_ids(request.env, emp)
 
     def _emp_scope_domain(self):
         """Domain giới hạn danh sách NV theo vai trò (họp #2):
         HR/Admin = tất cả; Giáo vụ = giáo viên; Quản lý = phòng ban mình;
         còn lại = rỗng."""
-        user = request.env.user
-        if (user.has_group('base.group_system')
-                or user.has_group('hr.group_hr_user')
-                or user.has_group('hr.group_hr_manager')):
-            return []
-        if user.has_group('hocba_employees.group_hocba_giaovu'):
-            return [('x_employee_type_id.code', '=', 'teacher')]
-        dept_ids = self._managed_department_ids(user.employee_id)
-        if dept_ids:
-            return [('department_id', 'in', dept_ids)]
-        return [('id', '=', 0)]  # không thuộc nhóm quản lý nào → rỗng
+        return _emp_scope_domain(request.env)
 
     def _emp_in_scope(self, e):
         """Người dùng hiện tại có được xem/quản lý hồ sơ e không."""
-        user = request.env.user
-        if (user.has_group('base.group_system')
-                or user.has_group('hr.group_hr_user')
-                or user.has_group('hr.group_hr_manager')):
-            return True
-        if e == user.employee_id:  # luôn xem được hồ sơ của chính mình
-            return True
-        return bool(request.env['hr.employee'].sudo().search_count(
-            [('id', '=', e.id)] + self._emp_scope_domain()))
+        return _emp_in_scope(request.env, e)
 
     def _can_eval_emp(self, e):
         """Người đang đăng nhập có quyền duyệt cổng thử việc của NV e không:
@@ -1116,8 +1148,7 @@ class HocBaHRM(http.Controller):
             bool(emp.child_ids)
             or bool(request.env['hr.department'].sudo().search_count(
                 [('manager_id', '=', emp.id)])))
-        can_manage = (is_admin or is_hr_mgr or is_hr_user
-                      or is_giaovu or is_manager)
+        can_manage = _user_can_manage(request.env)
         roles = []
         if is_admin:
             roles.append('Admin')
