@@ -306,6 +306,28 @@ class Attendance(models.Model):
             'face_score': face_score,
         }
 
+    def _assert_check_allowed(self, employee, kind):
+        """Chặn check-in/out sai luật: ngày nghỉ, đã check-in/out, chưa check-in.
+        Raise UserError với mã lỗi làm message để controller map sang HTTP."""
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'),
+            fields.Datetime.now()).replace(tzinfo=None)
+        if not policy.is_workday(now_local):
+            raise UserError('not_workday')
+        rec = self.sudo().search([
+            ('employee_id', '=', employee.id),
+            ('date', '=', now_local.date()),
+        ], limit=1)
+        if kind == 'in':
+            if rec and rec.check_in:
+                raise UserError('already_checked_in')
+        else:
+            if not rec or not rec.check_in:
+                raise UserError('not_checked_in')
+            if rec.check_out:
+                raise UserError('already_checked_out')
+
     @api.model
     def action_check_in(self, payload):
         """RPC entry: self-service check-in for the current user's employee."""
@@ -317,6 +339,7 @@ class Attendance(models.Model):
         # Self-service: regular employees aren't in the HR groups that own the
         # ACL on attendance/policy/status, so run the write under sudo. The
         # employee is already pinned to the caller above, preventing spoofing.
+        self._assert_check_allowed(employee, 'in')
         return self.sudo()._do_check(payload, 'in')
 
     @api.model
@@ -327,4 +350,5 @@ class Attendance(models.Model):
         if not employee:
             raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
         payload['employee_id'] = employee.id
+        self._assert_check_allowed(employee, 'out')
         return self.sudo()._do_check(payload, 'out')
