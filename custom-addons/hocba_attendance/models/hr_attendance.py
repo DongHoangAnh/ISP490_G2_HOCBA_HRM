@@ -328,6 +328,47 @@ class Attendance(models.Model):
             if rec.check_out:
                 raise UserError('already_checked_out')
 
+    def _todays_approved_shifts(self, employee, today):
+        """Ca approved của employee có start rơi vào ngày local `today`."""
+        shifts = self.env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', employee.id), ('state', '=', 'approved')])
+        return shifts.filtered(
+            lambda s: fields.Datetime.context_timestamp(s, s.start).date() == today)
+
+    def _assert_shift_check_allowed(self, employee, kind):
+        """CTV/OT (non-official): check-in/out theo ca approved + cửa sổ ±W phút.
+        Raise UserError mã lỗi: no_shift_today / outside_shift_window /
+        already_checked_in / not_checked_in / already_checked_out."""
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        window = policy.shift_window_minutes or 15
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'),
+            fields.Datetime.now()).replace(tzinfo=None)
+        today = now_local.date()
+        shifts = self._todays_approved_shifts(employee, today)
+        if not shifts:
+            raise UserError('no_shift_today')
+        in_window = False
+        for s in shifts:
+            anchor_utc = s.start if kind == 'in' else s.end
+            anchor = fields.Datetime.context_timestamp(
+                s, anchor_utc).replace(tzinfo=None)
+            if abs((now_local - anchor).total_seconds()) <= window * 60:
+                in_window = True
+                break
+        if not in_window:
+            raise UserError('outside_shift_window')
+        rec = self.sudo().search([
+            ('employee_id', '=', employee.id), ('date', '=', today)], limit=1)
+        if kind == 'in':
+            if rec and rec.check_in:
+                raise UserError('already_checked_in')
+        else:
+            if not rec or not rec.check_in:
+                raise UserError('not_checked_in')
+            if rec.check_out:
+                raise UserError('already_checked_out')
+
     @api.model
     def action_check_in(self, payload):
         """RPC entry: self-service check-in for the current user's employee."""
