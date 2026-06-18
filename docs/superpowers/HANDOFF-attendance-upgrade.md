@@ -14,8 +14,8 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 | **Gói 1** | Tính công (công sáng/chiều, lương theo ngày) + phút trễ/về sớm/thiếu + tổng hợp công tháng (trừ công thiếu, bỏ 2 ngày vi phạm đầu) + chuẩn hóa policy 8h, mốc trễ 9:30 | ✅ **XONG** (đã merge main) |
 | **Gói 2** | Tách tài khoản manager (chỉ quản lý, không check-in) ↔ user (tự chấm) + khóa check-in/out 1 lần/ngày, chỉ ngày làm việc + manager sửa/xóa bản ghi theo phạm vi | ✅ **XONG** (đã merge main) |
 | **Gói 3** | Luồng **đơn**: user gửi đơn sửa/tạo bản ghi → manager duyệt (chỉnh giờ được) & áp dụng, hoặc từ chối | ✅ **XONG** (đã merge main) |
-| **Gói 4A** | Đăng ký ca **CTV/OT** + **lịch tuần** (lưới 7 cột) + manager thêm/duyệt/từ chối ca + hủy ca pending; hệ số auto theo luật (T2-6=1.5 / cuối tuần=2.0) | ✅ **XONG** (nhánh `feature/shift-registration`; chờ merge main) |
-| **Gói 4B** | Check-in **cửa sổ ±15'** quanh giờ ca cho CTV/OT (mở check-in theo ca đã duyệt) | 🔴 **CHƯA bắt đầu** (phụ thuộc 4A) |
+| **Gói 4A** | Đăng ký ca **CTV/OT** + **lịch tuần** (lưới 7 cột) + manager thêm/duyệt/từ chối ca + hủy ca pending; hệ số auto theo luật (T2-6=1.5 / cuối tuần=2.0) | ✅ **XONG** (đã merge main) |
+| **Gói 4B** | Check-in **cửa sổ ±15'** quanh giờ ca cho CTV/OT (mở check-in theo ca đã duyệt; official giữ cơ chế workday Gói 2) | ✅ **XONG** (nhánh `feature/shift-checkin-window`; chờ merge main) |
 | **Gói 4C** | Tính **công/lương OT theo hệ số** + luật lễ/đêm (+30%), gộp vào tổng hợp tháng | 🔴 **CHƯA bắt đầu** (phụ thuộc 4A) |
 
 ---
@@ -50,8 +50,14 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 Yêu cầu gốc Gói 4 (từ khách) đã tách: 4A (lịch+đăng ký) xong; còn:
 > ...check-in trong **cửa sổ ±15'** quanh giờ ca (vd ca 9h → mở check-in 8h45–9h15, ngoài thời gian khóa nút); **checkout** có cơ chế tương tự. Cơ chế cửa sổ này CHỈ cho CTV/OT. ...OT có **hệ số** (150/200/300%) tính công/lương.
 
-- **Gói 4B (check-in cửa sổ ±15'):** mở `api_attendance_check` cho CTV/OT **theo ca `hocba.work_shift` đã approved** hôm nay + cửa sổ ±15' quanh `start` (check-in) / `end` (check-out); ngoài cửa sổ khóa nút. Khác cơ chế ngày-làm-việc của NV official ở Gói 2 (`_assert_check_allowed`). Hiện check-in chặn cứng non-official trong `api_attendance_check` (`not_official`) — 4B nới cho CTV/OT có ca duyệt. Bắt đầu bằng `superpowers:brainstorming`.
-- **Gói 4C (công/lương OT theo hệ số):** quy đổi giờ ca OT × `rate` thành công/lương, gộp vào `_att_me_history` (tổng hợp tháng); thêm luật lễ/đêm (+30%) tinh chỉnh `_default_rate`. Bắt đầu bằng `superpowers:brainstorming`.
+- **Gói 4B (check-in cửa sổ ±15') — ✅ XONG (nhánh `feature/shift-checkin-window`):** Spec [2026-06-18-shift-checkin-window-design.md](specs/2026-06-18-shift-checkin-window-design.md), plan [2026-06-18-shift-checkin-window.md](plans/2026-06-18-shift-checkin-window.md). Test 81/81 xanh, build SPA sạch.
+  - Policy `shift_window_minutes` (default 15) + view.
+  - Model `hocba.attendance`: `_todays_approved_shifts(emp, today)` + `_assert_shift_check_allowed(emp, kind)` (no_shift_today / outside_shift_window / already_checked_in / not_checked_in / already_checked_out).
+  - `api_attendance_check` **phân nhánh**: official → `_assert_check_allowed` (workday Gói 2); non-official (CTV/OT) → `_assert_shift_check_allowed` (ca + cửa sổ). Bỏ block `not_official`. Gọi trực tiếp `_do_check` (pin employee_id). Thêm mã lỗi vào `_CHECK_ERR_STATUS`.
+  - `_att_me_info.shiftToday` = {start, end, shiftType, rate, checkInOpen, checkOutOpen} (None cho official / non-official không có ca).
+  - FE `CheckInPanel.jsx`: non-official → enroll → "chưa có ca" → UI check-in/out theo ca (nút khóa khi ngoài cửa sổ); official giữ nguyên. Bỏ cảnh báo "ngoài khung giờ" cho CTV.
+  - **Giới hạn đã biết (để 4C/sau):** `_do_check` vẫn set `out_of_window` (và do đó `needs_review`) theo khung official → ca CTV check-in đúng vẫn bị cờ `needs_review` trong bảng ngày của manager. Không chặn check-in; chỉ là nhiễu báo cáo. Sửa sâu cần làm `_do_check` nhận biết cửa sổ ca (vượt scope 4B). Còn lại: merge + kiểm thử thủ công SPA.
+- **Gói 4C (công/lương OT theo hệ số):** quy đổi giờ ca OT × `rate` thành công/lương, gộp vào `_att_me_history` (tổng hợp tháng); thêm luật lễ/đêm (+30%) tinh chỉnh `_default_rate`. Cân nhắc gộp việc làm `_do_check`/`needs_review` nhận biết cửa sổ ca (giới hạn 4B ở trên). Bắt đầu bằng `superpowers:brainstorming`.
 
 ---
 
