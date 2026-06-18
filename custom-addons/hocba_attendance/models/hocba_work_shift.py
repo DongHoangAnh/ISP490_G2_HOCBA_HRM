@@ -54,9 +54,21 @@ class WorkShift(models.Model):
 
     @api.model
     def _default_rate(self, start_dt):
-        """Hệ số gợi ý theo thứ trong tuần (local): T2–T6 = 1.5; T7/CN = 2.0.
-        (Lễ/đêm + 30% để Gói 4C.) start_dt là Datetime UTC naive."""
+        """Hệ số gợi ý: lễ=3.0 / cuối tuần=2.0 / ngày thường=1.5; cộng phụ cấp đêm
+        nếu ca rơi khung đêm. Lễ lấy từ policy.holiday_dates (YYYY-MM-DD, phân tách
+        dấu phẩy/xuống dòng). start_dt là Datetime UTC naive."""
         if not start_dt:
             return 1.0
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
         local = fields.Datetime.context_timestamp(self, start_dt)
-        return 2.0 if local.weekday() >= 5 else 1.5
+        holidays = set((policy.holiday_dates or '').replace(',', ' ').split())
+        if local.strftime('%Y-%m-%d') in holidays:
+            base = 3.0
+        elif local.weekday() >= 5:
+            base = 2.0
+        else:
+            base = 1.5
+        hour = local.hour + local.minute / 60.0
+        if hour >= (policy.night_start or 22.0) or hour < (policy.night_end or 6.0):
+            base += (policy.night_bonus or 0.0)
+        return base

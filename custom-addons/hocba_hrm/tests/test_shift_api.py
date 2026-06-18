@@ -222,3 +222,27 @@ class TestShiftApi(TransactionCase):
         s = self._make_shift()
         res = _shift_cancel(self.env(user=self.hrm), s.id)
         self.assertEqual(res, {'ok': True})
+
+    def test_default_rate_weekday(self):
+        WS = self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh')
+        dt = fields.Datetime.to_datetime('2026-06-15 02:00:00')  # T2 09:00 local
+        self.assertEqual(WS._default_rate(dt), 1.5)
+
+    def test_default_rate_weekend(self):
+        WS = self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh')
+        dt = fields.Datetime.to_datetime('2026-06-20 02:00:00')  # T7 09:00 local
+        self.assertEqual(WS._default_rate(dt), 2.0)
+
+    def test_default_rate_holiday(self):
+        self.env['hocba.attendance.policy'].get_policy().write(
+            {'holiday_dates': '2026-06-15'})
+        WS = self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh')
+        dt = fields.Datetime.to_datetime('2026-06-15 02:00:00')  # T2 nhưng là lễ
+        self.assertEqual(WS._default_rate(dt), 3.0)
+
+    def test_default_rate_night_weekday(self):
+        self.env['hocba.attendance.policy'].get_policy().write(
+            {'night_start': 22.0, 'night_end': 6.0, 'night_bonus': 0.3})
+        WS = self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh')
+        dt = fields.Datetime.to_datetime('2026-06-15 16:00:00')  # T2 23:00 local
+        self.assertEqual(WS._default_rate(dt), 1.8)
