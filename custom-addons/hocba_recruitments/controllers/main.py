@@ -105,9 +105,72 @@ class HocBaTuyenDung(http.Controller):
     # Đọc: mọi user đăng nhập. Ghi (thêm/sửa/đổi stage): chỉ nhóm tuyển dụng.
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Phân quyền tuyển dụng (theo họp phân quyền):
+    #   - HR toàn quyền = Admin (group_system) / HR Manager / nhóm tuyển dụng
+    #     → xem & thao tác MỌI phòng ban.
+    #   - Trưởng phòng = người đứng manager_id của phòng ban (gồm phòng con)
+    #     → chỉ thao tác dữ liệu tuyển dụng THUỘC phòng mình.
+    # ------------------------------------------------------------------
+
+    def _has_recruit_group(self):
+        u = request.env.user
+        return (u.has_group('hr_recruitment.group_hr_recruitment_user')
+                or u.has_group('hr_recruitment.group_hr_recruitment_manager'))
+
+    def _is_hr(self):
+        """HR toàn quyền tuyển dụng (xem/sửa mọi phòng ban)."""
+        u = request.env.user
+        return (u.has_group('base.group_system')
+                or u.has_group('hr.group_hr_manager')
+                or self._has_recruit_group())
+
+    def _managed_department_ids(self):
+        """Phòng ban (gồm phòng con) mà user làm trưởng phòng (manager_id)."""
+        emp = request.env.user.employee_id
+        if not emp:
+            return []
+        Dept = request.env['hr.department'].sudo()
+        managed = Dept.search([('manager_id', '=', emp.id)])
+        if not managed:
+            return []
+        result, frontier = set(managed.ids), managed
+        while frontier:
+            children = Dept.search([('parent_id', 'in', frontier.ids)])
+            frontier = children.filtered(lambda d: d.id not in result)
+            result.update(frontier.ids)
+        return list(result)
+
+    def _is_dept_manager(self):
+        return bool(self._managed_department_ids())
+
     def _is_recruiter(self):
-        return request.env.user.has_group(
-            'hr_recruitment.group_hr_recruitment_user')
+        """Có quyền thao tác tuyển dụng (thêm/sửa/xóa/đổi stage):
+        HR toàn quyền hoặc trưởng phòng (giới hạn phòng ban mình)."""
+        return self._is_hr() or self._is_dept_manager()
+
+    def _dept_scope_ids(self):
+        """Phạm vi phòng ban được phép thao tác.
+        None = không giới hạn (HR); list = chỉ các phòng này (trưởng phòng);
+        [] = không có quyền nào."""
+        if self._is_hr():
+            return None
+        return self._managed_department_ids()
+
+    def _dep_in_scope(self, dep_id):
+        """dep_id (int/False) có nằm trong phạm vi cho phép không."""
+        scope = self._dept_scope_ids()
+        if scope is None:
+            return True
+        return bool(dep_id) and dep_id in scope
+
+    def _applicant_dep_id(self, a):
+        """Phòng ban của ứng viên: ưu tiên field department_id, fallback theo vị trí."""
+        return a.department_id.id or a.job_id.department_id.id or False
+
+    def _forbidden(self, message='Bạn không có quyền với phòng ban này.'):
+        return request.make_json_response(
+            {'error': 'forbidden', 'message': message}, status=403)
 
     def _sel_labels(self, model, fname):
         """Dict {key: label} của field Selection (theo ngôn ngữ context)."""
@@ -180,10 +243,16 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/cv', auth='user',
                 type='http', methods=['GET'])
     def api_recruitment_cv(self, **kw):
-        """Danh sách CV ứng viên cho tab "Danh sách CV" (list + kanban)."""
+        """Danh sách CV ứng viên cho tab "Danh sách CV" (list + kanban).
+        Trưởng phòng chỉ thấy ứng viên thuộc phòng ban mình quản lý."""
         env = request.env
+        scope = self._dept_scope_ids()
+        domain = []
+        if scope is not None:
+            domain = ['|', ('department_id', 'in', scope),
+                      ('job_id.department_id', 'in', scope)]
         applicants = env['hr.applicant'].sudo().search(
-            [], order='date_received desc, id desc')
+            domain, order='date_received desc, id desc')
         data = {'isRecruiter': self._is_recruiter(),
                 'rows': [self._cv_row(a) for a in applicants]}
         data.update(self._meta())
@@ -196,6 +265,8 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(app_id)
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(self._applicant_dep_id(a)):
+            return self._forbidden()
         return request.make_json_response(self._cv_row(a))
 
     @http.route('/hocba-hrm/api/recruitment/cv', auth='user',
@@ -210,6 +281,12 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên ứng viên.'},
                 status=400)
+        if not self._is_hr():
+            job_id = vals.get('job_id')
+            dep_id = (request.env['hr.job'].sudo().browse(job_id).department_id.id
+                      if job_id else False)
+            if not self._dep_in_scope(dep_id):
+                return self._forbidden('Vị trí không thuộc phòng ban bạn quản lý.')
         Applicant = request.env['hr.applicant'].sudo()
         # hr.applicant.name (tiêu đề đơn) tồn tại ở các bản Odoo cũ và bắt buộc;
         # Odoo 19 đã bỏ field này (dùng partner_name) -> chỉ set khi model còn field 'name'.
@@ -232,7 +309,13 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(app_id)
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(self._applicant_dep_id(a)):
+            return self._forbidden()
         vals = self._app_vals(request.get_json_data())
+        if not self._is_hr() and vals.get('job_id'):
+            new_dep = request.env['hr.job'].sudo().browse(vals['job_id']).department_id.id
+            if not self._dep_in_scope(new_dep):
+                return self._forbidden('Vị trí không thuộc phòng ban bạn quản lý.')
         try:
             if vals:
                 a.write(vals)
@@ -252,6 +335,8 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(app_id)
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(self._applicant_dep_id(a)):
+            return self._forbidden()
         f = request.httprequest.files.get('file')
         if not f:
             return request.make_json_response(
@@ -291,6 +376,8 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(app_id)
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(self._applicant_dep_id(a)):
+            return self._forbidden()
         stage_id = (request.get_json_data() or {}).get('stageId')
         if not stage_id:
             return request.make_json_response({'error': 'bad_request'}, status=400)
@@ -407,16 +494,22 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/jobs', auth='user',
                 type='http', methods=['GET'])
     def api_recruitment_jobs(self, **kw):
-        """Danh sách vị trí tuyển dụng / JD."""
+        """Danh sách vị trí tuyển dụng / JD.
+        Trưởng phòng chỉ thấy vị trí/phiếu thuộc phòng ban mình quản lý."""
         env = request.env
-        jobs = env['hr.job'].sudo().search([], order='name')
+        scope = self._dept_scope_ids()
+        job_domain = [] if scope is None else [('department_id', 'in', scope)]
+        jobs = env['hr.job'].sudo().search(job_domain, order='name')
         data = {'isRecruiter': self._is_recruiter(),
                 'rows': [self._job_row(j) for j in jobs]}
         data.update(self._job_meta())
         # Vị trí cần tuyển = phiếu yêu cầu ĐANG TUYỂN. Cần tuyển = SL phiếu;
         # đã tuyển = số ứng viên đã onboard thực tế (stage hired) của JD gắn với phiếu.
+        req_domain = [('state', '=', 'recruiting')]
+        if scope is not None:
+            req_domain.append(('department_id', 'in', scope))
         reqs = env['hb.recruitment.request'].sudo().search(
-            [('state', '=', 'recruiting')], order='department_id, job_title')
+            req_domain, order='department_id, job_title')
         level_labels = self._sel_labels('hb.recruitment.request', 'level')
         Applicant = env['hr.applicant'].sudo().with_context(active_test=False)
         data['requests'] = [{
@@ -444,6 +537,8 @@ class HocBaTuyenDung(http.Controller):
         j = request.env['hr.job'].sudo().browse(job_id)
         if not j.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(j.department_id.id):
+            return self._forbidden()
         return request.make_json_response(self._job_row(j, detail=True))
 
     @http.route('/hocba-hrm/api/recruitment/jobs', auth='user',
@@ -457,6 +552,8 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng nhập tên vị trí.'},
                 status=400)
+        if not self._is_hr() and not self._dep_in_scope(vals.get('department_id')):
+            return self._forbidden('Vị trí phải thuộc phòng ban bạn quản lý.')
         try:
             j = request.env['hr.job'].sudo().create(vals)
             self._sync_website_description(j)
@@ -475,7 +572,12 @@ class HocBaTuyenDung(http.Controller):
         j = request.env['hr.job'].sudo().browse(job_id)
         if not j.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(j.department_id.id):
+            return self._forbidden()
         vals = self._job_vals(request.get_json_data())
+        if (not self._is_hr() and 'department_id' in vals
+                and not self._dep_in_scope(vals['department_id'])):
+            return self._forbidden('Vị trí phải thuộc phòng ban bạn quản lý.')
         try:
             if vals:
                 j.write(vals)
@@ -550,9 +652,13 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/requests', auth='user',
                 type='http', methods=['GET'])
     def api_recruitment_requests(self, **kw):
-        """Danh sách phiếu yêu cầu tuyển dụng."""
+        """Danh sách phiếu yêu cầu tuyển dụng.
+        Trưởng phòng chỉ thấy phiếu thuộc phòng ban mình quản lý."""
         env = request.env
-        reqs = env['hb.recruitment.request'].sudo().search([], order='create_date desc')
+        scope = self._dept_scope_ids()
+        domain = [] if scope is None else [('department_id', 'in', scope)]
+        reqs = env['hb.recruitment.request'].sudo().search(
+            domain, order='create_date desc')
         data = {'isRecruiter': self._is_recruiter(),
                 'rows': [self._req_row(r) for r in reqs]}
         data.update(self._req_meta())
@@ -564,6 +670,8 @@ class HocBaTuyenDung(http.Controller):
         r = request.env['hb.recruitment.request'].sudo().browse(req_id)
         if not r.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(r.department_id.id):
+            return self._forbidden()
         return request.make_json_response(self._req_row(r, detail=True))
 
     @http.route('/hocba-hrm/api/recruitment/requests', auth='user',
@@ -581,6 +689,8 @@ class HocBaTuyenDung(http.Controller):
         if not vals.get('department_id'):
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng chọn phòng ban.'}, status=400)
+        if not self._is_hr() and not self._dep_in_scope(vals.get('department_id')):
+            return self._forbidden('Phiếu phải thuộc phòng ban bạn quản lý.')
         try:
             r = request.env['hb.recruitment.request'].create(vals)
         except (AccessError, ValidationError, UserError) as ex:
@@ -597,7 +707,12 @@ class HocBaTuyenDung(http.Controller):
         r = request.env['hb.recruitment.request'].browse(req_id)
         if not r.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(r.department_id.id):
+            return self._forbidden()
         vals = self._req_vals(request.get_json_data())
+        if (not self._is_hr() and 'department_id' in vals
+                and not self._dep_in_scope(vals['department_id'])):
+            return self._forbidden('Phiếu phải thuộc phòng ban bạn quản lý.')
         try:
             if vals:
                 r.write(vals)
@@ -616,6 +731,8 @@ class HocBaTuyenDung(http.Controller):
         r = request.env['hb.recruitment.request'].browse(req_id)
         if not r.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(r.department_id.id):
+            return self._forbidden()
         payload = request.get_json_data() or {}
         action = payload.get('action')
         method = REQUEST_ACTIONS.get(action)
@@ -666,7 +783,9 @@ class HocBaTuyenDung(http.Controller):
         tmpls = env['mail.template'].sudo().search(
             [('model_id', '=', applicant_model.id)], order='name')
         return request.make_json_response({
-            'isRecruiter': self._is_recruiter(),
+            # Mail mẫu là cấu hình email toàn hệ thống (không theo phòng ban) →
+            # chỉ HR toàn quyền quản lý; trưởng phòng không thấy nút thêm/sửa/gửi.
+            'isRecruiter': self._is_hr(),
             'rows': [self._tmpl_row(t) for t in tmpls],
             'recipients': self._applicant_recipients(),
         })
@@ -690,8 +809,8 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/mail-templates', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_recruitment_mail_template_create(self, **kw):
-        """Tạo mail mẫu mới (model cố định hr.applicant)."""
-        if not self._is_recruiter():
+        """Tạo mail mẫu mới (model cố định hr.applicant) — chỉ HR toàn quyền."""
+        if not self._is_hr():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data()
         vals = self._tmpl_vals(payload)
@@ -711,7 +830,7 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_mail_template_update(self, tmpl_id, **kw):
-        if not self._is_recruiter():
+        if not self._is_hr():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         t = request.env['mail.template'].sudo().browse(tmpl_id)
         if not t.exists():
@@ -729,8 +848,8 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/send',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_mail_template_send(self, tmpl_id, **kw):
-        """Gửi mail mẫu cho danh sách ứng viên được chọn."""
-        if not self._is_recruiter():
+        """Gửi mail mẫu cho danh sách ứng viên được chọn — chỉ HR toàn quyền."""
+        if not self._is_hr():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         t = request.env['mail.template'].sudo().browse(tmpl_id)
         if not t.exists():
@@ -844,7 +963,7 @@ class HocBaTuyenDung(http.Controller):
                 'status': status,
                 'failure': fail,
             })
-        return request.make_json_response({'isRecruiter': self._is_recruiter(), 'rows': rows})
+        return request.make_json_response({'isRecruiter': self._is_hr(), 'rows': rows})
 
     # ------------------------------------------------------------------
     # Lịch rảnh phỏng vấn (hb.interview.slot) — tab "Danh sách PV".
@@ -853,7 +972,8 @@ class HocBaTuyenDung(http.Controller):
 
     def _can_manage_slots(self):
         u = request.env.user
-        return (u.has_group('hr_recruitment.group_hr_recruitment_user')
+        return (self._is_hr()
+                or self._is_dept_manager()
                 or u.has_group('hr_recruitment.group_hr_recruitment_interviewer'))
 
     def _user_tz(self):
