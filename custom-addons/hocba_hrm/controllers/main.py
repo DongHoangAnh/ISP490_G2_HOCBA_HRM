@@ -282,6 +282,16 @@ def _att_me_history(env, month_str):
         'netCredit': round(total_credit - deficit_credit, 2),
         'violationDays': len(violations),
     }
+    shifts = env['hocba.work_shift'].sudo().search([
+        ('employee_id', '=', emp.id), ('state', '=', 'approved')])
+    month_shifts = shifts.filtered(
+        lambda s: first <= fields.Datetime.context_timestamp(s, s.start).date() <= last)
+    ot_hours = sum((s.end - s.start).total_seconds() / 3600.0 for s in month_shifts)
+    ot_credit = sum(
+        (s.end - s.start).total_seconds() / 3600.0 * s.rate for s in month_shifts)
+    summary['otShiftCount'] = len(month_shifts)
+    summary['otHours'] = round(ot_hours, 2)
+    summary['otCreditHours'] = round(ot_credit, 2)
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
