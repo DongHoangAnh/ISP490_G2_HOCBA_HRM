@@ -1843,3 +1843,66 @@ class HocBaHRM(http.Controller):
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_attendance_request_reject(self, req_id, **kw):
         return self._decide_request(req_id, False)
+
+    # ------------------------------------------------------------------
+    # Ca làm việc CTV/OT (Gói 4A): user đăng ký ca → manager duyệt/chỉnh/từ chối
+    # hoặc thêm ca hộ; lịch hiển thị theo tuần. Spec:
+    # docs/superpowers/specs/2026-06-17-shift-registration-design.md
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/shifts', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_shift_create(self, **kw):
+        try:
+            row = _shift_create(request.env, request.get_json_data() or {})
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/shifts/week', auth='user', type='http', methods=['GET'])
+    def api_shifts_week(self, monday=None, **kw):
+        return request.make_json_response(_shifts_week(request.env, monday))
+
+    def _decide_shift(self, shift_id, approve):
+        try:
+            row = _shift_decide(request.env, shift_id, approve,
+                                request.get_json_data() or {})
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response({'error': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/shifts/<int:shift_id>/approve', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_shift_approve(self, shift_id, **kw):
+        return self._decide_shift(shift_id, True)
+
+    @http.route('/hocba-hrm/api/shifts/<int:shift_id>/reject', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_shift_reject(self, shift_id, **kw):
+        return self._decide_shift(shift_id, False)
+
+    @http.route('/hocba-hrm/api/shifts/<int:shift_id>/cancel', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_shift_cancel(self, shift_id, **kw):
+        try:
+            res = _shift_cancel(request.env, shift_id)
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response({'error': str(ex)}, status=400)
+        if res is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(res)
