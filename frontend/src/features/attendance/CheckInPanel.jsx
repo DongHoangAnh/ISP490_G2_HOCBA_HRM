@@ -40,7 +40,7 @@ export default function CheckInPanel({ me, onChanged }) {
       const flags = [];
       if (res.faceSuspect) flags.push('khuôn mặt nghi ngờ');
       if (res.outOfZone) flags.push('ngoài vùng văn phòng');
-      if (res.outOfWindow) flags.push('ngoài khung giờ');
+      if (res.outOfWindow && me.isOfficial) flags.push('ngoài khung giờ');
       setMsg({
         kind: flags.length ? 'warn' : 'ok',
         text: (kind === 'in' ? 'Đã check-in' : 'Đã check-out')
