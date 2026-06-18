@@ -73,9 +73,11 @@ export default function CheckInPanel({ me, onChanged }) {
 
       <div className="card" style={{ padding: 20 }}>
         <div style={{ fontWeight: 800, fontSize: 18 }}>{me.name}</div>
-        <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-          Khung giờ: check-in {p.checkInStart}–{p.checkInEnd} · check-out {p.checkOutStart}–{p.checkOutEnd}
-        </div>
+        {me.isOfficial && (
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+            Khung giờ: check-in {p.checkInStart}–{p.checkInEnd} · check-out {p.checkOutStart}–{p.checkOutEnd}
+          </div>
+        )}
 
         <div className="divider" style={{ margin: '14px 0' }}></div>
 
