@@ -28,3 +28,14 @@ export const approveRequest = (id, body) =>
   hbPost(`/hocba-hrm/api/attendance/requests/${id}/approve`, body);
 export const rejectRequest = (id, body) =>
   hbPost(`/hocba-hrm/api/attendance/requests/${id}/reject`, body);
+
+export const fetchWeekShifts = (monday) =>
+  hbGet(`/hocba-hrm/api/shifts/week?monday=${monday}`);
+export const createShift = (body) =>
+  hbPost('/hocba-hrm/api/shifts', body);
+export const approveShift = (id, body) =>
+  hbPost(`/hocba-hrm/api/shifts/${id}/approve`, body);
+export const rejectShift = (id, body) =>
+  hbPost(`/hocba-hrm/api/shifts/${id}/reject`, body);
+export const cancelShift = (id) =>
+  hbPost(`/hocba-hrm/api/shifts/${id}/cancel`, {});
