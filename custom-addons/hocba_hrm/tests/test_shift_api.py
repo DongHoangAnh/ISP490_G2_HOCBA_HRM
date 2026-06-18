@@ -3,7 +3,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create
+from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create, _shifts_week
 
 
 @tagged('post_install', '-at_install')
@@ -96,3 +96,62 @@ class TestShiftApi(TransactionCase):
         self.assertEqual(row['empId'], self.emp.id)
         self.assertEqual(row['state'], 'approved')
         self.assertEqual(row['reviewer'], self.hrm.name)
+
+    def test_week_owner_sees_own_pending(self):
+        self._make_shift()   # pending, 2026-06-15 (T2)
+        data = _shifts_week(self.env(user=self.user), '2026-06-15')
+        self.assertEqual(data['weekStart'], '2026-06-15')
+        self.assertEqual(len(data['days']), 7)
+        mon = data['days'][0]
+        self.assertEqual(mon['date'], '2026-06-15')
+        self.assertEqual(mon['weekday'], 'T2')
+        self.assertEqual(len(mon['shifts']), 1)
+        self.assertEqual(mon['shifts'][0]['empId'], self.emp.id)
+
+    def test_week_other_sees_only_approved(self):
+        self._make_shift()                       # pending
+        self._make_shift(start='2026-06-16 02:00:00',
+                         end='2026-06-16 04:00:00', state='approved')
+        other_user = self.env['res.users'].create(
+            {'name': 'Khac', 'login': 'khac_shift'})
+        other_user.tz = 'Asia/Ho_Chi_Minh'
+        other_emp = self.env['hr.employee'].create({
+            'name': 'NV Khac', 'x_employment_status': 'official',
+            'identification_id': '012345678991',
+            'x_pit_code': '1112223334', 'x_social_insurance_no': '9998887776'})
+        other_emp.user_id = other_user
+        data = _shifts_week(self.env(user=other_user), '2026-06-15')
+        all_ids = [r['empId'] for d in data['days'] for r in d['shifts']]
+        self.assertNotIn(self.emp.id, all_ids)   # NV thường không thấy ca người khác
+
+    def test_week_hr_manager_sees_approved_in_scope(self):
+        self._make_shift(state='approved')
+        data = _shifts_week(self.env(user=self.hrm), '2026-06-15')
+        ids = [r['empId'] for d in data['days'] for r in d['shifts']]
+        self.assertIn(self.emp.id, ids)
+        self.assertTrue(data['canManage'])
+
+    def test_week_dept_head_scope(self):
+        dept = self.env['hr.department'].create({'name': 'Phòng S'})
+        in_emp = self.env['hr.employee'].create({
+            'name': 'NV trong S', 'department_id': dept.id,
+            'x_employment_status': 'official', 'identification_id': '012345678992',
+            'x_pit_code': '3334445556', 'x_social_insurance_no': '6665554443'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP S'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPS', 'login': 'tps_shift'})
+        mgr_user.tz = 'Asia/Ho_Chi_Minh'
+        mgr_emp.user_id = mgr_user
+        self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh').create({
+            'employee_id': in_emp.id, 'start': '2026-06-15 02:00:00',
+            'end': '2026-06-15 04:00:00', 'shift_type': 'ot', 'state': 'approved'})
+        self._make_shift(state='approved')   # self.emp ngoài Phòng S
+        data = _shifts_week(self.env(user=mgr_user), '2026-06-15')
+        ids = [r['empId'] for d in data['days'] for r in d['shifts']]
+        self.assertIn(in_emp.id, ids)
+        self.assertNotIn(self.emp.id, ids)
+
+    def test_week_defaults_to_monday(self):
+        # truyền ngày giữa tuần (2026-06-17 là T4) -> chuẩn hóa về thứ 2 2026-06-15
+        data = _shifts_week(self.env(user=self.user), '2026-06-17')
+        self.assertEqual(data['weekStart'], '2026-06-15')
