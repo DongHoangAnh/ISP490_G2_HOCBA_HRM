@@ -46,6 +46,12 @@
                             <field name="violation_free_days"/>
                             <field name="shift_window_minutes"/>
                         </group>
+                        <group string="Hệ số ca (OT/lễ/đêm)">
+                            <field name="night_start"/>
+                            <field name="night_end"/>
+                            <field name="night_bonus"/>
+                            <field name="holiday_dates"/>
+                        </group>
                     </sheet>
                 </form>
             </field>

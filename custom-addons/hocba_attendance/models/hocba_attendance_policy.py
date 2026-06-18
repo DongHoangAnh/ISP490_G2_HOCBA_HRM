@@ -53,6 +53,19 @@ class AttendancePolicy(models.Model):
     shift_window_minutes = fields.Integer(
         string='Cửa sổ check-in ca (phút)', default=15,
         help='CTV/OT được check-in/out trong ±N phút quanh giờ ca đã duyệt.')
+    night_start = fields.Float(
+        string='Giờ bắt đầu ca đêm', default=22.0,
+        help='Ca có giờ vào ≥ giờ này (22.0 = 22:00) được tính phụ cấp đêm.')
+    night_end = fields.Float(
+        string='Giờ kết thúc ca đêm', default=6.0,
+        help='...hoặc giờ vào < giờ này (6.0 = 06:00).')
+    night_bonus = fields.Float(
+        string='Phụ cấp ca đêm (+hệ số)', default=0.3,
+        help='Cộng vào hệ số nếu ca rơi vào khung đêm (Luật LĐ +30%).')
+    holiday_dates = fields.Text(
+        string='Ngày lễ (YYYY-MM-DD)',
+        help='Danh sách ngày lễ, phân tách bằng dấu phẩy hoặc xuống dòng. '
+             'Ca rơi vào ngày lễ → hệ số nền 300%.')
 
     @api.model
     def get_policy(self):
