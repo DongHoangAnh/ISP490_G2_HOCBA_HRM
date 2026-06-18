@@ -33,6 +33,7 @@ export const HB_RESULT = {
   draft: ['Chưa đánh giá', 'gray'],
   pass: ['Đạt', 'green'],
   fail: ['Không đạt', 'red'],
+  extend: ['Gia hạn', 'amber'],
 };
 
 export const HB_CERT = {

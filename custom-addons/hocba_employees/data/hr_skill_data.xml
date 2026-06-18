@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- CONF-EMP-04/05 + BR-070: ma trận kỹ năng tiếng Trung & Sư phạm -->
+    <!-- CONF-EMP-04/05 + BR-070 + họp #2: gom thành "Bằng ngôn ngữ" & "Bằng chuyên môn" -->
     <data noupdate="1">
-        <!-- Skill Type: Tiếng Trung -->
+        <!-- Skill Type: Bằng ngôn ngữ (giữ generic — GV tiếng Trung dùng ngôn ngữ mẹ đẻ) -->
         <record id="skill_type_chinese" model="hr.skill.type">
-            <field name="name">Tiếng Trung</field>
+            <field name="name">Bằng ngôn ngữ</field>
         </record>
         <record id="skill_level_chinese_basic" model="hr.skill.level">
             <field name="name">Sơ cấp</field>
@@ -79,9 +79,9 @@
             <field name="skill_type_id" ref="skill_type_chinese"/>
         </record>
 
-        <!-- Skill Type: Sư phạm ngoại ngữ -->
+        <!-- Skill Type: Bằng chuyên môn (sư phạm / nghiệp vụ chuyên ngành) -->
         <record id="skill_type_pedagogy" model="hr.skill.type">
-            <field name="name">Sư phạm ngoại ngữ</field>
+            <field name="name">Bằng chuyên môn</field>
         </record>
         <record id="skill_level_pedagogy_cert" model="hr.skill.level">
             <field name="name">Có chứng chỉ</field>
@@ -100,6 +100,15 @@
         <record id="skill_pedagogy_ctcsol" model="hr.skill">
             <field name="name">CTCSOL Quốc tế</field>
             <field name="skill_type_id" ref="skill_type_pedagogy"/>
+        </record>
+    </data>
+    <!-- Đổi tên nhóm trên DB đã cài (họp #2) -->
+    <data noupdate="0">
+        <record id="skill_type_chinese" model="hr.skill.type">
+            <field name="name">Bằng ngôn ngữ</field>
+        </record>
+        <record id="skill_type_pedagogy" model="hr.skill.type">
+            <field name="name">Bằng chuyên môn</field>
         </record>
     </data>
 </odoo>

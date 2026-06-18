@@ -1,5 +1,6 @@
 import json
 import math
+from datetime import timedelta
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
@@ -59,6 +60,28 @@ class Attendance(models.Model):
         store=True,
         help='Number of hours worked'
     )
+    expected_check_out = fields.Datetime(
+        string='Giờ ra mong đợi',
+        compute='_compute_work_metrics', store=True)
+    late_minutes = fields.Integer(
+        string='Phút đi trễ',
+        compute='_compute_work_metrics', store=True)
+    early_leave_minutes = fields.Integer(
+        string='Phút về sớm',
+        compute='_compute_work_metrics', store=True)
+    missing_minutes = fields.Integer(
+        string='Phút thiếu',
+        compute='_compute_work_metrics', store=True)
+    morning_credit = fields.Float(
+        string='Công sáng',
+        compute='_compute_work_metrics', store=True)
+    afternoon_credit = fields.Float(
+        string='Công chiều',
+        compute='_compute_work_metrics', store=True)
+    work_credit = fields.Float(
+        string='Công ngày',
+        compute='_compute_work_metrics', store=True,
+        help='0 / 0.5 / 1.0 = công sáng + công chiều.')
     active = fields.Boolean(default=True)
 
     # --- Face + geolocation check-in (F: face attendance) ---
@@ -101,13 +124,45 @@ class Attendance(models.Model):
             else:
                 record.working_hours = 0.0
 
+    @api.depends('check_in', 'check_out')
+    def _compute_work_metrics(self):
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        std = policy.std_work_hours or 8.0
+        late_cut = policy.late_cutoff or 9.5
+        morn_cut = policy.morning_credit_cutoff or 10.0
+        aft_margin = policy.afternoon_margin_hours or 2.0
+        for rec in self:
+            ci, co = rec.check_in, rec.check_out
+            rec.expected_check_out = (ci + timedelta(hours=std)) if ci else False
+            if ci:
+                local_in = fields.Datetime.context_timestamp(rec, ci)
+                in_hour = local_in.hour + local_in.minute / 60.0
+                rec.late_minutes = max(0, int(round((in_hour - late_cut) * 60)))
+                rec.morning_credit = 0.5 if in_hour <= morn_cut else 0.0
+            else:
+                rec.late_minutes = 0
+                rec.morning_credit = 0.0
+            if ci and co:
+                worked_min = (co - ci).total_seconds() / 60.0
+                rec.missing_minutes = max(0, int(round(std * 60 - worked_min)))
+                expected = ci + timedelta(hours=std)
+                rec.early_leave_minutes = max(
+                    0, int(round((expected - co).total_seconds() / 60.0)))
+                aft_threshold = ci + timedelta(hours=std - aft_margin)
+                rec.afternoon_credit = 0.5 if co >= aft_threshold else 0.0
+            else:
+                rec.missing_minutes = 0
+                rec.early_leave_minutes = 0
+                rec.afternoon_credit = 0.0
+            rec.work_credit = rec.morning_credit + rec.afternoon_credit
+
     @api.depends('check_in')
     def _compute_status(self):
         Status = self.env['hocba.attendance.status']
         on_time_status = Status.search([('code', '=', 'on_time')], limit=1)
         late_status = Status.search([('code', '=', 'late')], limit=1)
         policy = self.env['hocba.attendance.policy'].get_policy()
-        cutoff = policy.morning_start
+        cutoff = policy.late_cutoff
 
         for record in self:
             if not record.check_in:
@@ -251,6 +306,69 @@ class Attendance(models.Model):
             'face_score': face_score,
         }
 
+    def _assert_check_allowed(self, employee, kind):
+        """Chặn check-in/out sai luật: ngày nghỉ, đã check-in/out, chưa check-in.
+        Raise UserError với mã lỗi làm message để controller map sang HTTP."""
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'),
+            fields.Datetime.now()).replace(tzinfo=None)
+        if not policy.is_workday(now_local):
+            raise UserError('not_workday')
+        rec = self.sudo().search([
+            ('employee_id', '=', employee.id),
+            ('date', '=', now_local.date()),
+        ], limit=1)
+        if kind == 'in':
+            if rec and rec.check_in:
+                raise UserError('already_checked_in')
+        else:
+            if not rec or not rec.check_in:
+                raise UserError('not_checked_in')
+            if rec.check_out:
+                raise UserError('already_checked_out')
+
+    def _todays_approved_shifts(self, employee, today):
+        """Ca approved của employee có start rơi vào ngày local `today`."""
+        shifts = self.env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', employee.id), ('state', '=', 'approved')])
+        return shifts.filtered(
+            lambda s: fields.Datetime.context_timestamp(s, s.start).date() == today)
+
+    def _assert_shift_check_allowed(self, employee, kind):
+        """CTV/OT (non-official): check-in/out theo ca approved + cửa sổ ±W phút.
+        Raise UserError mã lỗi: no_shift_today / outside_shift_window /
+        already_checked_in / not_checked_in / already_checked_out."""
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        window = policy.shift_window_minutes or 15
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'),
+            fields.Datetime.now()).replace(tzinfo=None)
+        today = now_local.date()
+        shifts = self._todays_approved_shifts(employee, today)
+        if not shifts:
+            raise UserError('no_shift_today')
+        in_window = False
+        for s in shifts:
+            anchor_utc = s.start if kind == 'in' else s.end
+            anchor = fields.Datetime.context_timestamp(
+                s, anchor_utc).replace(tzinfo=None)
+            if abs((now_local - anchor).total_seconds()) <= window * 60:
+                in_window = True
+                break
+        if not in_window:
+            raise UserError('outside_shift_window')
+        rec = self.sudo().search([
+            ('employee_id', '=', employee.id), ('date', '=', today)], limit=1)
+        if kind == 'in':
+            if rec and rec.check_in:
+                raise UserError('already_checked_in')
+        else:
+            if not rec or not rec.check_in:
+                raise UserError('not_checked_in')
+            if rec.check_out:
+                raise UserError('already_checked_out')
+
     @api.model
     def action_check_in(self, payload):
         """RPC entry: self-service check-in for the current user's employee."""
@@ -262,6 +380,7 @@ class Attendance(models.Model):
         # Self-service: regular employees aren't in the HR groups that own the
         # ACL on attendance/policy/status, so run the write under sudo. The
         # employee is already pinned to the caller above, preventing spoofing.
+        self._assert_check_allowed(employee, 'in')
         return self.sudo()._do_check(payload, 'in')
 
     @api.model
@@ -272,4 +391,5 @@ class Attendance(models.Model):
         if not employee:
             raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
         payload['employee_id'] = employee.id
+        self._assert_check_allowed(employee, 'out')
         return self.sudo()._do_check(payload, 'out')

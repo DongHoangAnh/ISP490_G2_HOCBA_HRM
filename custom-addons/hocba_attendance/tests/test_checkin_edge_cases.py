@@ -19,6 +19,7 @@ class TestCheckinEdgeCases(TransactionCase):
         self.employee = self.env['hr.employee'].create({
             'name': 'Nguyen Van A',
             'x_employment_status': 'official',
+            'identification_id': '012345670001',
             'x_pit_code': '8765432109',
             'x_social_insurance_no': '0123456789',
             'x_face_descriptor': json.dumps([0.0] * 128),
@@ -61,6 +62,7 @@ class TestCheckinEdgeCases(TransactionCase):
         emp = self.env['hr.employee'].create({
             'name': 'No Face',
             'x_employment_status': 'official',
+            'identification_id': '012345670002',
             'x_pit_code': '8765432109',
             'x_social_insurance_no': '0123456789',
         })

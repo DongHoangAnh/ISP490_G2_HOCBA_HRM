@@ -1,0 +1,248 @@
+import json
+
+from odoo import fields
+from odoo.tests.common import TransactionCase
+from odoo.tests import tagged
+from odoo.exceptions import AccessError, UserError, ValidationError
+
+from odoo.addons.hocba_hrm.controllers.main import _req_row, _request_apply, _request_create, _request_decide, _att_requests_mine, _att_requests_pending
+
+
+@tagged('post_install', '-at_install')
+class TestAttendanceRequest(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.policy = self.env['hocba.attendance.policy'].get_policy()
+        self.policy.write({
+            'morning_start': 8.0, 'morning_end': 9.5,
+            'evening_start': 16.0, 'evening_end': 17.5,
+            'office_lat': 0.0, 'office_lng': 0.0,
+            'std_work_hours': 8.0, 'violation_free_days': 2,
+        })
+        # NV gửi đơn + user của họ
+        self.emp = self.env['hr.employee'].create({
+            'name': 'NV Don', 'x_employment_status': 'official',
+            'identification_id': '012345678901',
+            'x_pit_code': '8765432109', 'x_social_insurance_no': '0123456789',
+        })
+        self.user = self.env['res.users'].create({
+            'name': 'NV Don User', 'login': 'nv_req_user'})
+        self.user.tz = 'Asia/Ho_Chi_Minh'
+        self.emp.user_id = self.user
+        # HR Manager
+        self.hrm = self.env['res.users'].create({
+            'name': 'HRM Req', 'login': 'hrm_req',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        self.hrm.tz = 'Asia/Ho_Chi_Minh'
+
+    def _make_req(self, **vals):
+        base = {
+            'employee_id': self.emp.id, 'request_date': '2026-06-12',
+            'reason': 'Quên bấm', 'state': 'pending',
+        }
+        base.update(vals)
+        return self.env['hocba.attendance.request'].create(base)
+
+    def test_req_row_shape(self):
+        req = self._make_req()
+        row = _req_row(req)
+        self.assertEqual(row['empId'], self.emp.id)
+        self.assertEqual(row['requestDate'], '2026-06-12')
+        self.assertEqual(row['state'], 'pending')
+        self.assertIsNone(row['attendanceId'])
+        self.assertIsNone(row['reviewer'])
+        self.assertEqual(row['reason'], 'Quên bấm')
+
+    def test_apply_updates_existing_record(self):
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': self.emp.id,
+                          'check_in': '2026-06-12 02:00:00',    # 09:00 local
+                          'check_out': '2026-06-12 07:00:00'})  # 5h -> thiếu 180
+        self.assertEqual(rec.missing_minutes, 180)
+        req = self._make_req(attendance_id=rec.id)
+        # 09:00 -> 17:00 local = 8h đủ công. _to_utc nhận local ISO.
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        env = self.env(user=self.hrm)
+        out = _request_apply(env, req.with_env(env), None,
+                             _to_utc(env, '2026-06-12T17:00'))
+        self.assertEqual(out, rec)
+        self.assertEqual(rec.missing_minutes, 0)
+
+    def test_apply_creates_record_for_missing_day(self):
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        req = self._make_req(request_date='2026-06-13')
+        env = self.env(user=self.hrm)
+        ci = _to_utc(env, '2026-06-13T09:00')
+        co = _to_utc(env, '2026-06-13T17:00')
+        rec = _request_apply(env, req.with_env(env), ci, co)
+        self.assertTrue(rec.exists())
+        self.assertEqual(rec.employee_id, self.emp)
+        self.assertEqual(req.attendance_id, rec)
+        self.assertEqual(rec.check_in, ci)
+        self.assertEqual(rec.check_out, co)
+
+    def test_apply_missing_day_without_checkin_raises(self):
+        req = self._make_req(request_date='2026-06-14')
+        env = self.env(user=self.hrm)
+        with self.assertRaises(ValidationError):
+            _request_apply(env, req.with_env(env), None, None)
+
+    def test_create_pins_employee_and_converts_utc(self):
+        env = self.env(user=self.user)
+        row = _request_create(env, {
+            'requestDate': '2026-06-12',
+            'checkIn': '2026-06-12T08:10',
+            'reason': 'Điện thoại hết pin',
+        })
+        self.assertEqual(row['empId'], self.emp.id)
+        self.assertEqual(row['state'], 'pending')
+        req = env['hocba.attendance.request'].browse(row['id'])
+        # 08:10 local (+07) -> 01:10 UTC stored
+        self.assertEqual(str(req.proposed_check_in), '2026-06-12 01:10:00')
+
+    def test_create_empty_reason_raises(self):
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _request_create(env, {'requestDate': '2026-06-12', 'reason': '  '})
+
+    def test_create_no_employee_returns_none(self):
+        u = self.env['res.users'].create({'name': 'NoEmp', 'login': 'noemp_req'})
+        self.assertIsNone(_request_create(self.env(user=u),
+                                          {'requestDate': '2026-06-12',
+                                           'reason': 'x'}))
+
+    def test_create_foreign_attendance_rejected(self):
+        other = self.env['hr.employee'].create({
+            'name': 'NV Khac', 'x_employment_status': 'official',
+            'identification_id': '012345678902',
+            'x_pit_code': '1112223334', 'x_social_insurance_no': '9998887776'})
+        rec = self.env['hocba.attendance'].with_context(
+            tz='Asia/Ho_Chi_Minh').create({
+                'employee_id': other.id, 'check_in': '2026-06-12 02:00:00'})
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _request_create(env, {'requestDate': '2026-06-12',
+                                  'attendanceId': rec.id, 'reason': 'x'})
+
+    def test_create_derives_date_from_attendance(self):
+        # Đính kèm bản ghi của chính mình, KHÔNG gửi requestDate -> lấy theo
+        # ngày của bản ghi (attendance.date).
+        rec = self.env['hocba.attendance'].with_context(
+            tz='Asia/Ho_Chi_Minh').create({
+                'employee_id': self.emp.id, 'check_in': '2026-06-12 02:00:00'})
+        env = self.env(user=self.user)
+        row = _request_create(env, {'attendanceId': rec.id, 'reason': 'Sửa giờ'})
+        self.assertEqual(row['attendanceId'], rec.id)
+        req = env['hocba.attendance.request'].browse(row['id'])
+        self.assertEqual(req.request_date, rec.date)
+
+    def test_decide_approve_applies_manager_override(self):
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        rec = Att.create({'employee_id': self.emp.id,
+                          'check_in': '2026-06-12 02:00:00',
+                          'check_out': '2026-06-12 07:00:00'})  # thiếu 180
+        req = self._make_req(attendance_id=rec.id,
+                             proposed_check_out=_to_utc(
+                                 self.env(user=self.user), '2026-06-12T16:00'))
+        env = self.env(user=self.hrm)
+        # manager chỉnh khác giờ user đề xuất: 17:00
+        row = _request_decide(env, req.id, True, {'checkOut': '2026-06-12T17:00'})
+        self.assertEqual(row['state'], 'approved')
+        self.assertEqual(row['reviewer'], self.hrm.name)
+        self.assertEqual(rec.missing_minutes, 0)  # 09:00->17:00 = 8h
+
+    def test_decide_approve_creates_for_missing_day(self):
+        from odoo.addons.hocba_hrm.controllers.main import _to_utc
+        env = self.env(user=self.hrm)
+        req = self._make_req(
+            request_date='2026-06-13',
+            proposed_check_in=_to_utc(self.env(user=self.user), '2026-06-13T09:00'),
+            proposed_check_out=_to_utc(self.env(user=self.user), '2026-06-13T17:00'))
+        row = _request_decide(env, req.id, True, {})
+        self.assertEqual(row['state'], 'approved')
+        self.assertIsNotNone(row['attendanceId'])
+
+    def test_decide_approve_missing_day_no_checkin_raises(self):
+        env = self.env(user=self.hrm)
+        req = self._make_req(request_date='2026-06-14')  # không proposed giờ nào
+        with self.assertRaises(ValidationError):
+            _request_decide(env, req.id, True, {})
+
+    def test_decide_reject_sets_state_and_note(self):
+        env = self.env(user=self.hrm)
+        req = self._make_req()
+        row = _request_decide(env, req.id, False, {'reviewNote': 'Không hợp lệ'})
+        self.assertEqual(row['state'], 'rejected')
+        self.assertEqual(row['reviewNote'], 'Không hợp lệ')
+
+    def test_decide_out_of_scope_forbidden(self):
+        # NV ngoài phạm vi của 1 trưởng phòng (không HR)
+        dept = self.env['hr.department'].create({'name': 'Phòng X'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP X'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPX', 'login': 'tpx_req'})
+        mgr_emp.user_id = mgr_user
+        req = self._make_req()  # emp KHÔNG thuộc Phòng X
+        with self.assertRaises(AccessError):
+            _request_decide(self.env(user=mgr_user), req.id, True, {})
+
+    def test_decide_already_decided_raises(self):
+        env = self.env(user=self.hrm)
+        req = self._make_req(state='approved')
+        with self.assertRaises(UserError):
+            _request_decide(env, req.id, False, {})
+
+    def test_decide_missing_returns_none(self):
+        self.assertIsNone(_request_decide(self.env(user=self.hrm), 999999, False, {}))
+
+    def test_mine_only_own(self):
+        other = self.env['hr.employee'].create({
+            'name': 'NV Khac2', 'x_employment_status': 'official',
+            'identification_id': '012345678903',
+            'x_pit_code': '2223334445', 'x_social_insurance_no': '5554443332'})
+        self._make_req()                      # pending của self.emp
+        self._make_req(state='approved')      # approved của self.emp (mọi state)
+        self.env['hocba.attendance.request'].create({
+            'employee_id': other.id, 'request_date': '2026-06-12',
+            'reason': 'khac'})
+        rows = _att_requests_mine(self.env(user=self.user))
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r['empId'] == self.emp.id for r in rows))
+        self.assertEqual({r['state'] for r in rows}, {'pending', 'approved'})
+
+    def test_mine_no_employee_none(self):
+        u = self.env['res.users'].create({'name': 'NoEmp2', 'login': 'noemp_req2'})
+        self.assertIsNone(_att_requests_mine(self.env(user=u)))
+
+    def test_pending_hr_manager_sees_all_pending(self):
+        pending = self._make_req()
+        decided = self._make_req(state='rejected')
+        rows = _att_requests_pending(self.env(user=self.hrm))
+        ids = [r['id'] for r in rows]
+        self.assertIn(pending.id, ids)
+        self.assertNotIn(decided.id, ids)  # chỉ lấy pending
+
+    def test_pending_non_manager_empty(self):
+        self._make_req()
+        rows = _att_requests_pending(self.env(user=self.user))
+        self.assertEqual(rows, [])
+
+    def test_pending_dept_head_scope(self):
+        dept = self.env['hr.department'].create({'name': 'Phòng P'})
+        in_emp = self.env['hr.employee'].create({
+            'name': 'NV trong P', 'department_id': dept.id,
+            'x_employment_status': 'official', 'identification_id': '012345670099',
+            'x_pit_code': '3334445556', 'x_social_insurance_no': '6665554443'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP P'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPP', 'login': 'tpp_req'})
+        mgr_emp.user_id = mgr_user
+        self.env['hocba.attendance.request'].create({
+            'employee_id': in_emp.id, 'request_date': '2026-06-12', 'reason': 'a'})
+        self._make_req()  # emp ngoài Phòng P
+        rows = _att_requests_pending(self.env(user=mgr_user))
+        emp_ids = [r['empId'] for r in rows]
+        self.assertIn(in_emp.id, emp_ids)
+        self.assertNotIn(self.emp.id, emp_ids)

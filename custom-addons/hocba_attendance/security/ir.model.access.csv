@@ -7,3 +7,7 @@ access_hocba_attendance_status_user,access.hocba.attendance.status.user,model_ho
 access_hocba_attendance_status_manager,access.hocba.attendance.status.manager,model_hocba_attendance_status,hr.group_hr_manager,1,1,1,1
 access_hocba_attendance_policy_user,access.hocba.attendance.policy.user,model_hocba_attendance_policy,hr.group_hr_user,1,0,0,0
 access_hocba_attendance_policy_manager,access.hocba.attendance.policy.manager,model_hocba_attendance_policy,hr.group_hr_manager,1,1,1,1
+access_hocba_attendance_request_user,access.hocba.attendance.request.user,model_hocba_attendance_request,hr.group_hr_user,1,1,1,0
+access_hocba_attendance_request_manager,access.hocba.attendance.request.manager,model_hocba_attendance_request,hr.group_hr_manager,1,1,1,1
+access_hocba_work_shift_user,access.hocba.work_shift.user,model_hocba_work_shift,hr.group_hr_user,1,1,1,0
+access_hocba_work_shift_manager,access.hocba.work_shift.manager,model_hocba_work_shift,hr.group_hr_manager,1,1,1,1

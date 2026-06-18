@@ -17,7 +17,8 @@ class TestCheckinFlow(TransactionCase):
         self.employee = self.env['hr.employee'].create({
             'name': 'Nguyen Van A',
             'x_employment_status': 'official',
-            # BR-010: official employees must declare MST TNCN + BHXH
+            # BR-010: official employees must declare MST TNCN + BHXH + CCCD
+            'identification_id': '012345670003',
             'x_pit_code': '8765432109',
             'x_social_insurance_no': '0123456789',
             'x_face_descriptor': json.dumps([0.0] * 128),

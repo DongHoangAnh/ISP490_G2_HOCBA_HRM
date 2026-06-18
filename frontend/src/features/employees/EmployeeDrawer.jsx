@@ -80,7 +80,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
   );
 }
 
-export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
+export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, onUpdated }) {
   const [depForm, setDepForm] = useState(null); // null | 'new' | <dependent>
   const [certForm, setCertForm] = useState(null); // null | 'new' | <cert>
   const delDep = async (d) => {
@@ -119,25 +119,25 @@ export function InfoTab({ det, isHr, isMgr, editable, onUpdated }) {
           <div className="kv" key={i}><div className="k">{k}</div><div className="v">{v || '—'}</div></div>
         ))}
       </div>
-      {isHr && (det.dependents?.length > 0 || editable) && (
+      {isHr && (det.dependents?.length > 0 || depEditable) && (
         <div style={{ marginTop: 22 }}>
           <div className="between" style={{ marginBottom: 8 }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>Người phụ thuộc ({det.dependents?.length || 0})</div>
-            {editable && (
+            {depEditable && (
               <button className="btn btn-soft btn-sm" onClick={() => setDepForm('new')}>
                 <Icon name="plus" size={13} />Thêm NPT</button>
             )}
           </div>
           {det.dependents?.length > 0 ? (
             <div className="card" style={{ padding: 0 }}>
-              <table className="tbl"><thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th>Giảm trừ từ</th><th>Đến</th>{editable && <th></th>}</tr></thead>
+              <table className="tbl"><thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th>Giảm trừ từ</th><th>Đến</th>{depEditable && <th></th>}</tr></thead>
                 <tbody>{det.dependents.map((d) => (
                   <tr key={d.id} style={{ cursor: 'default' }}>
                     <td>{d.name}</td><td>{d.relationship}</td>
                     <td className="mono">{fmtDate(d.birthday)}</td>
                     <td className="mono">{fmtDate(d.from)}</td>
                     <td className="mono">{d.to ? fmtDate(d.to) : '—'}</td>
-                    {editable && (
+                    {depEditable && (
                       <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                         <button className="icon-btn" title="Sửa" onClick={() => setDepForm(d)}><Icon name="edit" size={15} className="faint" /></button>
                         <button className="icon-btn" title="Xoá" onClick={() => delDep(d)}><Icon name="trash" size={15} className="faint" /></button>
@@ -214,7 +214,9 @@ function GateAction({ empId, gate, onUpdated }) {
   const [err, setErr] = useState(null);
   const submit = async (result) => {
     if (result === 'fail' && !window.confirm(
-      'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding (không gia hạn). Tiếp tục?')) return;
+      'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding. Tiếp tục?')) return;
+    if (result === 'extend' && !window.confirm(
+      'Gia hạn sẽ kéo dài thử việc và hẹn tái đánh giá. Tiếp tục?')) return;
     setBusy(true); setErr(null);
     try {
       const det = await postGate(empId, { gate, result });
@@ -228,11 +230,16 @@ function GateAction({ empId, gate, onUpdated }) {
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 7 }}>
         Đánh giá cổng
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button className="btn btn-primary btn-sm" disabled={busy}
           style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
           onClick={() => submit('pass')}>
           <Icon name="checkCircle" size={14} />Đạt
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={busy}
+          style={{ color: 'var(--gold-600)', borderColor: 'var(--gold-200)' }}
+          onClick={() => submit('extend')}>
+          <Icon name="clock" size={14} />Gia hạn
         </button>
         <button className="btn btn-ghost btn-sm" disabled={busy}
           style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
@@ -310,16 +317,18 @@ function TrialAction({ empId, onUpdated }) {
 /* Timeline thử việc 5 điểm (Nhóm B) + thử giảng (Nhóm A) */
 export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
   const p = det.probation || {};
+  const gst = (r) => r === 'pass' ? 'done' : r === 'fail' ? 'fail' : r === 'extend' ? 'extend' : 'pending';
+  const gsub = (date, due) => date ? fmtDate(date) : (due ? 'hạn ' + fmtDate(due) : '');
   const steps = [
     ['Thử việc', p.start ? 'done' : 'pending', fmtDate(p.start)],
-    ['ĐG tuần-2', p.d2wResult === 'pass' ? 'done' : p.d2wResult === 'fail' ? 'fail' : 'pending',
-      p.d2wDate ? fmtDate(p.d2wDate) : (p.d2wDue ? 'hạn ' + fmtDate(p.d2wDue) : '')],
+    ['ĐG tuần-2', gst(p.d2wResult), gsub(p.d2wDate, p.d2wDue)],
     ['Cấp thiết bị', p.equipDate ? 'done' : 'pending', p.equipDate ? fmtDate(p.equipDate) : ''],
-    ['ĐG tháng-2', p.d2mResult === 'pass' ? 'done' : p.d2mResult === 'fail' ? 'fail' : 'pending',
-      p.d2mDate ? fmtDate(p.d2mDate) : (p.d2mDue ? 'hạn ' + fmtDate(p.d2mDue) : '')],
+    ['ĐG tháng-1', gst(p.d1mResult), gsub(p.d1mDate, p.d1mDue)],
+    ['ĐG tháng-2', gst(p.d2mResult), gsub(p.d2mDate, p.d2mDue)],
     ['Chính thức', p.officialDate ? 'done' : 'pending', p.officialDate ? fmtDate(p.officialDate) : ''],
   ];
-  const col = (s) => s === 'done' ? 'var(--green)' : s === 'fail' ? 'var(--red-600)' : 'var(--border-strong)';
+  const col = (s) => s === 'done' ? 'var(--green)' : s === 'fail' ? 'var(--red-600)'
+    : s === 'extend' ? 'var(--gold-500)' : 'var(--border-strong)';
   return (
     <div>
       {p.isGroupB ? (
@@ -332,7 +341,7 @@ export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 86 }}>
                     <div style={{ width: 17, height: 17, borderRadius: '50%', background: col(st),
                       display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 800 }}>
-                      {st === 'done' ? '✓' : st === 'fail' ? '✗' : i + 1}
+                      {st === 'done' ? '✓' : st === 'fail' ? '✗' : st === 'extend' ? '↻' : i + 1}
                     </div>
                     <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 6, textAlign: 'center' }}>{lbl}</div>
                     {sub && <div className="faint" style={{ fontSize: 10.5, marginTop: 2, textAlign: 'center' }}>{sub}</div>}
@@ -341,17 +350,35 @@ export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
               ))}
             </div>
           </div>
-          <div className="grid-2">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="card" style={{ padding: 16 }}>
               <div className="between" style={{ marginBottom: 10 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>Cổng tuần-2 · cấp thiết bị</span>
                 <Badge kind={HB_RESULT[p.d2wResult][1]} dot>{HB_RESULT[p.d2wResult][0]}</Badge>
               </div>
-              <div className="kv" style={{ marginBottom: 8 }}><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2wDue)}</div></div>
-              <div className="kv" style={{ marginBottom: 8 }}><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2wDate)}</div></div>
-              <div className="kv"><div className="k">Ghi chú</div><div className="v">{p.d2wNote || '—'}</div></div>
-              {isMgr && onUpdated && p.d2wResult === 'draft' && (
+              <div className="grid-2">
+                <div className="kv"><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2wDue)}</div></div>
+                <div className="kv"><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2wDate)}</div></div>
+              </div>
+              <div className="kv" style={{ marginTop: 8 }}><div className="k">Ghi chú</div><div className="v">{p.d2wNote || '—'}</div></div>
+              {p.canEval && onUpdated && p.d2wResult === 'draft' && (
                 <GateAction empId={det.id} gate="2w" onUpdated={onUpdated} />
+              )}
+            </div>
+            <div className="card" style={{ padding: 16 }}>
+              <div className="between" style={{ marginBottom: 10 }}>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>Cổng tháng-1 · có thể lên chính thức sớm</span>
+                <Badge kind={HB_RESULT[p.d1mResult][1]} dot>{HB_RESULT[p.d1mResult][0]}</Badge>
+              </div>
+              <div className="grid-2">
+                <div className="kv"><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d1mDue)}</div></div>
+                <div className="kv"><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d1mDate)}</div></div>
+              </div>
+              <div className="kv" style={{ marginTop: 8 }}><div className="k">Ghi chú</div><div className="v">{p.d1mNote || '—'}</div></div>
+              {p.d2wResult !== 'pass' ? (
+                <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>Mở sau khi cổng tuần-2 Đạt.</div>
+              ) : p.canEval && onUpdated && p.d1mResult === 'draft' && (
+                <GateAction empId={det.id} gate="1m" onUpdated={onUpdated} />
               )}
             </div>
             <div className="card" style={{ padding: 16 }}>
@@ -359,10 +386,14 @@ export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
                 <span style={{ fontWeight: 700, fontSize: 13 }}>Cổng tháng-2 · lên chính thức</span>
                 <Badge kind={HB_RESULT[p.d2mResult][1]} dot>{HB_RESULT[p.d2mResult][0]}</Badge>
               </div>
-              <div className="kv" style={{ marginBottom: 8 }}><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2mDue)}</div></div>
-              <div className="kv" style={{ marginBottom: 8 }}><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2mDate)}</div></div>
-              <div className="kv"><div className="k">Ghi chú</div><div className="v">{p.d2mNote || '—'}</div></div>
-              {isMgr && onUpdated && p.d2wResult === 'pass' && p.d2mResult === 'draft' && (
+              <div className="grid-2">
+                <div className="kv"><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2mDue)}</div></div>
+                <div className="kv"><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2mDate)}</div></div>
+              </div>
+              <div className="kv" style={{ marginTop: 8 }}><div className="k">Ghi chú</div><div className="v">{p.d2mNote || '—'}</div></div>
+              {p.d1mResult !== 'extend' ? (
+                <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>Chỉ mở khi cổng tháng-1 "Gia hạn".</div>
+              ) : p.canEval && onUpdated && p.d2mResult === 'draft' && (
                 <GateAction empId={det.id} gate="2m" onUpdated={onUpdated} />
               )}
             </div>

@@ -49,3 +49,12 @@ export async function hbPost(url, payload) {
   }
   return res.json();
 }
+
+/* Upload file (multipart/form-data) — không set Content-Type để browser tự thêm boundary. */
+export async function hbUpload(url, file, field = 'file') {
+  const fd = new FormData();
+  fd.append(field, file);
+  const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: fd });
+  if (!res.ok) throw new ApiError(res.status, await safeCode(res));
+  return res.json();
+}

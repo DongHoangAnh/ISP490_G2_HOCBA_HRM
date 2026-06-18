@@ -53,6 +53,7 @@
                                 <field name="x_employment_status"/>
                                 <field name="x_position_type"/>
                                 <field name="x_employee_type_id"/>
+                                <field name="x_seniority_level"/>
                             </group>
                             <group string="Mốc chính thức">
                                 <field name="x_official_date"/>
@@ -65,7 +66,7 @@
                                    colspan="2" readonly="1"/>
                         </group>
                         <!-- F-004: chỉ hiện với Nhóm B — BR-030 -->
-                        <group string="Dòng thời gian thử việc (2 cổng — Nhóm B)"
+                        <group string="Dòng thời gian thử việc (Nhóm B)"
                                invisible="x_position_type not in ('staff', 'manager') or x_work_form != 'offline'">
                             <group string="Cổng tuần-2 (cấp thiết bị)">
                                 <field name="x_probation_start"/>
@@ -76,9 +77,16 @@
                                 <field name="x_eval_2w_note"/>
                                 <field name="x_equip_grant_date" readonly="1"/>
                             </group>
-                            <group string="Cổng tháng-2 (lên chính thức)">
+                            <group string="Cổng tháng-1 (có thể lên chính thức sớm)">
+                                <field name="x_eval_1m_due"/>
+                                <field name="x_eval_1m_result" readonly="x_eval_2w_result != 'pass'"/>
+                                <field name="x_eval_1m_date" invisible="x_eval_1m_result == 'draft'"/>
+                                <field name="x_eval_1m_evaluator_id" invisible="x_eval_1m_result == 'draft'"/>
+                                <field name="x_eval_1m_note"/>
+                            </group>
+                            <group string="Cổng tháng-2 (chỉ khi tháng-1 gia hạn)">
                                 <field name="x_eval_2m_due"/>
-                                <field name="x_eval_2m_result" readonly="x_eval_2w_result != 'pass'"/>
+                                <field name="x_eval_2m_result" readonly="x_eval_1m_result != 'extend'"/>
                                 <field name="x_eval_2m_date" invisible="x_eval_2m_result == 'draft'"/>
                                 <field name="x_eval_2m_evaluator_id" invisible="x_eval_2m_result == 'draft'"/>
                                 <field name="x_eval_2m_note"/>

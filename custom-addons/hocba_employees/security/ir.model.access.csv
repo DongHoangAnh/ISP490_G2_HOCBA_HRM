@@ -9,3 +9,5 @@ access_hr_employee_asset_user,access.hr.employee.asset.user,model_hr_employee_as
 access_hr_employee_asset_manager,access.hr.employee.asset.manager,model_hr_employee_asset,hr.group_hr_manager,1,1,1,0
 access_hr_promotion_history_user,access.hr.promotion.history.user,model_hr_promotion_history,hr.group_hr_user,1,0,0,0
 access_hr_promotion_history_manager,access.hr.promotion.history.manager,model_hr_promotion_history,hr.group_hr_manager,1,1,1,0
+access_hr_employee_giaovu,access.hr.employee.giaovu,hr.model_hr_employee,hocba_employees.group_hocba_giaovu,1,1,1,0
+access_hocba_employee_type_giaovu,access.hocba.employee.type.giaovu,model_hocba_employee_type,hocba_employees.group_hocba_giaovu,1,0,0,0

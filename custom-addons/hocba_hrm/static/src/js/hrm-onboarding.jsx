@@ -23,12 +23,12 @@ function Onboarding({ search }) {
     <div className="content fade-in">
       <div className="page-head">
         <div>
-          <h1>Nhập việc</h1>
+          <h1>Nhận việc</h1>
           <p>Quy trình hội nhập Học Bá · thử việc 2 tuần → đánh giá cấp thiết bị → xét chính thức sau 2 tháng</p>
         </div>
         <div className="actions">
           <button className="btn btn-ghost"><Icon name="file" size={16}/>Mẫu checklist</button>
-          <button className="btn btn-primary"><Icon name="plus" size={16}/>Khởi tạo nhập việc</button>
+          <button className="btn btn-primary"><Icon name="plus" size={16}/>Khởi tạo nhận việc</button>
         </div>
       </div>
 
