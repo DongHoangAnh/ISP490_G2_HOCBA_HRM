@@ -44,6 +44,7 @@
                             <field name="std_work_hours"/>
                             <field name="afternoon_margin_hours"/>
                             <field name="violation_free_days"/>
+                            <field name="shift_window_minutes"/>
                         </group>
                     </sheet>
                 </form>

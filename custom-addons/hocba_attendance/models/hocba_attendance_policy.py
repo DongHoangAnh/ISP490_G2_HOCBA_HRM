@@ -50,6 +50,9 @@ class AttendancePolicy(models.Model):
     violation_free_days = fields.Integer(
         string='Số ngày vi phạm miễn trừ/tháng', default=2,
         help='Số ngày vi phạm đầu tháng không tính vào công thiếu.')
+    shift_window_minutes = fields.Integer(
+        string='Cửa sổ check-in ca (phút)', default=15,
+        help='CTV/OT được check-in/out trong ±N phút quanh giờ ca đã duyệt.')
 
     @api.model
     def get_policy(self):
