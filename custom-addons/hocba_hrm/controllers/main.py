@@ -548,6 +548,40 @@ def _shifts_week(env, monday_str):
     return {'weekStart': _d(monday), 'canManage': _user_can_manage(env), 'days': days}
 
 
+def _shift_decide(env, shift_id, approve, body):
+    """Manager duyệt/từ chối 1 ca trong phạm vi (Gói 4A). Khi duyệt: override
+    được start/end/shiftType/rate (nếu body gửi). Trả _shift_row; None nếu không
+    tồn tại; AccessError nếu vượt quyền; UserError('already_decided') nếu đã quyết định."""
+    shift = env['hocba.work_shift'].sudo().browse(shift_id)
+    if not shift.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
+        raise AccessError('forbidden')
+    if shift.state != 'pending':
+        raise UserError('already_decided')
+    vals = {
+        'reviewer_id': env.user.id,
+        'decision_date': fields.Datetime.now(),
+        'review_note': (body.get('reviewNote') or '').strip() or False,
+    }
+    if approve:
+        if 'start' in body:
+            vals['start'] = _to_utc(env, body['start'])
+        if 'end' in body:
+            vals['end'] = _to_utc(env, body['end'])
+        if 'shiftType' in body:
+            if body['shiftType'] not in ('ctv', 'ot'):
+                raise ValidationError('Loại ca không hợp lệ.')
+            vals['shift_type'] = body['shiftType']
+        if 'rate' in body:
+            vals['rate'] = float(body['rate'])
+        vals['state'] = 'approved'
+    else:
+        vals['state'] = 'rejected'
+    shift.write(vals)
+    return _shift_row(shift)
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:

@@ -3,7 +3,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create, _shifts_week
+from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create, _shifts_week, _shift_decide
 
 
 @tagged('post_install', '-at_install')
@@ -155,3 +155,45 @@ class TestShiftApi(TransactionCase):
         # truyền ngày giữa tuần (2026-06-17 là T4) -> chuẩn hóa về thứ 2 2026-06-15
         data = _shifts_week(self.env(user=self.user), '2026-06-17')
         self.assertEqual(data['weekStart'], '2026-06-15')
+
+    def test_decide_approve_with_override(self):
+        env = self.env(user=self.hrm)
+        s = self._make_shift()
+        row = _shift_decide(env, s.id, True, {'rate': 3.0,
+                            'end': '2026-06-15T12:00'})
+        self.assertEqual(row['state'], 'approved')
+        self.assertEqual(row['rate'], 3.0)
+        self.assertEqual(row['end'], '2026-06-15T12:00:00')
+        self.assertEqual(row['reviewer'], self.hrm.name)
+
+    def test_decide_reject_sets_note(self):
+        env = self.env(user=self.hrm)
+        s = self._make_shift()
+        row = _shift_decide(env, s.id, False, {'reviewNote': 'Không cần'})
+        self.assertEqual(row['state'], 'rejected')
+        self.assertEqual(row['reviewNote'], 'Không cần')
+
+    def test_decide_bad_type_override_raises(self):
+        env = self.env(user=self.hrm)
+        s = self._make_shift()
+        with self.assertRaises(ValidationError):
+            _shift_decide(env, s.id, True, {'shiftType': 'x'})
+
+    def test_decide_out_of_scope_forbidden(self):
+        dept = self.env['hr.department'].create({'name': 'Phòng Z'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP Z'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPZ', 'login': 'tpz_shift'})
+        mgr_emp.user_id = mgr_user
+        s = self._make_shift()   # self.emp ngoài Phòng Z
+        with self.assertRaises(AccessError):
+            _shift_decide(self.env(user=mgr_user), s.id, True, {})
+
+    def test_decide_already_decided_raises(self):
+        env = self.env(user=self.hrm)
+        s = self._make_shift(state='approved')
+        with self.assertRaises(UserError):
+            _shift_decide(env, s.id, False, {})
+
+    def test_decide_missing_returns_none(self):
+        self.assertIsNone(_shift_decide(self.env(user=self.hrm), 999999, True, {}))
