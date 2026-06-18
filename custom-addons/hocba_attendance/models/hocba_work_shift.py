@@ -58,5 +58,5 @@ class WorkShift(models.Model):
         (Lễ/đêm + 30% để Gói 4C.) start_dt là Datetime UTC naive."""
         if not start_dt:
             return 1.0
-        local = fields.Datetime.context_timestamp(self.env.user, start_dt)
+        local = fields.Datetime.context_timestamp(self, start_dt)
         return 2.0 if local.weekday() >= 5 else 1.5
