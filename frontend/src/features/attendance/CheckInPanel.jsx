@@ -54,6 +54,8 @@ export default function CheckInPanel({ me, onChanged }) {
         already_checked_in: 'Bạn đã check-in hôm nay rồi.',
         not_checked_in: 'Bạn chưa check-in nên không thể check-out.',
         already_checked_out: 'Bạn đã check-out hôm nay rồi.',
+        no_shift_today: 'Chưa có ca được duyệt hôm nay.',
+        outside_shift_window: 'Ngoài cửa sổ check-in của ca (±15 phút).',
       };
       setMsg({ kind: 'err', text: M[e.code] || ('Điểm danh thất bại (' + e.message + ').') });
     } finally { setBusy(false); }
@@ -90,7 +92,39 @@ export default function CheckInPanel({ me, onChanged }) {
         <div className="divider" style={{ margin: '14px 0' }}></div>
 
         {!me.isOfficial ? (
-          <div className="empty">Chức năng điểm danh chỉ áp dụng cho nhân viên chính thức.</div>
+          !enrolled ? (
+            <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
+              <Icon name="user" size={16} />Đăng ký khuôn mặt
+            </button>
+          ) : !me.shiftToday ? (
+            <div className="empty">Chưa có ca làm việc được duyệt hôm nay.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="muted" style={{ fontSize: 12.5 }}>
+                Ca: <b className="mono">{fmtTime(me.shiftToday.start)}–{fmtTime(me.shiftToday.end)}</b>
+                {' '}· {me.shiftToday.shiftType === 'ctv' ? 'CTV' : 'OT'} ×{me.shiftToday.rate}
+                {' '}· cửa sổ ±15'
+              </div>
+              {t && t.checkIn ? (
+                <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
+                  <Icon name="checkCircle" size={15} /> Đã check-in lúc {fmtTime(t.checkIn)}
+                </div>
+              ) : (
+                <button className="btn btn-primary" disabled={busy || !ready || !me.shiftToday.checkInOpen} onClick={() => doCheck('in')}>
+                  <Icon name="checkCircle" size={16} />Check-in
+                </button>
+              )}
+              {t && t.checkOut ? (
+                <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
+                  <Icon name="logout" size={15} /> Đã check-out lúc {fmtTime(t.checkOut)}
+                </div>
+              ) : (
+                <button className="btn btn-ghost" disabled={busy || !ready || !(t && t.checkIn) || !me.shiftToday.checkOutOpen} onClick={() => doCheck('out')}>
+                  <Icon name="logout" size={16} />Check-out
+                </button>
+              )}
+            </div>
+          )
         ) : !enrolled ? (
           <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
             <Icon name="user" size={16} />Đăng ký khuôn mặt
