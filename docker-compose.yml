@@ -22,7 +22,6 @@ services:
     command: >
       odoo
       --database=${DB_NAME:-neondb}
-      --init=hocba_timeoff
       --addons-path=/mnt/extra-addons
       --dev=xml
 
