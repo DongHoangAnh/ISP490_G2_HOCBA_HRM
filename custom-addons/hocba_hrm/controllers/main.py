@@ -670,6 +670,8 @@ _CHECK_ERR_STATUS = {
     'already_checked_in': 409,
     'not_checked_in': 409,
     'already_checked_out': 409,
+    'no_shift_today': 403,
+    'outside_shift_window': 403,
 }
 
 
@@ -1735,18 +1737,21 @@ class HocBaHRM(http.Controller):
         if _user_can_manage(request.env):
             return request.make_json_response(
                 {'error': 'manager_no_checkin'}, status=403)
-        if emp.x_employment_status != 'official':
-            return request.make_json_response({'error': 'not_official'}, status=403)
         payload = request.get_json_data()
         kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
-        method = 'action_check_out' if kind == 'out' else 'action_check_in'
+        Att = request.env['hocba.attendance'].sudo()
         try:
-            res = getattr(request.env['hocba.attendance'], method)({
+            if emp.x_employment_status == 'official':
+                Att._assert_check_allowed(emp, kind)
+            else:
+                Att._assert_shift_check_allowed(emp, kind)
+            res = Att._do_check({
+                'employee_id': emp.id,
                 'photo': payload.get('photo'),
                 'descriptor': payload.get('descriptor') or [],
                 'latitude': payload.get('latitude') or 0.0,
                 'longitude': payload.get('longitude') or 0.0,
-            })
+            }, kind)
         except UserError as ex:
             code = str(ex)
             request.env.cr.rollback()
