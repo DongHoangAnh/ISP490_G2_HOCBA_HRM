@@ -1,5 +1,5 @@
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from psycopg2 import IntegrityError
 from pytz import timezone, utc
@@ -8,6 +8,7 @@ from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request, Response
 from odoo.tools import file_open
+from odoo.osv import expression
 
 # 13/06/2026: SPA là frontend chính thức (FE/BE tách riêng qua API).
 # Dev:   cd frontend && npm run dev   (Vite :5173, proxy API về Odoo)
@@ -450,6 +451,27 @@ def _att_requests_pending(env):
             domain.append(('employee_id.%s' % field, op, val))
     reqs = env['hocba.attendance.request'].sudo().search(domain)
     return [_req_row(r) for r in reqs]
+
+
+def _shift_row(s):
+    """Một ca làm việc cho SPA (wire format camelCase)."""
+    emp = s.employee_id
+    return {
+        'id': s.id,
+        'empId': emp.id,
+        'empName': emp.name,
+        'code': emp.x_employee_code or '—',
+        'depName': emp.department_id.name or 'Chưa gán',
+        'start': _dt_local(s, s.start),
+        'end': _dt_local(s, s.end),
+        'shiftType': s.shift_type,
+        'rate': s.rate,
+        'state': s.state,
+        'reason': s.reason or '',
+        'reviewer': s.reviewer_id.name or None,
+        'reviewNote': s.review_note or None,
+        'decisionDate': _dt_local(s, s.decision_date),
+    }
 
 
 def _managed_department_ids(env, emp):
