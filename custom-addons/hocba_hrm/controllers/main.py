@@ -582,6 +582,23 @@ def _shift_decide(env, shift_id, approve, body):
     return _shift_row(shift)
 
 
+def _shift_cancel(env, shift_id):
+    """Hủy ca PENDING. Quyền: owner của ca hoặc manager trong phạm vi.
+    Trả {'ok':True}; None nếu không tồn tại; AccessError nếu vượt quyền;
+    UserError('only_pending') nếu ca không còn pending."""
+    shift = env['hocba.work_shift'].sudo().browse(shift_id)
+    if not shift.exists():
+        return None
+    me = env.user.employee_id
+    is_owner = bool(me) and shift.employee_id == me
+    if not (is_owner or (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id))):
+        raise AccessError('forbidden')
+    if shift.state != 'pending':
+        raise UserError('only_pending')
+    shift.unlink()
+    return {'ok': True}
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:

@@ -3,7 +3,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create, _shifts_week, _shift_decide
+from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create, _shifts_week, _shift_decide, _shift_cancel
 
 
 @tagged('post_install', '-at_install')
@@ -197,3 +197,28 @@ class TestShiftApi(TransactionCase):
 
     def test_decide_missing_returns_none(self):
         self.assertIsNone(_shift_decide(self.env(user=self.hrm), 999999, True, {}))
+
+    def test_cancel_owner_pending_ok(self):
+        s = self._make_shift()
+        res = _shift_cancel(self.env(user=self.user), s.id)
+        self.assertEqual(res, {'ok': True})
+        self.assertFalse(s.exists())
+
+    def test_cancel_approved_rejected(self):
+        s = self._make_shift(state='approved')
+        with self.assertRaises(UserError):
+            _shift_cancel(self.env(user=self.user), s.id)
+
+    def test_cancel_other_user_forbidden(self):
+        s = self._make_shift()
+        u = self.env['res.users'].create({'name': 'Ke', 'login': 'ke_shift'})
+        with self.assertRaises(AccessError):
+            _shift_cancel(self.env(user=u), s.id)
+
+    def test_cancel_missing_returns_none(self):
+        self.assertIsNone(_shift_cancel(self.env(user=self.user), 999999))
+
+    def test_cancel_manager_in_scope_ok(self):
+        s = self._make_shift()
+        res = _shift_cancel(self.env(user=self.hrm), s.id)
+        self.assertEqual(res, {'ok': True})
