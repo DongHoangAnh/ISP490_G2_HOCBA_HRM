@@ -13,8 +13,10 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 |---|---|---|
 | **Gói 1** | Tính công (công sáng/chiều, lương theo ngày) + phút trễ/về sớm/thiếu + tổng hợp công tháng (trừ công thiếu, bỏ 2 ngày vi phạm đầu) + chuẩn hóa policy 8h, mốc trễ 9:30 | ✅ **XONG** (đã merge main) |
 | **Gói 2** | Tách tài khoản manager (chỉ quản lý, không check-in) ↔ user (tự chấm) + khóa check-in/out 1 lần/ngày, chỉ ngày làm việc + manager sửa/xóa bản ghi theo phạm vi | ✅ **XONG** (đã merge main) |
-| **Gói 3** | Luồng **đơn**: user gửi đơn sửa/tạo bản ghi → manager duyệt (chỉnh giờ được) & áp dụng, hoặc từ chối | ✅ **XONG** (nhánh `feature/attendance-correction-request`; chờ merge main) |
-| **Gói 4** | Đăng ký ca **CTV/OT** + lịch tuần + manager thêm/duyệt ca + check-in cửa sổ ±15' quanh giờ ca | 🔴 **CHƯA bắt đầu** |
+| **Gói 3** | Luồng **đơn**: user gửi đơn sửa/tạo bản ghi → manager duyệt (chỉnh giờ được) & áp dụng, hoặc từ chối | ✅ **XONG** (đã merge main) |
+| **Gói 4A** | Đăng ký ca **CTV/OT** + **lịch tuần** (lưới 7 cột) + manager thêm/duyệt/từ chối ca + hủy ca pending; hệ số auto theo luật (T2-6=1.5 / cuối tuần=2.0) | ✅ **XONG** (nhánh `feature/shift-registration`; chờ merge main) |
+| **Gói 4B** | Check-in **cửa sổ ±15'** quanh giờ ca cho CTV/OT (mở check-in theo ca đã duyệt) | 🔴 **CHƯA bắt đầu** (phụ thuộc 4A) |
+| **Gói 4C** | Tính **công/lương OT theo hệ số** + luật lễ/đêm (+30%), gộp vào tổng hợp tháng | 🔴 **CHƯA bắt đầu** (phụ thuộc 4A) |
 
 ---
 
@@ -33,13 +35,23 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 ## 3. Bước tiếp theo (làm đúng thứ tự)
 
 ### A. Gói 3 — ĐÃ XONG (xem §2)
-Nhánh `feature/attendance-correction-request`, plan + code + test hoàn tất, test 46/46 xanh, build SPA sạch. Việc còn lại: merge về `main` (`superpowers:finishing-a-development-branch`) + kiểm thử thủ công SPA (spec §4).
+Đã merge `main`. Test 46/46 xanh, build SPA sạch.
 
-### B. Làm Gói 4 (bước kế tiếp)
-Bắt đầu bằng `superpowers:brainstorming` (chưa có spec). Yêu cầu gốc của Gói 4 (từ khách):
-> CTV và OT tự đăng ký ca làm việc, hiển thị **lịch theo tuần** và cho tự đăng ký. Manager có thể vào thêm ca và **duyệt** ca cho user; ca CTV/OT chỉ **hiển thị sau khi manager duyệt**. Họ cần **check-in trong cửa sổ ±15'** quanh giờ ca (vd ca 9h → mở check-in 8h45–9h15, ngoài thời gian khóa nút); **checkout** có cơ chế tương tự. Cơ chế cửa sổ này CHỈ cho CTV/OT. Vẫn dùng luồng **đơn** (Gói 3) để gửi manager.
+### B. Gói 4A — ĐÃ XONG (nhánh `feature/shift-registration`)
+- **Spec:** [docs/superpowers/specs/2026-06-17-shift-registration-design.md](specs/2026-06-17-shift-registration-design.md). **Plan:** [docs/superpowers/plans/2026-06-17-shift-registration.md](plans/2026-06-17-shift-registration.md) (13 task TDD).
+- **Đã làm (test xanh 70/70 suite `hocba_hrm`, build SPA sạch):**
+  - Model `hocba.work_shift` + ACL (`hocba_attendance`): `start`/`end` (Datetime UTC), `shift_type` (ctv/ot chọn tay), `rate` (Float), `state` (pending/approved/rejected), reviewer/review_note/decision_date, related `department_id`. Constraint `_check_times` (end>start) + `_check_overlap` (chặn trùng giờ pending/approved). `_default_rate(start)` = T2-6→1.5, T7/CN→2.0.
+  - Helper module-level trong `controllers/main.py`: `_shift_row`, `_shift_create` (pin employee; manager gửi `empId` trong phạm vi → tạo hộ, vào thẳng approved), `_shifts_week` (lịch tuần T2→CN; owner thấy mọi state, người khác chỉ approved trong phạm vi — dùng `expression.OR`), `_shift_decide` (manager duyệt/từ chối, override start/end/type/rate), `_shift_cancel` (owner/manager hủy ca pending).
+  - 5 endpoint: `POST /api/shifts`, `GET .../shifts/week?monday=`, `POST .../shifts/<id>/approve|reject`, `POST .../shifts/<id>/cancel`.
+  - FE: `ShiftCalendar.jsx` (lưới 7 cột, chuyển tuần ‹›, nút Đăng ký ca), `ShiftForm.jsx`, `ShiftDrawer.jsx` (manager override+duyệt/từ chối / owner hủy). Tab "Ca làm việc (CTV/OT)" thay `OtMock` cho cả user lẫn manager. **Đã xóa `mock.js`** (hết mock).
+- **Còn lại:** merge nhánh về `main`; kiểm thử thủ công SPA (spec §4).
 
-Lưu ý: hiện check-in chỉ mở cho NV `official` (CTV bị chặn — xem `api_attendance_check`). Gói 4 sẽ mở check-in cho CTV/OT **theo ca đã duyệt** + cửa sổ ±15' (khác cơ chế ngày-làm-việc của NV official ở Gói 2). Tab "Tăng ca (OT)" hiện vẫn mock (`OT_LOG` trong `mock.js`).
+### C. Làm Gói 4B rồi 4C (bước kế tiếp)
+Yêu cầu gốc Gói 4 (từ khách) đã tách: 4A (lịch+đăng ký) xong; còn:
+> ...check-in trong **cửa sổ ±15'** quanh giờ ca (vd ca 9h → mở check-in 8h45–9h15, ngoài thời gian khóa nút); **checkout** có cơ chế tương tự. Cơ chế cửa sổ này CHỈ cho CTV/OT. ...OT có **hệ số** (150/200/300%) tính công/lương.
+
+- **Gói 4B (check-in cửa sổ ±15'):** mở `api_attendance_check` cho CTV/OT **theo ca `hocba.work_shift` đã approved** hôm nay + cửa sổ ±15' quanh `start` (check-in) / `end` (check-out); ngoài cửa sổ khóa nút. Khác cơ chế ngày-làm-việc của NV official ở Gói 2 (`_assert_check_allowed`). Hiện check-in chặn cứng non-official trong `api_attendance_check` (`not_official`) — 4B nới cho CTV/OT có ca duyệt. Bắt đầu bằng `superpowers:brainstorming`.
+- **Gói 4C (công/lương OT theo hệ số):** quy đổi giờ ca OT × `rate` thành công/lương, gộp vào `_att_me_history` (tổng hợp tháng); thêm luật lễ/đêm (+30%) tinh chỉnh `_default_rate`. Bắt đầu bằng `superpowers:brainstorming`.
 
 ---
 
