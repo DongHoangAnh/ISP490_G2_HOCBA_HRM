@@ -29,7 +29,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
         : { reviewNote: note };
       await (approve ? approveShift(shift.id, body) : rejectShift(shift.id, body));
       onChanged && onChanged();
-    } catch (e) { setErr('Thao tác thất bại (' + e.message + ').'); onChanged && onChanged(); }
+    } catch (e) { setErr('Thao tác thất bại (' + e.message + ').'); }
     finally { setBusy(false); }
   }
 
@@ -38,7 +38,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
     try {
       await cancelShift(shift.id);
       onChanged && onChanged();
-    } catch (e) { setErr('Hủy thất bại (' + e.message + ').'); onChanged && onChanged(); }
+    } catch (e) { setErr('Hủy thất bại (' + e.message + ').'); }
     finally { setBusy(false); }
   }
 
