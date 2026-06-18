@@ -1,16 +1,12 @@
 /* Màn Chấm công — điều phối tab theo quyền (mẫu chuẩn: màn Nhân viên).
    Owner: Hoàng Anh. Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md */
 import { useState, useEffect } from 'react';
-import Icon from '../../components/Icon';
-import Avatar from '../../components/Avatar';
-import Badge from '../../components/Badge';
 import { LoadingState, ErrorState } from '../../components/states';
-import { fmtDate } from '../../utils/format';
 import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
 import CheckInPanel from './CheckInPanel';
 import MyHistory from './MyHistory';
 import AttendanceTable from './AttendanceTable';
-import { USE_MOCK, OT_LOG } from './mock';
+import ShiftCalendar from './ShiftCalendar';
 import RequestForm from './RequestForm';
 import RequestList from './RequestList';
 
@@ -39,8 +35,8 @@ export default function Attendance({ search }) {
 
   const isManager = me.canManage;
   const tabs = isManager
-    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Tăng ca (OT)']]
-    : [['me', 'Chấm công của tôi'], ['requests', 'Đơn của tôi']];
+    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)']]
+    : [['me', 'Chấm công của tôi'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
   const activeTab = tab || (isManager ? 'day' : 'me');
 
   const goTab = (id) => {
@@ -83,7 +79,7 @@ export default function Attendance({ search }) {
             onReload={() => loadReqs(isManager)} canReview={isManager} />
         </div>
       )}
-      {activeTab === 'ot' && <OtMock />}
+      {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
 
       {showForm && (
         <RequestForm onClose={() => setShowForm(false)} onSaved={() => loadReqs(false)} />
@@ -92,35 +88,3 @@ export default function Attendance({ search }) {
   );
 }
 
-function MockBanner() {
-  return USE_MOCK ? (
-    <div style={{ padding: '8px 12px', background: 'var(--amber-bg)', color: 'var(--amber)', borderRadius: 9, fontSize: 12.5, marginBottom: 12, fontWeight: 600 }}>
-      Dữ liệu mẫu — chờ backend
-    </div>
-  ) : null;
-}
-
-function OtMock() {
-  return (
-    <div className="card">
-      <div className="card-head"><h3>Đăng ký tăng ca</h3></div>
-      <div style={{ padding: '0 12px 8px' }}><MockBanner /></div>
-      <div className="tbl-wrap">
-        <table className="tbl">
-          <thead><tr><th>Nhân viên</th><th>Ngày</th><th className="tbl-num">Số giờ</th><th>Hệ số</th><th>Lý do</th></tr></thead>
-          <tbody>
-            {OT_LOG.map((o) => (
-              <tr key={o.id} style={{ cursor: 'default' }}>
-                <td><div className="cell-emp"><Avatar emp={{ id: o.id, name: o.name, hasImg: false }} /><div><div className="nm">{o.name}</div><div className="id">{o.code}</div></div></div></td>
-                <td className="mono muted">{fmtDate(o.date)}</td>
-                <td className="tbl-num mono" style={{ fontWeight: 600 }}>{o.hours} giờ</td>
-                <td><Badge kind={o.rate === 300 ? 'red' : o.rate === 150 ? 'amber' : 'gray'}>{o.rate}%</Badge></td>
-                <td className="muted">{o.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
