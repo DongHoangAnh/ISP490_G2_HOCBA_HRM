@@ -3,7 +3,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from odoo.addons.hocba_hrm.controllers.main import _shift_row
+from odoo.addons.hocba_hrm.controllers.main import _shift_row, _shift_create
 
 
 @tagged('post_install', '-at_install')
@@ -43,3 +43,56 @@ class TestShiftApi(TransactionCase):
         self.assertEqual(row['start'], '2026-06-15T09:00:00')
         self.assertEqual(row['end'], '2026-06-15T11:00:00')
         self.assertIsNone(row['reviewer'])
+
+    def test_create_pins_employee_and_default_rate(self):
+        env = self.env(user=self.user)
+        row = _shift_create(env, {
+            'start': '2026-06-15T09:00', 'end': '2026-06-15T11:00',
+            'shiftType': 'ctv', 'reason': 'Trực sáng'})
+        self.assertEqual(row['empId'], self.emp.id)
+        self.assertEqual(row['state'], 'pending')
+        self.assertEqual(row['rate'], 1.5)       # T2 -> 1.5
+        s = env['hocba.work_shift'].browse(row['id'])
+        self.assertEqual(str(s.start), '2026-06-15 02:00:00')   # 09:00+07 -> 02:00 UTC
+
+    def test_create_weekend_rate(self):
+        env = self.env(user=self.user)
+        row = _shift_create(env, {
+            'start': '2026-06-20T09:00', 'end': '2026-06-20T11:00',  # T7
+            'shiftType': 'ot'})
+        self.assertEqual(row['rate'], 2.0)
+
+    def test_create_bad_type_raises(self):
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _shift_create(env, {'start': '2026-06-15T09:00',
+                                'end': '2026-06-15T11:00', 'shiftType': 'x'})
+
+    def test_create_end_before_start_raises(self):
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _shift_create(env, {'start': '2026-06-15T11:00',
+                                'end': '2026-06-15T09:00', 'shiftType': 'ot'})
+
+    def test_create_overlap_raises(self):
+        env = self.env(user=self.user)
+        _shift_create(env, {'start': '2026-06-15T09:00',
+                            'end': '2026-06-15T11:00', 'shiftType': 'ctv'})
+        with self.assertRaises(ValidationError):
+            _shift_create(env, {'start': '2026-06-15T10:00',
+                                'end': '2026-06-15T12:00', 'shiftType': 'ctv'})
+
+    def test_create_no_employee_returns_none(self):
+        u = self.env['res.users'].create({'name': 'NoEmp', 'login': 'noemp_shift'})
+        self.assertIsNone(_shift_create(self.env(user=u), {
+            'start': '2026-06-15T09:00', 'end': '2026-06-15T11:00',
+            'shiftType': 'ot'}))
+
+    def test_manager_add_for_employee_approved(self):
+        env = self.env(user=self.hrm)
+        row = _shift_create(env, {
+            'empId': self.emp.id, 'start': '2026-06-16T09:00',
+            'end': '2026-06-16T11:00', 'shiftType': 'ot'})
+        self.assertEqual(row['empId'], self.emp.id)
+        self.assertEqual(row['state'], 'approved')
+        self.assertEqual(row['reviewer'], self.hrm.name)

@@ -474,6 +474,42 @@ def _shift_row(s):
     }
 
 
+def _shift_create(env, body):
+    """Đăng ký ca. Mặc định pin về user (state=pending). Nếu người gọi là
+    manager và gửi empId thuộc phạm vi → tạo hộ NV đó (state=approved).
+    Trả _shift_row; None nếu user chưa có hồ sơ NV; ValidationError nếu dữ liệu sai."""
+    Shift = env['hocba.work_shift'].sudo()
+    emp_id = body.get('empId')
+    as_manager = bool(emp_id) and _user_can_manage(env)
+    if as_manager:
+        emp = env['hr.employee'].sudo().browse(int(emp_id))
+        if not emp.exists() or not _emp_in_scope(env, emp):
+            raise ValidationError('Nhân viên ngoài phạm vi.')
+    else:
+        emp = env.user.employee_id
+        if not emp:
+            return None
+    shift_type = body.get('shiftType')
+    if shift_type not in ('ctv', 'ot'):
+        raise ValidationError('Loại ca không hợp lệ.')
+    start = _to_utc(env, body.get('start'))
+    end = _to_utc(env, body.get('end'))
+    if not start or not end:
+        raise ValidationError('Cần giờ bắt đầu và kết thúc.')
+    vals = {
+        'employee_id': emp.id,
+        'start': start, 'end': end,
+        'shift_type': shift_type,
+        'rate': Shift._default_rate(start),
+        'reason': (body.get('reason') or '').strip() or False,
+    }
+    if as_manager:
+        vals.update({'state': 'approved', 'reviewer_id': env.user.id,
+                     'decision_date': fields.Datetime.now()})
+    shift = Shift.create(vals)
+    return _shift_row(shift)
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:
