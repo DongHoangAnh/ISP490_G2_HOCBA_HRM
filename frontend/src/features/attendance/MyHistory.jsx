@@ -41,11 +41,13 @@ export default function MyHistory() {
 
       {data && (
         <>
-          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(6,1fr)', marginBottom: 16 }}>
             <Sum val={data.summary.daysPresent} lbl="Ngày có mặt" />
             <Sum val={data.summary.totalCredit} lbl="Tổng công" />
             <Sum val={data.summary.deficitCredit} lbl="Công thiếu" col={data.summary.deficitCredit > 0 ? 'var(--amber)' : undefined} />
             <Sum val={data.summary.netCredit} lbl="Công thực" col="var(--green)" />
+            <Sum val={data.summary.otHours} lbl="Giờ OT" />
+            <Sum val={data.summary.otCreditHours} lbl="Công OT quy đổi" col="var(--green)" />
           </div>
 
           <div className="tbl-wrap">
