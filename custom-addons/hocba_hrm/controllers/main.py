@@ -184,6 +184,23 @@ def _att_me_info(env):
         info['today'] = {k: row[k] for k in (
             'checkIn', 'checkOut', 'workingHours', 'statusKey',
             'lateMinutes', 'faceSuspect', 'outOfZone', 'outOfWindow')}
+    info['shiftToday'] = None
+    if not info['isOfficial']:
+        window = policy.shift_window_minutes or 15
+        now_local = fields.Datetime.context_timestamp(
+            env.user, fields.Datetime.now()).replace(tzinfo=None)
+        shifts = env['hocba.attendance']._todays_approved_shifts(
+            emp, now_local.date())
+        if shifts:
+            s = shifts[0]
+            ci = fields.Datetime.context_timestamp(s, s.start).replace(tzinfo=None)
+            co = fields.Datetime.context_timestamp(s, s.end).replace(tzinfo=None)
+            info['shiftToday'] = {
+                'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
+                'shiftType': s.shift_type, 'rate': s.rate,
+                'checkInOpen': abs((now_local - ci).total_seconds()) <= window * 60,
+                'checkOutOpen': abs((now_local - co).total_seconds()) <= window * 60,
+            }
     return info
 
 
