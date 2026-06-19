@@ -3,7 +3,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
 from odoo.addons.hocba_hrm.controllers.main import (
-    _ot_row, _ot_for_employee, _att_me_history)
+    _ot_row, _ot_for_employee, _att_me_history, _ot_table)
 
 
 @tagged('post_install', '-at_install')
@@ -65,3 +65,26 @@ class TestOtPayroll(TransactionCase):
         data = _att_me_history(self.env(user=self.user), '2026-06')
         self.assertEqual(data['summary']['otHours'], 2.0)
         self.assertEqual(data['summary']['otCreditHours'], 6.0)   # 2h * 3.0
+
+    def test_ot_table_scope_and_totals(self):
+        from odoo.addons.hocba_hrm.controllers.main import _ot_table
+        self._shift('2026-06-15', level='150'); self._attendance('2026-06-15')
+        self._shift('2026-06-16', level='300')   # không attendance -> counted False
+        hrm = self.env['res.users'].create({
+            'name': 'HRM OT', 'login': 'hrm_ot',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        hrm.tz = 'Asia/Ho_Chi_Minh'
+        data = _ot_table(self.env(user=hrm), '2026-06')
+        self.assertTrue(data['canManage'])
+        self.assertEqual(len(data['rows']), 2)            # cả 2 ca approved
+        self.assertEqual(data['totals']['otHours'], 2.0)   # chỉ ca counted
+        self.assertEqual(data['totals']['otCreditHours'], 3.0)
+        self.assertEqual(data['totals']['count'], 2)
+        self.assertEqual(data['totals']['countedCount'], 1)
+
+    def test_ot_table_user_sees_only_own(self):
+        from odoo.addons.hocba_hrm.controllers.main import _ot_table
+        self._shift('2026-06-15'); self._attendance('2026-06-15')
+        data = _ot_table(self.env(user=self.user), '2026-06')
+        self.assertFalse(data['canManage'])
+        self.assertTrue(all(r['empId'] == self.emp.id for r in data['rows']))

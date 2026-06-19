@@ -282,6 +282,47 @@ def _ot_for_employee(env, emp, first, last):
     }
 
 
+def _ot_table(env, month_str):
+    """Bảng ca OT approved theo tháng + phạm vi vai trò (giống _att_day_table).
+    rows=mọi ca approved trong tháng; totals cộng ca counted. canManage."""
+    user = env.user
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(user)
+        y, m = today.year, today.month
+    tz = timezone(user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+    domain = [('state', '=', 'approved'),
+              ('start', '>=', start_utc), ('start', '<', end_utc)]
+    if _user_can_manage(env):
+        for field, op, val in _emp_scope_domain(env):
+            if field == 'id':
+                domain.append(('employee_id', op, val))
+            else:
+                domain.append(('employee_id.%s' % field, op, val))
+    else:
+        emp = user.employee_id
+        domain.append(('employee_id', '=', emp.id if emp else -1))
+    recs = env['hocba.work_shift'].sudo().search(domain, order='start')
+    rows = [_ot_row(env, s) for s in recs]
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'canManage': _user_can_manage(env),
+        'rows': rows,
+        'totals': {
+            'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
+            'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+            'count': len(rows),
+            'countedCount': sum(1 for r in rows if r['counted']),
+        },
+    }
+
+
 def _att_me_history(env, month_str):
     """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -1934,6 +1975,10 @@ class HocBaHRM(http.Controller):
     @http.route('/hocba-hrm/api/shifts/week', auth='user', type='http', methods=['GET'])
     def api_shifts_week(self, monday=None, **kw):
         return request.make_json_response(_shifts_week(request.env, monday))
+
+    @http.route('/hocba-hrm/api/shifts/ot', auth='user', type='http', methods=['GET'])
+    def api_shifts_ot(self, month=None, **kw):
+        return request.make_json_response(_ot_table(request.env, month))
 
     def _decide_shift(self, shift_id, approve):
         try:
