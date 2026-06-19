@@ -4,19 +4,20 @@
    ============================================================ */
 
 export class ApiError extends Error {
-  constructor(status, code) {
-    super(code ? `${status} ${code}` : `HTTP ${status}`);
+  // detail = thông điệp người-đọc do BE trả ({"message": "..."}); nếu không có
+  // thì rơi về "<status> <code>". `.code` luôn giữ mã máy để xử lý theo nhánh.
+  constructor(status, code, detail) {
+    super(detail || (code ? `${status} ${code}` : `HTTP ${status}`));
     this.status = status;
     this.code = code;
   }
 }
 
-async function safeCode(res) {
+async function errBody(res) {
   try {
-    const body = await res.json();
-    return body && body.error;
+    return (await res.json()) || {};
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -28,7 +29,10 @@ export async function hbGet(url) {
     window.location.href = '/web/login?redirect=' + encodeURIComponent(window.location.pathname);
     throw new ApiError(401, 'login_required');
   }
-  if (!res.ok) throw new ApiError(res.status, await safeCode(res));
+  if (!res.ok) {
+    const b = await errBody(res);
+    throw new ApiError(res.status, b.error, b.message);
+  }
   return res.json();
 }
 
@@ -39,7 +43,10 @@ export async function hbPost(url, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload ?? {}),
   });
-  if (!res.ok) throw new ApiError(res.status, await safeCode(res));
+  if (!res.ok) {
+    const b = await errBody(res);
+    throw new ApiError(res.status, b.error, b.message);
+  }
   return res.json();
 }
 

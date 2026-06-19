@@ -5,7 +5,8 @@ import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchCvList, fetchMailTemplates, updateApplicant } from '../../api/recruitment';
+import Badge from '../../components/Badge';
+import { fetchCvList, fetchMailTemplates, updateApplicant, createEmployeeFromApplicant } from '../../api/recruitment';
 import MailSendModal from './MailSendModal';
 
 const OFFER_STAGES = ['Gửi Offer', 'Onboarding'];
@@ -22,6 +23,8 @@ export default function Offers({ search }) {
   useEffect(load, []);
   useEffect(() => { fetchMailTemplates().then(setTmpls).catch(() => setTmpls({ rows: [] })); }, []);
 
+  const [empBusyId, setEmpBusyId] = useState(null);
+
   // Lưu 1 trường (offer / ngày nhận việc) rồi cập nhật dòng vào state — chỉ recruiter.
   const saveField = async (id, patch) => {
     setSavingId(id);
@@ -31,6 +34,22 @@ export default function Offers({ search }) {
     } catch (e) {
       alert(e.message || 'Không lưu được thay đổi.');
     } finally { setSavingId(null); }
+  };
+
+  // Tạo hồ sơ nhân viên từ ứng viên đã nhận việc (chống tạo trùng ở backend).
+  const createEmployee = async (r) => {
+    if (!window.confirm(`Tạo hồ sơ nhân viên (thử việc) cho "${r.name}"?\nBạn sẽ điền nốt CCCD / MST / BHXH ở module Nhân sự.`)) return;
+    setEmpBusyId(r.id);
+    try {
+      const res = await createEmployeeFromApplicant(r.id);
+      setCv((p) => ({ ...p, rows: p.rows.map((x) => (x.id === r.id
+        ? { ...x, employeeId: res.employeeId, employeeName: res.employeeName, employeeCode: res.employeeCode } : x)) }));
+      alert(res.created
+        ? `Đã tạo hồ sơ nhân viên ${res.employeeCode ? '(' + res.employeeCode + ') ' : ''}cho ${res.employeeName}.`
+        : (res.message || 'Ứng viên này đã có hồ sơ nhân viên.'));
+    } catch (e) {
+      alert(e.message || 'Không tạo được hồ sơ nhân viên.');
+    } finally { setEmpBusyId(null); }
   };
 
   if (err) return <ErrorState message={err} onRetry={load} />;
@@ -103,8 +122,17 @@ export default function Offers({ search }) {
                     )}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
-                      <Icon name="mail" size={14} />Gửi mail</button>
+                    <div style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                      {r.employeeId ? (
+                        <Badge kind="teal">
+                          <Icon name="check" size={12} /> Đã tạo hồ sơ{r.employeeCode ? ' · ' + r.employeeCode : ''}</Badge>
+                      ) : isRecruiter ? (
+                        <button className="btn btn-soft btn-sm" disabled={empBusyId === r.id} onClick={() => createEmployee(r)}>
+                          <Icon name="user" size={14} />{empBusyId === r.id ? 'Đang tạo…' : 'Tạo hồ sơ NV'}</button>
+                      ) : null}
+                      <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
+                        <Icon name="mail" size={14} />Gửi mail</button>
+                    </div>
                   </td>
                 </tr>
               ))}

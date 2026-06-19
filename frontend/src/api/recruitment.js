@@ -13,6 +13,8 @@ export const changeStage = (id, stageId) =>
   hbPost(`/hocba-hrm/api/recruitment/applicant/${id}/stage`, { stageId });
 export const uploadCvFile = (id, file) =>
   hbUpload(`/hocba-hrm/api/recruitment/applicant/${id}/cv-file`, file);
+export const createEmployeeFromApplicant = (id) =>
+  hbPost(`/hocba-hrm/api/recruitment/applicant/${id}/create-employee`, {});
 
 /* Vị trí tuyển dụng / JD */
 export const fetchJobs = () => hbGet('/hocba-hrm/api/recruitment/jobs');

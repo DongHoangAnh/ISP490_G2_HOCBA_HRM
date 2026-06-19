@@ -1,0 +1,221 @@
+/* Tab "Tổng quan" — dashboard Nghỉ phép, tự đổi view Manager/Nhân viên
+   theo quyền (tái hiện OWL dashboard hr_holidays_modern). Owner: Nhật Anh.
+   Spec §3.6. */
+import { useState, useEffect } from 'react';
+import Icon from '../../components/Icon';
+import Badge from '../../components/Badge';
+import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { fmtDate } from '../../utils/format';
+import { fetchDashboard } from '../../api/timeoff';
+
+const THIS_YEAR = new Date().getFullYear();
+
+export default function DashboardPanel() {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [year, setYear] = useState(THIS_YEAR);
+  const [dept, setDept] = useState('');
+  const [tick, setTick] = useState(0); // ép tải lại (nút Thử lại)
+
+  useEffect(() => {
+    setErr(null); setData(null);
+    fetchDashboard(year, dept || undefined).then(setData).catch((e) => setErr(e.message));
+  }, [year, dept, tick]);
+
+  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
+  if (!data) return <LoadingState label="Đang tải tổng quan nghỉ phép…" />;
+
+  const nav = (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
+        <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
+      <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
+      <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
+      <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
+    </div>
+  );
+
+  return data.isManager
+    ? <ManagerView data={data} year={year} dept={dept} setDept={setDept} nav={nav} />
+    : <EmployeeView data={data} nav={nav} />;
+}
+
+function Kpi({ label, value, sub, color }) {
+  return (
+    <div className="card" style={{ padding: '16px 18px' }}>
+      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
+      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function BarList({ rows, unit = 'ngày', onEmpty = 'Chưa có dữ liệu.' }) {
+  if (!rows.length) return <EmptyState>{onEmpty}</EmptyState>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 13, padding: '4px 2px' }}>
+      {rows.map((r) => (
+        <div key={r.id || r.name}>
+          <div className="between" style={{ marginBottom: 5 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ width: 9, height: 9, borderRadius: 3, background: r.color }}></span>{r.name}
+            </span>
+            <span className="muted mono" style={{ fontSize: 12 }}>{r.days} {unit} · {r.count} đơn</span>
+          </div>
+          <div className="bar"><span style={{ width: r.pct + '%', background: r.color }}></span></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- View Manager ---------- */
+function ManagerView({ data, dept, setDept, nav }) {
+  const k = data.kpi;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="filterbar">
+        {nav}
+        <div style={{ marginLeft: 'auto' }}>
+          <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
+            <option value="">Mọi phòng ban</option>
+            {data.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+        <Kpi label="Tổng đơn (năm)" value={k.total} />
+        <Kpi label="Chờ duyệt" value={k.pending} color="var(--amber)" sub="cần xử lý" />
+        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)" />
+        <Kpi label="Ngày phép đã duyệt" value={k.approvedDays} sub="tổng số ngày" />
+        <Kpi label="Đang nghỉ hôm nay" value={k.onLeaveToday} color="var(--blue)" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="card">
+          <div className="card-head"><h3>Theo loại nghỉ</h3></div>
+          <div style={{ padding: 16 }}><BarList rows={data.byType} /></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Theo phòng ban</h3></div>
+          <div style={{ padding: 16 }}><BarList rows={data.byDept} /></div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 16 }}>
+        <div className="card">
+          <div className="card-head"><h3>Top nhân viên nghỉ nhiều</h3></div>
+          <div style={{ padding: 16 }}><BarList rows={data.topEmployees} /></div>
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h3>Đơn chờ duyệt</h3><span className="sub">{data.pending.length} đơn mới nhất</span>
+          </div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Nhân viên</th><th>Loại</th><th>Từ</th><th>Đến</th><th className="tbl-num">Ngày</th></tr></thead>
+              <tbody>
+                {data.pending.map((p) => (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 600 }}>{p.employee}{p.isEmergency && <Badge kind="red">Khẩn</Badge>}</td>
+                    <td>{p.leaveType}</td>
+                    <td className="mono muted">{fmtDate(p.from)}</td>
+                    <td className="mono muted">{fmtDate(p.to)}</td>
+                    <td className="tbl-num mono">{p.days}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.pending.length === 0 && <EmptyState>Không có đơn chờ duyệt.</EmptyState>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- View Nhân viên ---------- */
+function EmployeeView({ data, nav }) {
+  if (data.empMissing) {
+    return <EmptyState>Tài khoản chưa gắn hồ sơ nhân viên — chưa có dữ liệu nghỉ phép.</EmptyState>;
+  }
+  const k = data.empKpi;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="filterbar">{nav}</div>
+
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))' }}>
+        <Kpi label="Tổng phép còn lại" value={data.totalRemaining} color="var(--red-600)" sub="ngày" />
+        <Kpi label="Đơn chờ duyệt" value={k.pending} color="var(--amber)" />
+        <Kpi label="Đơn đã duyệt (năm)" value={k.approved} color="var(--green)" />
+        <Kpi label="Ngày phép đã dùng" value={k.approvedDays} sub="trong năm" />
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h3>Số dư phép theo loại</h3></div>
+        <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 14 }}>
+          {data.balances.map((b) => (
+            <div key={b.id} className="card" style={{ padding: 16, boxShadow: 'none', border: '1px solid var(--border)' }}>
+              <div className="between">
+                <span style={{ fontWeight: 700, fontSize: 13, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: b.color }}></span>{b.name}
+                </span>
+                {b.low && <Badge kind="amber">Sắp hết</Badge>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '8px 0 6px' }}>
+                <span style={{ fontSize: 24, fontWeight: 800 }}>{b.remaining}</span>
+                <span className="muted" style={{ fontSize: 12 }}>/ {b.allocated} còn lại</span>
+              </div>
+              <div className="bar"><span style={{ width: b.pct + '%', background: b.low ? 'var(--amber)' : b.color }}></span></div>
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>đã dùng {b.taken} ngày</div>
+            </div>
+          ))}
+          {data.balances.length === 0 && <EmptyState>Chưa có phân bổ phép nào.</EmptyState>}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+        <div className="card">
+          <div className="card-head"><h3>Đơn nghỉ gần đây</h3></div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Loại</th><th>Từ</th><th>Đến</th><th className="tbl-num">Ngày</th><th>Trạng thái</th></tr></thead>
+              <tbody>
+                {data.myRequests.map((r) => (
+                  <tr key={r.id}>
+                    <td style={{ fontWeight: 600 }}>{r.leaveType}</td>
+                    <td className="mono muted">{fmtDate(r.from)}</td>
+                    <td className="mono muted">{fmtDate(r.to)}</td>
+                    <td className="tbl-num mono">{r.days}</td>
+                    <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.myRequests.length === 0 && <EmptyState>Chưa có đơn nghỉ nào.</EmptyState>}
+        </div>
+
+        <div className="card">
+          <div className="card-head"><h3>Nghỉ sắp tới</h3></div>
+          <div style={{ padding: '8px 12px' }}>
+            {data.upcoming.map((u) => (
+              <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--red-50)', color: 'var(--red-600)', display: 'grid', placeItems: 'center' }}>
+                  <Icon name="calendar" size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{u.leaveType}</div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>{fmtDate(u.from)} → {fmtDate(u.to)}</div>
+                </div>
+                <span className="mono muted" style={{ fontSize: 12 }}>{u.days} ngày</span>
+              </div>
+            ))}
+            {data.upcoming.length === 0 && <EmptyState>Không có lịch nghỉ sắp tới.</EmptyState>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

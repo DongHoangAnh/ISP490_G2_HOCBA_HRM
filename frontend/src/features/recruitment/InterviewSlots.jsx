@@ -8,6 +8,7 @@ import { fmtDate } from '../../utils/format';
 import { fetchInterviewSlots, deleteInterviewSlot, fetchCvList, updateApplicant, fetchMailTemplates } from '../../api/recruitment';
 import { ATTENDANCE_KIND, INTERVIEW_RESULT_KIND } from './util';
 import SlotForm from './SlotForm';
+import SlotImport from './SlotImport';
 import MailSendModal from './MailSendModal';
 
 const INTERVIEW_STAGE = 'Phỏng vấn';
@@ -24,6 +25,7 @@ export default function InterviewSlots() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [creating, setCreating] = useState(null); // null | defaultDate
+  const [importing, setImporting] = useState(false);
   const [cv, setCv] = useState(null); // danh sách CV (để lọc ứng viên đang phỏng vấn)
   const [tmpls, setTmpls] = useState(null); // mail mẫu (cho nút Gửi mail)
 
@@ -65,7 +67,9 @@ export default function InterviewSlots() {
           {ddmm(weekDates[0])} – {ddmm(weekDates[6])}/{weekDates[6].split('-')[0]}</span>
         <span className="muted" style={{ fontSize: 12.5, marginLeft: 8 }}>{total} slot · {booked} đã đặt</span>
         {canManage && (
-          <div style={{ marginLeft: 'auto' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
+            <button className="btn btn-soft" onClick={() => setImporting(true)}>
+              <Icon name="file" size={16} />Import lịch tuần</button>
             <button className="btn btn-primary" onClick={() => setCreating(todayYmd)}>
               <Icon name="plus" size={16} />Thêm lịch rảnh PV</button>
           </div>
@@ -116,6 +120,11 @@ export default function InterviewSlots() {
         <SlotForm interviewers={interviewers} meId={meId} weekDates={weekDates} defaultDate={creating}
           onClose={() => setCreating(null)}
           onSaved={() => { setCreating(null); load(); }} />
+      )}
+      {importing && (
+        <SlotImport interviewers={interviewers} meId={meId}
+          onClose={() => setImporting(false)}
+          onSaved={() => { setImporting(false); load(); }} />
       )}
     </div>
   );
