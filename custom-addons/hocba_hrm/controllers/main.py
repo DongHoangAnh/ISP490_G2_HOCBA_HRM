@@ -737,6 +737,26 @@ def _att_requests_pending(env):
     return [_req_row(r) for r in reqs]
 
 
+def _shift_scope_domain(env, type_filter=None):
+    """Domain trên hocba.work_shift theo người xem (Section 2 spec).
+    - Manager: theo _emp_scope_domain (dịch sang employee_id.*) + lọc loại nếu gửi.
+    - CTV (x_employment_status='ctv'): chỉ thấy ca CTV (của mọi người).
+    - NV thường: chỉ thấy ca OT (của mọi người)."""
+    if _user_can_manage(env):
+        dom = []
+        for field, op, val in _emp_scope_domain(env):
+            if field == 'id':
+                dom.append(('employee_id', op, val))
+            else:
+                dom.append(('employee_id.%s' % field, op, val))
+        if type_filter in ('ot', 'ctv'):
+            dom.append(('shift_type', '=', type_filter))
+        return dom
+    emp = env.user.employee_id
+    is_ctv = bool(emp) and emp.x_employment_status == 'ctv'
+    return [('shift_type', '=', 'ctv' if is_ctv else 'ot')]
+
+
 def _shift_row(s):
     """Một ca làm việc cho SPA (wire format camelCase)."""
     emp = s.employee_id
@@ -749,6 +769,10 @@ def _shift_row(s):
         'start': _dt_local(s, s.start),
         'end': _dt_local(s, s.end),
         'shiftType': s.shift_type,
+        'shiftTypeLabel': 'CTV' if s.shift_type == 'ctv' else 'OT',
+        'deadline': _dt_local(s, s.deadline),
+        'locked': bool(s.deadline) and fields.Datetime.now() >= s.deadline,
+        'mine': bool(s.env.user.employee_id) and s.employee_id.id == s.env.user.employee_id.id,
         'otLevel': s.ot_level,
         'rate': s.rate,
         'state': s.state,
@@ -800,11 +824,10 @@ def _shift_create(env, body):
     return _shift_row(shift)
 
 
-def _shifts_week(env, monday_str):
+def _shifts_week(env, monday_str, type_filter=None):
     """Dữ liệu lịch tuần (T2→CN của tuần chứa monday_str; rỗng = tuần hiện tại).
-    Owner thấy ca của mình mọi state. Manager (HR=tất cả, trưởng phòng=phòng
-    mình, giáo vụ=giáo viên) thấy MỌI state của NV trong phạm vi — gồm ca
-    pending để duyệt. NV thường chỉ thấy ca approved của người khác."""
+    Visibility theo loại ca: NV thường thấy ca OT của mọi người; CTV thấy ca CTV;
+    Manager thấy ca theo phạm vi + filter loại tuỳ chọn."""
     user = env.user
     d = fields.Date.from_string(monday_str) if monday_str else fields.Date.context_today(user)
     monday = d - timedelta(days=d.weekday())
@@ -814,17 +837,15 @@ def _shifts_week(env, monday_str):
     start_utc = start_local.astimezone(utc).replace(tzinfo=None)
     end_utc = end_local.astimezone(utc).replace(tzinfo=None)
     can_manage = _user_can_manage(env)
-    scoped = [] if can_manage else [('state', '=', 'approved')]
-    for field, op, val in _emp_scope_domain(env):
-        if field == 'id':
-            scoped.append(('employee_id', op, val))
-        else:
-            scoped.append(('employee_id.%s' % field, op, val))
+    scope = _shift_scope_domain(env, type_filter)
+    env['hocba.work_shift'].sudo()._auto_reject_expired(scope)  # lazy backstop (Section 3)
     me = user.employee_id
-    if me:
-        visible = expression.OR([[('employee_id', '=', me.id)], scoped])
+    if can_manage:
+        visible = scope
     else:
-        visible = scoped
+        # NV thường/CTV: ca approved của mọi người cùng loại + ca của mình mọi state
+        visible = scope + ['|', ('state', '=', 'approved'),
+                           ('employee_id', '=', me.id if me else -1)]
     domain = [('start', '>=', start_utc), ('start', '<', end_utc)] + visible
     recs = env['hocba.work_shift'].sudo().search(domain)
     by_day = {}
@@ -2269,8 +2290,8 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(row)
 
     @http.route('/hocba-hrm/api/shifts/week', auth='user', type='http', methods=['GET'])
-    def api_shifts_week(self, monday=None, **kw):
-        return request.make_json_response(_shifts_week(request.env, monday))
+    def api_shifts_week(self, monday=None, type=None, **kw):
+        return request.make_json_response(_shifts_week(request.env, monday, type))
 
     @http.route('/hocba-hrm/api/shifts/ot', auth='user', type='http', methods=['GET'])
     def api_shifts_ot(self, month=None, **kw):
