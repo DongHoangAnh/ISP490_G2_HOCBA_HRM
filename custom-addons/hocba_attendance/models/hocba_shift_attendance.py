@@ -54,13 +54,9 @@ class ShiftAttendance(models.Model):
             raise UserError('shift_not_approved')
         policy = self.env['hocba.attendance.policy'].sudo().get_policy()
         window = policy.shift_window_minutes or 15
-        now_local = fields.Datetime.context_timestamp(
-            self.with_context(tz=self.env.user.tz or 'UTC'),
-            fields.Datetime.now()).replace(tzinfo=None)
-        anchor_utc = shift.start if kind == 'in' else shift.end
-        anchor = fields.Datetime.context_timestamp(
-            shift, anchor_utc).replace(tzinfo=None)
-        if abs((now_local - anchor).total_seconds()) > window * 60:
+        now = fields.Datetime.now()
+        anchor = shift.start if kind == 'in' else shift.end
+        if anchor and abs((now - anchor).total_seconds()) > window * 60:
             raise UserError('outside_shift_window')
         rec = self.sudo().search([('shift_id', '=', shift.id)], limit=1)
         if kind == 'in':
@@ -81,11 +77,8 @@ class ShiftAttendance(models.Model):
         fg = self.env['hocba.attendance']._eval_face_geo(employee, payload, policy)
         now = fields.Datetime.now()
         window = policy.shift_window_minutes or 15
-        now_local = fields.Datetime.context_timestamp(
-            self.with_context(tz=self.env.user.tz or 'UTC'), now).replace(tzinfo=None)
-        anchor = fields.Datetime.context_timestamp(
-            shift, shift.start if kind == 'in' else shift.end).replace(tzinfo=None)
-        out_of_window = abs((now_local - anchor).total_seconds()) > window * 60
+        anchor = shift.start if kind == 'in' else shift.end
+        out_of_window = abs((now - anchor).total_seconds()) > window * 60
         lat = payload.get('latitude') or 0.0
         lng = payload.get('longitude') or 0.0
 

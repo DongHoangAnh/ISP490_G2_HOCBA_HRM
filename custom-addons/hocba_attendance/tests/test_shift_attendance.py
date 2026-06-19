@@ -82,3 +82,20 @@ class TestShiftAttendanceCheck(TransactionCase):
         with self.assertRaises(UserError) as e:
             self.SA._assert_allowed(s, 'in')
         self.assertEqual(str(e.exception), 'already_checked_in')
+
+    def test_assert_not_checked_in_raises(self):
+        # end within window (1 min ahead) so window check passes, exposing not_checked_in
+        s = self._shift_now(end=fields.Datetime.now() + timedelta(minutes=1))
+        with self.assertRaises(UserError) as e:
+            self.SA._assert_allowed(s, 'out')
+        self.assertEqual(str(e.exception), 'not_checked_in')
+
+    def test_assert_already_checked_out_raises(self):
+        # end within window (1 min ahead) so window check passes, exposing already_checked_out
+        s = self._shift_now(end=fields.Datetime.now() + timedelta(minutes=1))
+        payload = {'descriptor': [], 'latitude': 0, 'longitude': 0}
+        self.SA._do_check(s, payload, 'in')
+        self.SA._do_check(s, payload, 'out')
+        with self.assertRaises(UserError) as e:
+            self.SA._assert_allowed(s, 'out')
+        self.assertEqual(str(e.exception), 'already_checked_out')
