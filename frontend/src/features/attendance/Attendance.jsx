@@ -11,6 +11,7 @@ import OtTable from './OtTable';
 import RequestForm from './RequestForm';
 import RequestList from './RequestList';
 import ShiftAttendance from './ShiftAttendance';
+import AttendanceHistory from './AttendanceHistory';
 
 export default function Attendance({ search }) {
   const [me, setMe] = useState(null);
@@ -39,7 +40,7 @@ export default function Attendance({ search }) {
   const shiftTabLabel = me.isOfficial ? 'Chấm công OT' : 'Chấm công';
   const tabs = isManager
     ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)'], ['otpay', 'Chấm công OT']]
-    : [['me', 'Chấm công của tôi'], ['shift', shiftTabLabel], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
+    : [['me', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['shift', shiftTabLabel], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
   const activeTab = tab || (isManager ? 'day' : 'me');
 
   const goTab = (id) => {
@@ -68,6 +69,7 @@ export default function Attendance({ search }) {
           <MyHistory />
         </div>
       )}
+      {activeTab === 'history' && <AttendanceHistory me={me} />}
       {activeTab === 'shift' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <ShiftAttendance me={me} onChanged={load} />
