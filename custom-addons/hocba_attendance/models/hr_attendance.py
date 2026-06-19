@@ -223,7 +223,7 @@ class Attendance(models.Model):
         policy = self.env['hocba.attendance.policy'].get_policy()
         now = fields.Datetime.now()
         now_local = fields.Datetime.context_timestamp(
-            self.with_context(tz=self.env.user.tz or 'UTC'), now
+            self.with_context(tz=self._context.get('tz') or self.env.user.tz or 'UTC'), now
         ).replace(tzinfo=None)
         today = now_local.date()
 
@@ -239,9 +239,13 @@ class Attendance(models.Model):
                 enrolled = json.loads(employee.x_face_descriptor)
             except (ValueError, TypeError):
                 enrolled = []
-        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
+        desc_payload = payload.get('descriptor') or []
+        dist = self._face_distance(desc_payload, enrolled)
         if dist is None:
-            face_suspect = True   # cannot verify -> flag for review
+            # Only flag when face data was actually present (employee enrolled OR
+            # payload sent a descriptor) — no data on either side means face
+            # verification was not attempted, so don't penalise the check-in.
+            face_suspect = bool(enrolled) or bool(desc_payload)
         else:
             face_score = dist
             face_suspect = dist > policy.face_threshold
@@ -252,7 +256,19 @@ class Attendance(models.Model):
             out_of_zone = not policy.is_within_office(lat, lng)
         else:
             out_of_zone = False
-        out_of_window = not policy.is_within_window(now_local, kind)
+        if employee.x_employment_status == 'official':
+            out_of_window = not policy.is_within_window(now_local, kind)
+        else:
+            # non-official (CTV/OT): cờ theo cửa sổ ±W quanh giờ ca approved
+            window = policy.shift_window_minutes or 15
+            in_win = False
+            for s in self._todays_approved_shifts(employee, today):
+                anchor = fields.Datetime.context_timestamp(
+                    s, s.start if kind == 'in' else s.end).replace(tzinfo=None)
+                if abs((now_local - anchor).total_seconds()) <= window * 60:
+                    in_win = True
+                    break
+            out_of_window = not in_win
 
         # One record per employee per day
         record = self.search([

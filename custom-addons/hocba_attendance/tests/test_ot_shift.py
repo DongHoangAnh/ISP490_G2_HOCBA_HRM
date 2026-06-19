@@ -36,3 +36,20 @@ class TestOtShift(TransactionCase):
         self.assertEqual(s.rate, 1.5)
         s.ot_level = '300'
         self.assertEqual(s.rate, 3.0)
+
+    def test_do_check_non_official_in_window_not_flagged(self):
+        from odoo import fields as f
+        from datetime import timedelta
+        Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
+        now = f.Datetime.now()
+        # ca approved quanh thời điểm hiện tại (start = now)
+        self.env['hocba.work_shift'].create({
+            'employee_id': self.emp.id, 'state': 'approved', 'shift_type': 'ot',
+            'ot_level': '150',
+            'start': now, 'end': now + timedelta(hours=2)})
+        res = Att.sudo()._do_check({
+            'employee_id': self.emp.id, 'descriptor': [], 'photo': False,
+            'latitude': 0.0, 'longitude': 0.0}, 'in')
+        self.assertFalse(res['out_of_window'])
+        rec = Att.browse(res['record_id'])
+        self.assertFalse(rec.needs_review)
