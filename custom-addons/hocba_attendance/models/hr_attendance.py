@@ -239,13 +239,9 @@ class Attendance(models.Model):
                 enrolled = json.loads(employee.x_face_descriptor)
             except (ValueError, TypeError):
                 enrolled = []
-        desc_payload = payload.get('descriptor') or []
-        dist = self._face_distance(desc_payload, enrolled)
+        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
         if dist is None:
-            # Only flag when face data was actually present (employee enrolled OR
-            # payload sent a descriptor) — no data on either side means face
-            # verification was not attempted, so don't penalise the check-in.
-            face_suspect = bool(enrolled) or bool(desc_payload)
+            face_suspect = True   # cannot verify -> flag for review
         else:
             face_score = dist
             face_suspect = dist > policy.face_threshold

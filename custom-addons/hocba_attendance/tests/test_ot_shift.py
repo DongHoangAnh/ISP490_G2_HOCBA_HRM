@@ -1,3 +1,5 @@
+import json
+
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
@@ -47,8 +49,9 @@ class TestOtShift(TransactionCase):
             'employee_id': self.emp.id, 'state': 'approved', 'shift_type': 'ot',
             'ot_level': '150',
             'start': now, 'end': now + timedelta(hours=2)})
+        self.emp.x_face_descriptor = json.dumps([0.1] * 128)
         res = Att.sudo()._do_check({
-            'employee_id': self.emp.id, 'descriptor': [], 'photo': False,
+            'employee_id': self.emp.id, 'descriptor': [0.1] * 128, 'photo': False,
             'latitude': 0.0, 'longitude': 0.0}, 'in')
         self.assertFalse(res['out_of_window'])
         rec = Att.browse(res['record_id'])
