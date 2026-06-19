@@ -36,14 +36,20 @@ class TestShiftAttendanceApi(TransactionCase):
         self.assertEqual(rows[0]['id'], s.id)
         self.assertTrue(rows[0]['checkInOpen'])
         self.assertFalse(rows[0]['checkIn'])
+        self.assertFalse(rows[0]['checkOutOpen'])
 
     def test_shift_check_in_then_out(self):
-        s = self._shift_now()
+        now = fields.Datetime.now()
+        s = self._shift_now(end=now + timedelta(minutes=1))
         env = self.env(user=self.user)
         res = _shift_check(env, s.id, 'in', {'descriptor': [], 'latitude': 0, 'longitude': 0})
         self.assertEqual(res['kind'], 'in')
         att = env['hocba.shift.attendance'].sudo().search([('shift_id', '=', s.id)])
         self.assertTrue(att.check_in)
+        res2 = _shift_check(env, s.id, 'out', {'descriptor': [], 'latitude': 0, 'longitude': 0})
+        self.assertEqual(res2['kind'], 'out')
+        att = env['hocba.shift.attendance'].sudo().search([('shift_id', '=', s.id)])
+        self.assertTrue(att.check_out)
 
     def test_shift_check_other_employee_forbidden(self):
         other = self.env['hr.employee'].create({
@@ -54,3 +60,9 @@ class TestShiftAttendanceApi(TransactionCase):
         env = self.env(user=self.user)
         with self.assertRaises(AccessError):
             _shift_check(env, s.id, 'in', {'descriptor': [], 'latitude': 0, 'longitude': 0})
+
+    def test_shift_check_nonexistent_raises_no_shift(self):
+        env = self.env(user=self.user)
+        with self.assertRaises(UserError) as e:
+            _shift_check(env, 999999, 'in', {'descriptor': [], 'latitude': 0, 'longitude': 0})
+        self.assertEqual(str(e.exception), 'no_shift')

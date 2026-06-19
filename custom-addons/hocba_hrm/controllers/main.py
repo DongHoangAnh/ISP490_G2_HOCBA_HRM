@@ -759,7 +759,9 @@ def _shift_check(env, shift_id, kind, payload):
     """Chấm công 1 ca cho user hiện tại. Raise AccessError nếu ca không thuộc user."""
     emp = env.user.employee_id
     shift = env['hocba.work_shift'].sudo().browse(shift_id)
-    if not shift.exists() or not emp or shift.employee_id.id != emp.id:
+    if not shift.exists():
+        raise UserError('no_shift')
+    if not emp or shift.employee_id.id != emp.id:
         raise AccessError('forbidden')
     SA = env['hocba.shift.attendance'].sudo()
     SA._assert_allowed(shift, kind)
