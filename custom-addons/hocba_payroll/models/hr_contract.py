@@ -1,6 +1,6 @@
 """
 Contract — standalone replacement for hr.contract (Enterprise).
-FUNC-PR-001: Cấu hình đơn giá giờ dạy trên hợp đồng giáo viên.
+Covers teaching hourly-rate config, allowances, insurance, and sale/KPI fields.
 """
 import logging
 
@@ -17,10 +17,11 @@ THRESHOLD_MAX = 200.0                     # VR-003
 
 class HbContract(models.Model):
     _name = 'hb.contract'
-    _description = 'Hợp đồng giáo viên'
+    _description = 'Hợp đồng lao động'
     _order = 'date_start desc'
     _inherit = ['mail.thread']
 
+    # ── Core ─────────────────────────────────────────────────
     name = fields.Char(string='Tên hợp đồng', required=True, tracking=True)
     employee_id = fields.Many2one(
         'hr.employee', string='Nhân viên', required=True,
@@ -29,9 +30,9 @@ class HbContract(models.Model):
     date_start = fields.Date(string='Ngày bắt đầu', required=True)
     date_end = fields.Date(string='Ngày kết thúc')
     wage = fields.Float(
-        string='Lương cơ bản (đóng BH)',
+        string='Lương cơ bản',
         digits=(12, 0),
-        help='Mức lương ghi trên hợp đồng, dùng làm base tính BHXH/BHYT/BHTN.',
+        help='Mức lương ghi trên hợp đồng.',
     )
     state = fields.Selection([
         ('draft', 'Nháp'),
@@ -44,50 +45,90 @@ class HbContract(models.Model):
         default=lambda self: self.env.company,
     )
 
-    # ── Teaching hourly-rate fields (PR-001 Screen 1) ────────
+    # ── Insurance ────────────────────────────────────────────
+    x_insurance_base = fields.Float(
+        string='Lương đóng BH', digits=(12, 0),
+        help='Cơ sở tính BHXH/BHYT/BHTN. Có thể KHÁC lương cơ bản.',
+    )
+    x_insurance_policy = fields.Selection([
+        ('standard', 'BH theo định mức'),
+        ('tnld_0_5', 'Đóng 0.5% BH TNLĐ'),
+        ('none', 'Không đóng'),
+    ], string='Chính sách BH', default='standard')
+    x_dependent_count = fields.Integer(
+        string='Số NPT (override)',
+        help='Số người phụ thuộc giảm trừ. Để 0 sẽ lấy từ hồ sơ nhân viên.',
+    )
+
+    # ── Allowances (Phụ cấp) ─────────────────────────────────
+    x_pc_seniority = fields.Float(
+        string='PC thâm niên', digits=(12, 0),
+    )
+    x_pc_parking = fields.Float(
+        string='PC gửi xe', digits=(12, 0),
+    )
+    x_pc_fuel = fields.Float(
+        string='PC xăng xe', digits=(12, 0),
+    )
+    x_pc_position = fields.Float(
+        string='PC chức vụ', digits=(12, 0),
+    )
+    x_sp_transport = fields.Float(
+        string='HT đi lại', digits=(12, 0),
+    )
+    x_sp_phone = fields.Float(
+        string='HT điện thoại', digits=(12, 0),
+    )
+    x_sp_meal = fields.Float(
+        string='HT ăn ca', digits=(12, 0),
+    )
+    x_sp_uniform = fields.Float(
+        string='HT trang phục', digits=(12, 0),
+    )
+
+    # ── Sale / KPI ───────────────────────────────────────────
+    x_kpi_wage = fields.Float(
+        string='Lương KPI', digits=(12, 0),
+    )
+    x_is_sale = fields.Boolean(
+        string='Nhân viên sale', default=False,
+    )
+    x_structure_id = fields.Many2one(
+        'hb.salary.structure', string='Cấu trúc lương',
+        help='STRUCT_OFFLINE hoặc STRUCT_ONLINE. Nếu trống sẽ tự xác định.',
+    )
+
+    # ── Teaching hourly-rate fields (PR-001) ─────────────────
     x_teaching_hourly_rate = fields.Float(
-        string='Đơn giá giờ cơ bản',
-        digits=(12, 0),
-        help='Đơn giá 1 giờ dạy cơ bản (VND/h). Bắt buộc cho hợp đồng GV.',
+        string='Đơn giá giờ cơ bản', digits=(12, 0),
+        help='Đơn giá 1 giờ dạy cơ bản (VND/h).',
     )
     x_rate_hsk_class = fields.Float(
-        string='Đơn giá giờ HSK4+',
-        digits=(12, 0),
-        help='Đơn giá giờ cho lớp HSK cấp 4 trở lên (VND/h). Để trống → dùng đơn giá cơ bản.',
+        string='Đơn giá giờ HSK4+', digits=(12, 0),
+        help='Đơn giá giờ cho lớp HSK cấp 4 trở lên (VND/h).',
     )
     x_rate_advanced_class = fields.Float(
-        string='Đơn giá giờ lớp đặc biệt',
-        digits=(12, 0),
-        help='Đơn giá giờ cho lớp đặc biệt (VND/h).',
+        string='Đơn giá giờ lớp đặc biệt', digits=(12, 0),
     )
     x_standard_threshold = fields.Float(
-        string='Ngưỡng giờ chuẩn/tháng',
-        digits=(6, 2),
-        default=60.0,
+        string='Ngưỡng giờ chuẩn/tháng', digits=(6, 2), default=60.0,
         help='Số giờ chuẩn mỗi tháng. Vượt ngưỡng sẽ tính bonus.',
     )
     x_extra_rate = fields.Float(
-        string='Đơn giá giờ vượt ngưỡng',
-        digits=(12, 0),
-        help='Đơn giá cho giờ vượt ngưỡng (VND/h). Để trống → = đơn giá cơ bản × 1.25.',
+        string='Đơn giá giờ vượt ngưỡng', digits=(12, 0),
+        help='Để trống → = đơn giá cơ bản × 1.25.',
     )
     x_has_fixed_base = fields.Boolean(
-        string='Có lương cố định base',
-        default=False,
-        help='Bật nếu giáo viên có phần lương cố định hàng tháng.',
+        string='Có lương cố định base', default=False,
     )
     x_fixed_base = fields.Float(
-        string='Lương cố định',
-        digits=(12, 0),
-        help='Lương cố định hàng tháng (VND). Sẽ pro-rate nếu vào/nghỉ giữa kỳ.',
+        string='Lương cố định', digits=(12, 0),
     )
 
     # ── Computed helper ──────────────────────────────────────
     x_effective_extra_rate = fields.Float(
         string='Đơn giá vượt ngưỡng (thực tế)',
-        compute='_compute_effective_extra_rate',
-        digits=(12, 0),
-        help='= x_extra_rate nếu đã cấu hình, ngược lại = base × 1.25',
+        compute='_compute_effective_extra_rate', digits=(12, 0),
     )
 
     @api.depends('x_teaching_hourly_rate', 'x_extra_rate')
@@ -97,6 +138,28 @@ class HbContract(models.Model):
                 rec.x_effective_extra_rate = rec.x_extra_rate
             else:
                 rec.x_effective_extra_rate = rec.x_teaching_hourly_rate * 1.25
+
+    # ── Sale helpers ─────────────────────────────────────────
+    def _hocba_sale_base(self, period_date):
+        """Return base_sale_wage from hocba.sale.level for current period."""
+        self.ensure_one()
+        revenue_rec = self.env['hocba.sale.revenue'].search([
+            ('employee_id', '=', self.employee_id.id),
+            ('period_month', '=', period_date.month),
+            ('period_year', '=', period_date.year),
+        ], limit=1)
+        if revenue_rec and revenue_rec.level_id:
+            return revenue_rec.level_id.base_sale_wage
+        return self.wage
+
+    def _hocba_sale_rate(self, period_date, revenue):
+        """Return commission_rate from hocba.sale.level based on revenue."""
+        self.ensure_one()
+        level = self.env['hocba.sale.level'].search(
+            [('kpi_threshold', '<=', revenue), ('active', '=', True)],
+            order='kpi_threshold desc', limit=1,
+        )
+        return level.commission_rate if level else 0.0
 
     # ── State transitions ────────────────────────────────────
     def action_open(self):
@@ -118,7 +181,6 @@ class HbContract(models.Model):
     # ── Constraints (VR-001 .. VR-009) ───────────────────────
     @api.constrains('x_teaching_hourly_rate')
     def _check_hourly_rate_positive(self):
-        """VR-001: Đơn giá giờ phải > 0 nếu nhân viên là teacher."""
         for rec in self:
             if rec.x_teaching_hourly_rate and rec.x_teaching_hourly_rate < 0:
                 raise ValidationError(
@@ -127,7 +189,6 @@ class HbContract(models.Model):
 
     @api.constrains('x_rate_hsk_class', 'x_teaching_hourly_rate')
     def _check_hsk_rate_higher(self):
-        """VR-002: HSK rate nên > base rate (warning-level, dùng log)."""
         for rec in self:
             if (rec.x_rate_hsk_class
                     and rec.x_teaching_hourly_rate
@@ -139,7 +200,6 @@ class HbContract(models.Model):
 
     @api.constrains('x_standard_threshold')
     def _check_threshold_range(self):
-        """VR-003: Ngưỡng giờ chuẩn phải trong khoảng 0-200h/tháng."""
         for rec in self:
             if rec.x_standard_threshold < THRESHOLD_MIN or rec.x_standard_threshold > THRESHOLD_MAX:
                 raise ValidationError(
@@ -149,7 +209,6 @@ class HbContract(models.Model):
 
     @api.constrains('x_has_fixed_base', 'x_fixed_base')
     def _check_fixed_base_consistent(self):
-        """VR-007: Nếu has_fixed_base = True thì fixed_base phải > 0."""
         for rec in self:
             if rec.x_has_fixed_base and (not rec.x_fixed_base or rec.x_fixed_base <= 0):
                 raise ValidationError(
@@ -158,7 +217,6 @@ class HbContract(models.Model):
 
     @api.constrains('x_teaching_hourly_rate')
     def _warn_high_hourly_rate(self):
-        """VR-009: Đơn giá > 1tr/h → log warning (cần HR Manager phê duyệt)."""
         for rec in self:
             if rec.x_teaching_hourly_rate and rec.x_teaching_hourly_rate > HOURLY_RATE_WARN_THRESHOLD:
                 _logger.warning(
@@ -166,6 +224,7 @@ class HbContract(models.Model):
                     rec.name, rec.x_teaching_hourly_rate, HOURLY_RATE_WARN_THRESHOLD,
                 )
 
+    # ── API serialization ────────────────────────────────────
     def _to_api_dict(self):
         self.ensure_one()
         return {
@@ -177,6 +236,25 @@ class HbContract(models.Model):
             'date_end': str(self.date_end) if self.date_end else None,
             'wage': self.wage,
             'state': self.state,
+            # Insurance
+            'x_insurance_base': self.x_insurance_base,
+            'x_insurance_policy': self.x_insurance_policy,
+            'x_dependent_count': self.x_dependent_count,
+            # Allowances
+            'x_pc_seniority': self.x_pc_seniority,
+            'x_pc_parking': self.x_pc_parking,
+            'x_pc_fuel': self.x_pc_fuel,
+            'x_pc_position': self.x_pc_position,
+            'x_sp_transport': self.x_sp_transport,
+            'x_sp_phone': self.x_sp_phone,
+            'x_sp_meal': self.x_sp_meal,
+            'x_sp_uniform': self.x_sp_uniform,
+            # Sale / KPI
+            'x_kpi_wage': self.x_kpi_wage,
+            'x_is_sale': self.x_is_sale,
+            'x_structure_id': self.x_structure_id.id if self.x_structure_id else None,
+            'x_structure_code': self.x_structure_id.code if self.x_structure_id else None,
+            # Teaching
             'x_teaching_hourly_rate': self.x_teaching_hourly_rate,
             'x_rate_hsk_class': self.x_rate_hsk_class,
             'x_rate_advanced_class': self.x_rate_advanced_class,
