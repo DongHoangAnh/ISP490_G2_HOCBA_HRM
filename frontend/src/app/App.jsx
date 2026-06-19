@@ -42,7 +42,7 @@ export default function App() {
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
-        {view === 'attendance' && canManage && <Attendance search={search} />}
+        {view === 'attendance' && <Attendance search={search} />}
         {view === 'timeoff' && canManage && <TimeOff search={search} />}
         {view === 'payroll' && canManage && <ComingSoon title="Bảng lương" owner="Hùng" api="/hocba-hrm/api/payroll/*" />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}

@@ -50,17 +50,5 @@ class WorkShift(models.Model):
             if rec.start and rec.end and rec.end <= rec.start:
                 raise ValidationError('Giờ kết thúc phải sau giờ bắt đầu.')
 
-    @api.constrains('start', 'end', 'employee_id', 'state')
-    def _check_overlap(self):
-        for rec in self:
-            if rec.state not in ('pending', 'approved') or not (rec.start and rec.end):
-                continue
-            clash = self.search_count([
-                ('id', '!=', rec.id),
-                ('employee_id', '=', rec.employee_id.id),
-                ('state', 'in', ('pending', 'approved')),
-                ('start', '<', rec.end),
-                ('end', '>', rec.start),
-            ])
-            if clash:
-                raise ValidationError('Ca bị trùng giờ với ca khác.')
+    # NOTE: Ràng buộc chống trùng giờ đã được gỡ theo yêu cầu nghiệp vụ — cho
+    # phép mỗi ngày nhiều người & một người nhiều ca OT, kể cả khi giờ chồng nhau.

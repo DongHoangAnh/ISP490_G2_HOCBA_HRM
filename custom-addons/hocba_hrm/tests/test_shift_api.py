@@ -84,13 +84,17 @@ class TestShiftApi(TransactionCase):
             _shift_create(env, {'start': '2026-06-15T11:00',
                                 'end': '2026-06-15T09:00', 'shiftType': 'ot'})
 
-    def test_create_overlap_raises(self):
+    def test_create_overlap_allowed(self):
+        # Cho phép 1 người đăng ký nhiều ca OT/ngày kể cả khi giờ chồng nhau.
         env = self.env(user=self.user)
         _shift_create(env, {'start': '2026-06-15T09:00',
                             'end': '2026-06-15T11:00', 'shiftType': 'ctv'})
-        with self.assertRaises(ValidationError):
-            _shift_create(env, {'start': '2026-06-15T10:00',
-                                'end': '2026-06-15T12:00', 'shiftType': 'ctv'})
+        row = _shift_create(env, {'start': '2026-06-15T10:00',
+                                  'end': '2026-06-15T12:00', 'shiftType': 'ctv'})
+        self.assertEqual(row['state'], 'pending')
+        cnt = self.env['hocba.work_shift'].search_count(
+            [('employee_id', '=', self.emp.id)])
+        self.assertEqual(cnt, 2)
 
     def test_create_no_employee_returns_none(self):
         u = self.env['res.users'].create({'name': 'NoEmp', 'login': 'noemp_shift'})
@@ -140,6 +144,32 @@ class TestShiftApi(TransactionCase):
         ids = [r['empId'] for d in data['days'] for r in d['shifts']]
         self.assertIn(self.emp.id, ids)
         self.assertTrue(data['canManage'])
+
+    def test_week_hr_manager_sees_pending_in_scope(self):
+        # Bug: manager phải thấy ca PENDING của NV trong phạm vi để duyệt.
+        self._make_shift()   # pending, self.emp
+        data = _shifts_week(self.env(user=self.hrm), '2026-06-15')
+        rows = [r for d in data['days'] for r in d['shifts']
+                if r['empId'] == self.emp.id]
+        self.assertTrue(rows, 'Manager phải thấy ca pending của NV để duyệt')
+        self.assertEqual(rows[0]['state'], 'pending')
+
+    def test_week_dept_head_sees_pending_in_scope(self):
+        dept = self.env['hr.department'].create({'name': 'Phòng P'})
+        in_emp = self.env['hr.employee'].create({
+            'name': 'NV trong P', 'department_id': dept.id,
+            'x_employment_status': 'ctv'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP P'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPP', 'login': 'tpp_shift'})
+        mgr_user.tz = 'Asia/Ho_Chi_Minh'
+        mgr_emp.user_id = mgr_user
+        self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh').create({
+            'employee_id': in_emp.id, 'start': '2026-06-15 02:00:00',
+            'end': '2026-06-15 04:00:00', 'shift_type': 'ot', 'state': 'pending'})
+        data = _shifts_week(self.env(user=mgr_user), '2026-06-15')
+        ids = [r['empId'] for d in data['days'] for r in d['shifts']]
+        self.assertIn(in_emp.id, ids)
 
     def test_week_dept_head_scope(self):
         dept = self.env['hr.department'].create({'name': 'Phòng S'})

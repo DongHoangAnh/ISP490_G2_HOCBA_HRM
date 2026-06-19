@@ -615,8 +615,9 @@ def _shift_create(env, body):
 
 def _shifts_week(env, monday_str):
     """Dữ liệu lịch tuần (T2→CN của tuần chứa monday_str; rỗng = tuần hiện tại).
-    Owner thấy ca của mình mọi state; người khác chỉ thấy ca approved trong
-    phạm vi vai trò (HR=tất cả, trưởng phòng=phòng mình, NV thường=của mình)."""
+    Owner thấy ca của mình mọi state. Manager (HR=tất cả, trưởng phòng=phòng
+    mình, giáo vụ=giáo viên) thấy MỌI state của NV trong phạm vi — gồm ca
+    pending để duyệt. NV thường chỉ thấy ca approved của người khác."""
     user = env.user
     d = fields.Date.from_string(monday_str) if monday_str else fields.Date.context_today(user)
     monday = d - timedelta(days=d.weekday())
@@ -625,17 +626,18 @@ def _shifts_week(env, monday_str):
     end_local = start_local + timedelta(days=7)
     start_utc = start_local.astimezone(utc).replace(tzinfo=None)
     end_utc = end_local.astimezone(utc).replace(tzinfo=None)
-    approved = [('state', '=', 'approved')]
+    can_manage = _user_can_manage(env)
+    scoped = [] if can_manage else [('state', '=', 'approved')]
     for field, op, val in _emp_scope_domain(env):
         if field == 'id':
-            approved.append(('employee_id', op, val))
+            scoped.append(('employee_id', op, val))
         else:
-            approved.append(('employee_id.%s' % field, op, val))
+            scoped.append(('employee_id.%s' % field, op, val))
     me = user.employee_id
     if me:
-        visible = expression.OR([[('employee_id', '=', me.id)], approved])
+        visible = expression.OR([[('employee_id', '=', me.id)], scoped])
     else:
-        visible = approved
+        visible = scoped
     domain = [('start', '>=', start_utc), ('start', '<', end_utc)] + visible
     recs = env['hocba.work_shift'].sudo().search(domain)
     by_day = {}
@@ -648,7 +650,7 @@ def _shifts_week(env, monday_str):
         day = monday + timedelta(days=i)
         days.append({'date': _d(day), 'weekday': weekdays[i],
                      'shifts': by_day.get(day, [])})
-    return {'weekStart': _d(monday), 'canManage': _user_can_manage(env), 'days': days}
+    return {'weekStart': _d(monday), 'canManage': can_manage, 'days': days}
 
 
 def _shift_decide(env, shift_id, approve, body):

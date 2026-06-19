@@ -2,7 +2,8 @@
 import Icon from '../components/Icon';
 
 /* Nav theo vai trò (họp #2 — tách tài khoản quản lý ↔ cá nhân).
-   need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; không gắn need = mọi nhân viên. */
+   need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; need 'self' = chỉ nhân viên
+   thường (không quản lý); không gắn need = mọi nhân viên. */
 const NAV = [
   { sec: 'Tổng quan', items: [
     { id: 'dashboard', label: 'Dashboard', icon: 'grid', need: 'manage' },
@@ -16,11 +17,16 @@ const NAV = [
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
   ]},
   { sec: 'Cá nhân', items: [
+    { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user' },
   ]},
 ];
 
-const allow = (need, me) => need !== 'manage' || !!(me && me.canManage);
+const allow = (need, me) => {
+  if (need === 'manage') return !!(me && me.canManage);
+  if (need === 'self') return !(me && me.canManage);
+  return true;
+};
 
 /* Danh sách section/item user được thấy theo vai trò. */
 export function visibleNav(me) {
