@@ -201,6 +201,7 @@ def _att_me_info(env):
                 'checkInOpen': abs((now_local - ci).total_seconds()) <= window * 60,
                 'checkOutOpen': abs((now_local - co).total_seconds()) <= window * 60,
             }
+    info['shiftsToday'] = _shift_today_rows(env, emp)
     return info
 
 
@@ -723,6 +724,55 @@ def _shift_cancel(env, shift_id):
     return {'ok': True}
 
 
+def _shift_today_rows(env, emp):
+    """Ca approved hôm nay của emp (local) + trạng thái chấm cho màn chấm công ca."""
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    window = policy.shift_window_minutes or 15
+    now_local = fields.Datetime.context_timestamp(
+        env.user, fields.Datetime.now()).replace(tzinfo=None)
+    today = now_local.date()
+    shifts = env['hocba.attendance']._todays_approved_shifts(emp, today)
+    rows = []
+    for s in shifts:
+        att = env['hocba.shift.attendance'].sudo().search(
+            [('shift_id', '=', s.id)], limit=1)
+        ci_anchor = fields.Datetime.context_timestamp(s, s.start).replace(tzinfo=None)
+        co_anchor = fields.Datetime.context_timestamp(s, s.end).replace(tzinfo=None)
+        has_in = bool(att and att.check_in)
+        has_out = bool(att and att.check_out)
+        rows.append({
+            'id': s.id,
+            'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
+            'shiftType': s.shift_type, 'otLevel': s.ot_level, 'rate': s.rate,
+            'checkIn': _dt_local(att, att.check_in) if has_in else None,
+            'checkOut': _dt_local(att, att.check_out) if has_out else None,
+            'checkInOpen': (not has_in) and abs((now_local - ci_anchor).total_seconds()) <= window * 60,
+            'checkOutOpen': has_in and (not has_out) and abs((now_local - co_anchor).total_seconds()) <= window * 60,
+            'faceSuspect': att.face_suspect if att else False,
+            'outOfZone': att.out_of_zone if att else False,
+            'outOfWindow': att.out_of_window if att else False,
+        })
+    return rows
+
+
+def _shift_check(env, shift_id, kind, payload):
+    """Chấm công 1 ca cho user hiện tại. Raise AccessError nếu ca không thuộc user."""
+    emp = env.user.employee_id
+    shift = env['hocba.work_shift'].sudo().browse(shift_id)
+    if not shift.exists() or not emp or shift.employee_id.id != emp.id:
+        raise AccessError('forbidden')
+    SA = env['hocba.shift.attendance'].sudo()
+    SA._assert_allowed(shift, kind)
+    rec = SA._do_check(shift, payload, kind)
+    return {
+        'recordId': rec.id, 'kind': kind,
+        'faceSuspect': rec.face_suspect, 'outOfZone': rec.out_of_zone,
+        'outOfWindow': rec.out_of_window,
+        'faceScore': (rec.check_in_face_score if kind == 'in'
+                      else rec.check_out_face_score),
+    }
+
+
 def _managed_department_ids(env, emp):
     """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
     if not emp:
@@ -796,6 +846,8 @@ _CHECK_ERR_STATUS = {
     'already_checked_out': 409,
     'no_shift_today': 403,
     'outside_shift_window': 403,
+    'no_shift': 404,
+    'shift_not_approved': 409,
 }
 
 
@@ -1886,6 +1938,32 @@ class HocBaHRM(http.Controller):
             'faceSuspect': res['face_suspect'], 'outOfZone': res['out_of_zone'],
             'outOfWindow': res['out_of_window'], 'faceScore': res['face_score'],
         })
+
+    @http.route(['/hocba-hrm/api/attendance/shift/<int:shift_id>/check-in',
+                 '/hocba-hrm/api/attendance/shift/<int:shift_id>/check-out'],
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_shift_attendance_check(self, shift_id, **kw):
+        if not request.env.user.employee_id:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        if _user_can_manage(request.env):
+            return request.make_json_response({'error': 'manager_no_checkin'}, status=403)
+        payload = request.get_json_data()
+        kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
+        try:
+            res = _shift_check(request.env, shift_id, kind, {
+                'photo': payload.get('photo'),
+                'descriptor': payload.get('descriptor') or [],
+                'latitude': payload.get('latitude') or 0.0,
+                'longitude': payload.get('longitude') or 0.0,
+            })
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except UserError as ex:
+            code = str(ex)
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': code}, status=_CHECK_ERR_STATUS.get(code, 400))
+        return request.make_json_response(res)
 
     @http.route('/hocba-hrm/api/attendance/<int:rec_id>', auth='user',
                 type='http', methods=['POST'], csrf=False)
