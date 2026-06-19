@@ -5,7 +5,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchCvList, changeStage } from '../../api/recruitment';
+import { fetchCvList, changeStage, updateApplicant } from '../../api/recruitment';
 import { CV_RESULT_KIND, CALL_STATUS_KIND } from './util';
 import ApplicantDrawer from './ApplicantDrawer';
 import ApplicantForm from './ApplicantForm';
@@ -72,7 +72,7 @@ export default function CvList({ search, stageNames }) {
       </div>
 
       {vmode === 'table' ? (
-        <TableView rows={filtered} onOpen={setSel} />
+        <TableView rows={filtered} meta={meta} isRecruiter={isRecruiter} onOpen={setSel} onSaved={applyRow} />
       ) : (
         <KanbanView rows={filtered} stages={stages} labels={{ cvResultLabels, callStatusLabels }}
           isRecruiter={isRecruiter} onOpen={setSel} onMoved={applyRow} onError={load} />
@@ -122,28 +122,96 @@ function CvFileCell({ row }) {
   return <span className="muted">—</span>;
 }
 
-function TableView({ rows, onOpen }) {
+/* Ô nhập inline (giống InterviewApplicants / Offers) — sửa trực tiếp ngoài bảng. */
+const cellStyle = {
+  padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border-strong)',
+  background: '#fff', fontSize: 12.5, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
+};
+
+function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
+  const [savingId, setSavingId] = useState(null);
+  const { jobs = [], cvResultLabels = {}, callStatusLabels = {} } = meta || {};
+
+  // Lưu 1 trường rồi cập nhật dòng vào state (không refetch).
+  const saveField = async (id, patch) => {
+    setSavingId(id);
+    try {
+      onSaved(await updateApplicant(id, patch));
+    } catch (e) {
+      alert(e.message || 'Không lưu được thay đổi.');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <div className="card">
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Ứng viên</th><th>Vị trí</th><th>Link CV / File PDF</th><th>Trạng thái</th><th></th>
+            <th>Ứng viên</th><th>Vị trí</th><th>Ngày nhận</th><th>CTV</th>
+            <th>Lọc CV</th><th>Gọi điện</th><th>Link CV / File PDF</th><th></th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} onClick={() => onOpen(r)}>
+            {rows.map((r) => {
+              const busy = savingId === r.id;
+              const op = busy ? 0.6 : 1;
+              return (
+              <tr key={r.id}>
                 <td>
                   <div className="nm">{r.name || '—'}</div>
                   <div className="id">{[r.phone, r.email].filter(Boolean).join(' · ') || '—'}</div>
                 </td>
-                <td>{r.jobName || '—'}</td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  {isRecruiter ? (
+                    <select value={r.jobId || ''} disabled={busy}
+                      onChange={(e) => saveField(r.id, { jobId: e.target.value })}
+                      style={{ ...cellStyle, width: 170, opacity: op }}>
+                      <option value="">— Chưa gán —</option>
+                      {jobs.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
+                    </select>
+                  ) : (r.jobName || '—')}
+                </td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  {isRecruiter ? (
+                    <input type="date" value={r.dateReceived ? r.dateReceived.slice(0, 10) : ''}
+                      disabled={busy} onChange={(e) => saveField(r.id, { dateReceived: e.target.value || '' })}
+                      style={{ ...cellStyle, width: 140, opacity: op }} />
+                  ) : (<span className="muted mono">{r.dateReceived ? fmtDate(r.dateReceived) : '—'}</span>)}
+                </td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  {isRecruiter ? (
+                    <input type="text" defaultValue={r.ctv || ''} placeholder="Tên CTV" disabled={busy}
+                      onBlur={(e) => { if ((e.target.value || '') !== (r.ctv || '')) saveField(r.id, { ctv: e.target.value }); }}
+                      style={{ ...cellStyle, width: 120, opacity: op }} />
+                  ) : (r.ctv || <span className="muted">—</span>)}
+                </td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  {isRecruiter ? (
+                    <select value={r.cvResult || ''} disabled={busy}
+                      onChange={(e) => saveField(r.id, { cvResult: e.target.value })}
+                      style={{ ...cellStyle, width: 130, opacity: op }}>
+                      <option value="">— Chưa lọc —</option>
+                      {Object.entries(cvResultLabels).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  ) : (<ResultBadge k={r.cvResult} label={cvResultLabels[r.cvResult]} />)}
+                </td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  {isRecruiter ? (
+                    <select value={r.callStatus || ''} disabled={busy}
+                      onChange={(e) => saveField(r.id, { callStatus: e.target.value })}
+                      style={{ ...cellStyle, width: 130, opacity: op }}>
+                      <option value="">— Chưa gọi —</option>
+                      {Object.entries(callStatusLabels).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  ) : (<CallBadge k={r.callStatus} label={callStatusLabels[r.callStatus]} />)}
+                </td>
                 <td><CvFileCell row={r} /></td>
-                <td>{r.stage ? <Badge kind="gray" dot>{r.stage}</Badge> : <span className="muted">—</span>}</td>
-                <td><button className="icon-btn" onClick={(e) => { e.stopPropagation(); onOpen(r); }}>
+                <td><button className="icon-btn" title="Xem hồ sơ" onClick={(e) => { e.stopPropagation(); onOpen(r); }}>
                   <Icon name="chevR" size={18} className="faint" /></button></td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

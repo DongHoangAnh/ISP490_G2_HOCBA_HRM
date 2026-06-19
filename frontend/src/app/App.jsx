@@ -45,7 +45,7 @@ export default function App() {
         {view === 'attendance' && canManage && <Attendance search={search} />}
         {view === 'timeoff' && canManage && <TimeOff search={search} />}
         {view === 'payroll' && canManage && <ComingSoon title="Bảng lương" owner="Hùng" api="/hocba-hrm/api/payroll/*" />}
-        {view === 'recruitment' && canManage && <Recruitment search={search} />
+        {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'profile' && <Profile />}
       </div>
     </div>
