@@ -7,6 +7,8 @@ export const fetchAttendanceDay = (date) =>
   hbGet(`/hocba-hrm/api/attendance?date=${date}`);
 export const fetchMyHistory = (month) =>
   hbGet(`/hocba-hrm/api/attendance/me/history?month=${month}`);
+export const fetchMyHistoryFull = (month, type) =>
+  hbGet(`/hocba-hrm/api/attendance/me/history-full?month=${month}&type=${type}`);
 export const enrollFace = (photo, descriptor) =>
   hbPost('/hocba-hrm/api/attendance/enroll', { photo, descriptor });
 export const checkIn = (payload) =>
