@@ -4,3 +4,4 @@ from . import test_shift_api
 from . import test_shift_checkin
 from . import test_ot_payroll
 from . import test_shift_attendance_api
+from . import test_ot_credit

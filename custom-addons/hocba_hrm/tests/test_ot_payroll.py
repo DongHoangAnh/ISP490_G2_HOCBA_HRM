@@ -26,65 +26,81 @@ class TestOtPayroll(TransactionCase):
                 'ot_level': level, 'state': state,
                 'start': day + ' 02:00:00', 'end': day + ' 04:00:00'})
 
-    def _attendance(self, day):
-        # check-in lúc 02:00 UTC ngày day -> date local = day
-        return self.env['hocba.attendance'].with_context(
-            tz='Asia/Ho_Chi_Minh').sudo().create({
-                'employee_id': self.emp.id, 'check_in': day + ' 02:00:00'})
+    def _shift_att(self, shift, ci=None, co=None):
+        return self.env['hocba.shift.attendance'].sudo().create({
+            'shift_id': shift.id,
+            'check_in': ci or shift.start,
+            'check_out': co or shift.end})
 
     def test_ot_row_counted(self):
         s = self._shift('2026-06-15', level='150')
-        self._attendance('2026-06-15')
+        self._shift_att(s)
         row = _ot_row(self.env, s)
         self.assertEqual(row['hours'], 2.0)
         self.assertTrue(row['counted'])
-        self.assertEqual(row['creditHours'], 3.0)   # 2h * 1.5
+        # 2h shift: congCa = round(2/8 * 1.5, 2) = 0.38
+        self.assertEqual(row['congCa'], 0.38)
         self.assertEqual(row['otLevel'], '150')
 
     def test_ot_row_not_counted_when_no_attendance(self):
         s = self._shift('2026-06-15')
         row = _ot_row(self.env, s)
         self.assertFalse(row['counted'])
-        self.assertEqual(row['creditHours'], 0.0)
+        self.assertEqual(row['congCa'], 0.0)
 
     def test_for_employee_sums_counted_only(self):
-        self._shift('2026-06-15', level='150'); self._attendance('2026-06-15')
-        self._shift('2026-06-16', level='300')  # không có attendance -> bỏ
+        s1 = self._shift('2026-06-15', level='150')
+        self._shift_att(s1)
+        self._shift('2026-06-16', level='300')  # không có shift_att -> bỏ
         res = _ot_for_employee(self.env, self.emp, date(2026, 6, 1), date(2026, 6, 30))
         self.assertEqual(res['otHours'], 2.0)
-        self.assertEqual(res['otCreditHours'], 3.0)
+        # congCa của ca counted: round(2/8 * 1.5, 2) = 0.38
+        self.assertEqual(res['otCong'], 0.38)
 
     def test_for_employee_excludes_pending_and_other_month(self):
-        self._shift('2026-06-15', state='pending'); self._attendance('2026-06-15')
-        self._shift('2026-05-15', level='300'); self._attendance('2026-05-15')
+        s1 = self._shift('2026-06-15', state='pending')
+        self._shift_att(s1)
+        s2 = self._shift('2026-05-15', level='300')
+        self._shift_att(s2)
         res = _ot_for_employee(self.env, self.emp, date(2026, 6, 1), date(2026, 6, 30))
-        self.assertEqual(res['otCreditHours'], 0.0)
+        self.assertEqual(res['otCong'], 0.0)
 
     def test_me_history_summary_has_ot(self):
-        self._shift('2026-06-15', level='300'); self._attendance('2026-06-15')
+        s = self._shift('2026-06-15', level='300')
+        self._shift_att(s)
         data = _att_me_history(self.env(user=self.user), '2026-06')
         self.assertEqual(data['summary']['otHours'], 2.0)
-        self.assertEqual(data['summary']['otCreditHours'], 6.0)   # 2h * 3.0
+        # congCa: round(2/8 * 3.0, 2) = 0.75
+        self.assertEqual(data['summary']['congOt'], 0.75)
 
     def test_ot_table_scope_and_totals(self):
         from odoo.addons.hocba_hrm.controllers.main import _ot_table
-        self._shift('2026-06-15', level='150'); self._attendance('2026-06-15')
-        self._shift('2026-06-16', level='300')   # không attendance -> counted False
-        hrm = self.env['res.users'].create({
-            'name': 'HRM OT', 'login': 'hrm_ot',
-            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
-        hrm.tz = 'Asia/Ho_Chi_Minh'
-        data = _ot_table(self.env(user=hrm), '2026-06')
+        s1 = self._shift('2026-06-15', level='150')
+        self._shift_att(s1)
+        self._shift('2026-06-16', level='300')   # không shift_att -> counted False
+        # Tạo manager có phạm vi chỉ trong phòng ban chứa self.emp
+        dept = self.env['hr.department'].create({'name': 'Phòng OT Test'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP OT'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({
+            'name': 'TPO OT', 'login': 'tpo_ot_test'})
+        mgr_user.tz = 'Asia/Ho_Chi_Minh'
+        mgr_emp.user_id = mgr_user
+        # Đưa self.emp vào phòng ban
+        self.emp.department_id = dept.id
+        data = _ot_table(self.env(user=mgr_user), '2026-06')
         self.assertTrue(data['canManage'])
-        self.assertEqual(len(data['rows']), 2)            # cả 2 ca approved
+        self.assertEqual(len(data['rows']), 2)            # cả 2 ca approved trong phòng
         self.assertEqual(data['totals']['otHours'], 2.0)   # chỉ ca counted
-        self.assertEqual(data['totals']['otCreditHours'], 3.0)
+        # otCong: congCa của ca 150% counted = round(2/8 * 1.5, 2) = 0.38
+        self.assertEqual(data['totals']['otCong'], 0.38)
         self.assertEqual(data['totals']['count'], 2)
         self.assertEqual(data['totals']['countedCount'], 1)
 
     def test_ot_table_user_sees_only_own(self):
         from odoo.addons.hocba_hrm.controllers.main import _ot_table
-        self._shift('2026-06-15'); self._attendance('2026-06-15')
+        s = self._shift('2026-06-15')
+        self._shift_att(s)
         data = _ot_table(self.env(user=self.user), '2026-06')
         self.assertFalse(data['canManage'])
         self.assertTrue(all(r['empId'] == self.emp.id for r in data['rows']))

@@ -246,13 +246,12 @@ def _att_day_table(env, date_str):
 
 
 def _ot_row(env, s):
-    """Một ca OT cho SPA (camelCase) + cờ counted / giờ quy đổi.
-    counted = ngày local của start có bản ghi attendance đã check-in."""
-    hours = ((s.end - s.start).total_seconds() / 3600.0) if (s.start and s.end) else 0.0
+    """Một ca OT cho SPA (camelCase) + công ca theo giờ chấm THỰC TẾ (hocba.shift.attendance).
+    counted = ca đã check-in; congCa = giờ_chấm/8 × hệ số (0 nếu chưa chấm)."""
+    att = env['hocba.shift.attendance'].sudo().search([('shift_id', '=', s.id)], limit=1)
+    hours = att.worked_hours if att else 0.0
+    counted = bool(att and att.check_in)
     d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
-    counted = bool(d and env['hocba.attendance'].sudo().search_count([
-        ('employee_id', '=', s.employee_id.id), ('date', '=', d),
-        ('check_in', '!=', False)]))
     emp = s.employee_id
     return {
         'id': s.id, 'empId': emp.id, 'empName': emp.name,
@@ -260,16 +259,16 @@ def _ot_row(env, s):
         'depName': emp.department_id.name or 'Chưa gán',
         'date': _d(d) if d else None,
         'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
-        'otLevel': s.ot_level, 'rate': s.rate,
+        'shiftType': s.shift_type, 'otLevel': s.ot_level, 'rate': s.rate,
         'hours': round(hours, 2), 'counted': counted,
-        'creditHours': round(hours * s.rate, 2) if counted else 0.0,
+        'congCa': round((hours / 8.0) * s.rate, 2) if counted else 0.0,
         'state': s.state,
     }
 
 
 def _ot_for_employee(env, emp, first, last):
     """Tổng OT của 1 NV trong [first,last] (ca approved, start trong tháng,
-    chỉ cộng ca counted). Trả {otHours, otCreditHours}."""
+    chỉ cộng ca counted). Trả {otHours, otCong}."""
     shifts = env['hocba.work_shift'].sudo().search([
         ('employee_id', '=', emp.id), ('state', '=', 'approved')])
     rows = []
@@ -279,7 +278,7 @@ def _ot_for_employee(env, emp, first, last):
             rows.append(_ot_row(env, s))
     return {
         'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
-        'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+        'otCong': round(sum(r['congCa'] for r in rows), 2),
     }
 
 
@@ -317,7 +316,7 @@ def _ot_table(env, month_str):
         'rows': rows,
         'totals': {
             'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
-            'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+            'otCong': round(sum(r['congCa'] for r in rows), 2),
             'count': len(rows),
             'countedCount': sum(1 for r in rows if r['counted']),
         },
@@ -351,20 +350,20 @@ def _att_me_history(env, month_str):
     std = policy.std_work_hours or 8.0
     deficit_credit = round(
         (sum(r['missingMinutes'] for r in counted) / 60.0) / std, 2)
+    ot = _ot_for_employee(env, emp, first, last)
     summary = {
         'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
         'late': sum(1 for r in rows if r['statusKey'] == 'late'),
         'needsReview': sum(1 for r in rows if r['needsReview']),
         'daysPresent': len(rows),
         'totalHours': round(sum(r['workingHours'] for r in rows), 2),
-        'totalCredit': round(total_credit, 2),
+        'totalCredit': round(total_credit + ot['otCong'], 2),
         'deficitCredit': deficit_credit,
-        'netCredit': round(total_credit - deficit_credit, 2),
+        'netCredit': round(total_credit + ot['otCong'] - deficit_credit, 2),
         'violationDays': len(violations),
+        'congOt': ot['otCong'],
+        'otHours': ot['otHours'],
     }
-    ot = _ot_for_employee(env, emp, first, last)
-    summary['otHours'] = ot['otHours']
-    summary['otCreditHours'] = ot['otCreditHours']
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
