@@ -156,9 +156,11 @@ Cron backstop: `ir.cron` record "Tự động từ chối ca quá hạn", `inter
   plus **read-only recomputed previews** of `working_hours` (giờ công), `work_credit` (công ngày),
   `expected_check_out` (giờ ra mong đợi), `early_leave_minutes` (về sớm), `missing_minutes`
   (phút thiếu), `needs_review` (cờ kiểm tra). On approve, backend writes check-in/out to the
-  `hocba.attendance` record; compute methods fill the rest. The preview can be served by a
-  dry-run helper or computed client-side mirroring Section 1's formula — to be settled in the
-  implementation plan.
+  `hocba.attendance` record; compute methods fill the rest. The preview is served by a backend
+  dry-run helper — `GET /hocba-hrm/api/attendance/requests/<id>/preview?checkIn=&checkOut=`
+  builds a transient `hocba.attendance` (or `new()` record), runs the same compute methods, and
+  returns the derived values — so the preview is guaranteed to match what approval will save
+  (single source of truth, no duplicated formula on the client).
 
 ---
 
