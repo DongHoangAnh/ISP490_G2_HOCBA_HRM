@@ -83,22 +83,25 @@ export default function ShiftAttendance({ me, onChanged }) {
                   Ca <b className="mono">{fmtTime(s.start)}–{fmtTime(s.end)}</b>
                   {' '}· {s.shiftType === 'ctv' ? 'CTV' : 'OT'} ×{s.rate} · ±15'
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   {s.checkIn ? (
                     <Badge kind="green" dot>Vào {fmtTime(s.checkIn)}</Badge>
-                  ) : (
-                    <button className="btn btn-primary btn-sm" disabled={busy || !ready || !s.checkInOpen}
+                  ) : s.checkInOpen ? (
+                    <button className="btn btn-primary btn-sm" disabled={busy || !ready}
                       onClick={() => doCheck(s.id, 'in')}>
                       <Icon name="checkCircle" size={15} />Check-in
                     </button>
-                  )}
+                  ) : null}
                   {s.checkOut ? (
                     <Badge kind="gray" dot>Ra {fmtTime(s.checkOut)}</Badge>
-                  ) : (
-                    <button className="btn btn-ghost btn-sm" disabled={busy || !ready || !s.checkOutOpen}
+                  ) : s.checkOutOpen ? (
+                    <button className="btn btn-ghost btn-sm" disabled={busy || !ready}
                       onClick={() => doCheck(s.id, 'out')}>
                       <Icon name="logout" size={15} />Check-out
                     </button>
+                  ) : null}
+                  {!s.checkIn && !s.checkInOpen && !s.checkOut && !s.checkOutOpen && (
+                    <span className="muted" style={{ fontSize: 12.5 }}>Ngoài khung giờ chấm công (±15')</span>
                   )}
                 </div>
               </div>
