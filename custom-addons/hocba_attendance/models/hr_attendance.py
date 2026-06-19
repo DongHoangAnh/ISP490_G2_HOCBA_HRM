@@ -210,6 +210,32 @@ class Attendance(models.Model):
             return None
         return math.sqrt(sum((x - y) ** 2 for x, y in zip(desc_a, desc_b)))
 
+    @api.model
+    def _eval_face_geo(self, employee, payload, policy):
+        """Tính face_score/face_suspect/out_of_zone dùng chung cho chấm công
+        ngày thường và chấm công ca."""
+        face_score = None
+        enrolled = []
+        if employee.x_face_descriptor:
+            try:
+                enrolled = json.loads(employee.x_face_descriptor)
+            except (ValueError, TypeError):
+                enrolled = []
+        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
+        if dist is None:
+            face_suspect = True
+        else:
+            face_score = dist
+            face_suspect = dist > policy.face_threshold
+        lat = payload.get('latitude') or 0.0
+        lng = payload.get('longitude') or 0.0
+        if policy.office_lat and policy.office_lng:
+            out_of_zone = not policy.is_within_office(lat, lng)
+        else:
+            out_of_zone = False
+        return {'face_score': face_score, 'face_suspect': face_suspect,
+                'out_of_zone': out_of_zone}
+
     def _do_check(self, payload, kind):
         """Core check-in/out logic. `kind` is 'in' or 'out'.
         payload keys: employee_id, photo (base64 str), descriptor (list),
@@ -230,28 +256,10 @@ class Attendance(models.Model):
         lat = payload.get('latitude') or 0.0
         lng = payload.get('longitude') or 0.0
 
-        # Face matching
-        face_score = None
-        face_suspect = False
-        enrolled = []
-        if employee.x_face_descriptor:
-            try:
-                enrolled = json.loads(employee.x_face_descriptor)
-            except (ValueError, TypeError):
-                enrolled = []
-        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
-        if dist is None:
-            face_suspect = True   # cannot verify -> flag for review
-        else:
-            face_score = dist
-            face_suspect = dist > policy.face_threshold
-
-        # Only enforce the geofence when the office location is configured;
-        # otherwise we cannot judge the location and must not flag everyone.
-        if policy.office_lat and policy.office_lng:
-            out_of_zone = not policy.is_within_office(lat, lng)
-        else:
-            out_of_zone = False
+        fg = self._eval_face_geo(employee, payload, policy)
+        face_score = fg['face_score']
+        face_suspect = fg['face_suspect']
+        out_of_zone = fg['out_of_zone']
         if employee.x_employment_status == 'official':
             out_of_window = not policy.is_within_window(now_local, kind)
         else:

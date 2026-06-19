@@ -1,4 +1,5 @@
 from odoo import models, fields, api
+from odoo.exceptions import UserError
 
 
 class ShiftAttendance(models.Model):
@@ -43,3 +44,67 @@ class ShiftAttendance(models.Model):
                 rec.worked_hours = (rec.check_out - rec.check_in).total_seconds() / 3600.0
             else:
                 rec.worked_hours = 0.0
+
+    @api.model
+    def _assert_allowed(self, shift, kind):
+        """Validate chấm công 1 ca. Raise UserError mã lỗi để controller map HTTP."""
+        if not shift or not shift.exists():
+            raise UserError('no_shift')
+        if shift.state != 'approved':
+            raise UserError('shift_not_approved')
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        window = policy.shift_window_minutes or 15
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'),
+            fields.Datetime.now()).replace(tzinfo=None)
+        anchor_utc = shift.start if kind == 'in' else shift.end
+        anchor = fields.Datetime.context_timestamp(
+            shift, anchor_utc).replace(tzinfo=None)
+        if abs((now_local - anchor).total_seconds()) > window * 60:
+            raise UserError('outside_shift_window')
+        rec = self.sudo().search([('shift_id', '=', shift.id)], limit=1)
+        if kind == 'in':
+            if rec and rec.check_in:
+                raise UserError('already_checked_in')
+        else:
+            if not rec or not rec.check_in:
+                raise UserError('not_checked_in')
+            if rec.check_out:
+                raise UserError('already_checked_out')
+
+    @api.model
+    def _do_check(self, shift, payload, kind):
+        """Ghi chấm công cho ca. Tái dùng face/geo của hocba.attendance.
+        out_of_window: ngoài cửa sổ ±W quanh start (in) / end (out)."""
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        employee = shift.employee_id
+        fg = self.env['hocba.attendance']._eval_face_geo(employee, payload, policy)
+        now = fields.Datetime.now()
+        window = policy.shift_window_minutes or 15
+        now_local = fields.Datetime.context_timestamp(
+            self.with_context(tz=self.env.user.tz or 'UTC'), now).replace(tzinfo=None)
+        anchor = fields.Datetime.context_timestamp(
+            shift, shift.start if kind == 'in' else shift.end).replace(tzinfo=None)
+        out_of_window = abs((now_local - anchor).total_seconds()) > window * 60
+        lat = payload.get('latitude') or 0.0
+        lng = payload.get('longitude') or 0.0
+
+        rec = self.sudo().search([('shift_id', '=', shift.id)], limit=1)
+        if kind == 'in':
+            vals = {'check_in': now, 'check_in_photo': payload.get('photo'),
+                    'check_in_lat': lat, 'check_in_lng': lng}
+            if fg['face_score'] is not None:
+                vals['check_in_face_score'] = fg['face_score']
+        else:
+            vals = {'check_out': now, 'check_out_photo': payload.get('photo'),
+                    'check_out_lat': lat, 'check_out_lng': lng}
+            if fg['face_score'] is not None:
+                vals['check_out_face_score'] = fg['face_score']
+        vals.update({'face_suspect': fg['face_suspect'],
+                     'out_of_zone': fg['out_of_zone'], 'out_of_window': out_of_window})
+        if rec:
+            rec.write(vals)
+        else:
+            vals['shift_id'] = shift.id
+            rec = self.create(vals)
+        return rec
