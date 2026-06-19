@@ -465,6 +465,14 @@ def _att_me_history_full(env, month_str, att_type):
     first = date(y, m, 1)
     last = date(y, m, calendar.monthrange(y, m)[1])
 
+    # UTC bounds for shift searches (mirrors _ot_table pattern)
+    tz = timezone(env.user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+
     # --- Regular rows ---
     regular_rows = []
     if att_type in ('regular', 'all'):
@@ -486,25 +494,23 @@ def _att_me_history_full(env, month_str, att_type):
             ('employee_id', '=', emp.id),
             ('state', '=', 'approved'),
             ('shift_type', '=', 'ot'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
         ])
         for s in shifts:
-            d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
-            if d and first <= d <= last:
-                att = env['hocba.shift.attendance'].sudo().search(
-                    [('shift_id', '=', s.id)], limit=1)
-                ot_rows.append(_shift_history_row(env, s, att or None, 'ot'))
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ot_rows.append(_shift_history_row(env, s, att or None, 'ot'))
     if att_type in ('ctv', 'all'):
         shifts = env['hocba.work_shift'].sudo().search([
             ('employee_id', '=', emp.id),
             ('state', '=', 'approved'),
             ('shift_type', '=', 'ctv'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
         ])
         for s in shifts:
-            d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
-            if d and first <= d <= last:
-                att = env['hocba.shift.attendance'].sudo().search(
-                    [('shift_id', '=', s.id)], limit=1)
-                ctv_rows.append(_shift_history_row(env, s, att or None, 'ctv'))
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ctv_rows.append(_shift_history_row(env, s, att or None, 'ctv'))
 
     all_rows = sorted(
         regular_rows + ot_rows + ctv_rows,
