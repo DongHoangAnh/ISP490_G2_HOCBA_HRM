@@ -6,7 +6,7 @@ import Icon from '../../components/Icon';
 import { createShift } from '../../api/attendance';
 
 export default function ShiftForm({ onClose, onSaved }) {
-  const [form, setForm] = useState({ start: '', end: '', shiftType: 'ot', reason: '' });
+  const [form, setForm] = useState({ start: '', end: '', shiftType: 'ot', otLevel: '100', reason: '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -16,7 +16,8 @@ export default function ShiftForm({ onClose, onSaved }) {
     try {
       await createShift({
         start: form.start, end: form.end,
-        shiftType: form.shiftType, reason: form.reason.trim(),
+        shiftType: form.shiftType, otLevel: form.otLevel,
+        reason: form.reason.trim(),
       });
       onSaved && onSaved();
       onClose();
@@ -37,6 +38,14 @@ export default function ShiftForm({ onClose, onSaved }) {
             onChange={(e) => setForm({ ...form, shiftType: e.target.value })}>
             <option value="ot">Tăng ca (OT)</option>
             <option value="ctv">CTV</option>
+          </select>
+        </label>
+        <label style={{ fontSize: 12.5 }}>Mức hệ số
+          <select className="sel" value={form.otLevel}
+            onChange={(e) => setForm({ ...form, otLevel: e.target.value })}>
+            <option value="100">100%</option>
+            <option value="150">150%</option>
+            <option value="300">300%</option>
           </select>
         </label>
         <label style={{ fontSize: 12.5 }}>Bắt đầu

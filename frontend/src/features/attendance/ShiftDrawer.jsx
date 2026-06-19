@@ -16,7 +16,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
   const [start, setStart] = useState(shift.start ? shift.start.slice(0, 16) : '');
   const [end, setEnd] = useState(shift.end ? shift.end.slice(0, 16) : '');
   const [stype, setStype] = useState(shift.shiftType);
-  const [rate, setRate] = useState(shift.rate);
+  const [level, setLevel] = useState(shift.otLevel);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -25,7 +25,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
     setBusy(true); setErr(null);
     try {
       const body = approve
-        ? { start: start || null, end: end || null, shiftType: stype, rate: Number(rate), reviewNote: note }
+        ? { start: start || null, end: end || null, shiftType: stype, otLevel: level, reviewNote: note }
         : { reviewNote: note };
       await (approve ? approveShift(shift.id, body) : rejectShift(shift.id, body));
       onChanged && onChanged();
@@ -84,8 +84,12 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
                 <option value="ot">OT</option><option value="ctv">CTV</option>
               </select>
             </label>
-            <label style={{ fontSize: 12 }}>Hệ số
-              <input type="number" step="0.5" className="sel" style={{ width: 80 }} value={rate} onChange={(e) => setRate(e.target.value)} />
+            <label style={{ fontSize: 12 }}>Mức hệ số
+              <select className="sel" value={level} onChange={(e) => setLevel(e.target.value)}>
+                <option value="100">100%</option>
+                <option value="150">150%</option>
+                <option value="300">300%</option>
+              </select>
             </label>
           </div>
           <input className="sel" placeholder="Ghi chú duyệt" value={note} onChange={(e) => setNote(e.target.value)} />
