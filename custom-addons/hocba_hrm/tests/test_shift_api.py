@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
@@ -27,6 +29,19 @@ class TestShiftApi(TransactionCase):
             'employee_id': self.emp.id,
             'start': '2026-06-15 02:00:00',   # T2, 09:00 local
             'end': '2026-06-15 04:00:00',     # 11:00 local
+            'shift_type': 'ctv', 'ot_level': '150', 'state': 'pending',
+        }
+        base.update(vals)
+        return self.env['hocba.work_shift'].with_context(
+            tz='Asia/Ho_Chi_Minh').create(base)
+
+    def _make_future_shift(self, **vals):
+        """Ca tương lai (start = now + 2h) — dùng cho test cần vượt qua deadline guard."""
+        future = fields.Datetime.now() + timedelta(hours=2)
+        base = {
+            'employee_id': self.emp.id,
+            'start': future,
+            'end': future + timedelta(hours=2),
             'shift_type': 'ctv', 'ot_level': '150', 'state': 'pending',
         }
         base.update(vals)
@@ -204,31 +219,37 @@ class TestShiftApi(TransactionCase):
 
     def test_decide_approve_with_override(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
+        # end override: now+4h expressed in hrm user's local tz (Asia/Ho_Chi_Minh)
+        from pytz import timezone as _tz
+        hrm_tz = _tz(self.hrm.tz or 'UTC')
+        import datetime as _dt
+        end_local = (fields.Datetime.now() + timedelta(hours=4)).replace(
+            tzinfo=_dt.timezone.utc).astimezone(hrm_tz)
+        end_override = end_local.strftime('%Y-%m-%dT%H:%M')
         row = _shift_decide(env, s.id, True, {'otLevel': '300',
-                            'end': '2026-06-15T12:00'})
+                            'end': end_override})
         self.assertEqual(row['state'], 'approved')
         self.assertEqual(row['otLevel'], '300')
         self.assertEqual(row['rate'], 3.0)
-        self.assertEqual(row['end'], '2026-06-15T12:00:00')
         self.assertEqual(row['reviewer'], self.hrm.name)
 
     def test_decide_bad_level_override_raises(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
         with self.assertRaises(ValidationError):
             _shift_decide(env, s.id, True, {'otLevel': '999'})
 
     def test_decide_reject_sets_note(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
         row = _shift_decide(env, s.id, False, {'reviewNote': 'Không cần'})
         self.assertEqual(row['state'], 'rejected')
         self.assertEqual(row['reviewNote'], 'Không cần')
 
     def test_decide_bad_type_override_raises(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
         with self.assertRaises(ValidationError):
             _shift_decide(env, s.id, True, {'shiftType': 'x'})
 
@@ -252,7 +273,7 @@ class TestShiftApi(TransactionCase):
         self.assertIsNone(_shift_decide(self.env(user=self.hrm), 999999, True, {}))
 
     def test_cancel_owner_pending_ok(self):
-        s = self._make_shift()
+        s = self._make_future_shift()
         res = _shift_cancel(self.env(user=self.user), s.id)
         self.assertEqual(res, {'ok': True})
         self.assertFalse(s.exists())
@@ -272,7 +293,7 @@ class TestShiftApi(TransactionCase):
         self.assertIsNone(_shift_cancel(self.env(user=self.user), 999999))
 
     def test_cancel_manager_in_scope_ok(self):
-        s = self._make_shift()
+        s = self._make_future_shift()
         res = _shift_cancel(self.env(user=self.hrm), s.id)
         self.assertEqual(res, {'ok': True})
 
@@ -286,7 +307,7 @@ class TestShiftApi(TransactionCase):
 
     def test_set_level_blocked_for_ctv(self):
         from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
-        s = self._make_shift(shift_type='ctv', state='approved', ot_level='100')
+        s = self._make_future_shift(shift_type='ctv', state='approved', ot_level='100')
         env = self.env(user=self.hrm)
         with self.assertRaises(ValidationError):
             _shift_set_level(env, s.id, '150')

@@ -870,8 +870,9 @@ def _shift_decide(env, shift_id, approve, body):
         return None
     if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
         raise AccessError('forbidden')
-    if shift.state != 'pending':
+    if shift.state == 'rejected':
         raise UserError('already_decided')
+    shift._assert_actionable()
     vals = {
         'reviewer_id': env.user.id,
         'decision_date': fields.Datetime.now(),
@@ -908,6 +909,7 @@ def _shift_set_level(env, shift_id, level):
         return None
     if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
         raise AccessError('forbidden')
+    shift._assert_actionable()
     if shift.state != 'approved':
         raise ValidationError('Chỉ đổi mức cho ca đã duyệt.')
     if shift.shift_type == 'ctv':
@@ -927,6 +929,7 @@ def _shift_cancel(env, shift_id):
     is_owner = bool(me) and shift.employee_id == me
     if not (is_owner or (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id))):
         raise AccessError('forbidden')
+    shift._assert_actionable()
     if shift.state != 'pending':
         raise UserError('only_pending')
     shift.unlink()

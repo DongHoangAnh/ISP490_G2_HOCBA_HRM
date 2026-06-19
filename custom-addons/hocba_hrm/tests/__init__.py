@@ -6,3 +6,4 @@ from . import test_ot_payroll
 from . import test_shift_attendance_api
 from . import test_ot_credit
 from . import test_shift_scope
+from . import test_shift_deadline_guard

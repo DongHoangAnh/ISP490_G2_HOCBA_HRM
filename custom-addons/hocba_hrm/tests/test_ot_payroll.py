@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, timedelta
+from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
@@ -31,6 +32,15 @@ class TestOtPayroll(TransactionCase):
             'shift_id': shift.id,
             'check_in': ci or shift.start,
             'check_out': co or shift.end})
+
+    def _future_shift(self, level='150', state='approved'):
+        """Ca tương lai (start = now + 2h) — dùng cho test cần vượt qua deadline guard."""
+        future = fields.Datetime.now() + timedelta(hours=2)
+        return self.env['hocba.work_shift'].with_context(
+            tz='Asia/Ho_Chi_Minh').create({
+                'employee_id': self.emp.id, 'shift_type': 'ot',
+                'ot_level': level, 'state': state,
+                'start': future, 'end': future + timedelta(hours=2)})
 
     def test_ot_row_counted(self):
         s = self._shift('2026-06-15', level='150')
@@ -107,7 +117,7 @@ class TestOtPayroll(TransactionCase):
 
     def test_set_level_manager_in_scope(self):
         from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
-        s = self._shift('2026-06-15', level='150')
+        s = self._future_shift(level='150')
         hrm = self.env['res.users'].create({
             'name': 'HRM SL', 'login': 'hrm_sl',
             'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
@@ -128,7 +138,7 @@ class TestOtPayroll(TransactionCase):
     def test_set_level_pending_raises(self):
         from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
         from odoo.exceptions import ValidationError
-        s = self._shift('2026-06-15', state='pending')
+        s = self._future_shift(state='pending')
         hrm = self.env['res.users'].create({
             'name': 'HRM SL3', 'login': 'hrm_sl3',
             'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
