@@ -8,3 +8,4 @@ from . import test_work_credit
 from . import test_check_lock
 from . import test_ot_shift
 from . import test_shift_attendance
+from . import test_shift_deadline

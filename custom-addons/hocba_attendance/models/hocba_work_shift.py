@@ -1,5 +1,7 @@
+from datetime import timedelta
+
 from odoo import models, fields, api
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
 
 
 class WorkShift(models.Model):
@@ -33,6 +35,9 @@ class WorkShift(models.Model):
     reviewer_id = fields.Many2one('res.users', string='Người duyệt', readonly=True)
     review_note = fields.Text(string='Ghi chú duyệt')
     decision_date = fields.Datetime(string='Thời điểm quyết định', readonly=True)
+    deadline = fields.Datetime(
+        string='Hạn thao tác', compute='_compute_deadline', store=True,
+        help='Hạn cuối duyệt/sửa/từ chối = giờ bắt đầu trừ 1 phút.')
     department_id = fields.Many2one(
         'hr.department', string='Phòng ban',
         related='employee_id.department_id', store=True, readonly=True)
@@ -43,6 +48,31 @@ class WorkShift(models.Model):
     def _compute_rate(self):
         for rec in self:
             rec.rate = self._OT_RATE.get(rec.ot_level, 1.0)
+
+    @api.depends('start')
+    def _compute_deadline(self):
+        for rec in self:
+            rec.deadline = (rec.start - timedelta(minutes=1)) if rec.start else False
+
+    def _auto_reject_expired(self, domain=None):
+        """Tự động từ chối mọi ca pending đã quá hạn (deadline < now).
+        domain: lọc thêm (AND). Trả recordset đã từ chối."""
+        now = fields.Datetime.now()
+        base = [('state', '=', 'pending'), ('deadline', '<', now)]
+        expired = self.sudo().search(base + (domain or []))
+        if expired:
+            expired.write({
+                'state': 'rejected',
+                'review_note': 'Tự động từ chối: quá hạn duyệt',
+                'decision_date': now,
+            })
+        return expired
+
+    def _assert_actionable(self):
+        """Raise nếu đã quá hạn thao tác với ca (now >= deadline)."""
+        self.ensure_one()
+        if self.deadline and fields.Datetime.now() >= self.deadline:
+            raise UserError('Đã quá hạn thao tác với ca này (trước giờ bắt đầu 1 phút).')
 
     @api.constrains('start', 'end')
     def _check_times(self):
