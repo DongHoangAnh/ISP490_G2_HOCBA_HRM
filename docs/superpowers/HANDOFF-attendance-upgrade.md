@@ -1,6 +1,6 @@
 # HANDOFF — Nâng cấp hệ thống Chấm công (4 gói)
 
-**Cập nhật:** 17/06/2026 · **Người bàn giao:** phiên làm việc với Claude Code
+**Cập nhật:** 19/06/2026 · **Người bàn giao:** phiên làm việc với Claude Code
 **Mục đích:** Giúp thành viên khác tiếp tục đúng mạch công việc đang dở. Đọc file này trước, rồi làm theo "Bước tiếp theo".
 
 ---
@@ -15,8 +15,8 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 | **Gói 2** | Tách tài khoản manager (chỉ quản lý, không check-in) ↔ user (tự chấm) + khóa check-in/out 1 lần/ngày, chỉ ngày làm việc + manager sửa/xóa bản ghi theo phạm vi | ✅ **XONG** (đã merge main) |
 | **Gói 3** | Luồng **đơn**: user gửi đơn sửa/tạo bản ghi → manager duyệt (chỉnh giờ được) & áp dụng, hoặc từ chối | ✅ **XONG** (đã merge main) |
 | **Gói 4A** | Đăng ký ca **CTV/OT** + **lịch tuần** (lưới 7 cột) + manager thêm/duyệt/từ chối ca + hủy ca pending; hệ số auto theo luật (T2-6=1.5 / cuối tuần=2.0) | ✅ **XONG** (đã merge main) |
-| **Gói 4B** | Check-in **cửa sổ ±15'** quanh giờ ca cho CTV/OT (mở check-in theo ca đã duyệt; official giữ cơ chế workday Gói 2) | ✅ **XONG** (nhánh `feature/shift-checkin-window`; chờ merge main) |
-| **Gói 4C** | Tính **công/lương OT theo hệ số** + luật lễ/đêm (+30%), gộp vào tổng hợp tháng | 🔴 **CHƯA bắt đầu** (phụ thuộc 4A) |
+| **Gói 4B** | Check-in **cửa sổ ±15'** quanh giờ ca cho CTV/OT (mở check-in theo ca đã duyệt; official giữ cơ chế workday Gói 2) | ✅ **XONG** (đã merge main; đã sửa cờ needs_review nhiễu cho CTV) |
+| **Gói 4C** | Tính **công OT theo 3 mốc hệ số** {100/150/300%} chọn tay (bỏ auto theo thứ), giờ OT quy đổi gộp vào tổng hợp tháng (cả official + CTV), tab "Chấm công OT" cho manager, API `_ot_table`/`_shift_set_level` + routes | ✅ **XONG** (nhánh `feature/ot-credit-rate`; chờ merge main) |
 
 ---
 
@@ -50,14 +50,28 @@ Nâng cấp module chấm công, chia thành **4 gói phụ thuộc**, làm tu�
 Yêu cầu gốc Gói 4 (từ khách) đã tách: 4A (lịch+đăng ký) xong; còn:
 > ...check-in trong **cửa sổ ±15'** quanh giờ ca (vd ca 9h → mở check-in 8h45–9h15, ngoài thời gian khóa nút); **checkout** có cơ chế tương tự. Cơ chế cửa sổ này CHỈ cho CTV/OT. ...OT có **hệ số** (150/200/300%) tính công/lương.
 
-- **Gói 4B (check-in cửa sổ ±15') — ✅ XONG (nhánh `feature/shift-checkin-window`):** Spec [2026-06-18-shift-checkin-window-design.md](specs/2026-06-18-shift-checkin-window-design.md), plan [2026-06-18-shift-checkin-window.md](plans/2026-06-18-shift-checkin-window.md). Test 81/81 xanh, build SPA sạch.
+- **Gói 4B (check-in cửa sổ ±15') — ✅ XONG (đã merge main; đã sửa cờ needs_review nhiễu cho CTV):** Spec [2026-06-18-shift-checkin-window-design.md](specs/2026-06-18-shift-checkin-window-design.md), plan [2026-06-18-shift-checkin-window.md](plans/2026-06-18-shift-checkin-window.md). Test 81/81 xanh, build SPA sạch.
   - Policy `shift_window_minutes` (default 15) + view.
   - Model `hocba.attendance`: `_todays_approved_shifts(emp, today)` + `_assert_shift_check_allowed(emp, kind)` (no_shift_today / outside_shift_window / already_checked_in / not_checked_in / already_checked_out).
   - `api_attendance_check` **phân nhánh**: official → `_assert_check_allowed` (workday Gói 2); non-official (CTV/OT) → `_assert_shift_check_allowed` (ca + cửa sổ). Bỏ block `not_official`. Gọi trực tiếp `_do_check` (pin employee_id). Thêm mã lỗi vào `_CHECK_ERR_STATUS`.
   - `_att_me_info.shiftToday` = {start, end, shiftType, rate, checkInOpen, checkOutOpen} (None cho official / non-official không có ca).
   - FE `CheckInPanel.jsx`: non-official → enroll → "chưa có ca" → UI check-in/out theo ca (nút khóa khi ngoài cửa sổ); official giữ nguyên. Bỏ cảnh báo "ngoài khung giờ" cho CTV.
-  - **Giới hạn đã biết (để 4C/sau):** `_do_check` vẫn set `out_of_window` (và do đó `needs_review`) theo khung official → ca CTV check-in đúng vẫn bị cờ `needs_review` trong bảng ngày của manager. Không chặn check-in; chỉ là nhiễu báo cáo. Sửa sâu cần làm `_do_check` nhận biết cửa sổ ca (vượt scope 4B). Còn lại: merge + kiểm thử thủ công SPA.
-- **Gói 4C (công/lương OT theo hệ số):** quy đổi giờ ca OT × `rate` thành công/lương, gộp vào `_att_me_history` (tổng hợp tháng); thêm luật lễ/đêm (+30%) tinh chỉnh `_default_rate`. Cân nhắc gộp việc làm `_do_check`/`needs_review` nhận biết cửa sổ ca (giới hạn 4B ở trên). Bắt đầu bằng `superpowers:brainstorming`.
+  - **Cờ `needs_review` nhiễu đã sửa trong Gói 4C:** `_do_check` đã được cập nhật để nhận biết cửa sổ ca — ca CTV/OT check-in đúng cửa sổ không còn bị `needs_review`. Đã merge main.
+
+- **Gói 4C (công OT theo hệ số) — ✅ XONG (nhánh `feature/ot-credit-rate`):** Spec [2026-06-19-ot-credit-rate-design.md](specs/2026-06-19-ot-credit-rate-design.md), plan [2026-06-19-ot-credit-rate.md](plans/2026-06-19-ot-credit-rate.md). Test 43/43 (hocba_attendance) + 95/95 (hocba_hrm) xanh.
+  - **Backend model:** Field `ot_level` (Selection '100'/'150'/'300', default '100') thay `_default_rate`. Field `rate` (Float, compute+store từ `ot_level`). Map `_OT_RATE = {'100': 1.0, '150': 1.5, '300': 3.0}`. Bỏ hệ số auto theo thứ (T2-6/cuối tuần).
+  - **`_do_check`:** nhận biết cửa sổ ca → không set `out_of_window`/`needs_review` cho CTV/OT check-in đúng (sửa giới hạn 4B).
+  - **`_att_me_history`:** gộp `otHours` (tổng giờ OT) + `otCreditHours` (tổng giờ OT quy đổi = Σ hours × rate) cho mỗi tháng — cả official lẫn CTV.
+  - **`_ot_row` / `_ot_for_employee`:** helper tổng hợp ca OT đã approved theo tháng (date, shiftType, hours, counted, creditHours, otLevel).
+  - **`_ot_table`:** aggregate OT tất cả nhân viên trong phạm vi (manager) → `GET /api/attendance/ot-summary`.
+  - **`_shift_set_level`:** cập nhật `ot_level` cho ca → `POST /api/shifts/<id>/level` (body `{otLevel}`).
+  - **FE:** Tab "Chấm công OT" trong `Attendance.jsx` (manager): bảng `OtTable.jsx` + drawer `OtDrawer.jsx` (manager chỉnh `ot_level`). `MyHistory.jsx` hiển thị `otHours`/`otCreditHours`. Nút "Đổi hệ số" gọi `setShiftLevel` qua `attendance.js`.
+
+  **Migration caveat:** Vì `rate` đổi sang computed-store từ `ot_level` (mặc định '100'), khi chạy `-u hocba_attendance` các ca CTV/OT cũ sẽ tính lại `rate` về 1.0. Chấp nhận trên DB demo; nếu DB thật có ca cần giữ hệ số, phải migrate `ot_level` trước khi upgrade.
+
+  **Sửa kèm theo:** Một lỗi build SPA có sẵn trước (thiếu `}` đóng trong `App.jsx` ở dòng Recruitment, đưa vào bởi merge TimeOff) đã được sửa trong nhánh này.
+
+  **Còn lại:** merge nhánh `feature/ot-credit-rate` về `main`; kiểm thử thủ công SPA (xem spec §4 và plan §testing).
 
 ---
 
