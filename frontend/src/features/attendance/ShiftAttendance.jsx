@@ -1,6 +1,6 @@
 /* Màn chấm công theo ca (ctv/ot). Nhãn do Attendance.jsx quyết định.
    Mỗi ca approved hôm nay là 1 thẻ camera + nút check-in/out. */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { useFaceApi } from './useFaceApi';
@@ -23,6 +23,7 @@ export default function ShiftAttendance({ me, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [enrolled, setEnrolled] = useState(me.enrolled);
+  useEffect(() => { setEnrolled(me.enrolled); }, [me.enrolled]);
   const shifts = me.shiftsToday || [];
 
   async function doEnroll() {
@@ -48,6 +49,7 @@ export default function ShiftAttendance({ me, onChanged }) {
       const flags = [];
       if (res.faceSuspect) flags.push('khuôn mặt nghi ngờ');
       if (res.outOfZone) flags.push('ngoài vùng văn phòng');
+      if (res.outOfWindow) flags.push('ngoài cửa sổ giờ');
       setMsg({ kind: flags.length ? 'warn' : 'ok',
         text: (kind === 'in' ? 'Đã check-in' : 'Đã check-out') + (flags.length ? ' ⚠ ' + flags.join(', ') : ' thành công') });
       onChanged && onChanged();
