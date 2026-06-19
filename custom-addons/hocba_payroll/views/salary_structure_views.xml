@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- Salary Structure                                      -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <record id="view_salary_structure_form" model="ir.ui.view">
+        <field name="name">hb.salary.structure.form</field>
+        <field name="model">hb.salary.structure</field>
+        <field name="arch" type="xml">
+            <form string="Cấu trúc lương">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Tên cấu trúc"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="rule_count"/>
+                        </group>
+                    </group>
+                    <field name="note" placeholder="Mô tả..."/>
+                    <notebook>
+                        <page string="Quy tắc lương" name="rules">
+                            <field name="rule_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="code"/>
+                                    <field name="name"/>
+                                    <field name="category_id"/>
+                                    <field name="amount_type"/>
+                                    <field name="appears_on_payslip"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_salary_structure_list" model="ir.ui.view">
+        <field name="name">hb.salary.structure.list</field>
+        <field name="model">hb.salary.structure</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="rule_count"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_salary_structure" model="ir.actions.act_window">
+        <field name="name">Cấu trúc lương</field>
+        <field name="res_model">hb.salary.structure</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- Salary Rule (standalone form for detail view)         -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <record id="view_salary_rule_form" model="ir.ui.view">
+        <field name="name">hb.salary.rule.form</field>
+        <field name="model">hb.salary.rule</field>
+        <field name="arch" type="xml">
+            <form string="Quy tắc lương">
+                <sheet>
+                    <group>
+                        <group string="Thông tin">
+                            <field name="name"/>
+                            <field name="code"/>
+                            <field name="sequence"/>
+                            <field name="structure_id"/>
+                            <field name="category_id"/>
+                            <field name="active"/>
+                            <field name="appears_on_payslip"/>
+                        </group>
+                        <group string="Tính toán">
+                            <field name="amount_type"/>
+                            <field name="amount_fixed" invisible="amount_type != 'fixed'"/>
+                            <field name="amount_percentage" invisible="amount_type != 'percentage'"/>
+                            <field name="amount_percentage_base" invisible="amount_type != 'percentage'"/>
+                        </group>
+                    </group>
+
+                    <!-- ── Formula section ── -->
+                    <div invisible="amount_type != 'formula'" class="mt-3">
+                        <label for="amount_formula" string="Công thức"/>
+                        <field name="amount_formula" widget="text"
+                               placeholder="VD: SUM(luong_thoi_gian, thuong_khac) hoặc luong_thoi_gian * 0.08"/>
+                        <div class="text-muted small mt-1 mb-2">
+                            Dùng mã rule (slug) để tham chiếu giá trị rule khác.
+                            VD: <code>IF(tong_thu_nhap > 0, tong_thu_nhap - SUM(bhxh_8_nv, bhtn_1_nv), 0)</code>
+                        </div>
+                        <!-- Quick-insert function buttons -->
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            <button type="object" name="action_insert_formula_func"
+                                    string="IF( , , )" class="btn btn-outline-secondary btn-sm"
+                                    context="{'formula_snippet': 'IF( , , )'}"/>
+                            <button type="object" name="action_insert_formula_func"
+                                    string="SUM( , )" class="btn btn-outline-secondary btn-sm"
+                                    context="{'formula_snippet': 'SUM( , )'}"/>
+                            <button type="object" name="action_insert_formula_func"
+                                    string="MAX( , )" class="btn btn-outline-secondary btn-sm"
+                                    context="{'formula_snippet': 'MAX( , )'}"/>
+                            <button type="object" name="action_insert_formula_func"
+                                    string="MIN( , )" class="btn btn-outline-secondary btn-sm"
+                                    context="{'formula_snippet': 'MIN( , )'}"/>
+                            <button type="object" name="action_insert_formula_func"
+                                    string="ABS( )" class="btn btn-outline-secondary btn-sm"
+                                    context="{'formula_snippet': 'ABS( )'}"/>
+                            <button type="object" name="action_insert_formula_func"
+                                    string="ROUND( )" class="btn btn-outline-secondary btn-sm"
+                                    context="{'formula_snippet': 'ROUND( )'}"/>
+                        </div>
+                        <!-- Help reference button -->
+                        <div class="d-flex justify-content-end">
+                            <button type="object" name="action_show_formula_help"
+                                    string="Hướng dẫn hàm"
+                                    class="btn btn-link btn-sm"
+                                    icon="fa-question-circle"/>
+                        </div>
+                    </div>
+
+                    <!-- ── Python Code section ── -->
+                    <group string="Python Code" invisible="amount_type != 'code'">
+                        <field name="amount_python_compute" widget="code" nolabel="1"/>
+                    </group>
+
+                    <group string="Điều kiện">
+                        <field name="condition_type"/>
+                        <field name="condition_python" widget="code"
+                               invisible="condition_type != 'python'"/>
+                    </group>
+                    <field name="note" placeholder="Mô tả..."/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

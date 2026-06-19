@@ -12,6 +12,12 @@ class HbPayslipLine(models.Model):
     payslip_id = fields.Many2one(
         'hb.payslip', string='Phiếu lương', required=True, ondelete='cascade',
     )
+    rule_id = fields.Many2one(
+        'hb.salary.rule', string='Quy tắc lương', ondelete='set null',
+    )
+    category_id = fields.Many2one(
+        'hb.salary.rule.category', string='Danh mục', ondelete='set null',
+    )
     code = fields.Char(string='Mã', required=True, index=True)
     name = fields.Char(string='Tên', required=True)
     sequence = fields.Integer(string='Thứ tự', default=10)

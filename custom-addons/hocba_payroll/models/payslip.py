@@ -1,26 +1,20 @@
 """
-Payslip — standalone replacement for hr.payslip (Enterprise).
-FUNC-PR-001: Tính lương giáo viên theo giờ dạy (TEACH_HOURS).
+Payslip — standalone payroll engine with data-driven salary rules.
 
 Design:
-    - Template Method: action_compute_teaching_salary orchestrates the pipeline.
-    - Each step is a separate method for testability & overriding.
+    - Rule Engine: action_compute_sheet() iterates salary rules via safe_eval.
+    - Proxy classes provide convenient attribute access in rule code.
+    - Backward compatible: teaching work-entry methods kept for teacher structures.
 """
 import logging
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError, UserError
+from odoo.tools.safe_eval import safe_eval
 
 _logger = logging.getLogger(__name__)
 
-# ── Constants ────────────────────────────────────────────────
-WORK_ENTRY_TEACHING = 'WORK200'
-WORK_ENTRY_HOLIDAY_OT = 'WORK110_OT_HOLIDAY'
-HOLIDAY_OT_MULTIPLIER = 3.0
-MAX_SINGLE_ENTRY_HOURS = 24.0
-WARN_MONTHLY_HOURS = 200.0
-
-# ── Vietnam PIT 7-bracket progressive table ─────────────────
+# ── Vietnam PIT 7-bracket progressive table (2026) ───────────
 PIT_BRACKETS = [
     (5_000_000, 0.05),
     (10_000_000, 0.10),
@@ -30,12 +24,81 @@ PIT_BRACKETS = [
     (80_000_000, 0.30),
     (float('inf'), 0.35),
 ]
-PERSONAL_DEDUCTION = 11_000_000
-DEPENDENT_DEDUCTION = 4_400_000
-BHXH_EE_RATE = 0.08
-BHYT_EE_RATE = 0.015
-BHTN_EE_RATE = 0.01
 
+# Teaching work entry codes (backward compat)
+WORK_ENTRY_TEACHING = 'WORK200'
+WORK_ENTRY_HOLIDAY_OT = 'WORK110_OT_HOLIDAY'
+MAX_SINGLE_ENTRY_HOURS = 24.0
+HOLIDAY_OT_MULTIPLIER = 3.0
+WARN_MONTHLY_HOURS = 200.0
+
+
+# ═══════════════════════════════════════════════════════════════
+# Proxy classes for rule evaluation
+# ═══════════════════════════════════════════════════════════════
+
+class _EmptyRecord:
+    """Fallback when a code is not found."""
+    number_of_days = 0.0
+    number_of_hours = 0.0
+    amount = 0.0
+
+    def __bool__(self):
+        return False
+
+
+class WorkedDaysProxy:
+    """Allow ``worked_days.WORK100.number_of_days`` syntax."""
+
+    def __init__(self, records):
+        self._data = {}
+        for rec in records:
+            self._data[rec.code] = rec
+
+    def __getattr__(self, code):
+        if code.startswith('_'):
+            raise AttributeError(code)
+        return self._data.get(code, _EmptyRecord())
+
+    def __contains__(self, code):
+        return code in self._data
+
+
+class InputsProxy:
+    """Allow ``inputs.ADVANCE.amount`` syntax."""
+
+    def __init__(self, records):
+        self._data = {}
+        for rec in records:
+            self._data[rec.code] = rec
+
+    def __getattr__(self, code):
+        if code.startswith('_'):
+            raise AttributeError(code)
+        return self._data.get(code, _EmptyRecord())
+
+    def __contains__(self, code):
+        return code in self._data
+
+
+class CategoryTotals:
+    """Accumulates category running totals during rule evaluation."""
+
+    def __init__(self):
+        self._totals = {}
+
+    def __getattr__(self, code):
+        if code.startswith('_'):
+            raise AttributeError(code)
+        return self._totals.get(code, 0.0)
+
+    def accumulate(self, code, amount):
+        self._totals[code] = self._totals.get(code, 0.0) + amount
+
+
+# ═══════════════════════════════════════════════════════════════
+# Model
+# ═══════════════════════════════════════════════════════════════
 
 class HbPayslip(models.Model):
     _name = 'hb.payslip'
@@ -56,6 +119,9 @@ class HbPayslip(models.Model):
     contract_id = fields.Many2one(
         'hb.contract', string='Hợp đồng',
     )
+    structure_id = fields.Many2one(
+        'hb.salary.structure', string='Cấu trúc lương',
+    )
     payslip_run_id = fields.Many2one(
         'hb.payslip.run', string='Batch', index=True, ondelete='cascade',
     )
@@ -72,12 +138,18 @@ class HbPayslip(models.Model):
         default=lambda self: self.env.company,
     )
 
-    # ── Payslip lines ────────────────────────────────────────
+    # ── Payslip details ─────────────────────────────────────
     line_ids = fields.One2many(
         'hb.payslip.line', 'payslip_id', string='Chi tiết lương',
     )
+    worked_days_ids = fields.One2many(
+        'hb.payslip.worked_days', 'payslip_id', string='Công',
+    )
+    input_ids = fields.One2many(
+        'hb.payslip.input', 'payslip_id', string='Đầu vào',
+    )
 
-    # ── Teaching computed fields ─────────────────────────────
+    # ── Computed status fields ──────────────────────────────
     x_teaching_total_hours = fields.Float(
         string='Tổng giờ dạy', digits=(8, 2), readonly=True,
     )
@@ -91,7 +163,7 @@ class HbPayslip(models.Model):
         string='Đã tính', default=False, readonly=True,
     )
 
-    # ── Aggregated amounts ───────────────────────────────────
+    # ── Aggregated amounts ──────────────────────────────────
     gross_amount = fields.Float(
         string='Gross', digits=(16, 0),
         compute='_compute_amounts', store=True,
@@ -101,20 +173,19 @@ class HbPayslip(models.Model):
         compute='_compute_amounts', store=True,
     )
 
+    # ── Computed & lifecycle ────────────────────────────────
     @api.depends('employee_id', 'date_from', 'date_to')
     def _compute_name(self):
         for rec in self:
             emp = rec.employee_id.name or ''
-            period = ''
-            if rec.date_from and rec.date_to:
-                period = f'{rec.date_from.strftime("%m/%Y")}'
+            period = rec.date_from.strftime('%m/%Y') if rec.date_from else ''
             rec.name = f'Lương {emp} — {period}' if emp else 'Phiếu lương mới'
 
     @api.depends('line_ids.amount', 'line_ids.code')
     def _compute_amounts(self):
         for rec in self:
-            gross_line = rec.line_ids.filtered(lambda l: l.code == 'GROSS')
-            net_line = rec.line_ids.filtered(lambda l: l.code == 'NET')
+            gross_line = rec.line_ids.filtered(lambda l: l.code == 'tong_thu_nhap')
+            net_line = rec.line_ids.filtered(lambda l: l.code == 'thuc_lanh')
             rec.gross_amount = gross_line[0].amount if gross_line else 0
             rec.net_amount = net_line[0].amount if net_line else 0
 
@@ -126,20 +197,69 @@ class HbPayslip(models.Model):
         return super().create(vals_list)
 
     # ═════════════════════════════════════════════════════════
-    # TEMPLATE METHOD: Compute teaching salary
+    # RULE-BASED SALARY ENGINE
     # ═════════════════════════════════════════════════════════
-    def action_compute_teaching_salary(self):
-        """Main entry — compute full salary pipeline for each payslip."""
+
+    def action_compute_sheet(self):
+        """Main entry — compute salary using data-driven rules."""
         for slip in self:
             slip._ensure_draft_state()
             contract = slip._resolve_contract()
-            slip._validate_work_entries()
-            result = slip._build_teaching_salary(contract)
-            slip._write_salary_lines(result, contract)
-            slip._finalize_compute(result)
+            structure = slip._resolve_structure(contract)
+
+            # Clear old lines
+            slip.line_ids.unlink()
+
+            # Build evaluation namespace
+            localdict = slip._build_localdict(contract)
+
+            # Execute rules in sequence order
+            warnings = []
+            rules = structure.rule_ids.filtered('active').sorted('sequence')
+            for rule in rules:
+                try:
+                    if not slip._evaluate_rule_condition(rule, localdict):
+                        continue
+                    amount, qty, rate = slip._evaluate_rule_amount(rule, localdict)
+                except Exception as e:
+                    _logger.warning(
+                        'Payslip %s: rule %s error — %s', slip.number, rule.code, e,
+                    )
+                    warnings.append(_('Rule %(code)s lỗi: %(err)s', code=rule.code, err=str(e)))
+                    amount, qty, rate = 0.0, 1.0, 0.0
+
+                # Store result for subsequent rules
+                localdict['rules'][rule.code] = amount
+                localdict['categories'].accumulate(rule.category_id.code, amount)
+
+                # Create payslip line
+                if rule.appears_on_payslip:
+                    self.env['hb.payslip.line'].create({
+                        'payslip_id': slip.id,
+                        'rule_id': rule.id,
+                        'category_id': rule.category_id.id,
+                        'code': rule.code,
+                        'name': rule.name,
+                        'sequence': rule.sequence,
+                        'quantity': qty,
+                        'rate': rate,
+                        'amount': round(amount),
+                    })
+
+            # Finalize
+            slip.write({
+                'structure_id': structure.id,
+                'x_teaching_computed': True,
+                'x_compute_warnings': '\n'.join(warnings) if warnings else False,
+            })
+
         return True
 
-    # ── Step 1: Guards ───────────────────────────────────────
+    # Backward-compat alias
+    def action_compute_teaching_salary(self):
+        return self.action_compute_sheet()
+
+    # ── Resolve helpers ─────────────────────────────────────
     def _ensure_draft_state(self):
         self.ensure_one()
         if self.state not in ('draft', 'verify'):
@@ -151,7 +271,6 @@ class HbPayslip(models.Model):
         self.ensure_one()
         contract = self.contract_id
         if not contract:
-            # Auto-find active contract
             contract = self.env['hb.contract'].search([
                 ('employee_id', '=', self.employee_id.id),
                 ('state', '=', 'open'),
@@ -165,163 +284,237 @@ class HbPayslip(models.Model):
                 _('Nhân viên %(emp)s không có hợp đồng active trong kỳ %(fr)s – %(to)s.',
                   emp=self.employee_id.name, fr=self.date_from, to=self.date_to)
             )
-        if not contract.x_teaching_hourly_rate or contract.x_teaching_hourly_rate <= 0:
-            raise ValidationError(
-                _('Hợp đồng %(ref)s của %(emp)s chưa cấu hình đơn giá giờ dạy.',
-                  ref=contract.name, emp=self.employee_id.name)
-            )
         return contract
 
-    # ── Step 2: Validation Gate (VR-004) ─────────────────────
-    def _validate_work_entries(self):
+    def _resolve_structure(self, contract):
+        """Determine salary structure: explicit > contract > auto-detect."""
         self.ensure_one()
-        pending = self.env['hb.work.entry'].search_count([
-            ('employee_id', '=', self.employee_id.id),
-            ('date_start', '>=', self.date_from),
-            ('date_stop', '<=', self.date_to),
-            ('work_entry_type_id.code', '=', WORK_ENTRY_TEACHING),
-            ('state', 'in', ('draft', 'conflict')),
-        ])
-        if pending:
-            raise ValidationError(
-                _('Còn %(n)s Work Entry chưa được xác thực trong kỳ. '
-                  'Vui lòng xử lý trước khi tính lương.', n=pending)
+        structure = self.structure_id or contract.x_structure_id
+        if not structure:
+            # Auto-detect from employee work_form
+            work_form = getattr(self.employee_id, 'x_work_form', 'offline')
+            code = 'STRUCT_ONLINE' if work_form == 'online' else 'STRUCT_OFFLINE'
+            structure = self.env['hb.salary.structure'].search(
+                [('code', '=', code), ('active', '=', True)], limit=1,
             )
+        if not structure:
+            raise ValidationError(
+                _('Không tìm thấy cấu trúc lương phù hợp cho %(emp)s.',
+                  emp=self.employee_id.name)
+            )
+        return structure
 
-    # ── Step 3: Build salary breakdown ───────────────────────
-    def _build_teaching_salary(self, contract):
+    # ── Build evaluation namespace ──────────────────────────
+    def _build_localdict(self, contract):
         self.ensure_one()
-        warnings = []
+        employee = self.employee_id
 
-        # Teaching hours (WORK200)
-        teaching_entries = self._get_work_entries(WORK_ENTRY_TEACHING)
-        total_hours, skipped = self._sum_hours(teaching_entries)
-        if skipped:
-            warnings.append(_('Bỏ qua %(n)s Work Entry không hợp lệ.', n=skipped))
+        # rules dict — preserves insertion order (= sequence order)
+        rules = {}
 
-        teach_amount = total_hours * contract.x_teaching_hourly_rate
+        def _range_sum(start_code, end_code):
+            """Sum all rule amounts from start_code to end_code (inclusive) by sequence order."""
+            codes = list(rules.keys())
+            try:
+                i_start = codes.index(start_code)
+            except ValueError:
+                return 0.0
+            try:
+                i_end = codes.index(end_code)
+            except ValueError:
+                return 0.0
+            if i_start > i_end:
+                i_start, i_end = i_end, i_start
+            return sum(rules[c] for c in codes[i_start:i_end + 1])
 
-        # HSK Premium
-        hsk_premium = self._calc_hsk_premium(teaching_entries, contract)
-
-        # Extra hours bonus
-        extra_bonus = self._calc_extra_bonus(total_hours, contract)
-
-        # Holiday OT
-        holiday_entries = self._get_work_entries(WORK_ENTRY_HOLIDAY_OT)
-        holiday_hours, _ = self._sum_hours(holiday_entries)
-        holiday_amount = holiday_hours * contract.x_teaching_hourly_rate * HOLIDAY_OT_MULTIPLIER
-
-        # Fixed base (pro-rated)
-        fixed_base = self._calc_fixed_base(contract)
-
-        # Gross
-        gross = teach_amount + hsk_premium + extra_bonus + holiday_amount + fixed_base
-
-        # Insurance deductions (employee portion)
-        wage = contract.wage or 0
-        bhxh_ee = wage * BHXH_EE_RATE
-        bhyt_ee = wage * BHYT_EE_RATE
-        bhtn_ee = wage * BHTN_EE_RATE
-        total_insurance_ee = bhxh_ee + bhyt_ee + bhtn_ee
-
-        # PIT
-        dep_count = self._get_dependent_count()
-        taxable = max(gross - total_insurance_ee - PERSONAL_DEDUCTION - dep_count * DEPENDENT_DEDUCTION, 0)
-        pit = self._calc_pit(taxable)
-
-        # Net
-        net = gross - total_insurance_ee - pit
-
-        if total_hours > WARN_MONTHLY_HOURS:
-            warnings.append(_('Tổng giờ dạy vượt %(h)sh — cần review.', h=WARN_MONTHLY_HOURS))
+        import math
+        def _round_dir(value, direction=0):
+            """Round with direction: 1 = ceil (làm tròn lên), 0 = floor (làm tròn xuống)."""
+            if direction:
+                return math.ceil(value)
+            return math.floor(value)
 
         return {
-            'total_hours': total_hours,
-            'holiday_hours': holiday_hours,
-            'teach_amount': teach_amount,
-            'hsk_premium': hsk_premium,
-            'extra_bonus': extra_bonus,
-            'holiday_amount': holiday_amount,
-            'fixed_base': fixed_base,
-            'gross': gross,
-            'bhxh_ee': bhxh_ee,
-            'bhyt_ee': bhyt_ee,
-            'bhtn_ee': bhtn_ee,
-            'pit': pit,
-            'taxable': taxable,
-            'dep_count': dep_count,
-            'net': net,
-            'warnings': warnings,
+            # Core objects
+            'payslip': self,
+            'employee': employee,
+            'contract': contract,
+            # Proxies
+            'worked_days': WorkedDaysProxy(self.worked_days_ids),
+            'inputs': InputsProxy(self.input_ids),
+            'categories': CategoryTotals(),
+            'rules': rules,
+            # Range sum helper
+            '_range_sum': _range_sum,
+            # Result placeholders
+            'result': 0.0,
+            'result_qty': 1.0,
+            'result_rate': 0.0,
+            # Safe builtins
+            'round': round,
+            'max': max,
+            'min': min,
+            'abs': abs,
+            'float': float,
+            'int': int,
+            # ROUND(x, y): y=1 → ceil, y=0 → floor
+            '_round_dir': _round_dir,
         }
 
-    # ── Sub-calculations ─────────────────────────────────────
-    def _get_work_entries(self, type_code):
-        self.ensure_one()
-        return self.env['hb.work.entry'].search([
-            ('employee_id', '=', self.employee_id.id),
-            ('date_start', '>=', self.date_from),
-            ('date_stop', '<=', self.date_to),
-            ('work_entry_type_id.code', '=', type_code),
-            ('state', '=', 'validated'),
-        ])
+    # ── Formula transpiler ─────────────────────────────────
+    @staticmethod
+    def _transpile_formula(formula, known_codes):
+        """Transpile Excel-like formula → Python expression.
+
+        Supported syntax:
+            Rule codes (slug)  → rules.get('slug_code', 0)
+            IF(c, a, b)        → (a if c else b)
+            SUM(a, b)          → _range_sum('a', 'b')  (cộng tất cả rule từ a đến b theo sequence)
+            MAX / MIN / ABS          → Python builtins (already in eval context)
+            ROUND(x, y)             → _round_dir(x, y)  (y=1: ceil, y=0: floor)
+            + - * / ( ) > < >= <= == !=  → kept as-is
+
+        VD: luong_thoi_gian * 0.08
+            SUM(luong_thoi_gian, thuong_khac)  → cộng tất cả rule từ seq 10 đến seq 36
+        """
+        import re
+
+        if not formula or not formula.strip():
+            return '0'
+
+        src = formula.strip()
+
+        # ── 1. Replace IF(cond, true_val, false_val) ──
+        #    Handles nested parens via manual depth tracking
+        def _replace_if(text):
+            while True:
+                m = re.search(r'\bIF\s*\(', text, re.IGNORECASE)
+                if not m:
+                    break
+                start = m.end()  # position right after 'IF('
+                depth = 1
+                parts = []
+                cur = []
+                i = start
+                while i < len(text) and depth > 0:
+                    ch = text[i]
+                    if ch == '(':
+                        depth += 1
+                        cur.append(ch)
+                    elif ch == ')':
+                        depth -= 1
+                        if depth == 0:
+                            parts.append(''.join(cur))
+                        else:
+                            cur.append(ch)
+                    elif ch == ',' and depth == 1:
+                        parts.append(''.join(cur))
+                        cur = []
+                    else:
+                        cur.append(ch)
+                    i += 1
+                if len(parts) == 3:
+                    cond, tv, fv = [p.strip() for p in parts]
+                    replacement = f'(({tv}) if ({cond}) else ({fv}))'
+                else:
+                    replacement = '0'
+                text = text[:m.start()] + replacement + text[i:]
+            return text
+
+        src = _replace_if(src)
+
+        # ── 2. Replace SUM(a, b) → _range_sum('a', 'b') ──
+        # SUM nhận 2 tham số: mã bắt đầu và mã kết thúc,
+        # cộng tất cả rule từ mã a đến mã b theo thứ tự sequence.
+        def _replace_sum(text):
+            while True:
+                m = re.search(r'\bSUM\s*\(', text, re.IGNORECASE)
+                if not m:
+                    break
+                start = m.end()
+                depth = 1
+                i = start
+                while i < len(text) and depth > 0:
+                    if text[i] == '(':
+                        depth += 1
+                    elif text[i] == ')':
+                        depth -= 1
+                    i += 1
+                inner = text[m.end():i - 1]
+                args = [a.strip() for a in inner.split(',') if a.strip()]
+                if len(args) == 2:
+                    replacement = f"_range_sum('{args[0]}', '{args[1]}')"
+                else:
+                    replacement = '0'
+                text = text[:m.start()] + replacement + text[i:]
+            return text
+
+        src = _replace_sum(src)
+
+        # ── 2b. Replace ROUND(x, y) → _round_dir(x, y) ──
+        # y=1: làm tròn lên (ceil), y=0: làm tròn xuống (floor)
+        src = re.sub(r'\bROUND\b', '_round_dir', src, flags=re.IGNORECASE)
+
+        # ── 3. Replace rule codes → rules.get('CODE', 0) ──
+        # Match identifiers (letters/underscores/digits, 2+ chars)
+        # Exclude Python/math builtins
+        builtins_skip = {
+            'IF', 'SUM', 'MAX', 'MIN', 'ABS', 'ROUND', 'True', 'False',
+            'if', 'else', 'and', 'or', 'not', 'in', 'is',
+            'max', 'min', 'abs', 'round', 'sum', 'float', 'int',
+            'true', 'false', '_range_sum', '_round_dir',
+        }
+
+        def _code_replacer(match):
+            token = match.group(0)
+            if token in builtins_skip:
+                return token
+            if token in known_codes:
+                return f"rules.get('{token}', 0)"
+            return token
+
+        src = re.sub(r'\b([a-zA-Z_][a-zA-Z0-9_]+)\b', _code_replacer, src)
+
+        return src
+
+    # ── Rule evaluation ─────────────────────────────────────
+    @staticmethod
+    def _evaluate_rule_condition(rule, localdict):
+        if rule.condition_type != 'python' or not rule.condition_python:
+            return True
+        return bool(safe_eval(rule.condition_python, localdict))
 
     @staticmethod
-    def _sum_hours(entries):
-        total = 0.0
-        skipped = 0
-        for entry in entries:
-            if entry.duration < 0 or entry.duration > MAX_SINGLE_ENTRY_HOURS:
-                skipped += 1
-                continue
-            total += entry.duration
-        return total, skipped
+    def _evaluate_rule_amount(rule, localdict):
+        amount = 0.0
+        qty = 1.0
+        rate = 0.0
 
-    def _calc_hsk_premium(self, entries, contract):
-        if not contract.x_rate_hsk_class:
-            return 0.0
-        rate_diff = contract.x_rate_hsk_class - contract.x_teaching_hourly_rate
-        if rate_diff <= 0:
-            return 0.0
-        hsk_hours = 0.0
-        for entry in entries:
-            if entry.x_class_level in ('hsk4', 'hsk5', 'hsk6'):
-                if 0 < entry.duration <= MAX_SINGLE_ENTRY_HOURS:
-                    hsk_hours += entry.duration
-        return hsk_hours * rate_diff
+        if rule.amount_type == 'code' and rule.amount_python_compute:
+            localdict['result'] = 0.0
+            localdict['result_qty'] = 1.0
+            localdict['result_rate'] = 0.0
+            safe_eval(rule.amount_python_compute, localdict, mode='exec', nocopy=True)
+            amount = float(localdict.get('result', 0.0))
+            qty = float(localdict.get('result_qty', 1.0))
+            rate = float(localdict.get('result_rate', 0.0))
+        elif rule.amount_type == 'fixed':
+            amount = rule.amount_fixed
+        elif rule.amount_type == 'percentage':
+            base = safe_eval(rule.amount_percentage_base or '0', localdict)
+            amount = round(float(base) * rule.amount_percentage / 100.0)
+        elif rule.amount_type == 'formula' and rule.amount_formula:
+            known = set(localdict.get('rules', {}).keys())
+            expr = HbPayslip._transpile_formula(rule.amount_formula, known)
+            localdict['result'] = 0.0
+            safe_eval(f"result = {expr}", localdict, mode='exec', nocopy=True)
+            amount = float(localdict.get('result', 0.0))
 
-    @staticmethod
-    def _calc_extra_bonus(total_hours, contract):
-        threshold = contract.x_standard_threshold or 60.0
-        if total_hours <= threshold:
-            return 0.0
-        excess = total_hours - threshold
-        extra_rate = contract.x_effective_extra_rate
-        return excess * extra_rate
+        return amount, qty, rate
 
-    def _calc_fixed_base(self, contract):
-        self.ensure_one()
-        if not contract.x_has_fixed_base or not contract.x_fixed_base or contract.x_fixed_base <= 0:
-            return 0.0
-        period_start = self.date_from
-        period_end = self.date_to
-        c_start = max(contract.date_start, period_start) if contract.date_start else period_start
-        c_end = min(contract.date_end, period_end) if contract.date_end else period_end
-        total_days = (period_end - period_start).days + 1
-        worked_days = max((c_end - c_start).days + 1, 0)
-        if total_days <= 0:
-            return 0.0
-        return contract.x_fixed_base * (worked_days / total_days)
-
-    def _get_dependent_count(self):
-        self.ensure_one()
-        dep_ids = getattr(self.employee_id, 'x_dependent_ids', None)
-        if dep_ids:
-            return len(dep_ids.filtered(lambda d: getattr(d, 'active', True)))
-        return 0
-
-    @staticmethod
-    def _calc_pit(taxable_income):
+    # ── PIT helper (exposed to rule code via payslip._hocba_pit) ──
+    def _hocba_pit(self, taxable_income):
+        """7-bracket progressive PIT calculation (2026 values)."""
         if taxable_income <= 0:
             return 0.0
         tax = 0.0
@@ -335,79 +528,21 @@ class HbPayslip(models.Model):
             tax += t * rate
             remaining -= t
             prev = limit
-        return tax
+        return round(tax)
 
-    # ── Step 4: Write lines ──────────────────────────────────
-    def _write_salary_lines(self, result, contract):
-        """Clear old lines and write new salary breakdown."""
+    # ── Dependent count helper (exposed to rule code) ────────
+    def _get_dependent_count(self):
         self.ensure_one()
-        self.line_ids.unlink()
-
-        lines = [
-            ('FIXED_BASE', 'Lương cố định base', result['fixed_base'], 5),
-            ('TEACH_HOURS', 'Lương theo giờ dạy', result['teach_amount'], 10),
-            ('HSK_PREMIUM', 'Premium giờ HSK4+', result['hsk_premium'], 11),
-            ('EXTRA_BONUS', 'Bonus giờ vượt ngưỡng', result['extra_bonus'], 12),
-            ('HOLIDAY_OT', 'OT ngày lễ (300%)', result['holiday_amount'], 13),
-            ('GROSS', 'Tổng lương Gross', result['gross'], 20),
-            ('BHXH_EE', 'BHXH NV đóng (8%)', -result['bhxh_ee'], 30),
-            ('BHYT_EE', 'BHYT NV đóng (1.5%)', -result['bhyt_ee'], 31),
-            ('BHTN_EE', 'BHTN NV đóng (1%)', -result['bhtn_ee'], 32),
-            ('PIT', 'Thuế TNCN', -result['pit'], 40),
-            ('NET', 'Thực lĩnh', result['net'], 99),
-        ]
-
-        vals_list = []
-        for code, name, amount, seq in lines:
-            # Derive quantity/rate for display
-            qty = 1.0
-            rate = amount
-            if code == 'TEACH_HOURS':
-                qty = result['total_hours']
-                rate = contract.x_teaching_hourly_rate
-            elif code == 'HOLIDAY_OT':
-                qty = result['holiday_hours']
-                rate = contract.x_teaching_hourly_rate * HOLIDAY_OT_MULTIPLIER
-
-            vals_list.append({
-                'payslip_id': self.id,
-                'code': code,
-                'name': name,
-                'sequence': seq,
-                'quantity': qty,
-                'rate': rate,
-                'amount': amount,
-            })
-
-        self.env['hb.payslip.line'].create(vals_list)
-
-    # ── Step 5: Finalize ─────────────────────────────────────
-    def _finalize_compute(self, result):
-        self.ensure_one()
-        self.write({
-            'x_teaching_total_hours': result['total_hours'],
-            'x_holiday_ot_hours': result['holiday_hours'],
-            'x_compute_warnings': '\n'.join(result['warnings']) if result['warnings'] else False,
-            'x_teaching_computed': True,
-        })
-        self.message_post(body=_(
-            'Tính lương thành công:\n'
-            '• Giờ dạy: %(hours).1fh | Gross: %(gross)s | Net: %(net)s\n'
-            '• Chi tiết: Base=%(base)s | HSK+=%(hsk)s | Extra=%(extra)s | Holiday=%(hol)s | Fixed=%(fix)s\n'
-            '• BHXH=%(bhxh)s | BHYT=%(bhyt)s | BHTN=%(bhtn)s | PIT=%(pit)s',
-            hours=result['total_hours'],
-            gross='{:,.0f}'.format(result['gross']),
-            net='{:,.0f}'.format(result['net']),
-            base='{:,.0f}'.format(result['teach_amount']),
-            hsk='{:,.0f}'.format(result['hsk_premium']),
-            extra='{:,.0f}'.format(result['extra_bonus']),
-            hol='{:,.0f}'.format(result['holiday_amount']),
-            fix='{:,.0f}'.format(result['fixed_base']),
-            bhxh='{:,.0f}'.format(result['bhxh_ee']),
-            bhyt='{:,.0f}'.format(result['bhyt_ee']),
-            bhtn='{:,.0f}'.format(result['bhtn_ee']),
-            pit='{:,.0f}'.format(result['pit']),
-        ))
+        dep_ids = getattr(self.employee_id, 'x_dependent_ids', None)
+        if dep_ids:
+            today = fields.Date.today()
+            return len(dep_ids.filtered(
+                lambda d: (
+                    getattr(d, 'date_start', False) and d.date_start <= today
+                    and (not getattr(d, 'date_end', False) or d.date_end >= today)
+                )
+            ))
+        return 0
 
     # ═════════════════════════════════════════════════════════
     # State transitions
@@ -456,6 +591,8 @@ class HbPayslip(models.Model):
             'employee_id': self.employee_id.id,
             'employee_name': self.employee_id.name,
             'contract_id': self.contract_id.id if self.contract_id else None,
+            'structure_id': self.structure_id.id if self.structure_id else None,
+            'structure_code': self.structure_id.code if self.structure_id else None,
             'date_from': str(self.date_from),
             'date_to': str(self.date_to),
             'state': self.state,
@@ -465,6 +602,17 @@ class HbPayslip(models.Model):
             'compute_warnings': self.x_compute_warnings,
             'gross_amount': self.gross_amount,
             'net_amount': self.net_amount,
+            'worked_days': [{
+                'code': wd.code,
+                'name': wd.name,
+                'number_of_days': wd.number_of_days,
+                'number_of_hours': wd.number_of_hours,
+            } for wd in self.worked_days_ids],
+            'inputs': [{
+                'code': inp.code,
+                'name': inp.name,
+                'amount': inp.amount,
+            } for inp in self.input_ids],
             'lines': [{
                 'id': l.id,
                 'code': l.code,
