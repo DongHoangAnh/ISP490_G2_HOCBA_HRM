@@ -147,8 +147,14 @@ class TestShiftApi(TransactionCase):
 
     def test_week_hr_manager_sees_pending_in_scope(self):
         # Bug: manager phải thấy ca PENDING của NV trong phạm vi để duyệt.
-        self._make_shift()   # pending, self.emp
-        data = _shifts_week(self.env(user=self.hrm), '2026-06-15')
+        # Dùng ngày tương lai để lazy auto-reject không loại ca này.
+        from odoo.fields import Datetime
+        from datetime import timedelta
+        future = Datetime.now() + timedelta(days=14)
+        future = future.replace(hour=2, minute=0, second=0, microsecond=0)
+        monday = future.date() - timedelta(days=future.date().weekday())
+        self._make_shift(start=future, end=future + timedelta(hours=2))
+        data = _shifts_week(self.env(user=self.hrm), monday.strftime('%Y-%m-%d'))
         rows = [r for d in data['days'] for r in d['shifts']
                 if r['empId'] == self.emp.id]
         self.assertTrue(rows, 'Manager phải thấy ca pending của NV để duyệt')

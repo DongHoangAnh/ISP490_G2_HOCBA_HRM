@@ -58,8 +58,8 @@ class TestAttendanceRequest(TransactionCase):
         Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
         rec = Att.create({'employee_id': self.emp.id,
                           'check_in': '2026-06-12 02:00:00',    # 09:00 local
-                          'check_out': '2026-06-12 07:00:00'})  # 5h -> thiếu 180
-        self.assertEqual(rec.missing_minutes, 180)
+                          'check_out': '2026-06-12 07:00:00'})  # 5h, half-day basis 4h -> missing=0
+        self.assertEqual(rec.missing_minutes, 0)
         req = self._make_req(attendance_id=rec.id)
         # 09:00 -> 17:00 local = 8h đủ công. _to_utc nhận local ISO.
         from odoo.addons.hocba_hrm.controllers.main import _to_utc
