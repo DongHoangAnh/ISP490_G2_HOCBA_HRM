@@ -74,3 +74,4 @@ docker compose -f docker-compose.yml run --rm --no-deps -T odoo \
 | 2026-06-17 | Local `hocba_hrm` | Seed 5 bản ghi chấm công hôm nay (3 đúng giờ, 2 muộn) — script `_demo_seed/seed_attendance_demo.py` | Vu/Claude |
 | 2026-06-17 | Neon `neondb` | **CHƯA seed** — máy hiện tại chặn TCP cổng 5432 tới Neon (host + container đều timeout). Chờ mạng/VPN cho phép 5432 | — |
 | 2026-06-19 | Neon `neondb` | ✅ Seed 7 tài khoản test + phòng "Phòng Test (QA)" + NV test (cổng 5432 đã thông; `seed_test_accounts.py`). Verify: 7/7 TK tồn tại, link hồ sơ đúng | Vu/Claude |
+| 2026-06-19 | Neon `neondb` | ✅ Cài/upgrade `hocba_payroll` (62 modules loaded OK). **Phải dùng endpoint Neon TRỰC TIẾP** (`ep-...neon.tech`, bỏ `-pooler`) cho upgrade — pooler rớt SSL giữa transaction DDL dài. Verify SPA: API `/api/payroll/batch` 200, màn Bảng lương render | Vu/Claude |
