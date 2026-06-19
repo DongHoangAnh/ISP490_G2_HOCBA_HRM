@@ -100,9 +100,6 @@ export default function ShiftAttendance({ me, onChanged }) {
                       <Icon name="logout" size={15} />Check-out
                     </button>
                   ) : null}
-                  {!s.checkIn && !s.checkInOpen && !s.checkOut && !s.checkOutOpen && (
-                    <span className="muted" style={{ fontSize: 12.5 }}>Ngoài khung giờ chấm công (±15')</span>
-                  )}
                 </div>
               </div>
             ))}
