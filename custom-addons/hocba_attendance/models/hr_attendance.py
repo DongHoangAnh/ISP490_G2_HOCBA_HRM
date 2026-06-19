@@ -223,7 +223,7 @@ class Attendance(models.Model):
         policy = self.env['hocba.attendance.policy'].get_policy()
         now = fields.Datetime.now()
         now_local = fields.Datetime.context_timestamp(
-            self.with_context(tz=self.env.user.tz or 'UTC'), now
+            self.with_context(tz=self._context.get('tz') or self.env.user.tz or 'UTC'), now
         ).replace(tzinfo=None)
         today = now_local.date()
 
@@ -252,7 +252,19 @@ class Attendance(models.Model):
             out_of_zone = not policy.is_within_office(lat, lng)
         else:
             out_of_zone = False
-        out_of_window = not policy.is_within_window(now_local, kind)
+        if employee.x_employment_status == 'official':
+            out_of_window = not policy.is_within_window(now_local, kind)
+        else:
+            # non-official (CTV/OT): cờ theo cửa sổ ±W quanh giờ ca approved
+            window = policy.shift_window_minutes or 15
+            in_win = False
+            for s in self._todays_approved_shifts(employee, today):
+                anchor = fields.Datetime.context_timestamp(
+                    s, s.start if kind == 'in' else s.end).replace(tzinfo=None)
+                if abs((now_local - anchor).total_seconds()) <= window * 60:
+                    in_win = True
+                    break
+            out_of_window = not in_win
 
         # One record per employee per day
         record = self.search([

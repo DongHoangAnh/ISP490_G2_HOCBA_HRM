@@ -39,3 +39,8 @@ export const rejectShift = (id, body) =>
   hbPost(`/hocba-hrm/api/shifts/${id}/reject`, body);
 export const cancelShift = (id) =>
   hbPost(`/hocba-hrm/api/shifts/${id}/cancel`, {});
+
+export const fetchOtTable = (month) =>
+  hbGet(`/hocba-hrm/api/shifts/ot?month=${month}`);
+export const setShiftLevel = (id, otLevel) =>
+  hbPost(`/hocba-hrm/api/shifts/${id}/level`, { otLevel });

@@ -244,6 +244,85 @@ def _att_day_table(env, date_str):
     }
 
 
+def _ot_row(env, s):
+    """Một ca OT cho SPA (camelCase) + cờ counted / giờ quy đổi.
+    counted = ngày local của start có bản ghi attendance đã check-in."""
+    hours = ((s.end - s.start).total_seconds() / 3600.0) if (s.start and s.end) else 0.0
+    d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
+    counted = bool(d and env['hocba.attendance'].sudo().search_count([
+        ('employee_id', '=', s.employee_id.id), ('date', '=', d),
+        ('check_in', '!=', False)]))
+    emp = s.employee_id
+    return {
+        'id': s.id, 'empId': emp.id, 'empName': emp.name,
+        'code': emp.x_employee_code or '—',
+        'depName': emp.department_id.name or 'Chưa gán',
+        'date': _d(d) if d else None,
+        'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
+        'otLevel': s.ot_level, 'rate': s.rate,
+        'hours': round(hours, 2), 'counted': counted,
+        'creditHours': round(hours * s.rate, 2) if counted else 0.0,
+        'state': s.state,
+    }
+
+
+def _ot_for_employee(env, emp, first, last):
+    """Tổng OT của 1 NV trong [first,last] (ca approved, start trong tháng,
+    chỉ cộng ca counted). Trả {otHours, otCreditHours}."""
+    shifts = env['hocba.work_shift'].sudo().search([
+        ('employee_id', '=', emp.id), ('state', '=', 'approved')])
+    rows = []
+    for s in shifts:
+        d = fields.Datetime.context_timestamp(s, s.start).date()
+        if first <= d <= last:
+            rows.append(_ot_row(env, s))
+    return {
+        'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
+        'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+    }
+
+
+def _ot_table(env, month_str):
+    """Bảng ca OT approved theo tháng + phạm vi vai trò (giống _att_day_table).
+    rows=mọi ca approved trong tháng; totals cộng ca counted. canManage."""
+    user = env.user
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(user)
+        y, m = today.year, today.month
+    tz = timezone(user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+    domain = [('state', '=', 'approved'),
+              ('start', '>=', start_utc), ('start', '<', end_utc)]
+    if _user_can_manage(env):
+        for field, op, val in _emp_scope_domain(env):
+            if field == 'id':
+                domain.append(('employee_id', op, val))
+            else:
+                domain.append(('employee_id.%s' % field, op, val))
+    else:
+        emp = user.employee_id
+        domain.append(('employee_id', '=', emp.id if emp else -1))
+    recs = env['hocba.work_shift'].sudo().search(domain, order='start')
+    rows = [_ot_row(env, s) for s in recs]
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'canManage': _user_can_manage(env),
+        'rows': rows,
+        'totals': {
+            'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
+            'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+            'count': len(rows),
+            'countedCount': sum(1 for r in rows if r['counted']),
+        },
+    }
+
+
 def _att_me_history(env, month_str):
     """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -282,6 +361,9 @@ def _att_me_history(env, month_str):
         'netCredit': round(total_credit - deficit_credit, 2),
         'violationDays': len(violations),
     }
+    ot = _ot_for_employee(env, emp, first, last)
+    summary['otHours'] = ot['otHours']
+    summary['otCreditHours'] = ot['otCreditHours']
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
@@ -482,6 +564,7 @@ def _shift_row(s):
         'start': _dt_local(s, s.start),
         'end': _dt_local(s, s.end),
         'shiftType': s.shift_type,
+        'otLevel': s.ot_level,
         'rate': s.rate,
         'state': s.state,
         'reason': s.reason or '',
@@ -509,6 +592,9 @@ def _shift_create(env, body):
     shift_type = body.get('shiftType')
     if shift_type not in ('ctv', 'ot'):
         raise ValidationError('Loại ca không hợp lệ.')
+    level = body.get('otLevel') or '100'
+    if level not in ('100', '150', '300'):
+        raise ValidationError('Mức hệ số không hợp lệ.')
     start = _to_utc(env, body.get('start'))
     end = _to_utc(env, body.get('end'))
     if not start or not end:
@@ -517,7 +603,7 @@ def _shift_create(env, body):
         'employee_id': emp.id,
         'start': start, 'end': end,
         'shift_type': shift_type,
-        'rate': Shift._default_rate(start),
+        'ot_level': level,
         'reason': (body.get('reason') or '').strip() or False,
     }
     if as_manager:
@@ -590,12 +676,31 @@ def _shift_decide(env, shift_id, approve, body):
             if body['shiftType'] not in ('ctv', 'ot'):
                 raise ValidationError('Loại ca không hợp lệ.')
             vals['shift_type'] = body['shiftType']
-        if 'rate' in body:
-            vals['rate'] = float(body['rate'])
+        if 'otLevel' in body:
+            if body['otLevel'] not in ('100', '150', '300'):
+                raise ValidationError('Mức hệ số không hợp lệ.')
+            vals['ot_level'] = body['otLevel']
         vals['state'] = 'approved'
     else:
         vals['state'] = 'rejected'
     shift.write(vals)
+    return _shift_row(shift)
+
+
+def _shift_set_level(env, shift_id, level):
+    """Manager (trong phạm vi) đổi mốc hệ số 1 ca approved (màn Chấm công OT).
+    Trả _shift_row; None nếu không tồn tại; AccessError nếu vượt quyền;
+    ValidationError nếu mốc sai / ca không ở trạng thái approved."""
+    if level not in ('100', '150', '300'):
+        raise ValidationError('Mức hệ số không hợp lệ.')
+    shift = env['hocba.work_shift'].sudo().browse(shift_id)
+    if not shift.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
+        raise AccessError('forbidden')
+    if shift.state != 'approved':
+        raise ValidationError('Chỉ đổi mức cho ca đã duyệt.')
+    shift.write({'ot_level': level})
     return _shift_row(shift)
 
 
@@ -1888,6 +1993,10 @@ class HocBaHRM(http.Controller):
     def api_shifts_week(self, monday=None, **kw):
         return request.make_json_response(_shifts_week(request.env, monday))
 
+    @http.route('/hocba-hrm/api/shifts/ot', auth='user', type='http', methods=['GET'])
+    def api_shifts_ot(self, month=None, **kw):
+        return request.make_json_response(_ot_table(request.env, month))
+
     def _decide_shift(self, shift_id, approve):
         try:
             row = _shift_decide(request.env, shift_id, approve,
@@ -1928,3 +2037,19 @@ class HocBaHRM(http.Controller):
         if res is None:
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(res)
+
+    @http.route('/hocba-hrm/api/shifts/<int:shift_id>/level', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_shift_set_level(self, shift_id, **kw):
+        try:
+            row = _shift_set_level(request.env, shift_id,
+                                   (request.get_json_data() or {}).get('otLevel'))
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)

@@ -27,7 +27,7 @@ class TestShiftApi(TransactionCase):
             'employee_id': self.emp.id,
             'start': '2026-06-15 02:00:00',   # T2, 09:00 local
             'end': '2026-06-15 04:00:00',     # 11:00 local
-            'shift_type': 'ctv', 'rate': 1.5, 'state': 'pending',
+            'shift_type': 'ctv', 'ot_level': '150', 'state': 'pending',
         }
         base.update(vals)
         return self.env['hocba.work_shift'].with_context(
@@ -39,28 +39,38 @@ class TestShiftApi(TransactionCase):
         self.assertEqual(row['empId'], self.emp.id)
         self.assertEqual(row['shiftType'], 'ctv')
         self.assertEqual(row['rate'], 1.5)
+        self.assertEqual(row['otLevel'], '150')
         self.assertEqual(row['state'], 'pending')
         self.assertEqual(row['start'], '2026-06-15T09:00:00')
         self.assertEqual(row['end'], '2026-06-15T11:00:00')
         self.assertIsNone(row['reviewer'])
 
-    def test_create_pins_employee_and_default_rate(self):
+    def test_create_pins_employee_default_level_100(self):
         env = self.env(user=self.user)
         row = _shift_create(env, {
             'start': '2026-06-15T09:00', 'end': '2026-06-15T11:00',
             'shiftType': 'ctv', 'reason': 'Trực sáng'})
         self.assertEqual(row['empId'], self.emp.id)
         self.assertEqual(row['state'], 'pending')
-        self.assertEqual(row['rate'], 1.5)       # T2 -> 1.5
+        self.assertEqual(row['otLevel'], '100')
+        self.assertEqual(row['rate'], 1.0)
         s = env['hocba.work_shift'].browse(row['id'])
-        self.assertEqual(str(s.start), '2026-06-15 02:00:00')   # 09:00+07 -> 02:00 UTC
+        self.assertEqual(str(s.start), '2026-06-15 02:00:00')
 
-    def test_create_weekend_rate(self):
+    def test_create_with_level_300(self):
         env = self.env(user=self.user)
         row = _shift_create(env, {
-            'start': '2026-06-20T09:00', 'end': '2026-06-20T11:00',  # T7
-            'shiftType': 'ot'})
-        self.assertEqual(row['rate'], 2.0)
+            'start': '2026-06-20T09:00', 'end': '2026-06-20T11:00',
+            'shiftType': 'ot', 'otLevel': '300'})
+        self.assertEqual(row['otLevel'], '300')
+        self.assertEqual(row['rate'], 3.0)
+
+    def test_create_bad_level_raises(self):
+        env = self.env(user=self.user)
+        with self.assertRaises(ValidationError):
+            _shift_create(env, {'start': '2026-06-20T09:00',
+                                'end': '2026-06-20T11:00',
+                                'shiftType': 'ot', 'otLevel': '999'})
 
     def test_create_bad_type_raises(self):
         env = self.env(user=self.user)
@@ -159,12 +169,19 @@ class TestShiftApi(TransactionCase):
     def test_decide_approve_with_override(self):
         env = self.env(user=self.hrm)
         s = self._make_shift()
-        row = _shift_decide(env, s.id, True, {'rate': 3.0,
+        row = _shift_decide(env, s.id, True, {'otLevel': '300',
                             'end': '2026-06-15T12:00'})
         self.assertEqual(row['state'], 'approved')
+        self.assertEqual(row['otLevel'], '300')
         self.assertEqual(row['rate'], 3.0)
         self.assertEqual(row['end'], '2026-06-15T12:00:00')
         self.assertEqual(row['reviewer'], self.hrm.name)
+
+    def test_decide_bad_level_override_raises(self):
+        env = self.env(user=self.hrm)
+        s = self._make_shift()
+        with self.assertRaises(ValidationError):
+            _shift_decide(env, s.id, True, {'otLevel': '999'})
 
     def test_decide_reject_sets_note(self):
         env = self.env(user=self.hrm)

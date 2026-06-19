@@ -7,6 +7,7 @@ import CheckInPanel from './CheckInPanel';
 import MyHistory from './MyHistory';
 import AttendanceTable from './AttendanceTable';
 import ShiftCalendar from './ShiftCalendar';
+import OtTable from './OtTable';
 import RequestForm from './RequestForm';
 import RequestList from './RequestList';
 
@@ -35,7 +36,7 @@ export default function Attendance({ search }) {
 
   const isManager = me.canManage;
   const tabs = isManager
-    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)']]
+    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)'], ['otpay', 'Chấm công OT']]
     : [['me', 'Chấm công của tôi'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
   const activeTab = tab || (isManager ? 'day' : 'me');
 
@@ -80,6 +81,7 @@ export default function Attendance({ search }) {
         </div>
       )}
       {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
+      {activeTab === 'otpay' && <OtTable />}
 
       {showForm && (
         <RequestForm onClose={() => setShowForm(false)} onSaved={() => loadReqs(false)} />

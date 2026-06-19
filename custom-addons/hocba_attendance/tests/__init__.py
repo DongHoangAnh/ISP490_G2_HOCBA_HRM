@@ -6,3 +6,4 @@ from . import test_status
 from . import test_checkin_edge_cases
 from . import test_work_credit
 from . import test_check_lock
+from . import test_ot_shift
