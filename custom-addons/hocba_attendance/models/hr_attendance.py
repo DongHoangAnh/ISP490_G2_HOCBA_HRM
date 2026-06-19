@@ -355,8 +355,11 @@ class Attendance(models.Model):
         """Ca approved của employee có start rơi vào ngày local `today`."""
         shifts = self.env['hocba.work_shift'].sudo().search([
             ('employee_id', '=', employee.id), ('state', '=', 'approved')])
+        # Use caller's tz context (not the sudo'd record's env) so the date
+        # comparison is consistent with how `today` was computed.
+        tz_ctx = self.with_context(tz=self.env.user.tz or 'UTC')
         return shifts.filtered(
-            lambda s: fields.Datetime.context_timestamp(s, s.start).date() == today)
+            lambda s: fields.Datetime.context_timestamp(tz_ctx, s.start).date() == today)
 
     def _assert_shift_check_allowed(self, employee, kind):
         """CTV/OT (non-official): check-in/out theo ca approved + cửa sổ ±W phút.
