@@ -39,10 +39,12 @@
 | **M-07** | **Chứng chỉ gom 2 nhóm:** *"Bằng ngôn ngữ"* + *"Bằng chuyên môn"* (giữ "ngôn ngữ" vì GV tiếng Trung; **không** thêm IELTS — công ty khác). **Phân cấp** sơ/trung/cao cho cả NV lẫn GV (GV dùng lọc xếp lớp). | **Đổi CONF-EMP-04/§5.2.2** ("Tiếng Trung"/"Sư phạm" → "Bằng ngôn ngữ"/"Bằng chuyên môn"); thêm `x_seniority_level`. | ✅ Implement |
 | **M-08** | **Lên chính thức bắt buộc CCCD + MST + BHXH.** Nhân viên chỉ cung cấp thông tin đầu vào; chức vụ/vị trí/lương/trạng thái do HR update. | **Mở rộng BR-010** (thêm CCCD). | ✅ Implement |
 | **M-09** | **Đổi thuật ngữ "Nhập việc" → "Nhận việc".** Thêm **vai trò "Giáo vụ"** (chỉ xem/quản lý giáo viên). | Thuật ngữ + group `hocba_employees.group_hocba_giaovu` + record rule. | ✅ Implement |
-| **M-10** | **Tách tài khoản quản lý ↔ cá nhân:** màn quản lý chỉ hiển thị menu quản lý; nhân viên thường chỉ thấy luồng cá nhân ("Hồ sơ của tôi"); vai trò gắn theo group Odoo (bàn giao được). | Bổ sung nav theo vai trò trong SPA + endpoint `/hocba-hrm/api/me/roles`. | ✅ Nav theo vai trò; chấm công/nghỉ self & scope phòng ban còn lại |
-| **M-11** | Người phụ thuộc & ảnh hồ sơ: nhân viên **tự thêm/tự up**, không cần duyệt. | FUNC-EMP-003 (self-service). | ⏳ Phần SPA cá nhân |
+| **M-10** | **Tách tài khoản quản lý ↔ cá nhân:** màn quản lý chỉ hiển thị menu quản lý; nhân viên thường chỉ thấy luồng cá nhân ("Hồ sơ của tôi"); vai trò gắn theo group Odoo (bàn giao được). | Bổ sung nav theo vai trò trong SPA + endpoint `/hocba-hrm/api/me/roles`. **Quản lý** phân quyền theo **phòng ban** (`_managed_department_ids`, gồm phòng con). | ✅ Implement (nav vai trò + scope phòng ban; panel chấm công self thuộc `hocba_attendance` — cross-team) |
+| **M-11** | Người phụ thuộc & ảnh hồ sơ: nhân viên **tự thêm/tự up**, không cần duyệt. | FUNC-EMP-003 (self-service): endpoint `/hocba-hrm/api/me/photo` + self-service NPT trên "Hồ sơ của tôi". | ✅ Implement |
 
 > **Còn treo cần khách làm rõ:** chi tiết **nghỉ phép / lịch sử nghỉ** (cuối Họp #2 bị gián đoạn kỹ thuật).
+>
+> **Chưa làm (đợt sau / cross-team), không thuộc M-01..M-11:** ẩn panel/duyệt chấm công ở giao diện HR (phối hợp `hocba_attendance`); duyệt nghỉ theo phòng ban (`hocba_timeoff`); **dashboard cá nhân + lịch sử đơn của mình** cho nhân viên thường (hiện mới có "Hồ sơ của tôi"). Xem `docs/BAOCAO_HOP2_EMPLOYEES_2026-06-16.md` §7.
 
 ---
 
