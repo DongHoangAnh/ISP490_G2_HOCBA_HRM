@@ -33,7 +33,7 @@
 | DB | Tài khoản test | Dữ liệu mẫu khác |
 |---|---|---|
 | **Local** (Docker `hocba_hrm`) | ✅ Đã seed (7 TK) | ✅ Chấm công hôm nay (5 bản ghi) |
-| **Neon** (`neondb`) | ❌ **CHƯA seed** | ❌ Chưa |
+| **Neon** (`neondb`) | ✅ **Đã seed (7 TK)** — 2026-06-19 | ❌ Chưa (chấm công demo) |
 
 ---
 
@@ -56,10 +56,10 @@ docker compose -f docker-compose.yml run --rm --no-deps -T odoo \
   odoo shell -d neondb --addons-path=/mnt/extra-addons --no-http \
   < _demo_seed/seed_test_accounts.py
 ```
-> ⚠️ **Đang BỊ CHẶN MẠNG (2026-06-17):** cả máy host lẫn container đều không
-> kết nối được Neon cổng **5432** (DNS phân giải OK nhưng **TCP timeout**) — mạng
-> hiện tại chặn outbound 5432. Cần chạy từ **mạng khác / VPN / hotspot** cho phép
-> 5432, hoặc nhờ thành viên kết nối được Neon chạy giúp script trên.
+> ✅ **Đã thông (2026-06-19):** Neon cổng **5432** kết nối lại được; đã seed thành
+> công 7 TK lên `neondb` bằng lệnh trên. (Lần trước 2026-06-17 bị mạng chặn
+> outbound 5432 — nay đã hết.) Khi chạy gặp ERROR `hb_timeoff_*`/`hr_holidays_modern`
+> "not loaded" là tồn đọng đã biết (module timeoff cũ đã gộp/đổi tên) — vô hại với seed.
 
 > Lưu ý Odoo 19: `res.users` dùng field **`group_ids`** (không phải `groups_id`);
 > `res.groups` **không còn `category_id`**.
@@ -73,3 +73,4 @@ docker compose -f docker-compose.yml run --rm --no-deps -T odoo \
 | 2026-06-17 | Local `hocba_hrm` | Seed 7 tài khoản test + phòng "Phòng Test (QA)" + NV test (script `seed_test_accounts.py`) | Vu/Claude |
 | 2026-06-17 | Local `hocba_hrm` | Seed 5 bản ghi chấm công hôm nay (3 đúng giờ, 2 muộn) — script `_demo_seed/seed_attendance_demo.py` | Vu/Claude |
 | 2026-06-17 | Neon `neondb` | **CHƯA seed** — máy hiện tại chặn TCP cổng 5432 tới Neon (host + container đều timeout). Chờ mạng/VPN cho phép 5432 | — |
+| 2026-06-19 | Neon `neondb` | ✅ Seed 7 tài khoản test + phòng "Phòng Test (QA)" + NV test (cổng 5432 đã thông; `seed_test_accounts.py`). Verify: 7/7 TK tồn tại, link hồ sơ đúng | Vu/Claude |
