@@ -1,0 +1,51 @@
+/* API domain Recruitment — Việt. Spec: docs/SPEC_API_RECRUITMENT.md */
+import { hbGet, hbPost, hbUpload } from './client';
+
+export const fetchCvList = () => hbGet('/hocba-hrm/api/recruitment/cv');
+export const fetchApplicant = (id) =>
+  hbGet(`/hocba-hrm/api/recruitment/applicant/${id}`);
+
+export const createCv = (payload) =>
+  hbPost('/hocba-hrm/api/recruitment/cv', payload);
+export const updateApplicant = (id, payload) =>
+  hbPost(`/hocba-hrm/api/recruitment/applicant/${id}`, payload);
+export const changeStage = (id, stageId) =>
+  hbPost(`/hocba-hrm/api/recruitment/applicant/${id}/stage`, { stageId });
+export const uploadCvFile = (id, file) =>
+  hbUpload(`/hocba-hrm/api/recruitment/applicant/${id}/cv-file`, file);
+
+/* Vị trí tuyển dụng / JD */
+export const fetchJobs = () => hbGet('/hocba-hrm/api/recruitment/jobs');
+export const fetchJob = (id) => hbGet(`/hocba-hrm/api/recruitment/job/${id}`);
+export const createJob = (payload) => hbPost('/hocba-hrm/api/recruitment/jobs', payload);
+export const updateJob = (id, payload) =>
+  hbPost(`/hocba-hrm/api/recruitment/job/${id}`, payload);
+
+/* Phiếu yêu cầu tuyển dụng */
+export const fetchRequests = () => hbGet('/hocba-hrm/api/recruitment/requests');
+export const fetchRequest = (id) => hbGet(`/hocba-hrm/api/recruitment/request/${id}`);
+export const createRequest = (payload) => hbPost('/hocba-hrm/api/recruitment/requests', payload);
+export const updateRequest = (id, payload) =>
+  hbPost(`/hocba-hrm/api/recruitment/request/${id}`, payload);
+export const requestAction = (id, action, extra) =>
+  hbPost(`/hocba-hrm/api/recruitment/request/${id}/action`, { action, ...extra });
+
+/* Mail mẫu tuyển dụng */
+export const fetchMailTemplates = () => hbGet('/hocba-hrm/api/recruitment/mail-templates');
+export const fetchMailTemplate = (id) => hbGet(`/hocba-hrm/api/recruitment/mail-template/${id}`);
+export const createMailTemplate = (payload) => hbPost('/hocba-hrm/api/recruitment/mail-templates', payload);
+export const updateMailTemplate = (id, payload) =>
+  hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}`, payload);
+export const sendMailTemplate = (id, applicantIds, override) =>
+  hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}/send`, { applicantIds, ...(override || {}) });
+export const fetchMailLogs = () => hbGet('/hocba-hrm/api/recruitment/mail-logs');
+export const previewMailTemplate = (id, applicantId) =>
+  hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}/preview`, { applicantId });
+
+/* Lịch rảnh phỏng vấn (hb.interview.slot) */
+export const fetchInterviewSlots = (from, to) =>
+  hbGet(`/hocba-hrm/api/recruitment/interview-slots?from=${from}&to=${to}`);
+export const createInterviewSlots = (userId, slots) =>
+  hbPost('/hocba-hrm/api/recruitment/interview-slots', { userId, slots });
+export const deleteInterviewSlot = (id) =>
+  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/delete`, {});

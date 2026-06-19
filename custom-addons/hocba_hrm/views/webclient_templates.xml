@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Nạp font Be Vietnam Pro cho toàn bộ giao diện Odoo (backend + login) -->
+        <template id="hocba_fonts" inherit_id="web.layout" name="Học Bá Fonts">
+            <xpath expr="//head" position="inside">
+                <link rel="preconnect" href="https://fonts.googleapis.com"/>
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin"/>
+                <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+            </xpath>
+        </template>
+    </data>
+</odoo>

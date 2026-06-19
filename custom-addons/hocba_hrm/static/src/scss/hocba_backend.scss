@@ -1,0 +1,193 @@
+// ============================================================
+// HỌC BÁ — skin cho Odoo backend (web.assets_backend)
+// Bám theo design system của UI đề xuất (hrm-styles.css):
+// đỏ Học Bá + gold, nền trắng ấm, bo tròn 14px, shadow mềm,
+// bảng kiểu SPA (header uppercase nhỏ), badge pill, tab đỏ
+// ============================================================
+
+$hb-red-900: #5C0A17;
+$hb-red-800: #7A0C1E;
+$hb-red-600: #C8102E;
+$hb-red-100: #F8DADF;
+$hb-red-50:  #FCEEF0;
+$hb-gold-500:#F2C200;
+$hb-gold-50: #FCF6DF;
+$hb-ink:     #1C1917;
+$hb-muted:   #78716C;
+$hb-faint:   #A8A29E;
+$hb-bg:      #F5F3F0;
+$hb-surface-2: #FAF8F5;
+$hb-border:  #EAE6E1;
+$hb-shadow-sm: 0 2px 6px -2px rgba(28, 25, 23, .10);
+$hb-shadow:    0 8px 24px -8px rgba(28, 25, 23, .16);
+
+// ---------------- NAVBAR: tông sidebar SPA (đỏ rất đậm) ----------------
+.o_main_navbar {
+    background: linear-gradient(90deg, $hb-red-900, $hb-red-800);
+    border-bottom: 0;
+
+    .o_menu_brand {
+        color: #fff;
+        font-weight: 800;
+        letter-spacing: -.2px;
+    }
+    .o_nav_entry, .dropdown-toggle, .o_menu_toggle {
+        color: rgba(255, 255, 255, .9);
+
+        &:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, .10);
+        }
+    }
+}
+
+// ---------------- Nền vùng làm việc: trắng ấm ----------------
+.o_web_client, .o_action_manager, .o_control_panel {
+    background-color: $hb-bg;
+}
+
+// ---------------- Control panel như page-head SPA ----------------
+.o_control_panel {
+    .o_breadcrumb .active {
+        font-weight: 800;
+        letter-spacing: -.3px;
+        color: $hb-ink;
+    }
+    .o_cp_switch_buttons .btn {
+        border-radius: 8px;
+    }
+}
+
+// Facet tìm kiếm như chip filterbar SPA
+.o_searchview {
+    border-radius: 10px;
+    border-color: $hb-border;
+
+    .o_searchview_facet {
+        border-radius: 7px;
+
+        .o_searchview_facet_label {
+            background: $hb-red-600;
+        }
+    }
+}
+
+// ---------------- LIST: bảng kiểu SPA ----------------
+.o_list_view .o_list_table {
+    thead {
+        background-color: $hb-surface-2;
+
+        th {
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: .5px;
+            font-weight: 700;
+            color: $hb-muted;
+        }
+    }
+    tbody > tr > td.o_data_cell {
+        padding-top: 9px;
+        padding-bottom: 9px;
+    }
+    tbody tr:hover {
+        background-color: $hb-red-50;
+    }
+}
+
+// ---------------- KANBAN: card SPA ----------------
+.o_kanban_renderer .o_kanban_record {
+    border-radius: 14px;
+    border: 1px solid $hb-border;
+    box-shadow: $hb-shadow-sm;
+
+    &:hover {
+        box-shadow: $hb-shadow;
+        transform: translateY(-1px);
+        transition: box-shadow .15s ease, transform .15s ease;
+    }
+    .o_kanban_image, .o_kanban_image img {
+        border-radius: 12px;
+    }
+}
+
+// ---------------- FORM: card + section heading như SPA ----------------
+.o_form_view {
+    .o_form_sheet_bg > .o_form_sheet {
+        border-radius: 14px;
+        border: 1px solid $hb-border;
+        box-shadow: $hb-shadow-sm;
+    }
+    // Tiêu đề nhóm (group string="...")
+    .o_horizontal_separator {
+        color: $hb-red-600;
+        font-weight: 800;
+        text-transform: uppercase;
+        font-size: 11.5px;
+        letter-spacing: .6px;
+    }
+    .o_form_label {
+        color: $hb-muted;
+    }
+    // Tab notebook: gạch đỏ kiểu SPA
+    .o_notebook .nav-tabs .nav-link {
+        font-weight: 600;
+        color: $hb-muted;
+
+        &.active {
+            color: $hb-red-600;
+            border-bottom: 2px solid $hb-red-600;
+        }
+    }
+    // Smart button
+    .oe_button_box .oe_stat_button {
+        border-radius: 10px;
+
+        .o_stat_value {
+            font-weight: 800;
+        }
+    }
+}
+
+// Statusbar: bước hiện tại nổi bật
+.o_statusbar_status .o_arrow_button {
+    font-weight: 600;
+
+    &.o_arrow_button_current {
+        font-weight: 800;
+    }
+}
+
+// ---------------- BADGE pill (list + form + kanban) ----------------
+.badge {
+    border-radius: 6px;
+    font-weight: 600;
+    letter-spacing: .1px;
+}
+
+// Hàng chip phân loại trên form nhân viên (wireframe F-001)
+.hb_chip_row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 4px 0 8px;
+    align-items: center;
+
+    .badge {
+        padding: 4px 9px;
+    }
+}
+
+// ---------------- Dialog / dropdown bo tròn ----------------
+.modal-content {
+    border-radius: 16px;
+}
+.dropdown-menu {
+    border-radius: 12px;
+    border-color: $hb-border;
+    box-shadow: $hb-shadow;
+}
+
+// ---------------- Nút ----------------
+.btn {
+    border-radius: 8px;
+}

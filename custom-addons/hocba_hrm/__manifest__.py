@@ -10,10 +10,19 @@
     'category': 'Human Resources',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
-    'depends': ['base', 'hr'],
+    'depends': ['base', 'hr', 'hocba_employees', 'hocba_attendance'],
     'data': [
         'views/menu.xml',
+        'views/webclient_templates.xml',
     ],
+    'assets': {
+        'web._assets_primary_variables': [
+            ('prepend', 'hocba_hrm/static/src/scss/primary_variables.scss'),
+        ],
+        'web.assets_backend': [
+            'hocba_hrm/static/src/scss/hocba_backend.scss',
+        ],
+    },
     'installable': True,
     'auto_install': False,
     'application': True,
