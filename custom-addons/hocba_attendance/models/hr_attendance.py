@@ -144,12 +144,15 @@ class Attendance(models.Model):
                 rec.morning_credit = 0.0
             if ci and co:
                 worked_min = (co - ci).total_seconds() / 60.0
-                rec.missing_minutes = max(0, int(round(std * 60 - worked_min)))
                 expected = ci + timedelta(hours=std)
                 rec.early_leave_minutes = max(
                     0, int(round((expected - co).total_seconds() / 60.0)))
                 aft_threshold = ci + timedelta(hours=std - aft_margin)
                 rec.afternoon_credit = 0.5 if co >= aft_threshold else 0.0
+                work_credit = rec.morning_credit + rec.afternoon_credit
+                basis = (std / 2.0) if work_credit == 0.5 else std
+                rec.missing_minutes = max(
+                    0, min(240, int(round(basis * 60 - worked_min))))
             else:
                 rec.missing_minutes = 0
                 rec.early_leave_minutes = 0
