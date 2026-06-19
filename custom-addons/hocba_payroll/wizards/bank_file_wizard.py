@@ -63,7 +63,7 @@ class BankFileWizard(models.TransientModel):
 
     @staticmethod
     def _get_net(payslip):
-        net_line = payslip.line_ids.filtered(lambda l: l.code == 'NET')
+        net_line = payslip.line_ids.filtered(lambda l: l.code == 'thuc_lanh')
         return net_line[0].amount if net_line else 0.0
 
     @staticmethod

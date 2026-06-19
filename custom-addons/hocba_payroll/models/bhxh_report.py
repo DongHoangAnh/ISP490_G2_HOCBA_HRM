@@ -130,9 +130,13 @@ class BhxhReport(models.Model):
             self.env['hb.bhxh.report.line'].create(vals_list)
 
     def _get_insurance_base(self, payslip, cap):
-        """Determine insurance base from contract wage, capped."""
-        wage = payslip.contract_id.wage or 0
-        return min(wage, cap)
+        """Determine insurance base from contract, respecting policy."""
+        contract = payslip.contract_id
+        policy = getattr(contract, 'x_insurance_policy', 'standard') or 'standard'
+        if policy == 'none':
+            return 0.0
+        base = getattr(contract, 'x_insurance_base', 0) or contract.wage or 0
+        return min(base, cap)
 
     def _get_regional_min_salary(self):
         """Return regional minimum salary for insurance cap calculation."""

@@ -7,6 +7,8 @@ import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
+import TimeOff from '../features/timeoff/TimeOff';
+import Payroll from '../features/payroll/Payroll';
 import ComingSoon from '../components/ComingSoon';
 import { LoadingState, ErrorState } from '../components/states';
 
@@ -42,8 +44,8 @@ export default function App() {
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && canManage && <Attendance search={search} />}
-        {view === 'timeoff' && canManage && <ComingSoon title="Nghỉ phép" owner="Nhật Anh" api="/hocba-hrm/api/timeoff/*" />}
-        {view === 'payroll' && canManage && <ComingSoon title="Bảng lương" owner="Hùng" api="/hocba-hrm/api/payroll/*" />}
+        {view === 'timeoff' && canManage && <TimeOff search={search} />}
+        {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'profile' && <Profile />}
       </div>

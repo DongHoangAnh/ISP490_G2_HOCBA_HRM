@@ -21,8 +21,8 @@ PIT_BRACKETS = [
     (80_000_000,  0.30),
     (float('inf'), 0.35),
 ]
-PERSONAL_DEDUCTION = 11_000_000       # 11M/month
-DEPENDENT_DEDUCTION = 4_400_000       # 4.4M per dependent
+PERSONAL_DEDUCTION = 15_500_000       # 15.5M/month (2026)
+DEPENDENT_DEDUCTION = 6_200_000       # 6.2M per dependent (2026)
 NON_RESIDENT_RATE = 0.20             # flat 20%
 
 
@@ -154,12 +154,12 @@ class EtaxReport(models.Model):
             self.env['hb.etax.report.line'].create(vals_list)
 
     def _get_gross(self, payslip):
-        gross_line = payslip.line_ids.filtered(lambda l: l.code == 'GROSS')
+        gross_line = payslip.line_ids.filtered(lambda l: l.code == 'tong_thu_nhap')
         return gross_line[0].amount if gross_line else 0.0
 
     def _get_insurance_deduction(self, payslip):
         """Sum BHXH + BHYT + BHTN employee portions from payslip lines."""
-        codes = ('BHXH_EE', 'BHYT_EE', 'BHTN_EE')
+        codes = ('bhxh_8_nv', 'bhyt_1_5_nv', 'bhtn_1_nv')
         total = 0.0
         for line in payslip.line_ids:
             if line.code in codes:
