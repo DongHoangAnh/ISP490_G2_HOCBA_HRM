@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { LoadingState, ErrorState } from '../../components/states';
 import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
 import CheckInPanel from './CheckInPanel';
-import MyHistory from './MyHistory';
 import AttendanceTable from './AttendanceTable';
 import ShiftCalendar from './ShiftCalendar';
 import OtTable from './OtTable';
@@ -66,7 +65,6 @@ export default function Attendance({ search }) {
       {activeTab === 'me' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <CheckInPanel me={me} onChanged={load} />
-          <MyHistory />
         </div>
       )}
       {activeTab === 'history' && <AttendanceHistory me={me} />}
