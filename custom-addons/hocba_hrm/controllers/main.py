@@ -326,7 +326,6 @@ def _ot_table(env, month_str):
 def _shift_history_row(env, s, att, row_type):
     """Một dòng ca OT/CTV cho history-full (unified row format như _att_row).
     s = hocba.work_shift, att = hocba.shift.attendance (có thể None/empty)."""
-    from math import floor
     emp = s.employee_id
     d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
     start_local = fields.Datetime.context_timestamp(s, s.start) if s.start else None
