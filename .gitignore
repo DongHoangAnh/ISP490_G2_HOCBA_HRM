@@ -1,15 +1,34 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *$py.class
 *.egg-info/
 .Python
 
 # Odoo
 *.log
+*.pot
+
+# Environment / secrets
+.env
 
 # OS / Editor
 .DS_Store
+**/.DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+# Microsoft Office temp files
+~$*
+
+# Claude Code (cau hinh ca nhan)
+.claude/
+
+# Local demo-data seed scripts (chứa mật khẩu test — không commit)
+_demo_seed/
+
+# Vite dev cache
+frontend/.vite/
