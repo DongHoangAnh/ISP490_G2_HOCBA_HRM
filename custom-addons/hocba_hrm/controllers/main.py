@@ -323,6 +323,90 @@ def _ot_table(env, month_str):
     }
 
 
+def _shift_history_row(env, s, att, row_type):
+    """Một dòng ca OT/CTV cho history-full (unified row format như _att_row).
+    s = hocba.work_shift, att = hocba.shift.attendance (có thể None/empty)."""
+    from math import floor
+    emp = s.employee_id
+    d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
+    start_local = fields.Datetime.context_timestamp(s, s.start) if s.start else None
+    end_local = fields.Datetime.context_timestamp(s, s.end) if s.end else None
+
+    checked_in = bool(att and att.check_in)
+    hours = att.worked_hours if att else 0.0
+    worked_min = int(hours * 60)
+
+    # Shift duration (minutes)
+    shift_min = 0
+    if s.start and s.end:
+        shift_min = int((s.end - s.start).total_seconds() / 60)
+
+    # Late = check_in vượt quá shift.start
+    late_min = 0
+    if checked_in and s.start:
+        diff = (att.check_in - s.start).total_seconds()
+        late_min = max(0, int(diff / 60))
+
+    # Early leave = check_out trước shift.end
+    early_min = 0
+    if att and att.check_out and s.end:
+        diff = (s.end - att.check_out).total_seconds()
+        early_min = max(0, int(diff / 60))
+
+    # Missing = shift duration - worked (nếu đã check in)
+    missing_min = max(0, shift_min - worked_min) if checked_in else 0
+
+    # workCredit = congCa
+    cong_ca = round((hours / 8.0) * (s.rate or 1.0), 2) if checked_in else 0.0
+
+    # statusKey
+    if not checked_in:
+        status_key = 'none'
+    elif late_min > 0:
+        status_key = 'late'
+    else:
+        status_key = 'on_time'
+
+    # shiftLabel  e.g. "OT 150% · 08:00–12:00" hoặc "CTV · 08:00–12:00"
+    t_start = start_local.strftime('%H:%M') if start_local else '?'
+    t_end = end_local.strftime('%H:%M') if end_local else '?'
+    if row_type == 'ot':
+        level_label = '%s%%' % (s.ot_level,) if s.ot_level else '100%'
+        shift_label = 'OT %s · %s–%s' % (level_label, t_start, t_end)
+    else:
+        shift_label = 'CTV · %s–%s' % (t_start, t_end)
+
+    return {
+        'id': s.id,
+        'empId': emp.id,
+        'code': emp.x_employee_code or '—',
+        'name': emp.name,
+        'depName': emp.department_id.name or 'Chưa gán',
+        'hasImg': bool(att and att.check_in_photo),
+        'hasCheckOutImg': bool(att and att.check_out_photo),
+        'date': _d(d) if d else None,
+        'checkIn': _dt_local(att, att.check_in) if att and att.check_in else None,
+        'checkOut': _dt_local(att, att.check_out) if att and att.check_out else None,
+        'workingHours': round(hours, 2),
+        'statusKey': status_key,
+        'lateMinutes': late_min,
+        'earlyLeaveMinutes': early_min,
+        'missingMinutes': missing_min,
+        'workCredit': cong_ca,
+        'morningCredit': 0.0,
+        'afternoonCredit': 0.0,
+        'expectedCheckOut': _dt_local(s, s.end) if s.end else None,
+        'faceSuspect': att.face_suspect if att else False,
+        'outOfZone': att.out_of_zone if att else False,
+        'outOfWindow': att.out_of_window if att else False,
+        'needsReview': False,
+        'checkInMapUrl': None,
+        'checkOutMapUrl': None,
+        'rowType': row_type,
+        'shiftLabel': shift_label,
+    }
+
+
 def _att_me_history(env, month_str):
     """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -365,6 +449,102 @@ def _att_me_history(env, month_str):
         'otHours': ot['otHours'],
     }
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
+
+
+def _att_me_history_full(env, month_str, att_type):
+    """Lịch sử chấm công đầy đủ (thường + OT + CTV) theo filter.
+    att_type: 'all' | 'regular' | 'ot' | 'ctv'. None nếu chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+
+    # --- Regular rows ---
+    regular_rows = []
+    if att_type in ('regular', 'all'):
+        recs = env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('date', '>=', first), ('date', '<=', last),
+        ], order='date desc')
+        for r in recs:
+            row = _att_row(r, policy)
+            row['rowType'] = 'regular'
+            row['shiftLabel'] = None
+            regular_rows.append(row)
+
+    # --- Shift rows (OT / CTV) ---
+    ot_rows = []
+    ctv_rows = []
+    if att_type in ('ot', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ot'),
+        ])
+        for s in shifts:
+            d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
+            if d and first <= d <= last:
+                att = env['hocba.shift.attendance'].sudo().search(
+                    [('shift_id', '=', s.id)], limit=1)
+                ot_rows.append(_shift_history_row(env, s, att or None, 'ot'))
+    if att_type in ('ctv', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ctv'),
+        ])
+        for s in shifts:
+            d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
+            if d and first <= d <= last:
+                att = env['hocba.shift.attendance'].sudo().search(
+                    [('shift_id', '=', s.id)], limit=1)
+                ctv_rows.append(_shift_history_row(env, s, att or None, 'ctv'))
+
+    all_rows = sorted(
+        regular_rows + ot_rows + ctv_rows,
+        key=lambda r: r['date'] or '', reverse=True)
+
+    # --- Summary ---
+    total_credit = sum(r['workCredit'] for r in regular_rows)
+    violations = sorted(
+        [r for r in regular_rows if r['missingMinutes'] > 0],
+        key=lambda r: r['date'])
+    counted = violations[policy.violation_free_days:]
+    std = policy.std_work_hours or 8.0
+    deficit_credit = round(
+        (sum(r['missingMinutes'] for r in counted) / 60.0) / std, 2)
+    ot_hours = round(sum(r['workingHours'] for r in ot_rows if r['statusKey'] != 'none'), 2)
+    cong_ot = round(sum(r['workCredit'] for r in ot_rows), 2)
+    ctv_hours = round(sum(r['workingHours'] for r in ctv_rows if r['statusKey'] != 'none'), 2)
+    cong_ctv = round(sum(r['workCredit'] for r in ctv_rows), 2)
+
+    summary = {
+        'daysPresent': len(regular_rows),
+        'totalHours': round(sum(r['workingHours'] for r in regular_rows), 2),
+        'totalCredit': round(total_credit, 2),
+        'deficitCredit': deficit_credit,
+        'netCredit': round(total_credit - deficit_credit, 2),
+        'onTime': sum(1 for r in regular_rows if r['statusKey'] == 'on_time'),
+        'late': sum(1 for r in regular_rows if r['statusKey'] == 'late'),
+        'needsReview': sum(1 for r in regular_rows if r['needsReview']),
+        'otHours': ot_hours,
+        'congOt': cong_ot,
+        'ctvHours': ctv_hours,
+        'congCtv': cong_ctv,
+    }
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'employmentStatus': emp.x_employment_status or 'official',
+        'summary': summary,
+        'rows': all_rows,
+    }
 
 
 def _req_row(req):
@@ -1892,6 +2072,15 @@ class HocBaHRM(http.Controller):
                 type='http', methods=['GET'])
     def api_attendance_history(self, month=None, **kw):
         data = _att_me_history(request.env, month)
+        if data is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/me/history-full', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_history_full(self, month=None, type=None, **kw):
+        att_type = type if type in ('regular', 'ot', 'ctv', 'all') else 'all'
+        data = _att_me_history_full(request.env, month, att_type)
         if data is None:
             return request.make_json_response({'error': 'no_employee'}, status=400)
         return request.make_json_response(data)
