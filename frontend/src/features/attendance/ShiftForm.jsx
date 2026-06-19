@@ -35,19 +35,22 @@ export default function ShiftForm({ onClose, onSaved }) {
       <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <label style={{ fontSize: 12.5 }}>Loại ca
           <select className="sel" value={form.shiftType}
-            onChange={(e) => setForm({ ...form, shiftType: e.target.value })}>
+            onChange={(e) => setForm({ ...form, shiftType: e.target.value,
+              otLevel: e.target.value === 'ctv' ? '100' : form.otLevel })}>
             <option value="ot">Tăng ca (OT)</option>
             <option value="ctv">CTV</option>
           </select>
         </label>
-        <label style={{ fontSize: 12.5 }}>Mức hệ số
-          <select className="sel" value={form.otLevel}
-            onChange={(e) => setForm({ ...form, otLevel: e.target.value })}>
-            <option value="100">100%</option>
-            <option value="150">150%</option>
-            <option value="300">300%</option>
-          </select>
-        </label>
+        {form.shiftType === 'ot' && (
+          <label style={{ fontSize: 12.5 }}>Mức hệ số
+            <select className="sel" value={form.otLevel}
+              onChange={(e) => setForm({ ...form, otLevel: e.target.value })}>
+              <option value="100">100%</option>
+              <option value="150">150%</option>
+              <option value="300">300%</option>
+            </select>
+          </label>
+        )}
         <label style={{ fontSize: 12.5 }}>Bắt đầu
           <input type="datetime-local" className="sel" value={form.start}
             onChange={(e) => setForm({ ...form, start: e.target.value })} />

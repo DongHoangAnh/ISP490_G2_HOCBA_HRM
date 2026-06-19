@@ -44,3 +44,8 @@ export const fetchOtTable = (month) =>
   hbGet(`/hocba-hrm/api/shifts/ot?month=${month}`);
 export const setShiftLevel = (id, otLevel) =>
   hbPost(`/hocba-hrm/api/shifts/${id}/level`, { otLevel });
+
+export const shiftCheckIn = (shiftId, payload) =>
+  hbPost(`/hocba-hrm/api/attendance/shift/${shiftId}/check-in`, payload);
+export const shiftCheckOut = (shiftId, payload) =>
+  hbPost(`/hocba-hrm/api/attendance/shift/${shiftId}/check-out`, payload);

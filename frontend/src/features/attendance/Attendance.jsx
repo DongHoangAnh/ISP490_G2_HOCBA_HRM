@@ -10,6 +10,7 @@ import ShiftCalendar from './ShiftCalendar';
 import OtTable from './OtTable';
 import RequestForm from './RequestForm';
 import RequestList from './RequestList';
+import ShiftAttendance from './ShiftAttendance';
 
 export default function Attendance({ search }) {
   const [me, setMe] = useState(null);
@@ -35,9 +36,10 @@ export default function Attendance({ search }) {
   if (!me) return <LoadingState label="Đang tải dữ liệu chấm công…" />;
 
   const isManager = me.canManage;
+  const shiftTabLabel = me.isOfficial ? 'Chấm công OT' : 'Chấm công';
   const tabs = isManager
     ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)'], ['otpay', 'Chấm công OT']]
-    : [['me', 'Chấm công của tôi'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
+    : [['me', 'Chấm công của tôi'], ['shift', shiftTabLabel], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
   const activeTab = tab || (isManager ? 'day' : 'me');
 
   const goTab = (id) => {
@@ -64,6 +66,11 @@ export default function Attendance({ search }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <CheckInPanel me={me} onChanged={load} />
           <MyHistory />
+        </div>
+      )}
+      {activeTab === 'shift' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <ShiftAttendance me={me} onChanged={load} />
         </div>
       )}
       {activeTab === 'day' && <AttendanceTable search={search} />}
