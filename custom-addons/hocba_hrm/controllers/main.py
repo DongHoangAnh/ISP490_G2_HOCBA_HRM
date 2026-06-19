@@ -244,6 +244,44 @@ def _att_day_table(env, date_str):
     }
 
 
+def _ot_row(env, s):
+    """Một ca OT cho SPA (camelCase) + cờ counted / giờ quy đổi.
+    counted = ngày local của start có bản ghi attendance đã check-in."""
+    hours = ((s.end - s.start).total_seconds() / 3600.0) if (s.start and s.end) else 0.0
+    d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
+    counted = bool(d and env['hocba.attendance'].sudo().search_count([
+        ('employee_id', '=', s.employee_id.id), ('date', '=', d),
+        ('check_in', '!=', False)]))
+    emp = s.employee_id
+    return {
+        'id': s.id, 'empId': emp.id, 'empName': emp.name,
+        'code': emp.x_employee_code or '—',
+        'depName': emp.department_id.name or 'Chưa gán',
+        'date': _d(d) if d else None,
+        'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
+        'otLevel': s.ot_level, 'rate': s.rate,
+        'hours': round(hours, 2), 'counted': counted,
+        'creditHours': round(hours * s.rate, 2) if counted else 0.0,
+        'state': s.state,
+    }
+
+
+def _ot_for_employee(env, emp, first, last):
+    """Tổng OT của 1 NV trong [first,last] (ca approved, start trong tháng,
+    chỉ cộng ca counted). Trả {otHours, otCreditHours}."""
+    shifts = env['hocba.work_shift'].sudo().search([
+        ('employee_id', '=', emp.id), ('state', '=', 'approved')])
+    rows = []
+    for s in shifts:
+        d = fields.Datetime.context_timestamp(s, s.start).date()
+        if first <= d <= last:
+            rows.append(_ot_row(env, s))
+    return {
+        'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
+        'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+    }
+
+
 def _att_me_history(env, month_str):
     """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -282,6 +320,9 @@ def _att_me_history(env, month_str):
         'netCredit': round(total_credit - deficit_credit, 2),
         'violationDays': len(violations),
     }
+    ot = _ot_for_employee(env, emp, first, last)
+    summary['otHours'] = ot['otHours']
+    summary['otCreditHours'] = ot['otCreditHours']
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
