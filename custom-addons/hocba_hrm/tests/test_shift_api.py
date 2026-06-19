@@ -269,3 +269,18 @@ class TestShiftApi(TransactionCase):
         s = self._make_shift()
         res = _shift_cancel(self.env(user=self.hrm), s.id)
         self.assertEqual(res, {'ok': True})
+
+    def test_ctv_forced_level_100(self):
+        env = self.env(user=self.user)
+        row = _shift_create(env, {
+            'start': '2026-06-15T09:00', 'end': '2026-06-15T11:00',
+            'shiftType': 'ctv', 'otLevel': '300', 'reason': 'x'})
+        self.assertEqual(row['otLevel'], '100')
+        self.assertEqual(row['rate'], 1.0)
+
+    def test_set_level_blocked_for_ctv(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        s = self._make_shift(shift_type='ctv', state='approved', ot_level='100')
+        env = self.env(user=self.hrm)
+        with self.assertRaises(ValidationError):
+            _shift_set_level(env, s.id, '150')

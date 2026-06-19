@@ -596,6 +596,8 @@ def _shift_create(env, body):
     level = body.get('otLevel') or '100'
     if level not in ('100', '150', '300'):
         raise ValidationError('Mức hệ số không hợp lệ.')
+    if shift_type == 'ctv':
+        level = '100'   # CTV cố định 100%, bỏ qua giá trị client gửi
     start = _to_utc(env, body.get('start'))
     end = _to_utc(env, body.get('end'))
     if not start or not end:
@@ -703,6 +705,8 @@ def _shift_set_level(env, shift_id, level):
         raise AccessError('forbidden')
     if shift.state != 'approved':
         raise ValidationError('Chỉ đổi mức cho ca đã duyệt.')
+    if shift.shift_type == 'ctv':
+        raise ValidationError('Ca CTV cố định hệ số 100%.')
     shift.write({'ot_level': level})
     return _shift_row(shift)
 
