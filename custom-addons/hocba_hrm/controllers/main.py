@@ -482,6 +482,7 @@ def _shift_row(s):
         'start': _dt_local(s, s.start),
         'end': _dt_local(s, s.end),
         'shiftType': s.shift_type,
+        'otLevel': s.ot_level,
         'rate': s.rate,
         'state': s.state,
         'reason': s.reason or '',
@@ -509,6 +510,9 @@ def _shift_create(env, body):
     shift_type = body.get('shiftType')
     if shift_type not in ('ctv', 'ot'):
         raise ValidationError('Loại ca không hợp lệ.')
+    level = body.get('otLevel') or '100'
+    if level not in ('100', '150', '300'):
+        raise ValidationError('Mức hệ số không hợp lệ.')
     start = _to_utc(env, body.get('start'))
     end = _to_utc(env, body.get('end'))
     if not start or not end:
@@ -517,7 +521,7 @@ def _shift_create(env, body):
         'employee_id': emp.id,
         'start': start, 'end': end,
         'shift_type': shift_type,
-        'rate': Shift._default_rate(start),
+        'ot_level': level,
         'reason': (body.get('reason') or '').strip() or False,
     }
     if as_manager:
@@ -590,8 +594,10 @@ def _shift_decide(env, shift_id, approve, body):
             if body['shiftType'] not in ('ctv', 'ot'):
                 raise ValidationError('Loại ca không hợp lệ.')
             vals['shift_type'] = body['shiftType']
-        if 'rate' in body:
-            vals['rate'] = float(body['rate'])
+        if 'otLevel' in body:
+            if body['otLevel'] not in ('100', '150', '300'):
+                raise ValidationError('Mức hệ số không hợp lệ.')
+            vals['ot_level'] = body['otLevel']
         vals['state'] = 'approved'
     else:
         vals['state'] = 'rejected'
