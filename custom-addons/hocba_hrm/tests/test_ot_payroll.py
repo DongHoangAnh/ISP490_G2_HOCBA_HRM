@@ -88,3 +88,52 @@ class TestOtPayroll(TransactionCase):
         data = _ot_table(self.env(user=self.user), '2026-06')
         self.assertFalse(data['canManage'])
         self.assertTrue(all(r['empId'] == self.emp.id for r in data['rows']))
+
+    def test_set_level_manager_in_scope(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        s = self._shift('2026-06-15', level='150')
+        hrm = self.env['res.users'].create({
+            'name': 'HRM SL', 'login': 'hrm_sl',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        row = _shift_set_level(self.env(user=hrm), s.id, '300')
+        self.assertEqual(row['otLevel'], '300')
+        self.assertEqual(row['rate'], 3.0)
+
+    def test_set_level_bad_value_raises(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        from odoo.exceptions import ValidationError
+        s = self._shift('2026-06-15')
+        hrm = self.env['res.users'].create({
+            'name': 'HRM SL2', 'login': 'hrm_sl2',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        with self.assertRaises(ValidationError):
+            _shift_set_level(self.env(user=hrm), s.id, '999')
+
+    def test_set_level_pending_raises(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        from odoo.exceptions import ValidationError
+        s = self._shift('2026-06-15', state='pending')
+        hrm = self.env['res.users'].create({
+            'name': 'HRM SL3', 'login': 'hrm_sl3',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        with self.assertRaises(ValidationError):
+            _shift_set_level(self.env(user=hrm), s.id, '300')
+
+    def test_set_level_out_of_scope_forbidden(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        from odoo.exceptions import AccessError
+        dept = self.env['hr.department'].create({'name': 'Phòng Q'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP Q'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPQ', 'login': 'tpq_ot'})
+        mgr_emp.user_id = mgr_user
+        s = self._shift('2026-06-15')   # self.emp ngoài Phòng Q
+        with self.assertRaises(AccessError):
+            _shift_set_level(self.env(user=mgr_user), s.id, '300')
+
+    def test_set_level_missing_returns_none(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        hrm = self.env['res.users'].create({
+            'name': 'HRM SL4', 'login': 'hrm_sl4',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+        self.assertIsNone(_shift_set_level(self.env(user=hrm), 999999, '300'))

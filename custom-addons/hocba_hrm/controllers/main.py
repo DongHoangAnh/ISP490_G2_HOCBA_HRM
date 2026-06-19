@@ -687,6 +687,23 @@ def _shift_decide(env, shift_id, approve, body):
     return _shift_row(shift)
 
 
+def _shift_set_level(env, shift_id, level):
+    """Manager (trong phạm vi) đổi mốc hệ số 1 ca approved (màn Chấm công OT).
+    Trả _shift_row; None nếu không tồn tại; AccessError nếu vượt quyền;
+    ValidationError nếu mốc sai / ca không ở trạng thái approved."""
+    if level not in ('100', '150', '300'):
+        raise ValidationError('Mức hệ số không hợp lệ.')
+    shift = env['hocba.work_shift'].sudo().browse(shift_id)
+    if not shift.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
+        raise AccessError('forbidden')
+    if shift.state != 'approved':
+        raise ValidationError('Chỉ đổi mức cho ca đã duyệt.')
+    shift.write({'ot_level': level})
+    return _shift_row(shift)
+
+
 def _shift_cancel(env, shift_id):
     """Hủy ca PENDING. Quyền: owner của ca hoặc manager trong phạm vi.
     Trả {'ok':True}; None nếu không tồn tại; AccessError nếu vượt quyền;
@@ -2020,3 +2037,19 @@ class HocBaHRM(http.Controller):
         if res is None:
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(res)
+
+    @http.route('/hocba-hrm/api/shifts/<int:shift_id>/level', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_shift_set_level(self, shift_id, **kw):
+        try:
+            row = _shift_set_level(request.env, shift_id,
+                                   (request.get_json_data() or {}).get('otLevel'))
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)
