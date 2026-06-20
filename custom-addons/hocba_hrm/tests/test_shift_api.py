@@ -265,9 +265,9 @@ class TestShiftApi(TransactionCase):
 
     def test_decide_already_decided_raises(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift(state='approved')
+        s = self._make_future_shift(state='rejected')
         with self.assertRaises(UserError):
-            _shift_decide(env, s.id, False, {})
+            _shift_decide(env, s.id, True, {})
 
     def test_decide_missing_returns_none(self):
         self.assertIsNone(_shift_decide(self.env(user=self.hrm), 999999, True, {}))

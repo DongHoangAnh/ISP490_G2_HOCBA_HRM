@@ -37,6 +37,7 @@ class TestShiftDeadlineGuard(TransactionCase):
         s = self._shift(fields.Datetime.now() + timedelta(hours=2), state='approved')
         _shift_decide(env, s.id, False, {'reviewNote': 'đổi ý'})
         self.assertEqual(s.state, 'rejected')
+        self.assertEqual(s.review_note, 'đổi ý')
 
     def test_decide_rejected_shift_is_already_decided(self):
         env = self.env(user=self.mgr_user)
