@@ -9,6 +9,7 @@
         'security/ir.model.access.csv',
         'data/hocba_attendance_status_data.xml',
         'data/hocba_attendance_policy_data.xml',
+        'data/hocba_work_shift_cron.xml',
         'views/hr_attendance_status_views.xml',
         'views/hr_work_assignment_views.xml',
         'views/hr_attendance_views.xml',

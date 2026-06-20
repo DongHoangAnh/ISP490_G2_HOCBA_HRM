@@ -69,8 +69,23 @@ class TestWorkCreditFields(TransactionCase):
         # 09:00 in (02:00 UTC), 14:00 out (07:00 UTC) = chỉ 5h, < check_in+6h
         rec = self._rec('2026-06-17 02:00:00', '2026-06-17 07:00:00')
         self.assertEqual(rec.afternoon_credit, 0.0)
-        self.assertEqual(rec.missing_minutes, 180)
+        self.assertEqual(rec.work_credit, 0.5)
+        # Nửa công -> phút thiếu so với 4h: worked 5h > 4h -> 0
+        self.assertEqual(rec.missing_minutes, 0)
         self.assertEqual(rec.early_leave_minutes, 180)
+
+    def test_half_day_missing_vs_four_hours(self):
+        # 09:00 in (02:00 UTC), 12:00 out (05:00 UTC) = 3h. Nửa công -> thiếu vs 4h = 60'
+        rec = self._rec('2026-06-17 02:00:00', '2026-06-17 05:00:00')
+        self.assertEqual(rec.work_credit, 0.5)
+        self.assertEqual(rec.missing_minutes, 60)
+
+    def test_missing_minutes_capped_at_240(self):
+        # 10:30 in (03:30 UTC) sau mốc sáng -> morning 0; 12:30 out (05:30 UTC) ->
+        # worked 2h, afternoon 0 -> work_credit 0 -> basis 8h -> 360' kẹp tối đa 240'
+        rec = self._rec('2026-06-17 03:30:00', '2026-06-17 05:30:00')
+        self.assertEqual(rec.work_credit, 0.0)
+        self.assertEqual(rec.missing_minutes, 240)
 
     def test_no_checkout_no_missing(self):
         rec = self._rec('2026-06-17 02:00:00')

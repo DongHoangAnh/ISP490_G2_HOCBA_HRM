@@ -1,6 +1,7 @@
 ﻿import pytz
 from datetime import datetime, time as dt_time
 from markupsafe import Markup, escape
+from psycopg2 import IntegrityError
 
 from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -210,6 +211,10 @@ class HocBaTuyenDung(http.Controller):
             'startDate': _d(a.start_date),
             'offerNote': a.offer_note or '',
             'candidateConfirmed': a.candidate_confirmed or '',
+            # Liên kết hồ sơ nhân viên (sau khi nhận việc)
+            'employeeId': a.employee_id.id or False,
+            'employeeName': a.employee_id.name or '',
+            'employeeCode': a.employee_id.x_employee_code or '',
         }
 
     def _meta(self):
@@ -388,6 +393,83 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(self._cv_row(a))
+
+    def _sync_employee_code_sequence(self):
+        """Đẩy sequence mã NV (hocba.employee.code) vượt qua mã lớn nhất đang có.
+        Cần thiết khi dữ liệu được import với mã HB.xx cố định mà không nâng sequence,
+        khiến next_by_code trả về mã đã tồn tại → trùng khoá."""
+        env = request.env
+        seq = env['ir.sequence'].sudo().search(
+            [('code', '=', 'hocba.employee.code')], limit=1)
+        if not seq:
+            return
+        env.cr.execute(r"""
+            SELECT COALESCE(MAX(CAST(substring(x_employee_code FROM '[0-9]+$') AS INTEGER)), 0)
+            FROM hr_employee
+            WHERE x_employee_code ~ '^HB\.[0-9]+$'
+        """)
+        max_num = env.cr.fetchone()[0] or 0
+        if seq.number_next_actual <= max_num:
+            seq.number_next_actual = max_num + 1
+
+    @http.route('/hocba-hrm/api/recruitment/applicant/<int:app_id>/create-employee',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_create_employee(self, app_id, **kw):
+        """Tạo hồ sơ nhân viên từ ứng viên đã nhận việc (chỉ nhóm tuyển dụng).
+        Map sẵn họ tên / vị trí / phòng ban / liên hệ, đặt trạng thái Thử việc,
+        liên kết ngược applicant ↔ employee. Chống tạo trùng: nếu đã có thì trả về luôn."""
+        if not self._is_recruiter():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        a = request.env['hr.applicant'].sudo().browse(app_id)
+        if not a.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(self._applicant_dep_id(a)):
+            return self._forbidden()
+        # Đã tạo rồi → trả về hồ sơ hiện có (không tạo trùng).
+        if a.employee_id:
+            return request.make_json_response({
+                'created': False, 'employeeId': a.employee_id.id,
+                'employeeName': a.employee_id.name or '',
+                'employeeCode': a.employee_id.x_employee_code or '',
+                'message': 'Ứng viên này đã có hồ sơ nhân viên.',
+            })
+        if not (a.partner_name or '').strip():
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Ứng viên chưa có họ tên.'}, status=400)
+        # Đồng bộ sequence mã NV để tránh trùng mã đã tồn tại (DB import lệch sequence).
+        self._sync_employee_code_sequence()
+        try:
+            emp = request.env['hr.employee'].sudo().create({
+                'name': a.partner_name,
+                'job_id': a.job_id.id or False,
+                'job_title': a.job_id.name or False,
+                'department_id': self._applicant_dep_id(a) or False,
+                'work_email': a.email_from or False,
+                'work_phone': a.partner_phone or False,
+                'private_email': a.email_from or False,
+                'private_phone': a.partner_phone or False,
+                'x_employment_status': 'probation',
+                'applicant_ids': [(6, 0, [a.id])],
+            })
+            # Đảm bảo liên kết ngược (phòng khi o2m không tự set inverse).
+            if not a.employee_id:
+                a.write({'employee_id': emp.id})
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự bị trùng, vui lòng thử lại. Nếu vẫn lỗi, '
+                            'kiểm tra dãy số mã nhân sự (sequence hocba.employee.code).'},
+                status=400)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({
+            'created': True, 'employeeId': emp.id,
+            'employeeName': emp.name or '',
+            'employeeCode': emp.x_employee_code or '',
+        })
 
     # ------------------------------------------------------------------
     # Vị trí tuyển dụng / JD (hr.job) — tab "Vị trí / JD" của SPA.

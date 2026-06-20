@@ -13,10 +13,11 @@ const STATE_KIND = { pending: 'amber', approved: 'green', rejected: 'red' };
 
 export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
   const isPending = shift.state === 'pending';
+  const canAct = !shift.locked && shift.state !== 'rejected';   // duyệt/sửa/từ chối được
   const [start, setStart] = useState(shift.start ? shift.start.slice(0, 16) : '');
   const [end, setEnd] = useState(shift.end ? shift.end.slice(0, 16) : '');
   const [stype, setStype] = useState(shift.shiftType);
-  const [rate, setRate] = useState(shift.rate);
+  const [level, setLevel] = useState(shift.otLevel);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -25,7 +26,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
     setBusy(true); setErr(null);
     try {
       const body = approve
-        ? { start: start || null, end: end || null, shiftType: stype, rate: Number(rate), reviewNote: note }
+        ? { start: start || null, end: end || null, shiftType: stype, otLevel: level, reviewNote: note }
         : { reviewNote: note };
       await (approve ? approveShift(shift.id, body) : rejectShift(shift.id, body));
       onChanged && onChanged();
@@ -70,7 +71,12 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
         )}
       </div>
 
-      {canManage && isPending && (
+      {shift.locked && (
+        <div className="muted" style={{ padding: '0 24px 14px', fontSize: 12.5 }}>
+          Đã quá hạn thao tác (trước giờ bắt đầu 1 phút) — không thể sửa/duyệt/từ chối.
+        </div>
+      )}
+      {canManage && canAct && (
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 12 }}>Bắt đầu
@@ -84,8 +90,12 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
                 <option value="ot">OT</option><option value="ctv">CTV</option>
               </select>
             </label>
-            <label style={{ fontSize: 12 }}>Hệ số
-              <input type="number" step="0.5" className="sel" style={{ width: 80 }} value={rate} onChange={(e) => setRate(e.target.value)} />
+            <label style={{ fontSize: 12 }}>Mức hệ số
+              <select className="sel" value={level} onChange={(e) => setLevel(e.target.value)}>
+                <option value="100">100%</option>
+                <option value="150">150%</option>
+                <option value="300">300%</option>
+              </select>
             </label>
           </div>
           <input className="sel" placeholder="Ghi chú duyệt" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -96,7 +106,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
           </div>
         </div>
       )}
-      {!canManage && isPending && (
+      {!canManage && isPending && !shift.locked && (
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
           {err && <div style={{ color: 'var(--red-600)', fontSize: 12.5, marginBottom: 8 }}>{err}</div>}
           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-600)' }} disabled={busy} onClick={cancel}>Hủy ca</button>
