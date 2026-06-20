@@ -19,6 +19,7 @@ const NAV = [
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
+    { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
   ]},
 ];
