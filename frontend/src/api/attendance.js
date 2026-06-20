@@ -31,8 +31,8 @@ export const approveRequest = (id, body) =>
 export const rejectRequest = (id, body) =>
   hbPost(`/hocba-hrm/api/attendance/requests/${id}/reject`, body);
 
-export const fetchWeekShifts = (monday) =>
-  hbGet(`/hocba-hrm/api/shifts/week?monday=${monday}`);
+export const fetchWeekShifts = (monday, type) =>
+  hbGet(`/hocba-hrm/api/shifts/week?monday=${monday}${type ? `&type=${type}` : ''}`);
 export const createShift = (body) =>
   hbPost('/hocba-hrm/api/shifts', body);
 export const approveShift = (id, body) =>
@@ -51,3 +51,8 @@ export const shiftCheckIn = (shiftId, payload) =>
   hbPost(`/hocba-hrm/api/attendance/shift/${shiftId}/check-in`, payload);
 export const shiftCheckOut = (shiftId, payload) =>
   hbPost(`/hocba-hrm/api/attendance/shift/${shiftId}/check-out`, payload);
+
+export const searchEmployees = (q) =>
+  hbGet(`/hocba-hrm/api/employees/search?q=${encodeURIComponent(q)}`);
+export const previewRequest = (id, body) =>
+  hbPost(`/hocba-hrm/api/attendance/requests/${id}/preview`, body);
