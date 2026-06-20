@@ -20,6 +20,8 @@ export const closeBatch = (batchId) =>
 // ── Payslip ─────────────────────────────────────────────
 export const fetchPayslips = (params) =>
   g('/hocba-hrm/api/payroll/payslip?' + new URLSearchParams(params));
+export const fetchEmployeePayroll = (params) =>
+  g('/hocba-hrm/api/payroll/employee-payroll?' + new URLSearchParams(params));
 export const fetchPayslip = (id) =>
   g(`/hocba-hrm/api/payroll/payslip/${id}`);
 export const computePayslip = (id) =>

@@ -20,5 +20,12 @@ export default defineConfig({
   build: {
     outDir: '../custom-addons/hocba_hrm/static/spa',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name][extname]',
+      },
+    },
   },
 });

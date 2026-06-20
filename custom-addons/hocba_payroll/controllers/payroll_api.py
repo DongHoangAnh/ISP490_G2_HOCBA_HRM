@@ -260,6 +260,78 @@ class PayrollAPI(http.Controller):
             _logger.exception('list_payslips error')
             return _error_response(str(e), status=500)
 
+    # ═════════════════════════════════════════════════════════
+    # EMPLOYEE PAYROLL SUMMARY
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/employee-payroll', type='http', auth='user',
+                methods=['GET'], csrf=False)
+    def employee_payroll_summary(self, **kw):
+        """Danh sách nhân viên kèm bảng lương mới nhất theo tháng/năm."""
+        try:
+            today = fields.Date.today()
+            month = int(kw.get('month') or today.month)
+            year = int(kw.get('year') or today.year)
+            nm = month + 1 if month < 12 else 1
+            ny = year if month < 12 else year + 1
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{ny}-{nm:02d}-01'
+
+            env = request.env
+
+            # 1) Salary rules → dynamic columns
+            rules = env['hb.salary.rule'].sudo().search(
+                [('active', '=', True), ('appears_on_payslip', '=', True)],
+                order='sequence, id',
+            )
+            columns = [{
+                'id': r.id, 'code': r.code,
+                'name': r.name, 'sequence': r.sequence,
+            } for r in rules]
+
+            # 2) Payslips trong kỳ (mới nhất mỗi NV)
+            slips = env['hb.payslip'].sudo().search(
+                [('date_from', '>=', date_start),
+                 ('date_from', '<', date_end),
+                 ('state', '!=', 'cancel')],
+                order='date_from desc, id desc',
+            )
+            slip_map = {}  # employee_id → payslip (first = latest)
+            for s in slips:
+                if s.employee_id.id not in slip_map:
+                    slip_map[s.employee_id.id] = s
+
+            # 3) Active employees
+            employees = env['hr.employee'].sudo().search(
+                [('active', '=', True)],
+                order='x_employee_code, id',
+            )
+
+            rows = []
+            for emp in employees:
+                slip = slip_map.get(emp.id)
+                amounts = {}
+                if slip:
+                    for ln in slip.line_ids:
+                        amounts[ln.code] = ln.amount
+                rows.append({
+                    'id': emp.id,
+                    'code': emp.x_employee_code or '',
+                    'name': emp.name or '',
+                    'job_title': emp.job_id.name if emp.job_id else '',
+                    'department': emp.department_id.name if emp.department_id else '',
+                    'payslip_id': slip.id if slip else None,
+                    'payslip_state': slip.state if slip else None,
+                    'amounts': amounts,
+                })
+
+            return _success_response({
+                'month': month, 'year': year,
+                'columns': columns, 'employees': rows,
+            })
+        except Exception as e:
+            _logger.exception('employee_payroll_summary error')
+            return _error_response(str(e), status=500)
+
     @http.route('/hocba-hrm/api/payroll/payslip/<int:slip_id>', type='http', auth='user',
                 methods=['GET'], csrf=False)
     def get_payslip(self, slip_id, **kw):

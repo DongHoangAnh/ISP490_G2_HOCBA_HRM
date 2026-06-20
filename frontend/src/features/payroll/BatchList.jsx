@@ -1,126 +1,183 @@
-/* Danh sách đợt lương — Owner: Hùng. */
+/* Danh sach nhan vien kem bang luong theo thang — Owner: Hung. */
 import { useState, useEffect } from 'react';
-import { fetchBatches } from '../../api/payroll';
+import { fetchEmployeePayroll } from '../../api/payroll';
 import Icon from '../../components/Icon';
-import Badge from '../../components/Badge';
-import { LoadingState, ErrorState } from '../../components/states';
-import { fmtDate, hbVND } from '../../utils/format';
-import { batchState, yearOptions } from './util';
-import BatchDrawer from './BatchDrawer';
-import BatchForm from './BatchForm';
+import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { hbVND } from '../../utils/format';
+import { monthOptions, yearOptions, currentMonth, currentYear } from './util';
+import PayslipDrawer from './PayslipDrawer';
 
-const CHIPS = [
-  ['all', 'Tất cả'],
-  ['draft', 'Nháp'],
-  ['computed', 'Đã tính'],
-  ['paid', 'Đã trả'],
-];
+/* Sticky helpers — giu 5 cot trai co dinh khi cuon ngang */
+const COL_W = [50, 90, 180, 120, 130]; // STT, Ma, Ten, ChucVu, PhongBan
+const cumLeft = COL_W.map((_, i) => COL_W.slice(0, i).reduce((a, b) => a + b, 0));
+const stickyTh = (i) => ({
+  position: 'sticky', left: cumLeft[i], zIndex: 3,
+  background: 'var(--surface-2, #f8f9fa)', minWidth: COL_W[i],
+});
+const stickyTd = (i) => ({
+  position: 'sticky', left: cumLeft[i], zIndex: 1,
+  background: '#fff', minWidth: COL_W[i],
+});
+const stickyFt = (i) => ({
+  position: 'sticky', left: cumLeft[i], zIndex: 1,
+  background: 'var(--gray-50, #f9fafb)', minWidth: COL_W[i],
+});
 
 export default function BatchList({ search }) {
+  const [month, setMonth] = useState(currentMonth());
+  const [year, setYear] = useState(currentYear());
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
-  const [creating, setCreating] = useState(false);
-  const [stFilter, setStFilter] = useState('all');
-  const [yrFilter, setYrFilter] = useState(String(new Date().getFullYear()));
 
   const load = () => {
     setErr(null); setData(null);
-    fetchBatches().then(setData).catch((e) => setErr(e.message));
+    fetchEmployeePayroll({ month, year })
+      .then(setData)
+      .catch((e) => setErr(e.message));
   };
-  useEffect(load, []);
+  useEffect(load, [month, year]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
-  if (!data) return <LoadingState label="Đang tải danh sách bảng lương..." />;
 
-  const filtered = data.filter((b) => {
-    if (stFilter !== 'all' && b.state !== stFilter) return false;
-    if (yrFilter && b.date_start && !b.date_start.startsWith(yrFilter)) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!(b.name || '').toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
+  /* Filter theo search */
+  const employees = data ? data.employees.filter((e) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (e.name || '').toLowerCase().includes(q)
+      || (e.code || '').toLowerCase().includes(q);
+  }) : [];
 
-  const counts = {};
-  data.forEach((b) => { counts[b.state] = (counts[b.state] || 0) + 1; });
+  const columns = data ? data.columns : [];
+
+  /* Metrics */
+  const total = employees.length;
+  const withSlip = employees.filter((e) => e.payslip_id).length;
+  const netCode = columns.find((c) => c.code === 'thuc_lanh')?.code;
+  const totalNet = netCode
+    ? employees.reduce((s, e) => s + (e.amounts[netCode] || 0), 0) : 0;
+  const avgNet = withSlip > 0 ? Math.round(totalNet / withSlip) : 0;
 
   return (
     <>
-      {/* Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
-        {[
-          ['Tổng kỳ', data.length, 'calendar'],
-          ['Nháp', counts.draft || 0, 'file-text'],
-          ['Đã tính', counts.computed || 0, 'calculator'],
-          ['Đã trả', counts.paid || 0, 'check-circle'],
-        ].map(([label, val, icon]) => (
-          <div key={label} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <Icon name={icon} size={22} />
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>{val}</div>
-              <div className="muted" style={{ fontSize: 12.5 }}>{label}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
+      {/* Filter bar */}
       <div className="filterbar" style={{ marginBottom: 14 }}>
-        <select className="sel" value={yrFilter} onChange={(e) => setYrFilter(e.target.value)}>
+        <select className="sel" value={month} onChange={(e) => setMonth(e.target.value)}>
+          {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select className="sel" value={year} onChange={(e) => setYear(e.target.value)}>
           {yearOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <div className="chips">
-          {CHIPS.map(([val, label]) => (
-            <button key={val} className={'chip' + (stFilter === val ? ' active' : '')}
-              onClick={() => setStFilter(val)}>
-              {label}{val !== 'all' && counts[val] ? ` (${counts[val]})` : ''}
-            </button>
+        <div style={{ flex: 1 }} />
+        {data && (
+          <div style={{ fontSize: 13.5, color: 'var(--muted)' }}>
+            {total} nhan vien
+          </div>
+        )}
+      </div>
+
+      {/* Metrics */}
+      {data && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
+          {[
+            ['Tong NV', total, 'users'],
+            ['Co phieu luong', withSlip, 'file-text'],
+            ['Tong thuc linh', hbVND(totalNet), 'dollar-sign'],
+            ['Binh quan', hbVND(avgNet), 'trending-up'],
+          ].map(([label, val, icon]) => (
+            <div key={label} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <Icon name={icon} size={22} />
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800 }}>{val}</div>
+                <div className="muted" style={{ fontSize: 12.5 }}>{label}</div>
+              </div>
+            </div>
           ))}
         </div>
-        <div style={{ flex: 1 }} />
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>
-          <Icon name="plus" size={16} />Tạo đợt lương
-        </button>
-      </div>
+      )}
 
       {/* Table */}
       <div className="card">
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Kỳ lương</th>
-                <th>Từ ngày</th>
-                <th>Đến ngày</th>
-                <th style={{ textAlign: 'right' }}>Số phiếu</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32 }} className="muted">Không có dữ liệu</td></tr>
-              )}
-              {filtered.map((b) => {
-                const [stLabel, stKind] = batchState(b.state);
-                return (
-                  <tr key={b.id} onClick={() => setSel(b)} style={{ cursor: 'pointer' }}>
-                    <td style={{ fontWeight: 600 }}>{b.name}</td>
-                    <td>{fmtDate(b.date_start)}</td>
-                    <td>{fmtDate(b.date_end)}</td>
-                    <td style={{ textAlign: 'right' }}>{b.payslip_count}</td>
-                    <td><Badge kind={stKind}>{stLabel}</Badge></td>
+        {!data ? (
+          <div style={{ padding: 36 }}>
+            <LoadingState label="Dang tai bang luong..." />
+          </div>
+        ) : employees.length === 0 ? (
+          <div style={{ padding: 36, textAlign: 'center' }}>
+            <EmptyState>Khong co du lieu thang {month}/{year}.</EmptyState>
+          </div>
+        ) : (
+          <div className="tbl-wrap" style={{ overflowX: 'auto' }}>
+            <table className="tbl" style={{ minWidth: cumLeft[4] + COL_W[4] + columns.length * 120 }}>
+              <thead>
+                <tr>
+                  <th style={stickyTh(0)}>STT</th>
+                  <th style={stickyTh(1)}>Ma NV</th>
+                  <th style={stickyTh(2)}>Ho Ten</th>
+                  <th style={stickyTh(3)}>Chuc Vu</th>
+                  <th style={{ ...stickyTh(4), borderRight: '2px solid var(--border, #dee2e6)' }}>Phong ban</th>
+                  {columns.map((c) => (
+                    <th key={c.code} style={{ textAlign: 'right', whiteSpace: 'nowrap', minWidth: 110 }}>
+                      {c.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((emp, idx) => (
+                  <tr
+                    key={emp.id}
+                    style={{ cursor: emp.payslip_id ? 'pointer' : 'default' }}
+                    onClick={() => emp.payslip_id && setSel(emp)}
+                  >
+                    <td style={stickyTd(0)}>{idx + 1}</td>
+                    <td style={stickyTd(1)}>
+                      <code style={{ fontSize: 12.5 }}>{emp.code || '—'}</code>
+                    </td>
+                    <td style={{ ...stickyTd(2), fontWeight: 600 }}>{emp.name}</td>
+                    <td style={stickyTd(3)}>{emp.job_title || '—'}</td>
+                    <td style={{ ...stickyTd(4), borderRight: '2px solid var(--border, #dee2e6)' }}>
+                      {emp.department || '—'}
+                    </td>
+                    {columns.map((c) => (
+                      <td key={c.code} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {emp.amounts[c.code] != null ? hbVND(emp.amounts[c.code]) : ''}
+                      </td>
+                    ))}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: 'var(--gray-50)', fontWeight: 700 }}>
+                  <td style={stickyFt(0)} />
+                  <td style={stickyFt(1)} />
+                  <td style={{ ...stickyFt(2), textAlign: 'right', fontSize: 14 }} colSpan={1}>
+                    Tong cong
+                  </td>
+                  <td style={stickyFt(3)} />
+                  <td style={{ ...stickyFt(4), borderRight: '2px solid var(--border, #dee2e6)' }} />
+                  {columns.map((c) => {
+                    const sum = employees.reduce((s, e) => s + (e.amounts[c.code] || 0), 0);
+                    return (
+                      <td key={c.code} style={{ textAlign: 'right', fontSize: 14, whiteSpace: 'nowrap' }}>
+                        {sum ? hbVND(sum) : ''}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
 
-      {sel && <BatchDrawer batch={sel} onClose={() => setSel(null)} onChanged={() => { setSel(null); load(); }} />}
-      {creating && <BatchForm onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} />}
+      {sel && (
+        <PayslipDrawer
+          slip={{ id: sel.payslip_id }}
+          onClose={() => setSel(null)}
+          onChanged={load}
+        />
+      )}
     </>
   );
 }
