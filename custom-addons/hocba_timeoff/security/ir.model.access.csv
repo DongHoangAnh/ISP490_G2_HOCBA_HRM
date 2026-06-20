@@ -10,3 +10,5 @@ access_hb_burnout_line_base_user,hb.timeoff.burnout.line base user,model_hb_time
 access_hb_export_wizard_hr_user,hb.timeoff.export.wizard HR user,model_hb_timeoff_export_wizard,hr.group_hr_user,1,1,1,1
 access_hb_work_day_base_user,hb.work.day base user,model_hb_work_day,base.group_user,1,0,0,0
 access_hb_work_day_hr_manager,hb.work.day hr_manager,model_hb_work_day,hr.group_hr_manager,1,1,1,1
+access_hb_leave_adjustment_hr_user,hb.leave.adjustment hr_user,model_hb_leave_adjustment,hr.group_hr_user,1,0,0,0
+access_hb_leave_adjustment_hr_manager,hb.leave.adjustment hr_manager,model_hb_leave_adjustment,hr.group_hr_manager,1,1,1,0
