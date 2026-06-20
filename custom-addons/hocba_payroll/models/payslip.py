@@ -7,6 +7,7 @@ Design:
     - Backward compatible: teaching work-entry methods kept for teacher structures.
 """
 import logging
+import uuid
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError, UserError
@@ -163,6 +164,21 @@ class HbPayslip(models.Model):
         string='Đã tính', default=False, readonly=True,
     )
 
+    # ── Employee confirmation ────────────────────────────────
+    x_access_token = fields.Char(
+        string='Access Token', copy=False, index=True,
+        default=lambda self: str(uuid.uuid4()),
+    )
+    x_employee_confirm = fields.Selection([
+        ('pending', 'Chờ xác nhận'),
+        ('confirmed', 'Đã xác nhận'),
+        ('rejected', 'Từ chối'),
+    ], string='NV xác nhận', default='pending', tracking=True)
+    x_employee_feedback = fields.Text(string='Phản hồi nhân viên')
+    x_email_sent = fields.Boolean(string='Đã gửi mail', default=False)
+    x_email_sent_date = fields.Datetime(string='Ngày gửi mail')
+    x_confirmed_date = fields.Datetime(string='Ngày xác nhận')
+
     # ── Aggregated amounts ──────────────────────────────────
     gross_amount = fields.Float(
         string='Gross', digits=(16, 0),
@@ -194,6 +210,8 @@ class HbPayslip(models.Model):
         for vals in vals_list:
             if vals.get('number', _('Mới')) == _('Mới'):
                 vals['number'] = self.env['ir.sequence'].next_by_code('hb.payslip') or '/'
+            if not vals.get('x_access_token'):
+                vals['x_access_token'] = str(uuid.uuid4())
         return super().create(vals_list)
 
     # ═════════════════════════════════════════════════════════
@@ -580,6 +598,69 @@ class HbPayslip(models.Model):
             ))
 
     # ═════════════════════════════════════════════════════════
+    # EMAIL — send payslip to employee
+    # ═════════════════════════════════════════════════════════
+    def action_send_payslip_mail(self):
+        """Send payslip email to employee with public view link."""
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        for slip in self:
+            employee = slip.employee_id
+            email_to = employee.work_email or getattr(employee, 'email', False)
+            if not email_to:
+                continue
+            if not slip.x_access_token:
+                slip.x_access_token = str(uuid.uuid4())
+
+            view_url = f'{base_url}/payslip/view/{slip.x_access_token}'
+            month = slip.date_from.strftime('%m') if slip.date_from else ''
+            year = slip.date_from.strftime('%Y') if slip.date_from else ''
+
+            mail_vals = {
+                'subject': f'Bảng lương tháng {month}/{year} — {employee.name}',
+                'email_to': email_to,
+                'body_html': slip._build_payslip_email_body(view_url, month, year),
+                'auto_delete': True,
+            }
+            mail = self.env['mail.mail'].sudo().create(mail_vals)
+            mail.send()
+
+            slip.write({
+                'x_email_sent': True,
+                'x_email_sent_date': fields.Datetime.now(),
+            })
+
+    def _build_payslip_email_body(self, view_url, month, year):
+        """Build HTML body for payslip notification email."""
+        self.ensure_one()
+        gross = f'{self.gross_amount:,.0f}'
+        net = f'{self.net_amount:,.0f}'
+        return f'''
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+            <h2 style="color:#1f2937;">Bảng lương tháng {month}/{year}</h2>
+            <p>Xin chào <strong>{self.employee_id.name}</strong>,</p>
+            <p>Phiếu lương tháng {month}/{year} của bạn đã sẵn sàng.</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                <tr style="background:#f3f4f6;">
+                    <td style="padding:8px 12px;font-weight:600;">Tổng thu nhập</td>
+                    <td style="padding:8px 12px;text-align:right;">{gross} ₫</td>
+                </tr>
+                <tr style="background:#ecfdf5;">
+                    <td style="padding:8px 12px;font-weight:600;color:#065f46;">Thực lĩnh</td>
+                    <td style="padding:8px 12px;text-align:right;font-weight:700;color:#065f46;">{net} ₫</td>
+                </tr>
+            </table>
+            <p>Vui lòng nhấn nút bên dưới để xem chi tiết và xác nhận:</p>
+            <a href="{view_url}"
+               style="display:inline-block;padding:12px 24px;background:#2563eb;
+                      color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+                Xem phiếu lương
+            </a>
+            <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb;"/>
+            <p style="font-size:12px;color:#9ca3af;">Email này được gửi tự động. Vui lòng không reply.</p>
+        </div>
+        '''
+
+    # ═════════════════════════════════════════════════════════
     # API serialization
     # ═════════════════════════════════════════════════════════
     def _to_api_dict(self):
@@ -602,6 +683,9 @@ class HbPayslip(models.Model):
             'compute_warnings': self.x_compute_warnings,
             'gross_amount': self.gross_amount,
             'net_amount': self.net_amount,
+            'employee_confirm': self.x_employee_confirm,
+            'employee_feedback': self.x_employee_feedback or '',
+            'email_sent': self.x_email_sent,
             'worked_days': [{
                 'code': wd.code,
                 'name': wd.name,

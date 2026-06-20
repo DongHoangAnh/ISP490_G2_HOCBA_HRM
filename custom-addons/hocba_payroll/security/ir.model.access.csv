@@ -15,14 +15,6 @@ access_hb_bank_format_user,access.hb.bank.format.user,model_hb_bank_format,hr.gr
 access_hb_bank_format_manager,access.hb.bank.format.manager,model_hb_bank_format,hr.group_hr_manager,1,1,1,1
 access_hb_bank_file_user,access.hb.bank.file.user,model_hb_bank_file,hr.group_hr_user,1,0,0,0
 access_hb_bank_file_manager,access.hb.bank.file.manager,model_hb_bank_file,hr.group_hr_manager,1,1,1,1
-access_hb_bhxh_report_user,access.hb.bhxh.report.user,model_hb_bhxh_report,hr.group_hr_user,1,0,0,0
-access_hb_bhxh_report_manager,access.hb.bhxh.report.manager,model_hb_bhxh_report,hr.group_hr_manager,1,1,1,1
-access_hb_bhxh_report_line_user,access.hb.bhxh.report.line.user,model_hb_bhxh_report_line,hr.group_hr_user,1,0,0,0
-access_hb_bhxh_report_line_manager,access.hb.bhxh.report.line.manager,model_hb_bhxh_report_line,hr.group_hr_manager,1,1,1,1
-access_hb_etax_report_user,access.hb.etax.report.user,model_hb_etax_report,hr.group_hr_user,1,0,0,0
-access_hb_etax_report_manager,access.hb.etax.report.manager,model_hb_etax_report,hr.group_hr_manager,1,1,1,1
-access_hb_etax_report_line_user,access.hb.etax.report.line.user,model_hb_etax_report_line,hr.group_hr_user,1,0,0,0
-access_hb_etax_report_line_manager,access.hb.etax.report.line.manager,model_hb_etax_report_line,hr.group_hr_manager,1,1,1,1
 access_hb_bank_file_wizard_manager,access.hb.bank.file.wizard.manager,model_hb_bank_file_wizard,hr.group_hr_manager,1,1,1,1
 access_hb_salary_rule_category_user,access.hb.salary.rule.category.user,model_hb_salary_rule_category,hr.group_hr_user,1,0,0,0
 access_hb_salary_rule_category_manager,access.hb.salary.rule.category.manager,model_hb_salary_rule_category,hr.group_hr_manager,1,1,1,1
@@ -34,8 +26,4 @@ access_hb_payslip_worked_days_user,access.hb.payslip.worked.days.user,model_hb_p
 access_hb_payslip_worked_days_manager,access.hb.payslip.worked.days.manager,model_hb_payslip_worked_days,hr.group_hr_manager,1,1,1,1
 access_hb_payslip_input_user,access.hb.payslip.input.user,model_hb_payslip_input,hr.group_hr_user,1,0,0,0
 access_hb_payslip_input_manager,access.hb.payslip.input.manager,model_hb_payslip_input,hr.group_hr_manager,1,1,1,1
-access_hocba_sale_level_user,access.hocba.sale.level.user,model_hocba_sale_level,hr.group_hr_user,1,0,0,0
-access_hocba_sale_level_manager,access.hocba.sale.level.manager,model_hocba_sale_level,hr.group_hr_manager,1,1,1,1
-access_hocba_sale_revenue_user,access.hocba.sale.revenue.user,model_hocba_sale_revenue,hr.group_hr_user,1,0,0,0
-access_hocba_sale_revenue_manager,access.hocba.sale.revenue.manager,model_hocba_sale_revenue,hr.group_hr_manager,1,1,1,1
 access_hb_formula_help_wizard_manager,access.hb.formula.help.wizard.manager,model_hb_formula_help_wizard,hr.group_hr_manager,1,1,1,1

@@ -260,18 +260,37 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .trend-down { color: var(--red-600); }
 
 /* ============ TABLE ============ */
-.tbl-wrap { overflow-x: auto; }
-table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl-wrap { overflow-x: auto; overflow-y: clip; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.tbl th {
-  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
-  color: var(--muted); font-weight: 700; padding: 11px 14px;
-  border-bottom: 1px solid var(--border); white-space: nowrap;
-  background: var(--surface-2);
+  text-align: left; font-size: 12px; font-weight: 600;
+  color: #6b7280; padding: 10px 16px;
+  border-bottom: 1px solid #e5e7eb; white-space: nowrap;
+  background: #fafbfd;
 }
-table.tbl td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.tbl td { padding: 10px 16px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0; }
 table.tbl tr:last-child td { border-bottom: none; }
-table.tbl tbody tr { transition: background .12s; cursor: pointer; }
-table.tbl tbody tr:hover { background: var(--surface-2); }
+table.tbl tbody tr { transition: background .12s; }
+table.tbl tbody tr:hover { background: #f8fafc; }
+
+/* Column resize handle */
+[data-rh] {
+  position: absolute; top: 0; right: -4px;
+  width: 9px; height: 100%;
+  cursor: col-resize; z-index: 10;
+}
+[data-rh]::after {
+  content: ''; position: absolute; top: 0; left: 4px;
+  width: 1px; height: 100%;
+  background: transparent;
+  transition: background .15s; pointer-events: none;
+}
+/* th hover → dark gray line, header-row height only */
+th:hover > [data-rh]::after { background: #6b7280; }
+/* handle hover → blue line extends full table height */
+[data-rh]:hover::after { background: #3b82f6; height: 9999px; }
+/* dragging → keep blue full-height */
+[data-rh].rh-active::after { background: #3b82f6; height: 9999px; }
 .tbl-num { font-variant-numeric: tabular-nums; text-align: right; }
 table.tbl th.tbl-num { text-align: right; }
 .cell-emp { display: flex; align-items: center; gap: 11px; }

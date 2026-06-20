@@ -83,3 +83,7 @@ export const deleteBankFormat = (id) =>
   p(`/hocba-hrm/api/payroll/bank-format/${id}/delete`, {});
 export const fetchContract = (id) =>
   g(`/hocba-hrm/api/payroll/contract/${id}`);
+
+// ── Send payslip mail ───────────────────────────────────
+export const sendPayslipMail = (payslipIds) =>
+  p('/hocba-hrm/api/payroll/payslip/send-mail', { payslip_ids: payslipIds });

@@ -7,6 +7,7 @@ import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import BankFileForm from './BankFileForm';
+import TblWrap from '../../components/TblWrap';
 
 const FILE_STATE = {
   draft: ['Đã tạo', 'gray'],
@@ -67,7 +68,7 @@ export default function BankFile() {
             <EmptyState>Chưa có file chuyển khoản.</EmptyState>
           </div>
         ) : (
-          <div className="tbl-wrap">
+          <TblWrap id="bank-file">
             <table className="tbl">
               <thead>
                 <tr>
@@ -108,7 +109,7 @@ export default function BankFile() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TblWrap>
         )}
       </div>
 

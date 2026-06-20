@@ -6,6 +6,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { slipState, monthOptions, yearOptions, currentMonth, currentYear } from './util';
 import PayslipDrawer from './PayslipDrawer';
+import TblWrap from '../../components/TblWrap';
 
 export default function SalaryHistory() {
   const [month, setMonth] = useState(currentMonth());
@@ -59,7 +60,7 @@ export default function SalaryHistory() {
             <EmptyState>Không có phiếu lương{month && year ? ` tháng ${month}/${year}` : year ? ` năm ${year}` : ''}.</EmptyState>
           </div>
         ) : (
-          <div className="tbl-wrap">
+          <TblWrap id="salary-history">
             <table className="tbl">
               <thead>
                 <tr>
@@ -95,7 +96,7 @@ export default function SalaryHistory() {
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </TblWrap>
         )}
       </div>
 

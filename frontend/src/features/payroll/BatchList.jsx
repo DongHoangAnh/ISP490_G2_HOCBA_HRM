@@ -1,6 +1,6 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchEmployeePayroll } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
@@ -203,6 +203,16 @@ function SalaryDetail({ emp, columns, onClose }) {
   );
 }
 
+/* checkbox col width */
+const CHK_W = 40;
+
+/* NV xac nhan badge styles */
+const CONFIRM_MAP = {
+  pending:   { label: 'Chờ',     bg: '#fef3c7', color: '#92400e' },
+  confirmed: { label: 'Đã XN',   bg: '#d1fae5', color: '#065f46' },
+  rejected:  { label: 'Từ chối', bg: '#fee2e2', color: '#991b1b' },
+};
+
 /* ── Main ── */
 export default function BatchList({ search }) {
   const [month, setMonth] = useState(currentMonth());
@@ -214,9 +224,11 @@ export default function BatchList({ search }) {
   const [cfgOpen, setCfgOpen] = useState(false);
   const [cfg, setCfg] = useState(() => loadCfg() || {});
   const [colWidths, setColWidths] = useState(() => loadWidths());
+  const [checked, setChecked] = useState({});
+  const [sending, setSending] = useState(false);
   const resizeRef = useRef(null);
 
-  const load = () => { setErr(null); setData(null); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
+  const load = () => { setErr(null); setData(null); setChecked({}); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, [month, year]);
   const applyCfg = useCallback((c) => { setCfg(c); saveCfg(c); }, []);
 
@@ -250,6 +262,34 @@ export default function BatchList({ search }) {
 
   const getW = useCallback((key, def) => colWidths[key] || def, [colWidths]);
 
+  /* ── checkbox helpers ── */
+  const empsWithSlip = (data ? data.employees : []).filter((e) => e.payslip_id);
+  const checkedIds = Object.keys(checked).filter((k) => checked[k]).map(Number);
+  const checkedCount = checkedIds.length;
+  const allChecked = empsWithSlip.length > 0 && empsWithSlip.every((e) => checked[e.payslip_id]);
+  const toggleOne = (pid) => setChecked((p) => ({ ...p, [pid]: !p[pid] }));
+  const toggleAll = () => {
+    if (allChecked) setChecked({});
+    else setChecked(Object.fromEntries(empsWithSlip.map((e) => [e.payslip_id, true])));
+  };
+
+  /* ── send mail ── */
+  const handleSendMail = async () => {
+    if (checkedCount === 0 || sending) return;
+    setSending(true);
+    try {
+      const res = await sendPayslipMail(checkedIds);
+      const msg = `Đã gửi ${res.sent} email` + (res.skipped?.length ? `, bỏ qua ${res.skipped.length}` : '');
+      alert(msg);
+      setChecked({});
+      load();
+    } catch (e) {
+      alert('Lỗi gửi mail: ' + e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
   if (err) return <ErrorState message={err} onRetry={load} />;
 
   const emps = data ? data.employees.filter((e) => {
@@ -270,7 +310,8 @@ export default function BatchList({ search }) {
   const fr = cfg.frozen || {};
   const frozenBase = BASE.filter((b) => fr[b.key] !== false);
   const fw = frozenBase.map((b) => getW(b.key, b.w));
-  const cumL = fw.map((_, i) => fw.slice(0, i).reduce((a, b) => a + b, 0));
+  /* offset by CHK_W for checkbox column */
+  const cumL = fw.map((_, i) => CHK_W + fw.slice(0, i).reduce((a, b) => a + b, 0));
 
   const sH = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 5, background: '#fafbfd', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
   const sD = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 2, background: 'inherit', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
@@ -320,6 +361,20 @@ export default function BatchList({ search }) {
 
         <div style={{ flex: 1 }} />
 
+        {checkedCount > 0 && (
+          <button onClick={handleSendMail} disabled={sending}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 14px', borderRadius: 7,
+              border: 'none', background: '#2563eb', color: '#fff',
+              fontSize: 12.5, fontWeight: 600, cursor: sending ? 'wait' : 'pointer',
+              opacity: sending ? .7 : 1,
+            }}>
+            <Icon name="send" size={14} />
+            {sending ? 'Đang gửi...' : `Gửi mail (${checkedCount})`}
+          </button>
+        )}
+
         <button onClick={() => setCfgOpen(true)}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -347,10 +402,20 @@ export default function BatchList({ search }) {
             <table style={{
               width: '100%', borderCollapse: 'separate', borderSpacing: 0,
               tableLayout: 'fixed',
-              minWidth: fw.reduce((a, b) => a + b, 0) + visCols.reduce((s, c) => s + getW(c.code, dataDefW), 0),
+              minWidth: CHK_W + fw.reduce((a, b) => a + b, 0) + visCols.reduce((s, c) => s + getW(c.code, dataDefW), 0) + 100,
             }}>
               <thead>
                 <tr>
+                  {/* checkbox header */}
+                  <th style={{
+                    ...P, position: 'sticky', left: 0, top: 0, zIndex: 6,
+                    width: CHK_W, minWidth: CHK_W, maxWidth: CHK_W,
+                    background: '#fafbfd', borderBottom: '1px solid #e5e7eb',
+                    textAlign: 'center', padding: '10px 0',
+                  }}>
+                    <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                      style={{ width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer' }} />
+                  </th>
                   {frozenBase.map((b, i) => (
                     <th key={b.key} style={{
                       ...sH(i), ...P, position: 'sticky', top: 0,
@@ -378,10 +443,21 @@ export default function BatchList({ search }) {
                       </th>
                     );
                   })}
+                  {/* NV xac nhan header */}
+                  <th style={{
+                    ...P, position: 'sticky', top: 0, zIndex: 3,
+                    fontSize: 12, fontWeight: 600, color: '#6b7280',
+                    textAlign: 'center', background: '#fafbfd',
+                    borderBottom: '1px solid #e5e7eb', width: 100, minWidth: 100, maxWidth: 100,
+                  }}>
+                    NV xác nhận
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {emps.map((emp, idx) => (
+                {emps.map((emp, idx) => {
+                  const cs = CONFIRM_MAP[emp.employee_confirm] || CONFIRM_MAP.pending;
+                  return (
                   <tr key={emp.id}
                     onClick={() => emp.payslip_id && setSel(emp)}
                     style={{
@@ -390,6 +466,20 @@ export default function BatchList({ search }) {
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
+                    {/* checkbox cell */}
+                    <td style={{
+                      ...P, position: 'sticky', left: 0, zIndex: 2,
+                      width: CHK_W, minWidth: CHK_W, maxWidth: CHK_W,
+                      background: 'inherit', textAlign: 'center', padding: '10px 0',
+                      borderBottom: '1px solid #e5e7eb',
+                    }}>
+                      {emp.payslip_id && (
+                        <input type="checkbox" checked={!!checked[emp.payslip_id]}
+                          onChange={(e) => { e.stopPropagation(); toggleOne(emp.payslip_id); }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer' }} />
+                      )}
+                    </td>
                     {frozenBase.map((b, i) => (
                       <td key={b.key} style={{
                         ...sD(i), ...P,
@@ -421,11 +511,34 @@ export default function BatchList({ search }) {
                         </td>
                       );
                     })}
+                    {/* NV xac nhan cell */}
+                    <td style={{
+                      ...P, textAlign: 'center', borderBottom: '1px solid #e5e7eb',
+                      width: 100, minWidth: 100, maxWidth: 100,
+                    }}>
+                      {emp.payslip_id && (
+                        <span style={{
+                          display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+                          fontSize: 11.5, fontWeight: 600,
+                          background: cs.bg, color: cs.color,
+                        }} title={emp.employee_feedback || ''}>
+                          {cs.label}
+                          {emp.email_sent && <span style={{ marginLeft: 4, fontSize: 10 }}>✉</span>}
+                        </span>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr>
+                  {/* checkbox footer */}
+                  <td style={{
+                    ...P, position: 'sticky', left: 0, bottom: 0, zIndex: 5,
+                    width: CHK_W, minWidth: CHK_W, maxWidth: CHK_W,
+                    background: '#f8f9fb', borderTop: '1px solid #e5e7eb',
+                  }} />
                   {frozenBase.map((b, i) => (
                     <td key={b.key} style={{
                       ...sF(i), ...P, position: 'sticky', bottom: 0,
@@ -451,6 +564,12 @@ export default function BatchList({ search }) {
                       </td>
                     );
                   })}
+                  {/* NV xac nhan footer */}
+                  <td style={{
+                    ...P, position: 'sticky', bottom: 0, zIndex: 3,
+                    background: '#f8f9fb', borderTop: '1px solid #e5e7eb',
+                    width: 100, minWidth: 100, maxWidth: 100,
+                  }} />
                 </tr>
               </tfoot>
             </table>

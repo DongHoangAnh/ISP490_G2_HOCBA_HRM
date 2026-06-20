@@ -7,6 +7,7 @@ import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { slipState, CATEGORY_LABEL, HIGHLIGHT_CODES, MUTED_CATEGORIES } from './util';
+import TblWrap from '../../components/TblWrap';
 
 export default function PayslipDrawer({ slip, onClose, onChanged }) {
   const [det, setDet] = useState(null);
@@ -103,7 +104,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           det.lines.length === 0 ? (
             <EmptyState>Chưa có dòng lương. Nhấn "Tính lương" để tính.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="slip-lines">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -154,7 +155,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TblWrap>
           )
         )}
 
@@ -163,7 +164,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           det.worked_days?.length === 0 ? (
             <EmptyState>Chưa có dữ liệu ngày công.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="slip-work">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -184,7 +185,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TblWrap>
           )
         )}
 
@@ -193,7 +194,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           det.inputs?.length === 0 ? (
             <EmptyState>Chưa có dữ liệu đầu vào.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="slip-inputs">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -212,7 +213,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TblWrap>
           )
         )}
       </div>

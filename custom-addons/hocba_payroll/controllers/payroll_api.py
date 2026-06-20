@@ -29,26 +29,6 @@ Endpoints:
     POST   /hocba-hrm/api/payroll/bank-file/<id>/upload  Mark as uploaded
     POST   /hocba-hrm/api/payroll/bank-file/<id>/confirm Mark as confirmed
 
-    ── BHXH Report ────────────────────────────────
-    POST   /hocba-hrm/api/payroll/bhxh                   Create BHXH report
-    GET    /hocba-hrm/api/payroll/bhxh                   List BHXH reports
-    GET    /hocba-hrm/api/payroll/bhxh/<id>              Get BHXH detail
-    POST   /hocba-hrm/api/payroll/bhxh/<id>/compute      Compute BHXH
-    POST   /hocba-hrm/api/payroll/bhxh/<id>/submit       Mark submitted
-
-    ── eTax Report ────────────────────────────────
-    POST   /hocba-hrm/api/payroll/etax                   Create eTax report
-    GET    /hocba-hrm/api/payroll/etax                   List eTax reports
-    GET    /hocba-hrm/api/payroll/etax/<id>              Get eTax detail
-    POST   /hocba-hrm/api/payroll/etax/<id>/compute      Compute eTax
-    POST   /hocba-hrm/api/payroll/etax/<id>/submit       Mark submitted
-
-    ── Sale Revenue ─────────────────────────────────
-    POST   /hocba-hrm/api/payroll/sale-revenue             Create sale revenue
-    GET    /hocba-hrm/api/payroll/sale-revenue              List sale revenues
-    POST   /hocba-hrm/api/payroll/sale-revenue/<id>         Update sale revenue
-    POST   /hocba-hrm/api/payroll/sale-revenue/<id>/delete  Delete sale revenue
-
     ── Config ─────────────────────────────────────
     GET    /hocba-hrm/api/payroll/bank-format             List bank formats
     POST   /hocba-hrm/api/payroll/bank-format             Create bank format
@@ -321,6 +301,9 @@ class PayrollAPI(http.Controller):
                     'department': emp.department_id.name if emp.department_id else '',
                     'payslip_id': slip.id if slip else None,
                     'payslip_state': slip.state if slip else None,
+                    'employee_confirm': slip.x_employee_confirm if slip else None,
+                    'employee_feedback': slip.x_employee_feedback or '' if slip else '',
+                    'email_sent': slip.x_email_sent if slip else False,
                     'amounts': amounts,
                 })
 
@@ -391,6 +374,51 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e))
         except Exception as e:
             _logger.exception('reset_payslip error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
+    # SEND PAYSLIP MAIL
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/payslip/send-mail', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def send_payslip_mail(self, **kw):
+        """Send payslip emails to selected employees."""
+        try:
+            body = _get_json_body()
+            payslip_ids = body.get('payslip_ids', [])
+            if not payslip_ids:
+                return _error_response('Missing payslip_ids.')
+
+            payslips = request.env['hb.payslip'].sudo().browse(payslip_ids)
+            if not payslips.exists():
+                return _error_response('No valid payslips found.', status=404)
+
+            sent = 0
+            skipped = []
+            for slip in payslips:
+                employee = slip.employee_id
+                email_to = employee.work_email or getattr(employee, 'email', False)
+                if not email_to:
+                    skipped.append({
+                        'employee_name': employee.name,
+                        'reason': 'Không có email',
+                    })
+                    continue
+                try:
+                    slip.action_send_payslip_mail()
+                    sent += 1
+                except Exception as e:
+                    skipped.append({
+                        'employee_name': employee.name,
+                        'reason': str(e),
+                    })
+
+            return _success_response({
+                'sent': sent,
+                'skipped': skipped,
+            }, message=f'Đã gửi {sent} email thành công.')
+        except Exception as e:
+            _logger.exception('send_payslip_mail error')
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
@@ -588,259 +616,6 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
-    # BHXH REPORT
-    # ═════════════════════════════════════════════════════════
-    @http.route('/hocba-hrm/api/payroll/bhxh', type='http', auth='user',
-                methods=['POST'], csrf=False)
-    def create_bhxh_report(self, **kw):
-        try:
-            body = _get_json_body()
-            for f in ('period_month', 'period_year', 'batch_id'):
-                if f not in body:
-                    return _error_response(f'Missing required field: {f}')
-            report = request.env['hb.bhxh.report'].sudo().create({
-                'period_month': str(body['period_month']),
-                'period_year': str(body['period_year']),
-                'batch_id': int(body['batch_id']),
-            })
-            return _success_response(report._to_api_dict(), message='BHXH report created.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            _logger.exception('create_bhxh error')
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/bhxh', type='http', auth='user',
-                methods=['GET'], csrf=False)
-    def list_bhxh_reports(self, **kw):
-        try:
-            reports = request.env['hb.bhxh.report'].sudo().search(
-                [], order='period_year desc, period_month desc',
-                limit=int(kw.get('limit', 50)),
-            )
-            return _success_response([r._to_api_dict() for r in reports])
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/bhxh/<int:report_id>', type='http', auth='user',
-                methods=['GET'], csrf=False)
-    def get_bhxh_report(self, report_id, **kw):
-        try:
-            report = request.env['hb.bhxh.report'].sudo().browse(report_id)
-            if not report.exists():
-                return _error_response('BHXH report not found.', status=404)
-            return _success_response(report._to_api_dict())
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/bhxh/<int:report_id>/compute', type='http',
-                auth='user', methods=['POST'], csrf=False)
-    def compute_bhxh(self, report_id, **kw):
-        try:
-            report = request.env['hb.bhxh.report'].sudo().browse(report_id)
-            if not report.exists():
-                return _error_response('BHXH report not found.', status=404)
-            report.action_compute()
-            return _success_response(report._to_api_dict(), message='BHXH report computed.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/bhxh/<int:report_id>/submit', type='http',
-                auth='user', methods=['POST'], csrf=False)
-    def submit_bhxh(self, report_id, **kw):
-        try:
-            report = request.env['hb.bhxh.report'].sudo().browse(report_id)
-            if not report.exists():
-                return _error_response('BHXH report not found.', status=404)
-            report.action_mark_submitted()
-            return _success_response({'state': report.state})
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    # ═════════════════════════════════════════════════════════
-    # ETAX REPORT
-    # ═════════════════════════════════════════════════════════
-    @http.route('/hocba-hrm/api/payroll/etax', type='http', auth='user',
-                methods=['POST'], csrf=False)
-    def create_etax_report(self, **kw):
-        try:
-            body = _get_json_body()
-            for f in ('period_month', 'period_year', 'batch_id'):
-                if f not in body:
-                    return _error_response(f'Missing required field: {f}')
-            report = request.env['hb.etax.report'].sudo().create({
-                'period_month': str(body['period_month']),
-                'period_year': str(body['period_year']),
-                'batch_id': int(body['batch_id']),
-            })
-            return _success_response(report._to_api_dict(), message='eTax report created.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            _logger.exception('create_etax error')
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/etax', type='http', auth='user',
-                methods=['GET'], csrf=False)
-    def list_etax_reports(self, **kw):
-        try:
-            reports = request.env['hb.etax.report'].sudo().search(
-                [], order='period_year desc, period_month desc',
-                limit=int(kw.get('limit', 50)),
-            )
-            return _success_response([r._to_api_dict() for r in reports])
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/etax/<int:report_id>', type='http', auth='user',
-                methods=['GET'], csrf=False)
-    def get_etax_report(self, report_id, **kw):
-        try:
-            report = request.env['hb.etax.report'].sudo().browse(report_id)
-            if not report.exists():
-                return _error_response('eTax report not found.', status=404)
-            return _success_response(report._to_api_dict())
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/etax/<int:report_id>/compute', type='http',
-                auth='user', methods=['POST'], csrf=False)
-    def compute_etax(self, report_id, **kw):
-        try:
-            report = request.env['hb.etax.report'].sudo().browse(report_id)
-            if not report.exists():
-                return _error_response('eTax report not found.', status=404)
-            report.action_compute()
-            return _success_response(report._to_api_dict(), message='eTax report computed.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/etax/<int:report_id>/submit', type='http',
-                auth='user', methods=['POST'], csrf=False)
-    def submit_etax(self, report_id, **kw):
-        try:
-            report = request.env['hb.etax.report'].sudo().browse(report_id)
-            if not report.exists():
-                return _error_response('eTax report not found.', status=404)
-            report.action_mark_submitted()
-            return _success_response({'state': report.state})
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    # ═════════════════════════════════════════════════════════
-    # SALE REVENUE
-    # ═════════════════════════════════════════════════════════
-    @http.route('/hocba-hrm/api/payroll/sale-revenue', type='http', auth='user',
-                methods=['POST'], csrf=False)
-    def create_sale_revenue(self, **kw):
-        try:
-            body = _get_json_body()
-            for f in ('employee_id', 'period_month', 'period_year', 'revenue'):
-                if f not in body:
-                    return _error_response(f'Missing required field: {f}')
-            rec = request.env['hocba.sale.revenue'].sudo().create({
-                'employee_id': int(body['employee_id']),
-                'period_month': str(body['period_month']),
-                'period_year': str(body['period_year']),
-                'revenue': float(body['revenue']),
-            })
-            return _success_response({
-                'id': rec.id,
-                'employee_id': rec.employee_id.id,
-                'employee_name': rec.employee_id.name,
-                'period_month': rec.period_month,
-                'period_year': rec.period_year,
-                'revenue': rec.revenue,
-                'level': rec.level_id.name if rec.level_id else None,
-                'commission': rec.commission,
-                'sale_wage': rec.sale_wage,
-            }, message='Sale revenue created.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            _logger.exception('create_sale_revenue error')
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/sale-revenue', type='http', auth='user',
-                methods=['GET'], csrf=False)
-    def list_sale_revenues(self, **kw):
-        try:
-            domain = []
-            if kw.get('employee_id'):
-                domain.append(('employee_id', '=', int(kw['employee_id'])))
-            if kw.get('period_month'):
-                domain.append(('period_month', '=', str(kw['period_month'])))
-            if kw.get('period_year'):
-                domain.append(('period_year', '=', str(kw['period_year'])))
-            recs = request.env['hocba.sale.revenue'].sudo().search(
-                domain, order='period_year desc, period_month desc',
-                limit=int(kw.get('limit', 100)),
-            )
-            data = [{
-                'id': r.id,
-                'employee_id': r.employee_id.id,
-                'employee_name': r.employee_id.name,
-                'period_month': r.period_month,
-                'period_year': r.period_year,
-                'revenue': r.revenue,
-                'level': r.level_id.name if r.level_id else None,
-                'commission': r.commission,
-                'sale_wage': r.sale_wage,
-            } for r in recs]
-            return _success_response(data)
-        except Exception as e:
-            _logger.exception('list_sale_revenues error')
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/sale-revenue/<int:rev_id>', type='http',
-                auth='user', methods=['POST'], csrf=False)
-    def update_sale_revenue(self, rev_id, **kw):
-        try:
-            body = _get_json_body()
-            rec = request.env['hocba.sale.revenue'].sudo().browse(rev_id)
-            if not rec.exists():
-                return _error_response('Sale revenue not found.', status=404)
-            vals = {}
-            if 'revenue' in body:
-                vals['revenue'] = float(body['revenue'])
-            if 'period_month' in body:
-                vals['period_month'] = str(body['period_month'])
-            if 'period_year' in body:
-                vals['period_year'] = str(body['period_year'])
-            if vals:
-                rec.write(vals)
-            return _success_response({
-                'id': rec.id, 'revenue': rec.revenue,
-                'level': rec.level_id.name if rec.level_id else None,
-                'commission': rec.commission,
-                'sale_wage': rec.sale_wage,
-            }, message='Sale revenue updated.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/sale-revenue/<int:rev_id>/delete', type='http',
-                auth='user', methods=['POST'], csrf=False)
-    def delete_sale_revenue(self, rev_id, **kw):
-        try:
-            rec = request.env['hocba.sale.revenue'].sudo().browse(rev_id)
-            if not rec.exists():
-                return _error_response('Sale revenue not found.', status=404)
-            rec.unlink()
-            return _success_response(message='Sale revenue deleted.')
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    # ═════════════════════════════════════════════════════════
     # CONFIG
     # ═════════════════════════════════════════════════════════
     @http.route('/hocba-hrm/api/payroll/bank-format', type='http', auth='user',
@@ -943,23 +718,6 @@ class PayrollAPI(http.Controller):
                 'id': s.id, 'name': s.name, 'code': s.code,
                 'rule_count': s.rule_count,
             } for s in structs]
-            return _success_response(data)
-        except Exception as e:
-            return _error_response(str(e), status=500)
-
-    @http.route('/hocba-hrm/api/payroll/sale-level', type='http', auth='user',
-                methods=['GET'], csrf=False)
-    def list_sale_levels(self, **kw):
-        try:
-            levels = request.env['hocba.sale.level'].sudo().search(
-                [('active', '=', True)], order='level',
-            )
-            data = [{
-                'id': lv.id, 'name': lv.name, 'level': lv.level,
-                'kpi_threshold': lv.kpi_threshold,
-                'commission_rate': lv.commission_rate,
-                'base_sale_wage': lv.base_sale_wage,
-            } for lv in levels]
             return _success_response(data)
         except Exception as e:
             return _error_response(str(e), status=500)
