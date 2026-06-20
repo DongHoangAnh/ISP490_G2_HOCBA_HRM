@@ -737,6 +737,25 @@ def _att_requests_pending(env):
     return [_req_row(r) for r in reqs]
 
 
+def _employee_search(env, q):
+    """Tìm NV theo mã (x_employee_code) hoặc tên cho manager (add-for-anyone).
+    [] nếu không phải manager hoặc query rỗng. Giới hạn theo phạm vi vai trò."""
+    if not _user_can_manage(env):
+        return []
+    q = (q or '').strip()
+    if not q:
+        return []
+    domain = ['|', ('x_employee_code', 'ilike', q), ('name', 'ilike', q)]
+    domain += _emp_scope_domain(env)
+    emps = env['hr.employee'].sudo().search(domain, limit=20)
+    return [{
+        'id': e.id,
+        'code': e.x_employee_code or '—',
+        'name': e.name,
+        'employmentStatus': e.x_employment_status or '',
+    } for e in emps]
+
+
 def _shift_scope_domain(env, type_filter=None):
     """Domain trên hocba.work_shift theo người xem (Section 2 spec).
     - Manager: theo _emp_scope_domain (dịch sang employee_id.*) + lọc loại nếu gửi.
@@ -2356,3 +2375,9 @@ class HocBaHRM(http.Controller):
         if row is None:
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/employees/search', auth='user',
+                type='http', methods=['GET'])
+    def api_employee_search(self, q=None, **kw):
+        return request.make_json_response(
+            {'rows': _employee_search(request.env, q)})
