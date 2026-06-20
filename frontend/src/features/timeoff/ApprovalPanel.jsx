@@ -14,7 +14,7 @@ const inp = {
   fontSize: 13.5, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
 };
 
-export default function ApprovalPanel({ isManager }) {
+export default function ApprovalPanel({ isHrManager }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
@@ -67,7 +67,7 @@ export default function ApprovalPanel({ isManager }) {
       {data.requests.length === 0 && <EmptyState>Không có đơn nào chờ duyệt.</EmptyState>}
 
       {decision && (
-        <DecisionModal req={decision} isManager={isManager}
+        <DecisionModal req={decision} isHrManager={isHrManager}
           onClose={() => setDecision(null)}
           onDone={(payload) => { setDecision(null); setData(payload); }} />
       )}
@@ -76,7 +76,7 @@ export default function ApprovalPanel({ isManager }) {
 }
 
 /* Modal xử lý 1 đơn: duyệt (kèm ghi chú thay thế / override chứng từ) hoặc từ chối. */
-function DecisionModal({ req, isManager, onClose, onDone }) {
+function DecisionModal({ req, isHrManager, onClose, onDone }) {
   const [note, setNote] = useState(req.replacementNote || '');
   const [override, setOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
@@ -140,7 +140,7 @@ function DecisionModal({ req, isManager, onClose, onDone }) {
         {missingDoc && (
           <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, fontSize: 12.5, color: 'var(--red-700)' }}>
             Đơn cần chứng từ y tế nhưng chưa có (BR-011).
-            {isManager ? (
+            {isHrManager ? (
               <div style={{ marginTop: 8 }}>
                 <label style={{ display: 'flex', gap: 7, alignItems: 'center', color: 'var(--ink)' }}>
                   <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />

@@ -10,15 +10,18 @@ import { fmtDate } from '../../utils/format';
 import { fetchOverview, cancelRequest } from '../../api/timeoff';
 import LeaveForm from './LeaveForm';
 import ApprovalPanel from './ApprovalPanel';
+import ApprovedPanel from './ApprovedPanel';
 import DashboardPanel from './DashboardPanel';
 import CalendarPanel from './CalendarPanel';
 import SummaryPanel from './SummaryPanel';
+import WorkScheduleModal from './WorkScheduleModal';
 
 export default function TimeOff({ search }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
   const [busy, setBusy] = useState(null); // id đơn đang hủy
 
   const load = () => {
@@ -39,8 +42,19 @@ export default function TimeOff({ search }) {
       .finally(() => setBusy(null));
   };
 
-  const tabs = [['overview', 'Tổng quan'], ['me', 'Của tôi'], ['calendar', 'Lịch']];
-  if (data.isOfficer) tabs.push(['approvals', 'Chờ duyệt'], ['summary', 'Tổng hợp']);
+  // Tách luồng cá nhân / quản lý theo phân quyền:
+  //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
+  //    KHÔNG có tab "Của tôi" (luồng quản lý thuần).
+  //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Của tôi" + "Lịch".
+  const tabs = [];
+  if (data.isOfficer) {
+    tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
+              ['approvals', 'Chờ duyệt'], ['approved', 'Đơn đã duyệt']);
+  } else {
+    tabs.push(['summary', 'Tổng hợp'], ['me', 'Của tôi'], ['calendar', 'Lịch']);
+  }
+
+  const activeTab = tab || tabs[0][0];
 
   return (
     <div className="content fade-in">
@@ -50,6 +64,10 @@ export default function TimeOff({ search }) {
           <p>Số dư phép, đơn nghỉ &amp; phê duyệt · dữ liệu trực tiếp từ Odoo</p>
         </div>
         <div className="actions">
+          {data.isHrManager && (
+            <button className="btn btn-ghost" onClick={() => setSchedOpen(true)}>
+              <Icon name="calendar" size={16} />Thêm lịch làm việc</button>
+          )}
           {data.employee && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} />Tạo đơn nghỉ</button>
@@ -59,20 +77,21 @@ export default function TimeOff({ search }) {
 
       <div className="tabs">
         {tabs.map(([id, l]) => (
-          <button key={id} className={'tab' + (tab === id ? ' active' : '')}
+          <button key={id} className={'tab' + (activeTab === id ? ' active' : '')}
             onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
 
-      {tab === 'overview' && <DashboardPanel />}
-      {tab === 'me' && (
+      {activeTab === 'overview' && data.isOfficer && <DashboardPanel />}
+      {activeTab === 'summary' && !data.isOfficer && <SummaryPanel />}
+      {activeTab === 'me' && !data.isOfficer && (
         <MyTimeOff data={data} search={search} busy={busy} onCancel={onCancel} />
       )}
-      {tab === 'calendar' && <CalendarPanel isOfficer={data.isOfficer} />}
-      {tab === 'approvals' && data.isOfficer && (
-        <ApprovalPanel isManager={data.isManager} />
+      {activeTab === 'calendar' && <CalendarPanel isOfficer={data.isOfficer} />}
+      {activeTab === 'approvals' && data.isOfficer && (
+        <ApprovalPanel isHrManager={data.isHrManager} />
       )}
-      {tab === 'summary' && data.isOfficer && <SummaryPanel />}
+      {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
 
       {creating && (
         <LeaveForm
@@ -80,6 +99,8 @@ export default function TimeOff({ search }) {
           onClose={() => setCreating(false)}
           onSaved={(payload) => { setCreating(false); setData(payload); }} />
       )}
+
+      {schedOpen && <WorkScheduleModal onClose={() => setSchedOpen(false)} />}
     </div>
   );
 }

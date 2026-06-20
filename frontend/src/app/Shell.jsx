@@ -11,11 +11,13 @@ const NAV = [
     { id: 'employees', label: 'Nhân viên', icon: 'users', need: 'manage' },
     { id: 'onboarding', label: 'Nhận việc', icon: 'checkCircle', need: 'manage' },
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'manage' },
-    { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'manage' },
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
   ]},
   { sec: 'Cá nhân', items: [
+    // Nghỉ phép: mọi vai trò đều thấy. Người duyệt (Admin/HR/Trưởng phòng) được
+    // component TimeOff bổ sung tab Chờ duyệt/Tổng hợp theo data.isOfficer.
+    { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user' },
   ]},
 ];
@@ -43,7 +45,7 @@ export const PAGE_META = {
   employees: { t: 'Nhân viên', c: 'Quản lý nhân sự / Hồ sơ' },
   onboarding: { t: 'Nhận việc', c: 'Quản lý nhân sự / Onboarding' },
   attendance: { t: 'Chấm công', c: 'Quản lý nhân sự / Attendance' },
-  timeoff: { t: 'Nghỉ phép', c: 'Quản lý nhân sự / Time Off' },
+  timeoff: { t: 'Nghỉ phép', c: 'Cá nhân / Nghỉ phép' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
