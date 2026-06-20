@@ -16,6 +16,8 @@
 
 ➡️ **Hệ quả lớn nhất:** tài khoản quản lý (Admin/HR/Giáo vụ) phải **tách rời** khỏi hồ sơ cá nhân của người đang giữ vai trò đó (xem mục 1).
 
+> 🔁 **Bổ sung 2026-06-20 (Vu chốt):** quy tắc tách áp dụng cho **CẢ Trưởng phòng** ("HR nhỏ" của từng phòng ban). Trước đó Trưởng phòng vẫn hiện "Hồ sơ của tôi" (gộp quản lý + cá nhân); nay coi là tài khoản vai trò thuần như Admin/HR/Giáo vụ → ẩn mục **CÁ NHÂN**, người giữ vai trò dùng **tài khoản nhân viên riêng** để xem hồ sơ/chấm công của chính mình. Sửa ở `frontend/src/app/Shell.jsx` (`isRoleAccount` thêm `isManager`).
+
 ---
 
 ## 1. 🔴 P0 — Tách "tài khoản quản lý" khỏi "hồ sơ cá nhân" (thay đổi kiến trúc UI lớn nhất)
@@ -151,7 +153,7 @@ Ký hiệu: ✅ đã đúng · ⚠️ cần sửa · ➕ làm mới · 🔁 đ�
 - **CCCD bắt buộc** khi lên chính thức (cùng MST + BHXH).
 - **Group "Giáo vụ"** + record rule chỉ xem giáo viên (`x_employee_type_id.code='teacher'`) + ACL.
 - **Đổi nhãn "Nhập việc" → "Nhận việc"** trong SPA (`frontend/src/` + `hocba_hrm/static/src/js/`).
-- **Tách tài khoản quản lý ↔ cá nhân (SPA)**: nav theo vai trò + endpoint `/hocba-hrm/api/me/roles` — nhân viên thường chỉ thấy "Hồ sơ của tôi". *(verify: admin/hrmanager canManage=true, employee/ctv=false)*
+- **Tách tài khoản quản lý ↔ cá nhân (SPA)**: nav theo vai trò + endpoint `/hocba-hrm/api/me/roles` — nhân viên thường chỉ thấy "Hồ sơ của tôi". *(verify: admin/hrmanager canManage=true, employee/ctv=false)* · **2026-06-20:** mở rộng sang **Trưởng phòng** (`isManager`) → cũng ẩn mục CÁ NHÂN. *(verify Neon: test_truongphong ẩn, test_employee vẫn hiện)*
 - **Self-service**: nhân viên **tự thêm/sửa/xoá người phụ thuộc** + **tự up ảnh** đại diện của mình (`/api/me/photo`, NPT nới quyền self). *(verify trên test_employee)*
 - **Giáo vụ chỉ thấy giáo viên trong SPA**: `api_employees` lọc domain theo loại NV (vì api dùng sudo).
 - **Cập nhật spec → v2.2** (biên bản M-01..M-11 trong `SPEC_EMPLOYEES_DAC_TA_v2.1.md`).

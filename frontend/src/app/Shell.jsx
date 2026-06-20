@@ -3,9 +3,9 @@ import Icon from '../components/Icon';
 
 /* Nav theo vai trò (họp #2 — tách tài khoản quản lý ↔ cá nhân).
    need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; không gắn need = mọi nhân viên.
-   need 'self'   = ẩn với tài khoản vai trò thuần (Admin/HR/Giáo vụ) — phần cá nhân
-   của họ đi theo luồng nhân viên ở tài khoản khác; Trưởng phòng (nhân viên thật)
-   và nhân viên thường vẫn thấy. */
+   need 'self'   = ẩn với MỌI tài khoản vai trò quản lý (Admin/HR/Giáo vụ/Trưởng phòng)
+   — phần cá nhân của họ đi theo luồng nhân viên ở tài khoản riêng; chỉ nhân viên
+   thường mới thấy "Hồ sơ của tôi". */
 const NAV = [
   { sec: 'Tổng quan', items: [
     { id: 'dashboard', label: 'Dashboard', icon: 'grid', need: 'manage' },
@@ -24,8 +24,10 @@ const NAV = [
   ]},
 ];
 
-/* Tài khoản vai trò thuần (không gắn với cá nhân): Admin/HR/Giáo vụ → ẩn 'Hồ sơ của tôi'. */
-const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrUser || me.isGiaovu));
+/* Tài khoản vai trò quản lý (không gắn với cá nhân): Admin/HR/Giáo vụ/Trưởng phòng
+   → ẩn 'Hồ sơ của tôi' (họp #2: HR cấp phòng ban cũng phải tách, dùng tài khoản
+   cá nhân riêng). */
+const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrUser || me.isGiaovu || me.isManager));
 
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
