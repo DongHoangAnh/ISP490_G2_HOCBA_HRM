@@ -17,7 +17,12 @@ const parseISO = (s) => { const [y, m, d] = s.split('-').map(Number); return new
 /* Thứ hạng trạng thái để chọn "đơn mạnh nhất" khi 1 ngày trùng nhiều đơn. */
 const RANK = { validate: 3, validate1: 2, confirm: 2, draft: 1, refuse: 1, cancel: 0 };
 
-/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). */
+/* Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
+   Ngày có >= ngần này người nghỉ (đã duyệt) tô cảnh báo "quá tải". */
+const OVERLAP_WARN = 3;
+
+/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). count = số người đã DUYỆT
+   nghỉ trong ngày (Phase 4: cảnh báo ngày trùng lịch khi xem "Cả đội"). */
 function buildDayMap(leaves, activeIds) {
   const map = {};
   for (const lv of leaves) {
@@ -27,8 +32,11 @@ function buildDayMap(leaves, activeIds) {
     for (let cur = parseISO(lv.from); cur <= end; cur.setDate(cur.getDate() + 1)) {
       const key = isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate());
       const r = RANK[lv.state] ?? 1;
-      if (!map[key] || r > map[key].rank) {
-        map[key] = { rank: r, color: lv.color, state: lv.state, leaveType: lv.leaveType, employee: lv.employee };
+      const slot = map[key] || (map[key] = { rank: -1, count: 0 });
+      if (lv.state === 'validate') slot.count += 1;
+      if (r > slot.rank) {
+        slot.rank = r; slot.color = lv.color; slot.state = lv.state;
+        slot.leaveType = lv.leaveType; slot.employee = lv.employee;
       }
     }
   }
@@ -102,13 +110,19 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, big }) {
             if (wdName) { st.background = 'rgba(16,185,129,.12)'; st.boxShadow = 'inset 0 0 0 1.5px var(--green)'; }
             else if (dow === 0 || dow === 6) st.background = st.background || 'var(--surface-2)';
           }
+          const overloaded = info && info.count >= OVERLAP_WARN;
+          if (overloaded) st.boxShadow = 'inset 0 0 0 2px var(--amber-600,#d97706)';
           return (
             <div key={key} style={st} title={[
               info && `${info.leaveType}${info.employee ? ' — ' + info.employee : ''}`,
+              info && info.count > 1 && (info.count + ' người nghỉ ngày này'),
               wdName && ('Đi làm: ' + wdName),
               mdName,
             ].filter(Boolean).join(' · ')}>
               {d}
+              {overloaded && (
+                <span style={{ position: 'absolute', top: 2, left: 2, minWidth: 13, height: 13, padding: '0 3px', borderRadius: 7, background: 'var(--amber-600,#d97706)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'grid', placeItems: 'center', lineHeight: 1 }}>{info.count}</span>
+              )}
               {mdName && (
                 <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--red-600)' }}></span>
               )}
@@ -219,6 +233,7 @@ export default function CalendarPanel({ isOfficer }) {
           <LegendRow swatch={{ background: 'rgba(200,16,46,.15)', boxShadow: 'inset 0 0 0 1.5px var(--red-600)' }} label="Chờ duyệt" />
           <LegendRow swatch={{ border: '1px solid var(--border-strong)' }} label="Từ chối (gạch ngang)" />
           <LegendRow swatch={{ background: 'rgba(16,185,129,.12)', boxShadow: 'inset 0 0 0 1.5px var(--green)' }} label="Ngày đi làm (Thứ 7)" />
+          <LegendRow swatch={{ boxShadow: 'inset 0 0 0 2px var(--amber-600,#d97706)' }} label={`Trùng lịch (≥ ${OVERLAP_WARN} người nghỉ)`} />
           <LegendRow dot label="Ngày bắt buộc / nghỉ lễ" />
         </div>
 

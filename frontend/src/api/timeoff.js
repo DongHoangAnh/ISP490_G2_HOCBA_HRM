@@ -78,3 +78,44 @@ export const fetchApproved = (year, dept) => {
   const q = p.toString();
   return hbGet('/hocba-hrm/api/timeoff/approved' + (q ? '?' + q : ''));
 };
+
+/* Bảng "Quỹ phép" toàn nhân viên (Phase 1/3 — chỉ officer).
+   HR/Admin xem mọi phòng ban, Trưởng phòng chỉ phòng mình.
+   year; dept (lọc phòng ban); type (lọc loại nghỉ); filter='expiring'
+   (chỉ NV còn nhiều phép năm — sắp mất phép). Tham số tùy chọn. */
+export const fetchBalances = (year, dept, type, filter) => {
+  const p = new URLSearchParams();
+  if (year) p.set('year', year);
+  if (dept) p.set('dept', dept);
+  if (type) p.set('type', type);
+  if (filter) p.set('filter', filter);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/balances' + (q ? '?' + q : ''));
+};
+
+/* Điều chỉnh quỹ phép thủ công (Phase 2 — chỉ HR Manager).
+   payload: { employeeId, leaveTypeId, deltaDays, reason }
+   deltaDays > 0 = cấp thêm, < 0 = trừ bớt. → trả { row } (dòng số dư mới của NV). */
+export const adjustQuota = (payload) =>
+  hbPost('/hocba-hrm/api/timeoff/balances/adjust', payload);
+
+/* Mức độ trùng lịch nghỉ theo ngày (Phase 4 — chỉ officer). Trả các ngày có
+   người nghỉ (đã duyệt) trong khoảng + KPI ngày 'quá tải' (>= overlapWarn).
+   from/to: 'YYYY-MM-DD' (thiếu → cả năm hiện tại); dept: lọc 1 phòng ban. */
+export const fetchCoverage = (from, to, dept) => {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  if (dept) p.set('dept', dept);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/coverage' + (q ? '?' + q : ''));
+};
+
+/* Nhật ký điều chỉnh quỹ. Lọc theo NV / loại nghỉ (tùy chọn). → { history: [...] } */
+export const fetchAdjustHistory = (employeeId, leaveTypeId) => {
+  const p = new URLSearchParams();
+  if (employeeId) p.set('employeeId', employeeId);
+  if (leaveTypeId) p.set('leaveTypeId', leaveTypeId);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/balances/history' + (q ? '?' + q : ''));
+};

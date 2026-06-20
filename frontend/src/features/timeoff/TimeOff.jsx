@@ -8,9 +8,11 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchOverview, cancelRequest } from '../../api/timeoff';
+import SortBar, { sortRows } from './SortBar';
 import LeaveForm from './LeaveForm';
 import ApprovalPanel from './ApprovalPanel';
 import ApprovedPanel from './ApprovedPanel';
+import BalancesPanel from './BalancesPanel';
 import DashboardPanel from './DashboardPanel';
 import CalendarPanel from './CalendarPanel';
 import SummaryPanel from './SummaryPanel';
@@ -49,7 +51,8 @@ export default function TimeOff({ search }) {
   const tabs = [];
   if (data.isOfficer) {
     tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
-              ['approvals', 'Chờ duyệt'], ['approved', 'Đơn đã duyệt']);
+              ['approvals', 'Chờ duyệt'], ['approved', 'Đơn đã duyệt'],
+              ['balances', 'Quỹ phép']);
   } else {
     tabs.push(['summary', 'Tổng hợp'], ['me', 'Của tôi'], ['calendar', 'Lịch']);
   }
@@ -68,7 +71,9 @@ export default function TimeOff({ search }) {
             <button className="btn btn-ghost" onClick={() => setSchedOpen(true)}>
               <Icon name="calendar" size={16} />Thêm lịch làm việc</button>
           )}
-          {data.employee && (
+          {/* Chỉ tài khoản nhân viên thường mới được tạo đơn nghỉ; vai trò quản lý
+              (Admin/HR/Giáo vụ/Trưởng phòng) chỉ duyệt/theo dõi. */}
+          {data.isEmployee && data.employee && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} />Tạo đơn nghỉ</button>
           )}
@@ -92,6 +97,7 @@ export default function TimeOff({ search }) {
         <ApprovalPanel isHrManager={data.isHrManager} />
       )}
       {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
+      {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
 
       {creating && (
         <LeaveForm
@@ -106,15 +112,26 @@ export default function TimeOff({ search }) {
 }
 
 /* ---- Tab "Của tôi": số dư phép + danh sách đơn ---- */
+const MY_SORT_FIELDS = [
+  { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
+  { key: 'from', label: 'Từ ngày', type: 'date' },
+  { key: 'to', label: 'Đến ngày', type: 'date' },
+  { key: 'days', label: 'Số ngày', type: 'num' },
+  { key: 'stateLabel', label: 'Trạng thái', type: 'text' },
+];
+
 function MyTimeOff({ data, search, busy, onCancel }) {
+  const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
   if (!data.employee) {
     return <EmptyState>Tài khoản chưa gắn với hồ sơ nhân viên — chưa có dữ liệu nghỉ phép.</EmptyState>;
   }
 
   const q = (search || '').toLowerCase();
-  const requests = data.requests.filter((r) =>
-    !q || (r.leaveType || '').toLowerCase().includes(q)
-        || (r.reason || '').toLowerCase().includes(q));
+  const requests = sortRows(
+    data.requests.filter((r) =>
+      !q || (r.leaveType || '').toLowerCase().includes(q)
+          || (r.reason || '').toLowerCase().includes(q)),
+    MY_SORT_FIELDS, sort);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -139,6 +156,10 @@ function MyTimeOff({ data, search, busy, onCancel }) {
 
       {/* Đơn nghỉ của tôi */}
       <div className="card">
+        <div className="card-head">
+          <h3>Đơn nghỉ của tôi</h3>
+          <div className="actions"><SortBar fields={MY_SORT_FIELDS} sort={sort} onChange={setSort} /></div>
+        </div>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
