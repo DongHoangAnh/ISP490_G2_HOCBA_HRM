@@ -17,6 +17,12 @@
         unpaid:
             True  = Trừ lương khi nghỉ
             False = Không trừ lương (paid leave)
+
+        QUY ƯỚC HỌC BÁ (theo phân quyền mới):
+        - CHỈ "Nghỉ Phép Năm" requires_allocation=True → trừ vào quỹ 12 ngày cố định.
+        - CHỈ "Nghỉ Không Lương" unpaid=True → không có lương.
+        - Mọi loại còn lại: requires_allocation=False (nghỉ tự do, không cần
+          allocation) và unpaid=False (có lương).
     -->
     <data noupdate="1">
 
@@ -71,20 +77,50 @@
 
         <!-- ====================================================
              4. NGHỈ THAI SẢN (Maternity Leave)
-             - Cần allocation (do HR tạo thủ công từng trường hợp)
+             - KHÔNG cần allocation (nghỉ tự do, không trừ quỹ 12 ngày)
              - Manager + HR duyệt
              - Có lương (hưởng BHXH)
-             - Allocation validation chỉ cần HR
         ==================================================== -->
         <record id="hb_leave_type_maternity" model="hr.leave.type">
             <field name="name">Nghỉ Thai Sản</field>
             <field name="time_type">leave</field>
-            <field name="requires_allocation">True</field>
+            <field name="requires_allocation">False</field>
             <field name="leave_validation_type">both</field>
-            <field name="allocation_validation_type">hr</field>
             <field name="unpaid">False</field>
             <field name="request_unit">day</field>
             <field name="color">4</field>
+        </record>
+
+        <!-- ====================================================
+             6. NGHỈ BÙ (Compensatory Leave)
+             - Không cần allocation (nghỉ tự do)
+             - Manager trực tiếp duyệt
+             - Có lương
+        ==================================================== -->
+        <record id="hb_leave_type_compensatory" model="hr.leave.type">
+            <field name="name">Nghỉ Bù</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">False</field>
+            <field name="leave_validation_type">manager</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">6</field>
+        </record>
+
+        <!-- ====================================================
+             7. NGHỈ VIỆC RIÊNG (Personal Leave)
+             - Không cần allocation (nghỉ tự do)
+             - Manager trực tiếp duyệt
+             - Có lương
+        ==================================================== -->
+        <record id="hb_leave_type_personal" model="hr.leave.type">
+            <field name="name">Nghỉ Việc Riêng</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">False</field>
+            <field name="leave_validation_type">manager</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">8</field>
         </record>
 
         <!-- ====================================================
