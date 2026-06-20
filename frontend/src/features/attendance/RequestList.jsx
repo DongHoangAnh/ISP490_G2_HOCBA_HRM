@@ -1,13 +1,13 @@
 /* Danh sách đơn chấm công (Gói 3).
    - canReview=false (user): xem trạng thái + ghi chú duyệt (read-only).
    - canReview=true (manager): chỉnh giờ đề xuất + Duyệt / Từ chối. */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fmtTime } from './util';
-import { approveRequest, rejectRequest } from '../../api/attendance';
+import { approveRequest, rejectRequest, previewRequest } from '../../api/attendance';
 
 const STATE_LABEL = { pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Từ chối' };
 const STATE_KIND = { pending: 'amber', approved: 'green', rejected: 'red' };
@@ -35,6 +35,7 @@ function RequestRow({ r, canReview, onReload }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [preview, setPreview] = useState(null);
 
   async function act(approve) {
     setBusy(true); setErr(null);
@@ -49,6 +50,15 @@ function RequestRow({ r, canReview, onReload }) {
       onReload && onReload();   // đơn có thể đã đổi trạng thái (vd already_decided) -> đồng bộ lại
     } finally { setBusy(false); }
   }
+
+  useEffect(() => {
+    if (!canReview || r.state !== 'pending') return;
+    let alive = true;
+    previewRequest(r.id, { checkIn: ci || null, checkOut: co || null })
+      .then((p) => { if (alive) setPreview(p); })
+      .catch(() => { if (alive) setPreview(null); });
+    return () => { alive = false; };
+  }, [ci, co, canReview, r.id, r.state]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 4px', borderBottom: '1px solid var(--border)' }}>
@@ -87,6 +97,16 @@ function RequestRow({ r, canReview, onReload }) {
           <label style={{ fontSize: 12, flex: 1, minWidth: 140 }}>Ghi chú
             <input className="sel" value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
+          {preview && (
+            <div style={{ flexBasis: '100%', fontSize: 12, display: 'flex', gap: 14, flexWrap: 'wrap', color: 'var(--text-muted,#555)' }}>
+              <span>Giờ công: <b>{preview.workingHours}</b></span>
+              <span>Công ngày: <b>{preview.workCredit}</b></span>
+              <span>Giờ ra mong đợi: <b>{preview.expectedCheckOut ? preview.expectedCheckOut.slice(11, 16) : '—'}</b></span>
+              <span>Về sớm: <b>{preview.earlyLeaveMinutes > 0 ? preview.earlyLeaveMinutes + "'" : '—'}</b></span>
+              <span>Phút thiếu: <b>{preview.missingMinutes > 0 ? preview.missingMinutes + "'" : '—'}</b></span>
+              <span>Cờ kiểm tra: <b>{preview.needsReview ? 'Có' : 'Không'}</b></span>
+            </div>
+          )}
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => act(true)}>Duyệt</button>
           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-600)' }} disabled={busy} onClick={() => act(false)}>Từ chối</button>
         </div>
