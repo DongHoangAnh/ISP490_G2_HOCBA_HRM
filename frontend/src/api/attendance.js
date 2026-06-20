@@ -56,3 +56,8 @@ export const searchEmployees = (q) =>
   hbGet(`/hocba-hrm/api/employees/search?q=${encodeURIComponent(q)}`);
 export const previewRequest = (id, body) =>
   hbPost(`/hocba-hrm/api/attendance/requests/${id}/preview`, body);
+
+export const fetchManagerSummary = (month) =>
+  hbGet(`/hocba-hrm/api/attendance/manager-summary?month=${month}`);
+export const fetchEmpHistory = (empId, month, type) =>
+  hbGet(`/hocba-hrm/api/attendance/emp-history?empId=${empId}&month=${month}&type=${type}`);

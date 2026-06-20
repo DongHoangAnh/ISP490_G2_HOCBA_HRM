@@ -552,6 +552,188 @@ def _att_me_history_full(env, month_str, att_type):
     }
 
 
+def _att_manager_summary(env, month_str):
+    """Tổng hợp chấm công theo tháng cho manager: 1 dòng/NV trong phạm vi quản lý.
+    Cột: tổng công thường, OT, thiếu, tổng tháng."""
+    if not _user_can_manage(env):
+        raise AccessError('Không có quyền')
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    tz = timezone(env.user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    emp_domain = _emp_scope_domain(env)
+    employees = env['hr.employee'].sudo().search(
+        emp_domain, order='department_id, name')
+
+    rows = []
+    for emp in employees:
+        att_recs = env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('date', '>=', first), ('date', '<=', last),
+        ])
+        att_rows = [_att_row(r, policy) for r in att_recs]
+        total_regular = round(sum(r['workCredit'] for r in att_rows), 2)
+
+        violations = sorted(
+            [r for r in att_rows if r['missingMinutes'] > 0],
+            key=lambda r: r['date'])
+        counted_v = violations[policy.violation_free_days:]
+        std = policy.std_work_hours or 8.0
+        deficit = round(
+            (sum(r['missingMinutes'] for r in counted_v) / 60.0) / std, 2)
+
+        ot = _ot_for_employee(env, emp, first, last)
+
+        # CTV cong
+        ctv_shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ctv'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        ctv_cong = 0.0
+        for s in ctv_shifts:
+            att_s = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            if att_s and att_s.check_in:
+                hours = att_s.worked_hours or 0.0
+                ctv_cong += round((hours / 8.0) * (s.rate or 1.0), 2)
+        ctv_cong = round(ctv_cong, 2)
+
+        rows.append({
+            'empId': emp.id,
+            'empName': emp.name,
+            'code': emp.x_employee_code or '—',
+            'depId': emp.department_id.id if emp.department_id else None,
+            'depName': emp.department_id.name or 'Chưa gán',
+            'totalRegular': total_regular,
+            'totalOt': ot['otCong'],
+            'totalCtv': ctv_cong,
+            'totalMissing': deficit,
+            'totalMonth': round(total_regular + ot['otCong'] + ctv_cong, 2),
+        })
+
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'rows': rows,
+    }
+
+
+def _att_emp_history(env, emp_id, month_str, att_type):
+    """Lịch sử chấm công đầy đủ cho 1 NV cụ thể (manager xem/sửa).
+    att_type: 'all' | 'regular' | 'ot' | 'ctv'. Kiểm tra phạm vi quản lý."""
+    if not _user_can_manage(env):
+        raise AccessError('Không có quyền')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise UserError('Nhân viên không tồn tại')
+    if not _emp_in_scope(env, emp):
+        raise AccessError('Ngoài phạm vi quản lý')
+
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    tz = timezone(env.user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+
+    regular_rows = []
+    if att_type in ('regular', 'all'):
+        recs = env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('date', '>=', first), ('date', '<=', last),
+        ], order='date desc')
+        for r in recs:
+            row = _att_row(r, policy)
+            row['rowType'] = 'regular'
+            row['shiftLabel'] = None
+            regular_rows.append(row)
+
+    ot_rows = []
+    if att_type in ('ot', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ot'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        for s in shifts:
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ot_rows.append(_shift_history_row(env, s, att or None, 'ot'))
+
+    ctv_rows = []
+    if att_type in ('ctv', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ctv'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        for s in shifts:
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ctv_rows.append(_shift_history_row(env, s, att or None, 'ctv'))
+
+    all_rows = sorted(
+        regular_rows + ot_rows + ctv_rows,
+        key=lambda r: r['date'] or '', reverse=True)
+
+    total_credit = sum(r['workCredit'] for r in regular_rows)
+    violations = sorted(
+        [r for r in regular_rows if r['missingMinutes'] > 0],
+        key=lambda r: r['date'])
+    counted_v = violations[policy.violation_free_days:]
+    std = policy.std_work_hours or 8.0
+    deficit = round(
+        (sum(r['missingMinutes'] for r in counted_v) / 60.0) / std, 2)
+    ot_hours = round(sum(r['workingHours'] for r in ot_rows if r['statusKey'] != 'none'), 2)
+    cong_ot = round(sum(r['workCredit'] for r in ot_rows), 2)
+    ctv_hours = round(sum(r['workingHours'] for r in ctv_rows if r['statusKey'] != 'none'), 2)
+    cong_ctv = round(sum(r['workCredit'] for r in ctv_rows), 2)
+
+    summary = {
+        'daysPresent': len(regular_rows),
+        'totalHours': round(sum(r['workingHours'] for r in regular_rows), 2),
+        'totalCredit': round(total_credit, 2),
+        'deficitCredit': deficit,
+        'netCredit': round(total_credit - deficit, 2),
+        'otHours': ot_hours,
+        'congOt': cong_ot,
+        'ctvHours': ctv_hours,
+        'congCtv': cong_ctv,
+    }
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'emp': {
+            'id': emp.id, 'name': emp.name,
+            'code': emp.x_employee_code or '—',
+            'depName': emp.department_id.name or 'Chưa gán',
+        },
+        'summary': summary,
+        'rows': all_rows,
+    }
+
+
 def _req_row(req):
     """Một đơn chấm công cho SPA (wire format camelCase)."""
     emp = req.employee_id
@@ -2156,6 +2338,30 @@ class HocBaHRM(http.Controller):
         data = _att_me_history_full(request.env, month, att_type)
         if data is None:
             return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/manager-summary', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_manager_summary(self, month=None, **kw):
+        try:
+            data = _att_manager_summary(request.env, month)
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/emp-history', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_emp_history(self, empId=None, month=None, type=None, **kw):
+        if not empId:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        att_type = type if type in ('regular', 'ot', 'ctv', 'all') else 'all'
+        try:
+            data = _att_emp_history(request.env, int(empId), month, att_type)
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except (UserError, ValidationError) as ex:
+            return request.make_json_response(
+                {'error': 'not_found', 'message': str(ex)}, status=404)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/attendance/enroll', auth='user',

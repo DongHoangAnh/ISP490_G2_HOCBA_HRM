@@ -5,8 +5,8 @@ import { LoadingState, ErrorState } from '../../components/states';
 import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
 import CheckInPanel from './CheckInPanel';
 import AttendanceTable from './AttendanceTable';
+import ManagerAttendanceBoard from './ManagerAttendanceBoard';
 import ShiftCalendar from './ShiftCalendar';
-import OtTable from './OtTable';
 import RequestList from './RequestList';
 import ShiftAttendance from './ShiftAttendance';
 import AttendanceHistory from './AttendanceHistory';
@@ -34,11 +34,13 @@ export default function Attendance({ search }) {
   if (!me) return <LoadingState label="Đang tải dữ liệu chấm công…" />;
 
   const isManager = me.canManage;
-  const shiftTabLabel = me.isOfficial ? 'Chấm công OT' : 'Chấm công';
+  const isCtv = !isManager && !me.isOfficial;
   const tabs = isManager
-    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)'], ['otpay', 'Chấm công OT']]
-    : [['me', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['shift', shiftTabLabel], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
-  const activeTab = tab || (isManager ? 'day' : 'me');
+    ? [['mgr', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)']]
+    : isCtv
+      ? [['shift', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']]
+      : [['me', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['shift', 'Chấm công OT'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
+  const activeTab = tab || (isManager ? 'mgr' : isCtv ? 'shift' : 'me');
 
   const goTab = (id) => {
     setTab(id);
@@ -71,6 +73,7 @@ export default function Attendance({ search }) {
           <ShiftAttendance me={me} onChanged={load} />
         </div>
       )}
+      {activeTab === 'mgr' && <ManagerAttendanceBoard search={search} />}
       {activeTab === 'day' && <AttendanceTable search={search} />}
       {activeTab === 'requests' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -84,7 +87,6 @@ export default function Attendance({ search }) {
         </div>
       )}
       {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
-      {activeTab === 'otpay' && <OtTable />}
 
     </div>
   );
