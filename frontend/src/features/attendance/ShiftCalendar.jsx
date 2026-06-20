@@ -73,7 +73,7 @@ export default function ShiftCalendar({ canManage }) {
         ))}
       </div>
 
-      {showForm && <ShiftForm onClose={() => setShowForm(false)} onSaved={load} />}
+      {showForm && <ShiftForm canManage={canManage} onClose={() => setShowForm(false)} onSaved={load} />}
       {sel && <ShiftDrawer shift={sel} canManage={canManage}
         onClose={() => setSel(null)} onChanged={() => { setSel(null); load(); }} />}
     </div>
