@@ -1,6 +1,5 @@
-/* Form gửi đơn chấm công (Gói 3). Dùng 2 trường hợp:
-   - Sửa bản ghi có sẵn: truyền attendanceId + requestDate cố định (prefill giờ).
-   - Quên cả ngày: không attendanceId, user tự chọn ngày. */
+/* Form gửi đơn sửa chấm công (Gói 3). Chỉ mở từ một bản ghi chấm công có sẵn
+   (AttendanceDrawer truyền attendanceId + requestDate). Không hỗ trợ ngày trống. */
 import { useState } from 'react';
 import Modal from '../../components/Modal';
 import Icon from '../../components/Icon';
@@ -18,7 +17,7 @@ export default function RequestForm({ attendanceId, requestDate, checkIn, checkO
   const [err, setErr] = useState(null);
 
   async function submit() {
-    if (!form.requestDate) { setErr('Vui lòng chọn ngày.'); return; }
+    if (!attendanceId) { setErr('Đơn phải gắn với một bản ghi chấm công.'); return; }
     if (!form.reason.trim()) { setErr('Vui lòng nhập lý do.'); return; }
     setBusy(true); setErr(null);
     try {
