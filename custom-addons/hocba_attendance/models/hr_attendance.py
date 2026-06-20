@@ -106,11 +106,13 @@ class Attendance(models.Model):
     check_out_map_url = fields.Char(
         string='Check-out Map', compute='_compute_map_urls')
 
-    @api.depends('check_in')
+    @api.depends('check_in', 'employee_id')
     def _compute_date(self):
         for record in self:
             if record.check_in:
-                local_dt = fields.Datetime.context_timestamp(record, record.check_in)
+                emp_tz = record.employee_id.user_id.tz or 'UTC'
+                local_dt = fields.Datetime.context_timestamp(
+                    record.with_context(tz=emp_tz), record.check_in)
                 record.date = local_dt.date()
             else:
                 record.date = False
@@ -355,9 +357,8 @@ class Attendance(models.Model):
         """Ca approved của employee có start rơi vào ngày local `today`."""
         shifts = self.env['hocba.work_shift'].sudo().search([
             ('employee_id', '=', employee.id), ('state', '=', 'approved')])
-        # Use caller's tz context (not the sudo'd record's env) so the date
-        # comparison is consistent with how `today` was computed.
-        tz_ctx = self.with_context(tz=self.env.user.tz or 'UTC')
+        emp_tz = employee.user_id.tz or 'UTC'
+        tz_ctx = self.with_context(tz=emp_tz)
         return shifts.filtered(
             lambda s: fields.Datetime.context_timestamp(tz_ctx, s.start).date() == today)
 
@@ -367,8 +368,9 @@ class Attendance(models.Model):
         already_checked_in / not_checked_in / already_checked_out."""
         policy = self.env['hocba.attendance.policy'].sudo().get_policy()
         window = policy.shift_window_minutes or 15
+        emp_tz = employee.user_id.tz or 'UTC'
         now_local = fields.Datetime.context_timestamp(
-            self.with_context(tz=self.env.user.tz or 'UTC'),
+            self.with_context(tz=emp_tz),
             fields.Datetime.now()).replace(tzinfo=None)
         today = now_local.date()
         shifts = self._todays_approved_shifts(employee, today)
@@ -378,7 +380,7 @@ class Attendance(models.Model):
         for s in shifts:
             anchor_utc = s.start if kind == 'in' else s.end
             anchor = fields.Datetime.context_timestamp(
-                s, anchor_utc).replace(tzinfo=None)
+                self.with_context(tz=emp_tz), anchor_utc).replace(tzinfo=None)
             if abs((now_local - anchor).total_seconds()) <= window * 60:
                 in_window = True
                 break
