@@ -6,7 +6,6 @@ import Icon from '../../components/Icon';
 import { createRequest } from '../../api/attendance';
 
 export default function RequestForm({ attendanceId, requestDate, checkIn, checkOut, onClose, onSaved }) {
-  const fixedDate = !!attendanceId;
   const [form, setForm] = useState({
     requestDate: requestDate || '',
     checkIn: checkIn ? checkIn.slice(0, 16) : '',
@@ -22,7 +21,7 @@ export default function RequestForm({ attendanceId, requestDate, checkIn, checkO
     setBusy(true); setErr(null);
     try {
       await createRequest({
-        attendanceId: attendanceId || undefined,
+        attendanceId,
         requestDate: form.requestDate,
         checkIn: form.checkIn || null,
         checkOut: form.checkOut || null,
@@ -39,13 +38,13 @@ export default function RequestForm({ attendanceId, requestDate, checkIn, checkO
     <Modal onClose={onClose}>
       <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, flex: 1 }}>
-          {fixedDate ? 'Gửi đơn sửa chấm công' : 'Gửi đơn quên chấm công'}
+          Gửi đơn sửa chấm công
         </h2>
         <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
       </div>
       <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <label style={{ fontSize: 12.5 }}>Ngày công
-          <input type="date" className="sel" value={form.requestDate} disabled={fixedDate}
+          <input type="date" className="sel" value={form.requestDate} disabled
             onChange={(e) => setForm({ ...form, requestDate: e.target.value })} />
         </label>
         <label style={{ fontSize: 12.5 }}>Giờ vào đề xuất
