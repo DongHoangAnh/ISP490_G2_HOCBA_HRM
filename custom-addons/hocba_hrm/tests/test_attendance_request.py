@@ -89,9 +89,12 @@ class TestAttendanceRequest(TransactionCase):
             _request_apply(env, req.with_env(env), None, None)
 
     def test_create_pins_employee_and_converts_utc(self):
+        rec = self.env['hocba.attendance'].with_context(
+            tz='Asia/Ho_Chi_Minh').create({
+                'employee_id': self.emp.id, 'check_in': '2026-06-12 01:10:00'})
         env = self.env(user=self.user)
         row = _request_create(env, {
-            'requestDate': '2026-06-12',
+            'attendanceId': rec.id,
             'checkIn': '2026-06-12T08:10',
             'reason': 'Điện thoại hết pin',
         })

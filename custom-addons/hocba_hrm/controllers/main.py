@@ -669,13 +669,12 @@ def _request_create(env, body):
     Att = env['hocba.attendance'].sudo()
     att_id = body.get('attendanceId') or None
     attendance = Att.browse(int(att_id)) if att_id else Att.browse()
-    if att_id and (not attendance.exists() or attendance.employee_id != emp):
+    if not att_id or not attendance.exists() or attendance.employee_id != emp:
         raise ValidationError('Bản ghi không hợp lệ.')
-    request_date = body.get('requestDate') or (attendance.date if att_id else False)
     req = env['hocba.attendance.request'].sudo().create({
         'employee_id': emp.id,
-        'request_date': request_date,
-        'attendance_id': attendance.id or False,
+        'request_date': attendance.date,
+        'attendance_id': attendance.id,
         'proposed_check_in': _to_utc(env, body.get('checkIn')),
         'proposed_check_out': _to_utc(env, body.get('checkOut')),
         'reason': reason,
@@ -709,6 +708,32 @@ def _request_decide(env, req_id, approve, body):
         vals['state'] = 'rejected'
     req.write(vals)
     return _req_row(req)
+
+
+def _request_preview(env, req_id, body):
+    """Tính thử (dry-run) các trường công khi áp giờ đề xuất, KHÔNG lưu.
+    Manager xem trước khi duyệt. AccessError nếu vượt quyền; None nếu không tồn tại."""
+    req = env['hocba.attendance.request'].sudo().browse(req_id)
+    if not req.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, req.employee_id)):
+        raise AccessError('forbidden')
+    ci = _to_utc(env, body['checkIn']) if 'checkIn' in body else req.proposed_check_in
+    co = _to_utc(env, body['checkOut']) if 'checkOut' in body else req.proposed_check_out
+    draft = env['hocba.attendance'].sudo().new({
+        'employee_id': req.employee_id.id,
+        'check_in': ci or False,
+        'check_out': co or False,
+    })
+    return {
+        'workingHours': round(draft.working_hours, 2),
+        'workCredit': draft.work_credit,
+        'expectedCheckOut': _dt_local(draft, draft.expected_check_out),
+        'earlyLeaveMinutes': draft.early_leave_minutes,
+        'missingMinutes': draft.missing_minutes,
+        'lateMinutes': draft.late_minutes,
+        'needsReview': draft.needs_review,
+    }
 
 
 def _att_requests_mine(env):
@@ -2292,6 +2317,18 @@ class HocBaHRM(http.Controller):
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_attendance_request_reject(self, req_id, **kw):
         return self._decide_request(req_id, False)
+
+    @http.route('/hocba-hrm/api/attendance/requests/<int:req_id>/preview',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_request_preview(self, req_id, **kw):
+        try:
+            row = _request_preview(request.env, req_id,
+                                   request.get_json_data() or {})
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)
 
     # ------------------------------------------------------------------
     # Ca làm việc CTV/OT (Gói 4A): user đăng ký ca → manager duyệt/chỉnh/từ chối
