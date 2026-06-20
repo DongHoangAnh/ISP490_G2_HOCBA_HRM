@@ -134,7 +134,7 @@ class HrLeave(models.Model):
             raise_if_not_found=False,
         )
         hr_manager_group = self.env.ref(
-            'hr_holidays.group_hr_holidays_manager',
+            'hr.group_hr_manager',
             raise_if_not_found=False,
         )
         # BR-033: chỉ bỏ qua trial lessons nếu field tồn tại trên model

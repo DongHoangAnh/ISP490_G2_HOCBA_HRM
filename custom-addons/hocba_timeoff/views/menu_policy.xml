@@ -8,6 +8,6 @@
         parent="hr_holidays.menu_hr_holidays_configuration"
         action="action_hb_timeoff_policy_rule"
         sequence="20"
-        groups="hr_holidays.group_hr_holidays_manager"/>
+        groups="hr.group_hr_manager"/>
 
 </odoo>

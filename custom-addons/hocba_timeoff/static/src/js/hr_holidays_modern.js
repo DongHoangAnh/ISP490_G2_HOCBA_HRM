@@ -48,7 +48,7 @@ export class HrHolidaysDashboard extends Component {
             upcoming: [],
         });
         onWillStart(async () => {
-            this.state.isManager = await user.hasGroup("hr_holidays.group_hr_holidays_manager");
+            this.state.isManager = await user.hasGroup("hr.group_hr_manager");
             if (this.state.isManager) {
                 this.state.departments = await this.orm.searchRead(
                     "hr.department", [], ["name"], { order: "name asc" }

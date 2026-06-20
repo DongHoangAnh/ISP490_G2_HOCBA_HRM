@@ -20,7 +20,7 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_leave_analysis_by_dept"
         sequence="10"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
     <!-- W2: Monthly Trend -->
     <menuitem
@@ -29,7 +29,7 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_leave_analysis_monthly"
         sequence="20"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
     <!-- W3: Sick Leave Frequency -->
     <menuitem
@@ -38,7 +38,7 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_leave_analysis_sick"
         sequence="30"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
     <!-- W4: Top Absent Employees -->
     <menuitem
@@ -47,7 +47,7 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_leave_analysis_absent"
         sequence="40"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
     <!-- W5: Leave Balance -->
     <menuitem
@@ -56,7 +56,7 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_leave_balance"
         sequence="50"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
     <!-- W6: Burnout Risk -->
     <menuitem
@@ -65,7 +65,7 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_burnout_risk"
         sequence="60"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
     <!-- Export wizard -->
     <menuitem
@@ -74,6 +74,6 @@
         parent="menu_hb_leave_analytics_root"
         action="action_hb_timeoff_export_wizard"
         sequence="70"
-        groups="hr_holidays.group_hr_holidays_user"/>
+        groups="hr.group_hr_user"/>
 
 </odoo>

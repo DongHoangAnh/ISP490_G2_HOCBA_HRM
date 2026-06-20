@@ -20,7 +20,7 @@
                     type="object"
                     class="oe_stat_button"
                     icon="fa-calendar-check-o"
-                    groups="hr_holidays.group_hr_holidays_user">
+                    groups="hr.group_hr_user">
                     <div class="o_stat_info">
                         <field name="x_policy_log_count" class="o_stat_value"/>
                         <span class="o_stat_text">Chính sách</span>
@@ -47,7 +47,7 @@
                             string="Áp dụng lại Chính sách"
                             class="btn-secondary"
                             icon="fa-refresh"
-                            groups="hr_holidays.group_hr_holidays_manager"
+                            groups="hr.group_hr_manager"
                             invisible="x_policy_override"/>
                     </group>
                 </group>
