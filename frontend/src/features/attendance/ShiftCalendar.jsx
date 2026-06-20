@@ -25,6 +25,7 @@ function mondayOf(date) {
 
 export default function ShiftCalendar({ canManage }) {
   const [monday, setMonday] = useState(() => mondayOf(new Date()));
+  const [typeFilter, setTypeFilter] = useState('');   // '' | 'ot' | 'ctv' (manager only)
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -32,9 +33,9 @@ export default function ShiftCalendar({ canManage }) {
 
   const load = () => {
     setErr(null); setData(null);
-    fetchWeekShifts(ymd(monday)).then(setData).catch((e) => setErr(e.message));
+    fetchWeekShifts(ymd(monday), typeFilter || undefined).then(setData).catch((e) => setErr(e.message));
   };
-  useEffect(load, [monday]);
+  useEffect(load, [monday, typeFilter]);
 
   const moveWeek = (n) => {
     const d = new Date(monday); d.setDate(d.getDate() + n); setMonday(d);
@@ -52,6 +53,14 @@ export default function ShiftCalendar({ canManage }) {
         </div>
         <button className="btn btn-ghost btn-sm" onClick={() => moveWeek(7)}>Tuần sau ›</button>
         <div style={{ flex: 1 }} />
+        {canManage && (
+          <select className="sel" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+            style={{ width: 'auto' }}>
+            <option value="">Tất cả</option>
+            <option value="ot">OT</option>
+            <option value="ctv">CTV</option>
+          </select>
+        )}
         <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>Đăng ký ca</button>
       </div>
 
@@ -64,9 +73,10 @@ export default function ShiftCalendar({ canManage }) {
             {day.shifts.length === 0 && <div className="faint" style={{ fontSize: 11 }}>—</div>}
             {day.shifts.map((s) => (
               <button key={s.id} onClick={() => setSel(s)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', marginBottom: 6, background: CHIP_BG[s.state], cursor: 'pointer' }}>
+                style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid ' + (s.mine ? 'var(--red-300,#fca5a5)' : 'var(--border)'), borderRadius: 8, padding: '6px 8px', marginBottom: 6, background: CHIP_BG[s.state], cursor: 'pointer', opacity: s.locked ? 0.6 : 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.empName}</div>
                 <div className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{fmtTime(s.start)}–{fmtTime(s.end)}</div>
-                <div style={{ fontSize: 11 }}>{s.shiftType === 'ctv' ? 'CTV' : 'OT'} ×{s.rate}</div>
+                <div style={{ fontSize: 11 }}>{s.shiftTypeLabel} ×{s.rate}{s.locked ? ' · đã khóa' : ''}</div>
               </button>
             ))}
           </div>
