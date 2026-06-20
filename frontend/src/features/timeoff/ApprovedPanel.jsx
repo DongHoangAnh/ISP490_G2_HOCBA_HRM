@@ -8,8 +8,20 @@ import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchApproved } from '../../api/timeoff';
+import { downloadXlsx } from '../../utils/xlsx';
+import SortBar, { sortRows } from './SortBar';
 
 const THIS_YEAR = new Date().getFullYear();
+
+const SORT_FIELDS = [
+  { key: 'employee', label: 'Nhân viên', type: 'text' },
+  { key: 'department', label: 'Phòng ban', type: 'text' },
+  { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
+  { key: 'stateLabel', label: 'Kết quả', type: 'text' },
+  { key: 'from', label: 'Từ ngày', type: 'date' },
+  { key: 'to', label: 'Đến ngày', type: 'date' },
+  { key: 'days', label: 'Số ngày', type: 'num' },
+];
 
 export default function ApprovedPanel({ search }) {
   const [data, setData] = useState(null);
@@ -18,6 +30,7 @@ export default function ApprovedPanel({ search }) {
   const [dept, setDept] = useState('');
   const [tick, setTick] = useState(0);
   const [detail, setDetail] = useState(null); // đơn đang xem chi tiết
+  const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
 
   useEffect(() => {
     setErr(null); setData(null);
@@ -29,10 +42,25 @@ export default function ApprovedPanel({ search }) {
 
   const k = data.kpi;
   const q = (search || '').toLowerCase();
-  const rows = data.requests.filter((r) =>
-    !q || (r.employee || '').toLowerCase().includes(q)
-       || (r.leaveType || '').toLowerCase().includes(q)
-       || (r.department || '').toLowerCase().includes(q));
+  const rows = sortRows(
+    data.requests.filter((r) =>
+      !q || (r.employee || '').toLowerCase().includes(q)
+         || (r.leaveType || '').toLowerCase().includes(q)
+         || (r.department || '').toLowerCase().includes(q)),
+    SORT_FIELDS, sort);
+
+  const exportExcel = () => {
+    const headers = ['Nhân viên', 'Phòng ban', 'Loại nghỉ', 'Kết quả', 'Từ ngày',
+      'Đến ngày', 'Số ngày', 'Lương', 'Người duyệt/từ chối', 'Lý do'];
+    const body = rows.map((r) => [
+      r.employee || '', r.department || '', r.leaveType || '', r.stateLabel || '',
+      fmtDate(r.from), fmtDate(r.to), Number(r.days) || 0,
+      r.unpaid ? 'Không lương' : 'Có lương', r.approver || '', r.reason || '',
+    ]);
+    const deptName = dept ? (data.allDepartments.find((d) => String(d.id) === String(dept))?.name || '') : '';
+    const fn = `don-nghi-da-duyet-${year}${deptName ? '-' + deptName.replace(/\s+/g, '_') : ''}.xlsx`;
+    downloadXlsx(fn, `Đơn đã duyệt ${year}`, headers, body);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -65,6 +93,12 @@ export default function ApprovedPanel({ search }) {
         <div className="card-head">
           <h3>Danh sách đơn nghỉ đã xử lý</h3>
           <span className="sub">{rows.length} đơn · bấm để xem chi tiết</span>
+          <div className="actions">
+            <SortBar fields={SORT_FIELDS} sort={sort} onChange={setSort} />
+            <button className="btn btn-soft btn-sm" onClick={exportExcel} disabled={rows.length === 0}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="download" size={15} />Xuất Excel</button>
+          </div>
         </div>
         <div className="tbl-wrap">
           <table className="tbl">
