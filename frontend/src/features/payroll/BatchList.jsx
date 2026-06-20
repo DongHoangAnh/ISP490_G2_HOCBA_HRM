@@ -1,165 +1,452 @@
-/* Danh sach nhan vien kem bang luong theo thang — Owner: Hung. */
-import { useState, useEffect } from 'react';
+/* Bang luong nhan vien theo thang — Owner: Hung. */
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchEmployeePayroll } from '../../api/payroll';
 import Icon from '../../components/Icon';
+import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { monthOptions, yearOptions, currentMonth, currentYear } from './util';
 import PayslipDrawer from './PayslipDrawer';
 
-/* Sticky helpers — giu 5 cot trai co dinh khi cuon ngang */
-const COL_W = [50, 90, 180, 120, 130]; // STT, Ma, Ten, ChucVu, PhongBan
-const cumLeft = COL_W.map((_, i) => COL_W.slice(0, i).reduce((a, b) => a + b, 0));
-const stickyTh = (i) => ({
-  position: 'sticky', left: cumLeft[i], zIndex: 3,
-  background: 'var(--surface-2, #f8f9fa)', minWidth: COL_W[i],
-});
-const stickyTd = (i) => ({
-  position: 'sticky', left: cumLeft[i], zIndex: 1,
-  background: '#fff', minWidth: COL_W[i],
-});
-const stickyFt = (i) => ({
-  position: 'sticky', left: cumLeft[i], zIndex: 1,
-  background: 'var(--gray-50, #f9fafb)', minWidth: COL_W[i],
-});
+/* ── localStorage v2 ── */
+const LS_KEY = 'hb_payroll_col_v2';
+const LS_WIDTHS = 'hb_payroll_widths';
+const loadCfg = () => {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || null; } catch { return null; }
+};
+const saveCfg = (c) => localStorage.setItem(LS_KEY, JSON.stringify(c));
+const loadWidths = () => {
+  try { return JSON.parse(localStorage.getItem(LS_WIDTHS)) || {}; } catch { return {}; }
+};
+const saveWidths = (w) => localStorage.setItem(LS_WIDTHS, JSON.stringify(w));
 
-export default function BatchList({ search }) {
-  const [month, setMonth] = useState(currentMonth());
-  const [year, setYear] = useState(currentYear());
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [sel, setSel] = useState(null);
+/* 5 cot co ban */
+const BASE = [
+  { key: 'stt',        label: 'STT',        w: 40  },
+  { key: 'code',       label: 'Ma NV',      w: 76  },
+  { key: 'name',       label: 'Ho va ten',  w: 150 },
+  { key: 'job_title',  label: 'Chuc vu',    w: 110 },
+  { key: 'department', label: 'Phong ban',   w: 115 },
+];
 
-  const load = () => {
-    setErr(null); setData(null);
-    fetchEmployeePayroll({ month, year })
-      .then(setData)
-      .catch((e) => setErr(e.message));
+/* ── Column-config Modal ── */
+function CfgModal({ dataCols, cfg, onApply, onClose }) {
+  const [frozen, setFrozen] = useState(() => {
+    const s = cfg.frozen || {};
+    return Object.fromEntries(BASE.map((b) => [b.key, s[b.key] !== false]));
+  });
+  const [vis, setVis] = useState(() => {
+    const s = cfg.visible || {};
+    return Object.fromEntries(dataCols.map((c) => [c.code, s[c.code] !== false]));
+  });
+  const [ord, setOrd] = useState(() => {
+    const saved = cfg.order || [];
+    const all = dataCols.map((c) => c.code);
+    const merged = saved.filter((c) => all.includes(c));
+    all.forEach((c) => { if (!merged.includes(c)) merged.push(c); });
+    return merged;
+  });
+
+  const allOn = dataCols.length > 0 && dataCols.every((c) => vis[c.code]);
+  const flipAll = () => {
+    const on = !allOn;
+    setVis(Object.fromEntries(dataCols.map((c) => [c.code, on])));
   };
-  useEffect(load, [month, year]);
 
-  if (err) return <ErrorState message={err} onRetry={load} />;
-
-  /* Filter theo search */
-  const employees = data ? data.employees.filter((e) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (e.name || '').toLowerCase().includes(q)
-      || (e.code || '').toLowerCase().includes(q);
-  }) : [];
-
-  const columns = data ? data.columns : [];
-
-  /* Metrics */
-  const total = employees.length;
-  const withSlip = employees.filter((e) => e.payslip_id).length;
-  const netCode = columns.find((c) => c.code === 'thuc_lanh')?.code;
-  const totalNet = netCode
-    ? employees.reduce((s, e) => s + (e.amounts[netCode] || 0), 0) : 0;
-  const avgNet = withSlip > 0 ? Math.round(totalNet / withSlip) : 0;
+  const drag = useRef(null);
+  const nameOf = {};
+  dataCols.forEach((c) => { nameOf[c.code] = c.name; });
 
   return (
-    <>
-      {/* Filter bar */}
-      <div className="filterbar" style={{ marginBottom: 14 }}>
-        <select className="sel" value={month} onChange={(e) => setMonth(e.target.value)}>
-          {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className="sel" value={year} onChange={(e) => setYear(e.target.value)}>
-          {yearOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <div style={{ flex: 1 }} />
-        {data && (
-          <div style={{ fontSize: 13.5, color: 'var(--muted)' }}>
-            {total} nhan vien
+    <Modal onClose={onClose}>
+      <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border,#e5e7eb)' }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Tuy chinh cot hien thi</h2>
+        <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--muted,#888)' }}>
+          Chon cot va thu tu hien thi tren bang luong. Cau hinh duoc luu tren trinh duyet.
+        </p>
+      </div>
+      <div style={{ maxHeight: '58vh', overflowY: 'auto' }}>
+        <label style={MS.allRow}>
+          <input type="checkbox" checked={allOn} onChange={flipAll} style={MS.chk} />
+          <span style={{ fontWeight: 600 }}>Tat ca cot du lieu</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+            {dataCols.filter((c) => vis[c.code]).length}/{dataCols.length}
+          </span>
+        </label>
+        <div style={MS.section}>Co dinh (Freeze)</div>
+        {BASE.map((b) => (
+          <label key={b.key} style={MS.row}>
+            <input type="checkbox" checked={frozen[b.key]} style={MS.chk}
+              onChange={() => setFrozen((f) => ({ ...f, [b.key]: !f[b.key] }))} />
+            <Icon name="lock" size={13} />
+            <span>{b.label}</span>
+          </label>
+        ))}
+        <div style={MS.section}>Cot du lieu</div>
+        {ord.map((code, i) => (
+          <div key={code} style={{ ...MS.row, cursor: 'default' }}
+            draggable onDragStart={() => { drag.current = i; }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => {
+              if (drag.current == null || drag.current === i) return;
+              setOrd((p) => { const n = [...p]; const [it] = n.splice(drag.current, 1); n.splice(i, 0, it); return n; });
+              drag.current = null;
+            }}>
+            <input type="checkbox" checked={vis[code] !== false} style={MS.chk}
+              onChange={() => setVis((v) => ({ ...v, [code]: !v[code] }))} />
+            <span style={{ flex: 1, fontSize: 13 }}>{nameOf[code] || code}</span>
+            <span style={{ cursor: 'grab', color: '#bbb', fontSize: 15, userSelect: 'none' }}>&#9776;</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 24px', borderTop: '1px solid var(--border,#e5e7eb)' }}>
+        <button className="btn btn-ghost" onClick={onClose}>Huy</button>
+        <button className="btn btn-primary" onClick={() => { onApply({ frozen, visible: vis, order: ord }); onClose(); }}>
+          Ap dung
+        </button>
+      </div>
+    </Modal>
+  );
+}
+const MS = {
+  chk: { width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer', flexShrink: 0 },
+  allRow: {
+    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 24px',
+    borderBottom: '1px solid var(--border,#e5e7eb)', cursor: 'pointer',
+    background: 'var(--gray-50,#f9fafb)', fontSize: 13.5,
+  },
+  row: {
+    display: 'flex', alignItems: 'center', gap: 10, padding: '7px 24px',
+    borderBottom: '1px solid #f3f4f6', fontSize: 13, cursor: 'pointer',
+  },
+  section: {
+    padding: '10px 24px 4px', fontSize: 11, fontWeight: 700,
+    color: '#9ca3af', textTransform: 'uppercase', letterSpacing: .6,
+  },
+};
+
+/* ── Salary Detail — receipt-style, flex to screen ── */
+function SalaryDetail({ emp, columns, onClose }) {
+  const lastCode = columns.length > 0 ? columns[columns.length - 1].code : null;
+  const NET_CODES = new Set(['thuc_lanh', 'NET']);
+  const netRow = columns.find((c) => NET_CODES.has(c.code));
+  const netVal = netRow ? emp.amounts[netRow.code] : null;
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{
+        display: 'flex', flexDirection: 'column',
+        height: 'calc(100vh - 100px)', maxHeight: 720,
+        padding: '16px 24px 16px',
+      }}>
+        {/* ─ header ─ */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{emp.name}</h2>
+            <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
+              {[emp.code, emp.job_title, emp.department].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          <button className="icon-btn" onClick={onClose} style={{ marginTop: -4 }}><Icon name="x" size={18} /></button>
+        </div>
+
+        {/* ─ rows — flex fill ─ */}
+        <div style={{
+          flex: 1, minHeight: 0,
+          border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {columns.map((col, i) => {
+            const val = emp.amounts[col.code];
+            const isNet = NET_CODES.has(col.code) || col.code === lastCode;
+            return (
+              <div key={col.code} style={{
+                flex: 1, minHeight: 0,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0 16px',
+                borderBottom: i < columns.length - 1 ? '1px solid #f3f4f6' : 'none',
+                background: isNet ? '#f0fdf4' : '#fff',
+                fontSize: 13,
+              }}>
+                <span style={{
+                  color: isNet ? '#15803d' : '#374151',
+                  fontWeight: isNet ? 700 : 400,
+                }}>{col.name}</span>
+                <span style={{
+                  fontVariantNumeric: 'tabular-nums',
+                  fontWeight: isNet ? 800 : 500,
+                  color: isNet ? '#15803d' : val < 0 ? '#dc2626' : '#111827',
+                  fontSize: isNet ? 14.5 : 13,
+                }}>
+                  {val != null ? hbVND(val) : '—'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ─ total bar ─ */}
+        {netVal != null && (
+          <div style={{
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+            background: 'linear-gradient(135deg, #065f46, #047857)',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span style={{ color: '#d1fae5', fontSize: 13, fontWeight: 600 }}>Thuc linh</span>
+            <span style={{ color: '#fff', fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {hbVND(netVal)}
+            </span>
           </div>
         )}
       </div>
+    </Modal>
+  );
+}
 
-      {/* Metrics */}
-      {data && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
+/* ── Main ── */
+export default function BatchList({ search }) {
+  const [month, setMonth] = useState(currentMonth());
+  const [year, setYear]   = useState(currentYear());
+  const [data, setData]   = useState(null);
+  const [err, setErr]     = useState(null);
+  const [sel, setSel]     = useState(null);
+  const [detailEmp, setDetailEmp] = useState(null);
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [cfg, setCfg] = useState(() => loadCfg() || {});
+  const [colWidths, setColWidths] = useState(() => loadWidths());
+  const resizeRef = useRef(null);
+
+  const load = () => { setErr(null); setData(null); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
+  useEffect(load, [month, year]);
+  const applyCfg = useCallback((c) => { setCfg(c); saveCfg(c); }, []);
+
+  /* ── column resize ── */
+  const startResize = useCallback((colKey, initW, e) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.classList.add('rh-active');
+    const startX = e.clientX;
+    resizeRef.current = { colKey, initW, startX };
+    const onMove = (ev) => {
+      if (!resizeRef.current) return;
+      const delta = ev.clientX - resizeRef.current.startX;
+      const newW = Math.max(40, resizeRef.current.initW + delta);
+      setColWidths((prev) => ({ ...prev, [colKey]: newW }));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('rh-active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setColWidths((prev) => { saveWidths(prev); return prev; });
+      resizeRef.current = null;
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
+
+  const getW = useCallback((key, def) => colWidths[key] || def, [colWidths]);
+
+  if (err) return <ErrorState message={err} onRetry={load} />;
+
+  const emps = data ? data.employees.filter((e) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (e.name || '').toLowerCase().includes(q) || (e.code || '').toLowerCase().includes(q);
+  }) : [];
+
+  const allCols = data ? data.columns : [];
+  const sorted = (() => {
+    const codes = allCols.map((c) => c.code);
+    const o = (cfg.order || []).filter((c) => codes.includes(c));
+    codes.forEach((c) => { if (!o.includes(c)) o.push(c); });
+    return o.map((c) => allCols.find((x) => x.code === c)).filter(Boolean);
+  })();
+  const visCols = sorted.filter((c) => (cfg.visible || {})[c.code] !== false);
+
+  const fr = cfg.frozen || {};
+  const frozenBase = BASE.filter((b) => fr[b.key] !== false);
+  const fw = frozenBase.map((b) => getW(b.key, b.w));
+  const cumL = fw.map((_, i) => fw.slice(0, i).reduce((a, b) => a + b, 0));
+
+  const sH = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 5, background: '#fafbfd', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
+  const sD = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 2, background: 'inherit', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
+  const sF = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 5, background: '#f8f9fb', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
+
+  const cellVal = (e, key, idx) => {
+    if (key === 'stt') return idx + 1;
+    if (key === 'code') return e.code || '—';
+    if (key === 'name') return e.name;
+    if (key === 'job_title') return e.job_title || '—';
+    if (key === 'department') return e.department || '—';
+    return '—';
+  };
+
+  const total = emps.length;
+  const withSlip = emps.filter((e) => e.payslip_id).length;
+  const netCol = allCols.find((c) => c.code === 'thuc_lanh');
+  const totalNet = netCol ? emps.reduce((s, e) => s + (e.amounts[netCol.code] || 0), 0) : 0;
+  const avgNet = withSlip > 0 ? Math.round(totalNet / withSlip) : 0;
+
+  const P = { padding: '10px 14px', fontSize: 13.5, whiteSpace: 'nowrap', lineHeight: '20px', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const dataDefW = 110;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+        <select className="sel" value={month} onChange={(e) => setMonth(e.target.value)} style={{ minWidth: 100 }}>
+          {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select className="sel" value={year} onChange={(e) => setYear(e.target.value)} style={{ minWidth: 72 }}>
+          {yearOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+
+        {/* metrics inline */}
+        {data && <>
+          <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 4px' }} />
           {[
-            ['Tong NV', total, 'users'],
-            ['Co phieu luong', withSlip, 'file-text'],
-            ['Tong thuc linh', hbVND(totalNet), 'dollar-sign'],
-            ['Binh quan', hbVND(avgNet), 'trending-up'],
-          ].map(([label, val, icon]) => (
-            <div key={label} className="card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-              <Icon name={icon} size={22} />
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 800 }}>{val}</div>
-                <div className="muted" style={{ fontSize: 12.5 }}>{label}</div>
-              </div>
-            </div>
+            ['NV:', total], ['Phieu:', withSlip],
+            ['Thuc linh:', hbVND(totalNet)], ['TB:', hbVND(avgNet)],
+          ].map(([l, v]) => (
+            <span key={l} style={{ fontSize: 12, color: '#6b7280' }}>
+              {l} <b style={{ color: '#111827' }}>{v}</b>
+            </span>
           ))}
-        </div>
-      )}
+        </>}
 
-      {/* Table */}
-      <div className="card">
+        <div style={{ flex: 1 }} />
+
+        <button onClick={() => setCfgOpen(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '5px 12px', borderRadius: 7,
+            border: '1px solid var(--border,#d1d5db)', background: '#fff',
+            fontSize: 12.5, color: '#374151', cursor: 'pointer',
+          }}>
+          <Icon name="settings" size={14} />
+          Cot&nbsp;<b>{visCols.length}/{allCols.length}</b>
+        </button>
+      </div>
+
+      {/* table — flex:1 fills remaining height */}
+      <div style={{
+        flex: 1, minHeight: 0,
+        border: '1px solid var(--border,#e5e7eb)', borderRadius: 10,
+        background: '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      }}>
         {!data ? (
-          <div style={{ padding: 36 }}>
-            <LoadingState label="Dang tai bang luong..." />
-          </div>
-        ) : employees.length === 0 ? (
-          <div style={{ padding: 36, textAlign: 'center' }}>
-            <EmptyState>Khong co du lieu thang {month}/{year}.</EmptyState>
-          </div>
+          <div style={{ padding: 40 }}><LoadingState label="Dang tai bang luong..." /></div>
+        ) : emps.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center' }}><EmptyState>Khong co du lieu thang {month}/{year}.</EmptyState></div>
         ) : (
-          <div className="tbl-wrap" style={{ overflowX: 'auto' }}>
-            <table className="tbl" style={{ minWidth: cumLeft[4] + COL_W[4] + columns.length * 120 }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <table style={{
+              width: '100%', borderCollapse: 'separate', borderSpacing: 0,
+              tableLayout: 'fixed',
+              minWidth: fw.reduce((a, b) => a + b, 0) + visCols.reduce((s, c) => s + getW(c.code, dataDefW), 0),
+            }}>
               <thead>
                 <tr>
-                  <th style={stickyTh(0)}>STT</th>
-                  <th style={stickyTh(1)}>Ma NV</th>
-                  <th style={stickyTh(2)}>Ho Ten</th>
-                  <th style={stickyTh(3)}>Chuc Vu</th>
-                  <th style={{ ...stickyTh(4), borderRight: '2px solid var(--border, #dee2e6)' }}>Phong ban</th>
-                  {columns.map((c) => (
-                    <th key={c.code} style={{ textAlign: 'right', whiteSpace: 'nowrap', minWidth: 110 }}>
-                      {c.name}
+                  {frozenBase.map((b, i) => (
+                    <th key={b.key} style={{
+                      ...sH(i), ...P, position: 'sticky', top: 0,
+                      fontSize: 12, fontWeight: 600, color: '#6b7280',
+                      textAlign: 'left',
+                      borderBottom: '1px solid #e5e7eb', overflow: 'visible',
+                      ...(i === frozenBase.length - 1 ? { boxShadow: '1px 0 0 #e5e7eb' } : {}),
+                    }}>
+                      {b.label}
+                      <div data-rh="1" onMouseDown={(e) => startResize(b.key, fw[i], e)} />
                     </th>
                   ))}
+                  {visCols.map((c) => {
+                    const w = getW(c.code, dataDefW);
+                    return (
+                      <th key={c.code} style={{
+                        ...P, position: 'sticky', top: 0, zIndex: 3,
+                        fontSize: 12, fontWeight: 600, color: '#6b7280',
+                        textAlign: 'left', background: '#fafbfd',
+                        borderBottom: '1px solid #e5e7eb', width: w, minWidth: w, maxWidth: w,
+                        overflow: 'visible',
+                      }}>
+                        {c.name}
+                        <div data-rh="1" onMouseDown={(e) => startResize(c.code, w, e)} />
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {employees.map((emp, idx) => (
-                  <tr
-                    key={emp.id}
-                    style={{ cursor: emp.payslip_id ? 'pointer' : 'default' }}
+                {emps.map((emp, idx) => (
+                  <tr key={emp.id}
                     onClick={() => emp.payslip_id && setSel(emp)}
-                  >
-                    <td style={stickyTd(0)}>{idx + 1}</td>
-                    <td style={stickyTd(1)}>
-                      <code style={{ fontSize: 12.5 }}>{emp.code || '—'}</code>
-                    </td>
-                    <td style={{ ...stickyTd(2), fontWeight: 600 }}>{emp.name}</td>
-                    <td style={stickyTd(3)}>{emp.job_title || '—'}</td>
-                    <td style={{ ...stickyTd(4), borderRight: '2px solid var(--border, #dee2e6)' }}>
-                      {emp.department || '—'}
-                    </td>
-                    {columns.map((c) => (
-                      <td key={c.code} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        {emp.amounts[c.code] != null ? hbVND(emp.amounts[c.code]) : ''}
+                    style={{
+                      cursor: emp.payslip_id ? 'pointer' : 'default',
+                      background: '#fff',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
+                    {frozenBase.map((b, i) => (
+                      <td key={b.key} style={{
+                        ...sD(i), ...P,
+                        background: 'inherit',
+                        textAlign: 'left',
+                        fontWeight: b.key === 'name' ? 600 : 400,
+                        borderBottom: '1px solid #e5e7eb',
+                        ...(i === frozenBase.length - 1 ? { borderRight: '1px solid #e5e7eb' } : {}),
+                      }}>
+                        {b.key === 'name' ? (
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setDetailEmp(emp); }}
+                            style={{ color: '#2563eb', cursor: 'pointer' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+                          >{emp.name}</span>
+                        ) : cellVal(emp, b.key, idx)}
                       </td>
                     ))}
+                    {visCols.map((c) => {
+                      const w = getW(c.code, dataDefW);
+                      return (
+                        <td key={c.code} style={{
+                          ...P, textAlign: 'right', borderBottom: '1px solid #e5e7eb',
+                          fontVariantNumeric: 'tabular-nums',
+                          width: w, minWidth: w, maxWidth: w,
+                        }}>
+                          {emp.amounts[c.code] != null ? hbVND(emp.amounts[c.code]) : ''}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ background: 'var(--gray-50)', fontWeight: 700 }}>
-                  <td style={stickyFt(0)} />
-                  <td style={stickyFt(1)} />
-                  <td style={{ ...stickyFt(2), textAlign: 'right', fontSize: 14 }} colSpan={1}>
-                    Tong cong
-                  </td>
-                  <td style={stickyFt(3)} />
-                  <td style={{ ...stickyFt(4), borderRight: '2px solid var(--border, #dee2e6)' }} />
-                  {columns.map((c) => {
-                    const sum = employees.reduce((s, e) => s + (e.amounts[c.code] || 0), 0);
+                <tr>
+                  {frozenBase.map((b, i) => (
+                    <td key={b.key} style={{
+                      ...sF(i), ...P, position: 'sticky', bottom: 0,
+                      fontWeight: 700, borderTop: '1px solid #e5e7eb',
+                      textAlign: b.key === 'name' ? 'right' : 'left',
+                      ...(i === frozenBase.length - 1 ? { borderRight: '1px solid #e5e7eb' } : {}),
+                    }}>
+                      {b.key === 'name' ? 'Tong' : ''}
+                    </td>
+                  ))}
+                  {visCols.map((c) => {
+                    const sum = emps.reduce((s, e) => s + (e.amounts[c.code] || 0), 0);
+                    const w = getW(c.code, dataDefW);
                     return (
-                      <td key={c.code} style={{ textAlign: 'right', fontSize: 14, whiteSpace: 'nowrap' }}>
+                      <td key={c.code} style={{
+                        ...P, position: 'sticky', bottom: 0, zIndex: 3,
+                        textAlign: 'right', fontWeight: 700,
+                        background: '#f8f9fb', borderTop: '1px solid #e5e7eb',
+                        fontVariantNumeric: 'tabular-nums',
+                        width: w, minWidth: w, maxWidth: w,
+                      }}>
                         {sum ? hbVND(sum) : ''}
                       </td>
                     );
@@ -171,13 +458,11 @@ export default function BatchList({ search }) {
         )}
       </div>
 
-      {sel && (
-        <PayslipDrawer
-          slip={{ id: sel.payslip_id }}
-          onClose={() => setSel(null)}
-          onChanged={load}
-        />
+      {cfgOpen && allCols.length > 0 && (
+        <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
-    </>
+      {sel && <PayslipDrawer slip={{ id: sel.payslip_id }} onClose={() => setSel(null)} onChanged={load} />}
+      {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} />}
+    </div>
   );
 }

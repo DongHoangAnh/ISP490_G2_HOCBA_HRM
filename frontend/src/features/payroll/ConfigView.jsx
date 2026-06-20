@@ -8,6 +8,7 @@ import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import SalaryRuleForm from './SalaryRuleForm';
 import BankFormatForm from './BankFormatForm';
+import TblWrap from '../../components/TblWrap';
 
 const TYPE_LABEL = { fixed: 'Số cố định', formula: 'Công thức' };
 const SUB_TABS = [['rules', 'Quy tắc lương'], ['banks', 'Ngân hàng']];
@@ -103,9 +104,9 @@ export default function ConfigView() {
   if (!rules || !banks) return <LoadingState label="Đang tải cấu hình..." />;
 
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* ── Segment toggle ── */}
-      <div style={segWrap}>
+      <div style={{ ...segWrap, flexShrink: 0 }}>
         {SUB_TABS.map(([id, l]) => (
           <button key={id} style={segBtn(tab === id)} onClick={() => setTab(id)}>{l}</button>
         ))}
@@ -115,11 +116,15 @@ export default function ConfigView() {
           TAB: QUY TẮC LƯƠNG
           ════════════════════════════════════════════════════════ */}
       {tab === 'rules' && (
-        <div className="card">
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          border: '1px solid #e5e7eb', borderRadius: 10,
+          background: '#fff', overflow: 'hidden',
+        }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Quy tắc lương (Salary Rules)</h3>
-              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Kéo hoặc dùng mũi tên để sắp xếp thứ tự tính lương</div>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Quy tắc lương (Salary Rules)</h3>
+              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>Kéo hoặc dùng mũi tên để sắp xếp thứ tự tính lương</div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={() => setRuleForm('new')}>
               <Icon name="plus" size={14} />Thêm rule
@@ -128,87 +133,91 @@ export default function ConfigView() {
           {rules.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center' }}><EmptyState>Chưa có quy tắc lương.</EmptyState></div>
           ) : (
-            <div className="tbl-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th style={{ width: 70 }}>Thứ tự</th>
-                    <th>Mã</th>
-                    <th>Tên</th>
-                    <th>Loại tính</th>
-                    <th>Giá trị / Công thức</th>
-                    <th style={{ width: 120 }}>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rules.map((r, i) => (
-                    <tr
-                      key={r.id}
-                      draggable
-                      onDragStart={() => onDragStart(i)}
-                      onDragOver={(e) => onDragOver(e, i)}
-                      onDragEnd={onDragEnd}
-                      onDrop={() => onDrop(i)}
-                      style={{
-                        cursor: 'grab',
-                        background: dragOver === i ? 'var(--blue-50)' : undefined,
-                        borderTop: dragOver === i ? '2px solid var(--blue-400)' : undefined,
-                      }}
-                    >
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <button
-                            className="icon-btn"
-                            title="Lên"
-                            onClick={() => move(i, -1)}
-                            disabled={i === 0}
-                            style={{ padding: 2 }}
-                          >
-                            <Icon name="arrowUp" size={14} />
-                          </button>
-                          <button
-                            className="icon-btn"
-                            title="Xuống"
-                            onClick={() => move(i, 1)}
-                            disabled={i === rules.length - 1}
-                            style={{ padding: 2 }}
-                          >
-                            <Icon name="arrowDown" size={14} />
-                          </button>
-                          <span className="muted" style={{ fontSize: 12, marginLeft: 4 }}>{i + 1}</span>
-                        </div>
-                      </td>
-                      <td><code style={{ fontSize: 12.5 }}>{r.code}</code></td>
-                      <td style={{ fontWeight: 600 }}>{r.name}</td>
-                      <td>
-                        <span style={{
-                          display: 'inline-block', padding: '2px 8px', borderRadius: 4,
-                          fontSize: 12, fontWeight: 600,
-                          background: r.amount_type === 'formula' ? 'var(--blue-50)' : 'var(--green-50)',
-                          color: r.amount_type === 'formula' ? 'var(--blue-600)' : 'var(--green-700)',
-                        }}>
-                          {TYPE_LABEL[r.amount_type] || r.amount_type}
-                        </span>
-                      </td>
-                      <td className="muted" style={{ fontSize: 12.5, fontFamily: 'monospace', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.amount_type === 'fixed' ? (r.amount_fixed ? Number(r.amount_fixed).toLocaleString('vi') + ' ₫' : '—')
-                          : r.amount_type === 'formula' ? (r.amount_formula || '—')
-                          : '—'}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="icon-btn" title="Sửa" onClick={() => setRuleForm(r)}>
-                            <Icon name="edit" size={15} />
-                          </button>
-                          <button className="icon-btn" title="Xoá" onClick={() => delRule(r)} disabled={ruleBusy === r.id}>
-                            <Icon name="trash" size={15} />
-                          </button>
-                        </div>
-                      </td>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+            <TblWrap id="cfg-rules">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 70 }}>Thứ tự</th>
+                      <th>Mã</th>
+                      <th>Tên</th>
+                      <th>Loại tính</th>
+                      <th>Giá trị / Công thức</th>
+                      <th style={{ width: 100 }}>Thao tác</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rules.map((r, i) => (
+                      <tr
+                        key={r.id}
+                        draggable
+                        onDragStart={() => onDragStart(i)}
+                        onDragOver={(e) => onDragOver(e, i)}
+                        onDragEnd={onDragEnd}
+                        onDrop={() => onDrop(i)}
+                        style={{
+                          cursor: 'grab',
+                          background: dragOver === i ? 'var(--blue-50)' : '#fff',
+                          borderTop: dragOver === i ? '2px solid var(--blue-400)' : undefined,
+                        }}
+                        onMouseEnter={(e) => { if (dragOver == null) e.currentTarget.style.background = '#f8fafc'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = dragOver === i ? 'var(--blue-50)' : '#fff'; }}
+                      >
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <button
+                              className="icon-btn"
+                              title="Lên"
+                              onClick={() => move(i, -1)}
+                              disabled={i === 0}
+                              style={{ padding: 2 }}
+                            >
+                              <Icon name="arrowUp" size={14} />
+                            </button>
+                            <button
+                              className="icon-btn"
+                              title="Xuống"
+                              onClick={() => move(i, 1)}
+                              disabled={i === rules.length - 1}
+                              style={{ padding: 2 }}
+                            >
+                              <Icon name="arrowDown" size={14} />
+                            </button>
+                            <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 4 }}>{i + 1}</span>
+                          </div>
+                        </td>
+                        <td style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{r.code}</td>
+                        <td style={{ fontWeight: 600 }}>{r.name}</td>
+                        <td>
+                          <span style={{
+                            display: 'inline-block', padding: '2px 8px', borderRadius: 4,
+                            fontSize: 12, fontWeight: 600,
+                            background: r.amount_type === 'formula' ? 'var(--blue-50)' : 'var(--green-50)',
+                            color: r.amount_type === 'formula' ? 'var(--blue-600)' : 'var(--green-700)',
+                          }}>
+                            {TYPE_LABEL[r.amount_type] || r.amount_type}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12.5, fontFamily: 'monospace', color: '#6b7280' }}>
+                          {r.amount_type === 'fixed' ? (r.amount_fixed ? Number(r.amount_fixed).toLocaleString('vi') + ' ₫' : '—')
+                            : r.amount_type === 'formula' ? (r.amount_formula || '—')
+                            : '—'}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="icon-btn" title="Sửa" onClick={() => setRuleForm(r)}>
+                              <Icon name="edit" size={15} />
+                            </button>
+                            <button className="icon-btn" title="Xoá" onClick={() => delRule(r)} disabled={ruleBusy === r.id}>
+                              <Icon name="trash" size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TblWrap>
             </div>
           )}
         </div>
@@ -218,11 +227,15 @@ export default function ConfigView() {
           TAB: NGÂN HÀNG
           ════════════════════════════════════════════════════════ */}
       {tab === 'banks' && (
-        <div className="card">
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          border: '1px solid #e5e7eb', borderRadius: 10,
+          background: '#fff', overflow: 'hidden',
+        }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Ngân hàng (Bank Formats)</h3>
-              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Danh sách ngân hàng để chọn khi tạo lương</div>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Ngân hàng (Bank Formats)</h3>
+              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>Danh sách ngân hàng để chọn khi tạo lương</div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={() => setBankForm('new')}>
               <Icon name="plus" size={14} />Thêm ngân hàng
@@ -231,34 +244,40 @@ export default function ConfigView() {
           {banks.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center' }}><EmptyState>Chưa có ngân hàng nào.</EmptyState></div>
           ) : (
-            <div className="tbl-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Mã</th>
-                    <th>Tên ngân hàng</th>
-                    <th style={{ width: 120 }}>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {banks.map((b) => (
-                    <tr key={b.id}>
-                      <td><code style={{ fontSize: 12.5 }}>{b.code}</code></td>
-                      <td style={{ fontWeight: 600 }}>{b.name}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="icon-btn" title="Sửa" onClick={() => setBankForm(b)}>
-                            <Icon name="edit" size={15} />
-                          </button>
-                          <button className="icon-btn" title="Xoá" onClick={() => delBank(b)} disabled={bankBusy === b.id}>
-                            <Icon name="trash" size={15} />
-                          </button>
-                        </div>
-                      </td>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+            <TblWrap id="cfg-banks">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Mã</th>
+                      <th>Tên ngân hàng</th>
+                      <th style={{ width: 100 }}>Thao tác</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {banks.map((b) => (
+                      <tr key={b.id}
+                        style={{ background: '#fff' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
+                      >
+                        <td style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{b.code}</td>
+                        <td style={{ fontWeight: 600 }}>{b.name}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="icon-btn" title="Sửa" onClick={() => setBankForm(b)}>
+                              <Icon name="edit" size={15} />
+                            </button>
+                            <button className="icon-btn" title="Xoá" onClick={() => delBank(b)} disabled={bankBusy === b.id}>
+                              <Icon name="trash" size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TblWrap>
             </div>
           )}
         </div>
@@ -281,6 +300,6 @@ export default function ConfigView() {
           onSaved={() => { setBankForm(null); loadBanks(); }}
         />
       )}
-    </>
+    </div>
   );
 }

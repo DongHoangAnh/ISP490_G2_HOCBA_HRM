@@ -49,40 +49,6 @@ export const markBankFileUploaded = (id) =>
 export const markBankFileConfirmed = (id) =>
   p(`/hocba-hrm/api/payroll/bank-file/${id}/confirm`, {});
 
-// ── BHXH ────────────────────────────────────────────────
-export const fetchBhxhReports = () =>
-  g('/hocba-hrm/api/payroll/bhxh');
-export const fetchBhxhReport = (id) =>
-  g(`/hocba-hrm/api/payroll/bhxh/${id}`);
-export const createBhxhReport = (payload) =>
-  p('/hocba-hrm/api/payroll/bhxh', payload);
-export const computeBhxh = (id) =>
-  p(`/hocba-hrm/api/payroll/bhxh/${id}/compute`, {});
-export const submitBhxh = (id) =>
-  p(`/hocba-hrm/api/payroll/bhxh/${id}/submit`, {});
-
-// ── eTax ────────────────────────────────────────────────
-export const fetchEtaxReports = () =>
-  g('/hocba-hrm/api/payroll/etax');
-export const fetchEtaxReport = (id) =>
-  g(`/hocba-hrm/api/payroll/etax/${id}`);
-export const createEtaxReport = (payload) =>
-  p('/hocba-hrm/api/payroll/etax', payload);
-export const computeEtax = (id) =>
-  p(`/hocba-hrm/api/payroll/etax/${id}/compute`, {});
-export const submitEtax = (id) =>
-  p(`/hocba-hrm/api/payroll/etax/${id}/submit`, {});
-
-// ── Sale Revenue ────────────────────────────────────────
-export const fetchSaleRevenues = (params) =>
-  g('/hocba-hrm/api/payroll/sale-revenue?' + new URLSearchParams(params));
-export const createSaleRevenue = (payload) =>
-  p('/hocba-hrm/api/payroll/sale-revenue', payload);
-export const updateSaleRevenue = (id, payload) =>
-  p(`/hocba-hrm/api/payroll/sale-revenue/${id}`, payload);
-export const deleteSaleRevenue = (id) =>
-  p(`/hocba-hrm/api/payroll/sale-revenue/${id}/delete`, {});
-
 // ── Salary Structure (read-only list) ────────────────────
 export const fetchSalaryStructures = () =>
   g('/hocba-hrm/api/payroll/salary-structure');
