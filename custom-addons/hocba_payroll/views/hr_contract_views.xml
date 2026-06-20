@@ -30,6 +30,7 @@
                             <field name="date_start"/>
                             <field name="date_end"/>
                             <field name="wage" widget="monetary"/>
+                            <field name="x_structure_id"/>
                             <field name="company_id" groups="base.group_multi_company"/>
                         </group>
                         <group string="Đơn giá giờ dạy">
@@ -50,6 +51,43 @@
                                    invisible="not x_has_fixed_base"/>
                         </group>
                     </group>
+                    <notebook>
+                        <page string="Bảo hiểm" name="insurance">
+                            <group>
+                                <group>
+                                    <field name="x_insurance_base" widget="monetary"/>
+                                    <field name="x_insurance_policy"/>
+                                </group>
+                                <group>
+                                    <field name="x_dependent_count"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Phụ cấp" name="allowances">
+                            <group>
+                                <group string="Phụ cấp lương">
+                                    <field name="x_pc_seniority" widget="monetary"/>
+                                    <field name="x_pc_position" widget="monetary"/>
+                                    <field name="x_pc_parking" widget="monetary"/>
+                                    <field name="x_pc_fuel" widget="monetary"/>
+                                </group>
+                                <group string="Hỗ trợ">
+                                    <field name="x_sp_transport" widget="monetary"/>
+                                    <field name="x_sp_phone" widget="monetary"/>
+                                    <field name="x_sp_meal" widget="monetary"/>
+                                    <field name="x_sp_uniform" widget="monetary"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Sale / KPI" name="sale_kpi">
+                            <group>
+                                <group>
+                                    <field name="x_is_sale"/>
+                                    <field name="x_kpi_wage" widget="monetary"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <chatter/>
             </form>
@@ -67,6 +105,7 @@
                 <field name="date_start"/>
                 <field name="date_end"/>
                 <field name="wage"/>
+                <field name="x_structure_id"/>
                 <field name="x_teaching_hourly_rate"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
@@ -93,6 +132,8 @@
                             context="{'group_by': 'employee_id'}"/>
                     <filter name="group_by_state" string="Trạng thái"
                             context="{'group_by': 'state'}"/>
+                    <filter name="group_by_structure" string="Cấu trúc lương"
+                            context="{'group_by': 'x_structure_id'}"/>
                 </group>
             </search>
         </field>
@@ -100,7 +141,7 @@
 
     <!-- Contract Action -->
     <record id="action_hb_contract" model="ir.actions.act_window">
-        <field name="name">Hợp đồng giáo viên</field>
+        <field name="name">Hợp đồng</field>
         <field name="res_model">hb.contract</field>
         <field name="view_mode">list,form</field>
         <field name="context">{'search_default_filter_open': 1}</field>

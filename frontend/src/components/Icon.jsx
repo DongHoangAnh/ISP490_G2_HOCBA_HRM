@@ -42,6 +42,10 @@ const PATHS = {
   idcard: <><rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8" cy="11" r="2.2"/><path d="M4.8 16.2a3.2 3.2 0 0 1 6.4 0M14 9.5h4M14 13h3"/></>,
   shield: <><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></>,
   graduation: <><path d="M22 9 12 5 2 9l10 4 10-4Z"/><path d="M6 10.5V16c0 1 2.5 3 6 3s6-2 6-3v-5.5"/></>,
+  calculator: <><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h2M8 18h2M14 14h2M14 18h2"/></>,
+  send: <><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></>,
+  upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></>,
+  rotateCcw: <><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></>,
 };
 
 export default function Icon({ name, size = 20, stroke = 1.8, className = '' }) {

@@ -1,10 +1,319 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!--
-        Salary computation logic is embedded directly in hb.payslip model
-        (payslip.py → action_compute_teaching_salary / _build_teaching_salary).
+    <data noupdate="1">
 
-        Enterprise hr.salary.rule / hr.payroll.structure are NOT used.
-        This file is kept as a placeholder for any future seed data.
-    -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- STRUCTURES                                            -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <record id="struct_offline" model="hb.salary.structure">
+            <field name="name">Lương Offline (đầy đủ)</field>
+            <field name="code">STRUCT_OFFLINE</field>
+            <field name="note">Cấu trúc cho NV offline: lương thời gian + phụ cấp + BH + thuế</field>
+        </record>
+
+        <record id="struct_online" model="hb.salary.structure">
+            <field name="name">Lương Online (đơn giản)</field>
+            <field name="code">STRUCT_ONLINE</field>
+            <field name="note">Cấu trúc cho NV/GV online: lương + thưởng − tạm ứng</field>
+        </record>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- STRUCT_OFFLINE RULES (15 rules)                       -->
+        <!-- ══════════════════════════════════════════════════════ -->
+
+        <!-- 1. luong_thoi_gian — Lương thời gian -->
+        <record id="rule_off_luong_tg" model="hb.salary.rule">
+            <field name="name">Lương thời gian</field>
+            <field name="code">luong_thoi_gian</field>
+            <field name="sequence">10</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_basic"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">
+std_days = inputs.STD_DAYS.amount or 24.0
+total_days = (worked_days.WORK100.number_of_days or 0.0) + (worked_days.OT.number_of_days or 0.0)
+ratio = total_days / std_days if std_days else 0.0
+if contract.x_is_sale:
+    base = contract._hocba_sale_base(payslip.date_from)
+else:
+    base = contract.wage or 0.0
+result = round(base * ratio)
+result_qty = total_days
+result_rate = base / std_days if std_days else 0.0
+</field>
+        </record>
+
+        <!-- 2. hoa_hong_sale — Hoa hồng sale -->
+        <record id="rule_off_hoa_hong" model="hb.salary.rule">
+            <field name="name">Hoa hồng sale</field>
+            <field name="code">hoa_hong_sale</field>
+            <field name="sequence">20</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_com"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = contract.x_is_sale</field>
+            <field name="amount_python_compute">
+rev = inputs.SALE_REV.amount or 0.0
+rate_com = contract._hocba_sale_rate(payslip.date_from, rev)
+result = round(rev * rate_com)
+result_rate = rate_com
+</field>
+        </record>
+
+        <!-- 3. tong_phu_cap — Tổng phụ cấp -->
+        <record id="rule_off_phu_cap" model="hb.salary.rule">
+            <field name="name">Tổng phụ cấp</field>
+            <field name="code">tong_phu_cap</field>
+            <field name="sequence">30</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_alw"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">
+result = (
+    (contract.x_pc_seniority or 0.0)
+    + (contract.x_pc_parking or 0.0)
+    + (contract.x_pc_fuel or 0.0)
+    + (contract.x_pc_position or 0.0)
+    + (contract.x_sp_transport or 0.0)
+    + (contract.x_sp_phone or 0.0)
+    + (contract.x_sp_meal or 0.0)
+    + (contract.x_sp_uniform or 0.0)
+)
+</field>
+        </record>
+
+        <!-- 4. thuong_le — Thưởng lễ -->
+        <record id="rule_off_thuong_le" model="hb.salary.rule">
+            <field name="name">Thưởng lễ</field>
+            <field name="code">thuong_le</field>
+            <field name="sequence">35</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_bonus"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = inputs.BONUS_HOLIDAY.amount or 0.0</field>
+        </record>
+
+        <!-- 5. thuong_khac — Thưởng khác -->
+        <record id="rule_off_thuong_khac" model="hb.salary.rule">
+            <field name="name">Thưởng khác</field>
+            <field name="code">thuong_khac</field>
+            <field name="sequence">36</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_bonus"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = inputs.BONUS_OTHER.amount or 0.0</field>
+        </record>
+
+        <!-- 6. tong_thu_nhap — Tổng thu nhập -->
+        <record id="rule_off_gross" model="hb.salary.rule">
+            <field name="name">TỔNG THU NHẬP</field>
+            <field name="code">tong_thu_nhap</field>
+            <field name="sequence">50</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_gross"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">
+result = categories.luong_thoi_gian + categories.hoa_hong + categories.phu_cap + categories.thuong
+</field>
+        </record>
+
+        <!-- 7-9. BH Công ty (bh_phan_cong_ty — tracking, không trừ NET) -->
+        <record id="rule_off_bhxh_ct" model="hb.salary.rule">
+            <field name="name">BHXH 17.5% (CT)</field>
+            <field name="code">bhxh_17_5_ct</field>
+            <field name="sequence">60</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_comp"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = (contract.x_insurance_policy or 'standard') != 'none'</field>
+            <field name="amount_python_compute">
+base = contract.x_insurance_base or 0.0
+policy = contract.x_insurance_policy or 'standard'
+if policy == 'standard':
+    result = round(base * 0.175)
+elif policy == 'tnld_0_5':
+    result = round(base * 0.005)
+else:
+    result = 0.0
+</field>
+        </record>
+
+        <record id="rule_off_bhyt_ct" model="hb.salary.rule">
+            <field name="name">BHYT 3% (CT)</field>
+            <field name="code">bhyt_3_ct</field>
+            <field name="sequence">61</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_comp"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = (contract.x_insurance_policy or 'standard') == 'standard'</field>
+            <field name="amount_python_compute">
+base = contract.x_insurance_base or 0.0
+result = round(base * 0.03)
+</field>
+        </record>
+
+        <record id="rule_off_bhtn_ct" model="hb.salary.rule">
+            <field name="name">BHTN 1% (CT)</field>
+            <field name="code">bhtn_1_ct</field>
+            <field name="sequence">62</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_comp"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = (contract.x_insurance_policy or 'standard') == 'standard'</field>
+            <field name="amount_python_compute">
+base = contract.x_insurance_base or 0.0
+result = round(base * 0.01)
+</field>
+        </record>
+
+        <!-- 10-12. BH Nhân viên (khau_tru_nv — trừ NET) -->
+        <record id="rule_off_bhxh_nv" model="hb.salary.rule">
+            <field name="name">BHXH 8% (NV)</field>
+            <field name="code">bhxh_8_nv</field>
+            <field name="sequence">70</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_ded"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = (contract.x_insurance_policy or 'standard') == 'standard'</field>
+            <field name="amount_python_compute">
+base = contract.x_insurance_base or 0.0
+result = -round(base * 0.08)
+</field>
+        </record>
+
+        <record id="rule_off_bhyt_nv" model="hb.salary.rule">
+            <field name="name">BHYT 1.5% (NV)</field>
+            <field name="code">bhyt_1_5_nv</field>
+            <field name="sequence">71</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_ded"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = (contract.x_insurance_policy or 'standard') == 'standard'</field>
+            <field name="amount_python_compute">
+base = contract.x_insurance_base or 0.0
+result = -round(base * 0.015)
+</field>
+        </record>
+
+        <record id="rule_off_bhtn_nv" model="hb.salary.rule">
+            <field name="name">BHTN 1% (NV)</field>
+            <field name="code">bhtn_1_nv</field>
+            <field name="sequence">72</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_ded"/>
+            <field name="amount_type">code</field>
+            <field name="condition_type">python</field>
+            <field name="condition_python">result = (contract.x_insurance_policy or 'standard') == 'standard'</field>
+            <field name="amount_python_compute">
+base = contract.x_insurance_base or 0.0
+result = -round(base * 0.01)
+</field>
+        </record>
+
+        <!-- 13. thue_tncn — Thuế TNCN (2026: personal 15.5M, dependent 6.2M) -->
+        <record id="rule_off_tncn" model="hb.salary.rule">
+            <field name="name">Thuế TNCN</field>
+            <field name="code">thue_tncn</field>
+            <field name="sequence">80</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_tax"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">
+gross = categories.tong_thu_nhap
+bh_nv = abs(rules.get('bhxh_8_nv', 0)) + abs(rules.get('bhyt_1_5_nv', 0)) + abs(rules.get('bhtn_1_nv', 0))
+dep_count = contract.x_dependent_count or payslip._get_dependent_count()
+self_ded = 15500000
+dep_ded = 6200000 * dep_count
+nontax = inputs.NONTAX_ALW.amount or 0.0
+taxable = max(0.0, gross - bh_nv - self_ded - dep_ded - nontax)
+result = -payslip._hocba_pit(taxable)
+result_rate = taxable
+</field>
+        </record>
+
+        <!-- 14. tam_ung_tru_khac — Tạm ứng, trừ khác -->
+        <record id="rule_off_tam_ung" model="hb.salary.rule">
+            <field name="name">Tạm ứng, trừ khác</field>
+            <field name="code">tam_ung_tru_khac</field>
+            <field name="sequence">90</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_ded"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = -(inputs.ADVANCE.amount or 0.0)</field>
+        </record>
+
+        <!-- 15. thuc_lanh — Thực lãnh -->
+        <record id="rule_off_net" model="hb.salary.rule">
+            <field name="name">THỰC LÃNH</field>
+            <field name="code">thuc_lanh</field>
+            <field name="sequence">99</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_net"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">
+result = categories.tong_thu_nhap + categories.khau_tru_nv + categories.thue_tncn
+</field>
+        </record>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- STRUCT_ONLINE RULES (5 rules)                         -->
+        <!-- ══════════════════════════════════════════════════════ -->
+
+        <record id="rule_on_wage" model="hb.salary.rule">
+            <field name="name">Lương</field>
+            <field name="code">luong</field>
+            <field name="sequence">10</field>
+            <field name="structure_id" ref="struct_online"/>
+            <field name="category_id" ref="rule_categ_basic"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = inputs.WAGE_ONLINE.amount or contract.wage or 0.0</field>
+        </record>
+
+        <record id="rule_on_thuong" model="hb.salary.rule">
+            <field name="name">Thưởng</field>
+            <field name="code">thuong</field>
+            <field name="sequence">40</field>
+            <field name="structure_id" ref="struct_online"/>
+            <field name="category_id" ref="rule_categ_bonus"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = inputs.BONUS_OTHER.amount or 0.0</field>
+        </record>
+
+        <record id="rule_on_gross" model="hb.salary.rule">
+            <field name="name">TỔNG THU NHẬP</field>
+            <field name="code">tong_thu_nhap</field>
+            <field name="sequence">50</field>
+            <field name="structure_id" ref="struct_online"/>
+            <field name="category_id" ref="rule_categ_gross"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = categories.luong_thoi_gian + categories.thuong</field>
+        </record>
+
+        <record id="rule_on_tam_ung" model="hb.salary.rule">
+            <field name="name">Tạm ứng, trừ khác</field>
+            <field name="code">tam_ung_tru_khac</field>
+            <field name="sequence">90</field>
+            <field name="structure_id" ref="struct_online"/>
+            <field name="category_id" ref="rule_categ_ded"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = -(inputs.ADVANCE.amount or 0.0)</field>
+        </record>
+
+        <record id="rule_on_net" model="hb.salary.rule">
+            <field name="name">THỰC LÃNH</field>
+            <field name="code">thuc_lanh</field>
+            <field name="sequence">99</field>
+            <field name="structure_id" ref="struct_online"/>
+            <field name="category_id" ref="rule_categ_net"/>
+            <field name="amount_type">code</field>
+            <field name="amount_python_compute">result = categories.tong_thu_nhap + categories.khau_tru_nv</field>
+        </record>
+
+    </data>
 </odoo>
