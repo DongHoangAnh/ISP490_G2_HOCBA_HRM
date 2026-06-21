@@ -53,7 +53,6 @@
                                     <field name="number"/>
                                     <field name="employee_id"/>
                                     <field name="structure_id"/>
-                                    <field name="x_teaching_total_hours"/>
                                     <field name="gross_amount" widget="monetary"/>
                                     <field name="net_amount" widget="monetary"/>
                                     <field name="state" widget="badge"
@@ -139,10 +138,6 @@
                     </group>
                     <group string="Kết quả">
                         <group>
-                            <field name="x_teaching_total_hours"/>
-                            <field name="x_holiday_ot_hours"/>
-                        </group>
-                        <group>
                             <field name="gross_amount" widget="monetary"/>
                             <field name="net_amount" widget="monetary"/>
                         </group>
@@ -204,7 +199,6 @@
                 <field name="structure_id"/>
                 <field name="date_from"/>
                 <field name="date_to"/>
-                <field name="x_teaching_total_hours"/>
                 <field name="gross_amount" widget="monetary"/>
                 <field name="net_amount" widget="monetary"/>
                 <field name="state" widget="badge"

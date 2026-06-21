@@ -79,14 +79,6 @@
                                 </group>
                             </group>
                         </page>
-                        <page string="Sale / KPI" name="sale_kpi">
-                            <group>
-                                <group>
-                                    <field name="x_is_sale"/>
-                                    <field name="x_kpi_wage" widget="monetary"/>
-                                </group>
-                            </group>
-                        </page>
                     </notebook>
                 </sheet>
                 <chatter/>

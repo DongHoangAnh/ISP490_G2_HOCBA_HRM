@@ -145,7 +145,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                         <td className="mono" style={{
                           textAlign: 'right',
                           fontWeight: isHL ? 800 : 500,
-                          color: item._catCode === 'NET' ? 'var(--green)' : isNeg ? 'var(--red-600)' : undefined,
+                          color: item._catCode === 'thuc_lanh' ? 'var(--green)' : isNeg ? 'var(--red-600)' : undefined,
                           fontSize: isHL ? 15 : 14,
                         }}>
                           {hbVND(item.total)}

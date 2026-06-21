@@ -128,7 +128,7 @@ const MS = {
 /* ── Salary Detail — receipt-style, flex to screen ── */
 function SalaryDetail({ emp, columns, onClose }) {
   const lastCode = columns.length > 0 ? columns[columns.length - 1].code : null;
-  const NET_CODES = new Set(['thuc_lanh', 'NET']);
+  const NET_CODES = new Set(['thuc_lanh']);
   const netRow = columns.find((c) => NET_CODES.has(c.code));
   const netVal = netRow ? emp.amounts[netRow.code] : null;
 

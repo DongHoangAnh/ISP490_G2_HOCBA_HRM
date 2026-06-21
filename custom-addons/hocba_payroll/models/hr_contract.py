@@ -1,6 +1,6 @@
 """
 Contract — standalone replacement for hr.contract (Enterprise).
-Covers teaching hourly-rate config, allowances, insurance, and sale/KPI fields.
+Covers teaching hourly-rate config, allowances, and insurance.
 """
 import logging
 
@@ -86,13 +86,6 @@ class HbContract(models.Model):
         string='HT trang phục', digits=(12, 0),
     )
 
-    # ── Sale / KPI ───────────────────────────────────────────
-    x_kpi_wage = fields.Float(
-        string='Lương KPI', digits=(12, 0),
-    )
-    x_is_sale = fields.Boolean(
-        string='Nhân viên sale', default=False,
-    )
     x_structure_id = fields.Many2one(
         'hb.salary.structure', string='Cấu trúc lương',
         help='STRUCT_OFFLINE hoặc STRUCT_ONLINE. Nếu trống sẽ tự xác định.',
@@ -138,28 +131,6 @@ class HbContract(models.Model):
                 rec.x_effective_extra_rate = rec.x_extra_rate
             else:
                 rec.x_effective_extra_rate = rec.x_teaching_hourly_rate * 1.25
-
-    # ── Sale helpers ─────────────────────────────────────────
-    def _hocba_sale_base(self, period_date):
-        """Return base_sale_wage from hocba.sale.level for current period."""
-        self.ensure_one()
-        revenue_rec = self.env['hocba.sale.revenue'].search([
-            ('employee_id', '=', self.employee_id.id),
-            ('period_month', '=', period_date.month),
-            ('period_year', '=', period_date.year),
-        ], limit=1)
-        if revenue_rec and revenue_rec.level_id:
-            return revenue_rec.level_id.base_sale_wage
-        return self.wage
-
-    def _hocba_sale_rate(self, period_date, revenue):
-        """Return commission_rate from hocba.sale.level based on revenue."""
-        self.ensure_one()
-        level = self.env['hocba.sale.level'].search(
-            [('kpi_threshold', '<=', revenue), ('active', '=', True)],
-            order='kpi_threshold desc', limit=1,
-        )
-        return level.commission_rate if level else 0.0
 
     # ── State transitions ────────────────────────────────────
     def action_open(self):
@@ -249,9 +220,6 @@ class HbContract(models.Model):
             'x_sp_phone': self.x_sp_phone,
             'x_sp_meal': self.x_sp_meal,
             'x_sp_uniform': self.x_sp_uniform,
-            # Sale / KPI
-            'x_kpi_wage': self.x_kpi_wage,
-            'x_is_sale': self.x_is_sale,
             'x_structure_id': self.x_structure_id.id if self.x_structure_id else None,
             'x_structure_code': self.x_structure_id.code if self.x_structure_id else None,
             # Teaching

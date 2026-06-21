@@ -11,12 +11,10 @@
 1. res.partner.bank  ← (số TK, ngân hàng từ 2_2)
 2. hr.employee       ← 2_2 (lương/phúc lợi) + 2_3 (thuế/BH)   [match theo Mã NV]
 3. hr.contract       ← 2_2 (lương, phụ cấp định mức) + 2_3 (lương đóng BH, NPT)
-4. hocba.sale.level  ← seed bậc hoa hồng (file 03) — chờ khách chốt
-5. hocba.sale.revenue← 5_1 (Doanh thu, Level, %COM) theo từng tháng
-6. hr.payslip (history) ← 5_1 (offline) + 5_2 (online) — import kết quả để tra cứu/đối chiếu
+4. hr.payslip (history) ← 5_1 (offline) + 5_2 (online) — import kết quả để tra cứu/đối chiếu
 ```
 
-> Lưu ý: bước 6 import **kết quả lịch sử** (không tính lại) để giữ số đã trả. Từ kỳ go-live trở đi
+> Lưu ý: bước 4 import **kết quả lịch sử** (không tính lại) để giữ số đã trả. Từ kỳ go-live trở đi
 > hệ thống **tự tính**. Có thể tạo một field `x_imported = True` để phân biệt phiếu nhập tay.
 
 ---
@@ -46,7 +44,6 @@
 | Hỗ trợ điện thoại | `x_sp_phone` | contract |
 | Hỗ trợ ăn ca | `x_sp_meal` | contract |
 | Hỗ trợ trang phục | `x_sp_uniform` | contract |
-| Lương KPI | `x_kpi_wage` | contract |
 | Số tài khoản | `res.partner.bank.acc_number` | bank |
 | Ngân hàng | `res.partner.bank.bank_id` | bank |
 
@@ -79,17 +76,14 @@ Map `x_insurance_policy`: `BH theo định mức→standard`, `Đóng 0.5% BH TN
 
 ---
 
-## 4. Map `5_1 Tính lương offline` → hocba.sale.revenue + hr.payslip (history)
+## 4. Map `5_1 Tính lương offline` -> hr.payslip (history)
 
-**Sale revenue** (chỉ dòng có Doanh thu): `Mã NV`, `Tháng/Năm tương ứng`, `Doanh thu`→revenue, `Level`, `%COM`.
-
-**Payslip history** — lưu các chỉ tiêu để đối chiếu (map vào payslip lines tương ứng hoặc field phụ):
+**Payslip history** -- lưu các chỉ tiêu để đối chiếu (map vào payslip lines tương ứng hoặc field phụ):
 | Cột Excel | Ý nghĩa |
 |---|---|
 | Tháng tương ứng / Năm tương ứng | period |
 | Công chuẩn / Công tháng / Tăng ca / Tổng công | worked days |
 | Lương thời gian | line LUONG_TG |
-| COM / Lương sale | line HOA_HONG |
 | Tổng phụ cấp | line PHU_CAP |
 | Thưởng Lễ / Thưởng khác | line THUONG |
 | TỔNG THU NHẬP | line GROSS |

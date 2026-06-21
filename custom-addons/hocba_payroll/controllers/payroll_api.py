@@ -135,7 +135,6 @@ class PayrollAPI(http.Controller):
                 'state': s.state,
                 'gross_amount': s.gross_amount,
                 'net_amount': s.net_amount,
-                'teaching_total_hours': s.x_teaching_total_hours,
                 'teaching_computed': s.x_teaching_computed,
             } for s in batch.slip_ids]
             return _success_response({
@@ -1007,8 +1006,6 @@ class PayrollAPI(http.Controller):
                 'x_sp_phone': c.x_sp_phone,
                 'x_sp_meal': c.x_sp_meal,
                 'x_sp_uniform': c.x_sp_uniform,
-                'x_kpi_wage': c.x_kpi_wage,
-                'x_is_sale': c.x_is_sale,
                 'x_teaching_hourly_rate': c.x_teaching_hourly_rate,
                 'x_rate_hsk_class': c.x_rate_hsk_class,
                 'x_rate_advanced_class': c.x_rate_advanced_class,

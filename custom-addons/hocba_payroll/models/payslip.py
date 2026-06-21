@@ -26,13 +26,6 @@ PIT_BRACKETS = [
     (float('inf'), 0.35),
 ]
 
-# Teaching work entry codes (backward compat)
-WORK_ENTRY_TEACHING = 'WORK200'
-WORK_ENTRY_HOLIDAY_OT = 'WORK110_OT_HOLIDAY'
-MAX_SINGLE_ENTRY_HOURS = 24.0
-HOLIDAY_OT_MULTIPLIER = 3.0
-WARN_MONTHLY_HOURS = 200.0
-
 
 # ═══════════════════════════════════════════════════════════════
 # Proxy classes for rule evaluation
@@ -151,12 +144,6 @@ class HbPayslip(models.Model):
     )
 
     # ── Computed status fields ──────────────────────────────
-    x_teaching_total_hours = fields.Float(
-        string='Tổng giờ dạy', digits=(8, 2), readonly=True,
-    )
-    x_holiday_ot_hours = fields.Float(
-        string='Giờ OT ngày lễ', digits=(8, 2), readonly=True,
-    )
     x_compute_warnings = fields.Text(
         string='Cảnh báo tính lương', readonly=True,
     )
@@ -703,8 +690,6 @@ class HbPayslip(models.Model):
             'date_from': str(self.date_from),
             'date_to': str(self.date_to),
             'state': self.state,
-            'teaching_total_hours': self.x_teaching_total_hours,
-            'holiday_ot_hours': self.x_holiday_ot_hours,
             'teaching_computed': self.x_teaching_computed,
             'compute_warnings': self.x_compute_warnings,
             'gross_amount': self.gross_amount,
@@ -731,5 +716,6 @@ class HbPayslip(models.Model):
                 'quantity': l.quantity,
                 'rate': l.rate,
                 'amount': l.amount,
+                'category_code': l.category_id.code if l.category_id else '',
             } for l in self.line_ids.sorted('sequence')],
         }

@@ -318,63 +318,6 @@ result = round(F * 0.01)
 </field>
         </record>
 
-        <!-- ── Deactivate old rules no longer used ──────────────── -->
-        <record id="rule_off_luong_tg" model="hb.salary.rule">
-            <field name="name">Lương thời gian (cũ)</field>
-            <field name="code">luong_thoi_gian</field>
-            <field name="sequence">999</field>
-            <field name="structure_id" ref="struct_offline"/>
-            <field name="category_id" ref="rule_categ_alw"/>
-            <field name="active" eval="False"/>
-            <field name="appears_on_payslip" eval="False"/>
-            <field name="amount_type">fixed</field>
-            <field name="amount_fixed">0</field>
-        </record>
-        <record id="rule_off_hoa_hong" model="hb.salary.rule">
-            <field name="name">Hoa hồng sale (cũ)</field>
-            <field name="code">hoa_hong_sale</field>
-            <field name="sequence">999</field>
-            <field name="structure_id" ref="struct_offline"/>
-            <field name="category_id" ref="rule_categ_alw"/>
-            <field name="active" eval="False"/>
-            <field name="appears_on_payslip" eval="False"/>
-            <field name="amount_type">fixed</field>
-            <field name="amount_fixed">0</field>
-        </record>
-        <record id="rule_off_phu_cap" model="hb.salary.rule">
-            <field name="name">Tổng phụ cấp (cũ)</field>
-            <field name="code">tong_phu_cap</field>
-            <field name="sequence">999</field>
-            <field name="structure_id" ref="struct_offline"/>
-            <field name="category_id" ref="rule_categ_alw"/>
-            <field name="active" eval="False"/>
-            <field name="appears_on_payslip" eval="False"/>
-            <field name="amount_type">fixed</field>
-            <field name="amount_fixed">0</field>
-        </record>
-        <record id="rule_off_thuong_le" model="hb.salary.rule">
-            <field name="name">Thưởng lễ (cũ)</field>
-            <field name="code">thuong_le</field>
-            <field name="sequence">999</field>
-            <field name="structure_id" ref="struct_offline"/>
-            <field name="category_id" ref="rule_categ_bonus"/>
-            <field name="active" eval="False"/>
-            <field name="appears_on_payslip" eval="False"/>
-            <field name="amount_type">fixed</field>
-            <field name="amount_fixed">0</field>
-        </record>
-        <record id="rule_off_tam_ung" model="hb.salary.rule">
-            <field name="name">Tạm ứng trừ khác (cũ)</field>
-            <field name="code">tam_ung_tru_khac</field>
-            <field name="sequence">999</field>
-            <field name="structure_id" ref="struct_offline"/>
-            <field name="category_id" ref="rule_categ_ded"/>
-            <field name="active" eval="False"/>
-            <field name="appears_on_payslip" eval="False"/>
-            <field name="amount_type">fixed</field>
-            <field name="amount_fixed">0</field>
-        </record>
-
         <!-- ══════════════════════════════════════════════════════ -->
         <!-- STRUCT_ONLINE RULES (5 rules — giữ nguyên)            -->
         <!-- ══════════════════════════════════════════════════════ -->

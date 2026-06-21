@@ -33,14 +33,6 @@ export const confirmPayslip = (id) =>
 export const resetPayslip = (id, reason) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/reset`, { reason });
 
-// ── Work Entry ──────────────────────────────────────────
-export const fetchWorkEntries = (params) =>
-  g('/hocba-hrm/api/payroll/work-entry?' + new URLSearchParams(params));
-export const createWorkEntry = (payload) =>
-  p('/hocba-hrm/api/payroll/work-entry', payload);
-export const bulkCreateWorkEntries = (entries) =>
-  p('/hocba-hrm/api/payroll/work-entry/bulk-create', { entries });
-
 // ── Bank File ───────────────────────────────────────────
 export const fetchBankFiles = (params) =>
   g('/hocba-hrm/api/payroll/bank-file?' + new URLSearchParams(params));
@@ -51,19 +43,11 @@ export const markBankFileUploaded = (id) =>
 export const markBankFileConfirmed = (id) =>
   p(`/hocba-hrm/api/payroll/bank-file/${id}/confirm`, {});
 
-// ── Salary Structure (read-only list) ────────────────────
-export const fetchSalaryStructures = () =>
-  g('/hocba-hrm/api/payroll/salary-structure');
-
 // ── Salary Rule ──────────────────────────────────────────
-export const fetchRuleCategories = () =>
-  g('/hocba-hrm/api/payroll/salary-rule-category');
 export const createRuleCategory = (payload) =>
   p('/hocba-hrm/api/payroll/salary-rule-category', payload);
 export const updateRuleCategory = (id, payload) =>
   p(`/hocba-hrm/api/payroll/salary-rule-category/${id}`, payload);
-export const deleteRuleCategory = (id) =>
-  p(`/hocba-hrm/api/payroll/salary-rule-category/${id}/delete`, {});
 export const fetchSalaryRules = (params) =>
   g('/hocba-hrm/api/payroll/salary-rule?' + new URLSearchParams(params));
 export const createSalaryRule = (payload) =>
@@ -83,8 +67,6 @@ export const updateBankFormat = (id, payload) =>
   p(`/hocba-hrm/api/payroll/bank-format/${id}`, payload);
 export const deleteBankFormat = (id) =>
   p(`/hocba-hrm/api/payroll/bank-format/${id}/delete`, {});
-export const fetchContract = (id) =>
-  g(`/hocba-hrm/api/payroll/contract/${id}`);
 
 // ── Send payslip mail ───────────────────────────────────
 export const sendPayslipMail = (payslipIds) =>
