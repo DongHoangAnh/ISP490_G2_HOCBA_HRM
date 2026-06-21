@@ -88,7 +88,7 @@
 
                     <div class="lines">
                         <t t-foreach="lines" t-as="line">
-                            <div t-attf-class="line #{('thuc_lanh' in line.code or 'NET' in line.code) and 'line-net' or ''}">
+                            <div t-attf-class="line #{'thuc_lanh' in line.code and 'line-net' or ''}">
                                 <span class="lbl"><t t-esc="line.name"/></span>
                                 <span class="val"><t t-esc="'{:,.0f}'.format(line.amount)"/> ₫</span>
                             </div>

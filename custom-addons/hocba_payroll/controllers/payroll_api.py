@@ -155,21 +155,21 @@ class PayrollAPI(http.Controller):
             if not batch.exists():
                 return _error_response('Batch not found.', status=404)
 
-            employees = request.env['hr.employee'].sudo().search([
-                ('active', '=', True),
-                ('contract_ids.state', '=', 'open'),
+            # Search open contracts first, then get unique employees
+            contracts = request.env['hb.contract'].sudo().search([
+                ('state', '=', 'open'),
+                ('employee_id.active', '=', True),
+                ('date_start', '<=', batch.date_end),
+                '|', ('date_end', '=', False), ('date_end', '>=', batch.date_start),
             ])
             created = 0
             skipped = []
-            for emp in employees:
-                contract = emp.contract_ids.filtered(
-                    lambda c: c.state == 'open'
-                              and c.date_start <= batch.date_end
-                              and (not c.date_end or c.date_end >= batch.date_start)
-                )[:1]
-                if not contract:
-                    skipped.append(emp.name)
+            seen_emp_ids = set()
+            for contract in contracts:
+                emp = contract.employee_id
+                if emp.id in seen_emp_ids:
                     continue
+                seen_emp_ids.add(emp.id)
                 slip_vals = {
                     'employee_id': emp.id,
                     'contract_id': contract.id,
@@ -261,6 +261,101 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e))
         except Exception as e:
             _logger.exception('close_batch_by_period error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/compute-all', type='http', auth='user',
+                methods=['POST'], csrf=False)
+    def compute_all_payslips(self, **kw):
+        """One-click: find-or-create batch, generate payslips, compute all.
+
+        Body: { "month": int, "year": int }
+        """
+        try:
+            body = _get_json_body()
+            month = int(body.get('month', 0))
+            year = int(body.get('year', 0))
+            if not month or not year:
+                return _error_response('month and year are required.')
+
+            import calendar
+            last_day = calendar.monthrange(year, month)[1]
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{year}-{month:02d}-{last_day:02d}'
+
+            env = request.env
+            Batch = env['hb.payslip.run'].sudo()
+            Slip = env['hb.payslip'].sudo()
+
+            # 1) Find or create batch for this period
+            batch = Batch.search([
+                ('date_start', '=', date_start),
+                ('date_end', '=', date_end),
+                ('state', '=', 'draft'),
+            ], limit=1)
+            if not batch:
+                batch = Batch.create({
+                    'name': f'Lương Tháng {month:02d}/{year}',
+                    'date_start': date_start,
+                    'date_end': date_end,
+                })
+
+            # 2) Generate payslips for employees who don't have one yet
+            existing_emp_ids = set(
+                Slip.search([
+                    ('payslip_run_id', '=', batch.id),
+                ]).mapped('employee_id.id')
+            )
+            # Search open contracts first, then get unique employees
+            contracts = env['hb.contract'].sudo().search([
+                ('state', '=', 'open'),
+                ('employee_id.active', '=', True),
+                ('date_start', '<=', batch.date_end),
+                '|', ('date_end', '=', False), ('date_end', '>=', batch.date_start),
+            ])
+            created = 0
+            seen_emp_ids = set()
+            for contract in contracts:
+                emp = contract.employee_id
+                if emp.id in existing_emp_ids or emp.id in seen_emp_ids:
+                    continue
+                seen_emp_ids.add(emp.id)
+                slip_vals = {
+                    'employee_id': emp.id,
+                    'contract_id': contract.id,
+                    'date_from': batch.date_start,
+                    'date_to': batch.date_end,
+                    'payslip_run_id': batch.id,
+                }
+                struct = getattr(contract, 'x_structure_id', None)
+                if struct:
+                    slip_vals['structure_id'] = struct.id
+                Slip.create(slip_vals)
+                created += 1
+
+            # 3) Compute all draft/verify payslips in the batch
+            to_compute = Slip.search([
+                ('payslip_run_id', '=', batch.id),
+                ('state', 'in', ('draft', 'verify')),
+            ])
+            computed = 0
+            errors = []
+            for slip in to_compute:
+                try:
+                    slip.action_compute_sheet()
+                    computed += 1
+                except Exception as e:
+                    errors.append(f'{slip.employee_id.name}: {e}')
+
+            return _success_response({
+                'batch_id': batch.id,
+                'created': created,
+                'computed': computed,
+                'errors': errors,
+            }, message=f'Đã tính lương cho {computed} nhân viên.')
+        except (ValidationError, UserError) as e:
+            return _error_response(str(e))
+        except Exception as e:
+            _logger.exception('compute_all_payslips error')
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
@@ -843,6 +938,27 @@ class PayrollAPI(http.Controller):
             _logger.exception('delete_salary_rule_category error')
             return _error_response(str(e), status=500)
 
+    # ── Lookup Sources ─────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/lookup-sources', type='http', auth='user',
+                methods=['GET'], csrf=False)
+    def list_lookup_sources(self, **kw):
+        """Return available lookup sources and their fields for the frontend."""
+        try:
+            from odoo.addons.hocba_payroll.models.payslip import LOOKUP_SOURCES
+            data = {}
+            for key, src in LOOKUP_SOURCES.items():
+                data[key] = {
+                    'label': src['label'],
+                    'fields': {
+                        fname: {'label': fdef['label'], 'agg': fdef.get('agg', 'sum')}
+                        for fname, fdef in src['fields'].items()
+                    },
+                }
+            return _success_response(data)
+        except Exception as e:
+            _logger.exception('list_lookup_sources error')
+            return _error_response(str(e), status=500)
+
     # ── Salary Rule CRUD ──────────────────────────────────
     @http.route('/hocba-hrm/api/payroll/salary-rule', type='http', auth='user',
                 methods=['GET'], csrf=False)
@@ -865,6 +981,8 @@ class PayrollAPI(http.Controller):
                 'amount_percentage_base': r.amount_percentage_base or '',
                 'amount_python_compute': r.amount_python_compute or '',
                 'amount_formula': r.amount_formula or '',
+                'lookup_source': r.lookup_source or '',
+                'lookup_field': r.lookup_field or '',
                 'condition_type': r.condition_type,
                 'condition_python': r.condition_python or '',
                 'appears_on_payslip': r.appears_on_payslip,
@@ -900,6 +1018,9 @@ class PayrollAPI(http.Controller):
                 vals['amount_formula'] = body.get('amount_formula', '')
             elif vals['amount_type'] == 'code':
                 vals['amount_python_compute'] = body.get('amount_python_compute', '')
+            elif vals['amount_type'] == 'lookup':
+                vals['lookup_source'] = body.get('lookup_source', '')
+                vals['lookup_field'] = body.get('lookup_field', '')
             if body.get('condition_type') == 'python':
                 vals['condition_type'] = 'python'
                 vals['condition_python'] = body.get('condition_python', '')
@@ -922,7 +1043,8 @@ class PayrollAPI(http.Controller):
                 return _error_response('Salary rule not found.', status=404)
             vals = {}
             for f in ('name', 'code', 'note', 'amount_percentage_base',
-                       'amount_python_compute', 'amount_formula', 'condition_python'):
+                       'amount_python_compute', 'amount_formula', 'condition_python',
+                       'lookup_source', 'lookup_field'):
                 if f in body:
                     vals[f] = body[f]
             for f in ('sequence', 'category_id'):

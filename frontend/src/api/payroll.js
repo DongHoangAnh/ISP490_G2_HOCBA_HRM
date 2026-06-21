@@ -32,6 +32,8 @@ export const confirmPayslip = (id) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/confirm`, {});
 export const resetPayslip = (id, reason) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/reset`, { reason });
+export const computeAllPayslips = (month, year) =>
+  p('/hocba-hrm/api/payroll/compute-all', { month, year });
 
 // ── Bank File ───────────────────────────────────────────
 export const fetchBankFiles = (params) =>
@@ -58,6 +60,8 @@ export const deleteSalaryRule = (id) =>
   p(`/hocba-hrm/api/payroll/salary-rule/${id}/delete`, {});
 export const reorderSalaryRules = (order) =>
   p('/hocba-hrm/api/payroll/salary-rule/reorder', { order });
+export const fetchLookupSources = () =>
+  g('/hocba-hrm/api/payroll/lookup-sources');
 
 export const fetchBankFormats = () =>
   g('/hocba-hrm/api/payroll/bank-format');

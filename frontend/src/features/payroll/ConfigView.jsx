@@ -12,7 +12,7 @@ import SalaryRuleForm from './SalaryRuleForm';
 import BankFormatForm from './BankFormatForm';
 import TblWrap from '../../components/TblWrap';
 
-const TYPE_LABEL = { fixed: 'Số cố định', formula: 'Công thức' };
+const TYPE_LABEL = { fixed: 'Số cố định', formula: 'Công thức', lookup: 'Tra cứu' };
 const SUB_TABS = [['rules', 'Quy tắc lương'], ['banks', 'Ngân hàng'], ['mail', 'Mẫu email']];
 
 const segWrap = {
@@ -209,8 +209,12 @@ export default function ConfigView() {
                           <span style={{
                             display: 'inline-block', padding: '2px 8px', borderRadius: 4,
                             fontSize: 12, fontWeight: 600,
-                            background: r.amount_type === 'formula' ? 'var(--blue-50)' : 'var(--green-50)',
-                            color: r.amount_type === 'formula' ? 'var(--blue-600)' : 'var(--green-700)',
+                            background: r.amount_type === 'formula' ? 'var(--blue-50)'
+                              : r.amount_type === 'lookup' ? '#fef3c7'
+                              : 'var(--green-50)',
+                            color: r.amount_type === 'formula' ? 'var(--blue-600)'
+                              : r.amount_type === 'lookup' ? '#92400e'
+                              : 'var(--green-700)',
                           }}>
                             {TYPE_LABEL[r.amount_type] || r.amount_type}
                           </span>
@@ -218,6 +222,7 @@ export default function ConfigView() {
                         <td style={{ fontSize: 12.5, fontFamily: 'monospace', color: '#6b7280' }}>
                           {r.amount_type === 'fixed' ? (r.amount_fixed ? Number(r.amount_fixed).toLocaleString('vi') + ' ₫' : '—')
                             : r.amount_type === 'formula' ? (r.amount_formula || '—')
+                            : r.amount_type === 'lookup' ? `${r.lookup_source || '?'}.${r.lookup_field || '?'}`
                             : '—'}
                         </td>
                         <td>

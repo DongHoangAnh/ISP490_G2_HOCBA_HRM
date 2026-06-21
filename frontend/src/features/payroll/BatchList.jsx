@@ -1,6 +1,6 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, closeBatchByPeriod } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, closeBatchByPeriod, computeAllPayslips } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
@@ -225,6 +225,7 @@ export default function BatchList({ search }) {
   const [cfg, setCfg] = useState(() => loadCfg() || {});
   const [colWidths, setColWidths] = useState(() => loadWidths());
   const [checked, setChecked] = useState({});
+  const [computing, setComputing] = useState(false);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
@@ -273,6 +274,24 @@ export default function BatchList({ search }) {
   const toggleAll = () => {
     if (allChecked) setChecked({});
     else setChecked(Object.fromEntries(empsWithSlip.map((e) => [e.payslip_id, true])));
+  };
+
+  /* ── compute all ── */
+  const handleComputeAll = async () => {
+    if (computing) return;
+    setComputing(true);
+    try {
+      const res = await computeAllPayslips(Number(month), Number(year));
+      const msg = `Đã tính lương cho ${res.computed} nhân viên`
+        + (res.created ? `, tạo mới ${res.created} phiếu` : '')
+        + (res.errors?.length ? `\nLỗi: ${res.errors.join('; ')}` : '');
+      alert(msg);
+      load();
+    } catch (e) {
+      alert('Lỗi tính lương: ' + e.message);
+    } finally {
+      setComputing(false);
+    }
   };
 
   /* ── send mail ── */
@@ -416,6 +435,19 @@ export default function BatchList({ search }) {
         </>}
 
         <div style={{ flex: 1 }} />
+
+        <button onClick={handleComputeAll} disabled={computing}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', borderRadius: 7,
+            border: 'none', background: '#f59e0b', color: '#fff',
+            fontSize: 12.5, fontWeight: 600,
+            cursor: computing ? 'not-allowed' : 'pointer',
+            opacity: computing ? .5 : 1,
+          }}>
+          <Icon name="zap" size={14} />
+          {computing ? 'Đang tính...' : 'Tính lương'}
+        </button>
 
         <button onClick={handleSendMail} disabled={sending || checkedCount === 0}
           style={{

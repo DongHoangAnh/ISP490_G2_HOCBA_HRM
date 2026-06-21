@@ -20,6 +20,7 @@
         'hr',
         'mail',
         'hocba_employees',
+        'hocba_attendance',
     ],
     'data': [
         # Security first

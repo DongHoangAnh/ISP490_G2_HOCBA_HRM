@@ -27,6 +27,29 @@ PIT_BRACKETS = [
 ]
 
 
+# ── Lookup source registry (whitelist) ────────────────────────
+# Each entry maps a source key to model, date/employee fields,
+# and the set of aggregatable fields with their labels and default
+# aggregation function.  Only sources listed here can be queried
+# by "lookup" salary rules — this is the security boundary.
+LOOKUP_SOURCES = {
+    'attendance': {
+        'model': 'hocba.attendance',
+        'label': 'Chấm công',
+        'employee_field': 'employee_id',
+        'date_field': 'date',
+        'fields': {
+            'work_credit':         {'label': 'Số công (0/0.5/1.0)', 'agg': 'sum'},
+            'working_hours':       {'label': 'Giờ làm việc',        'agg': 'sum'},
+            'late_minutes':        {'label': 'Phút đi trễ',         'agg': 'sum'},
+            'early_leave_minutes': {'label': 'Phút về sớm',         'agg': 'sum'},
+            'morning_credit':      {'label': 'Công sáng',           'agg': 'sum'},
+            'afternoon_credit':    {'label': 'Công chiều',          'agg': 'sum'},
+        },
+    },
+}
+
+
 # ═══════════════════════════════════════════════════════════════
 # Proxy classes for rule evaluation
 # ═══════════════════════════════════════════════════════════════
@@ -489,8 +512,7 @@ class HbPayslip(models.Model):
             return True
         return bool(safe_eval(rule.condition_python, localdict))
 
-    @staticmethod
-    def _evaluate_rule_amount(rule, localdict):
+    def _evaluate_rule_amount(self, rule, localdict):
         amount = 0.0
         qty = 1.0
         rate = 0.0
@@ -514,8 +536,61 @@ class HbPayslip(models.Model):
             localdict['result'] = 0.0
             safe_eval(f"result = {expr}", localdict, mode='exec', nocopy=True)
             amount = float(localdict.get('result', 0.0))
+        elif rule.amount_type == 'lookup':
+            amount = self._compute_lookup(rule)
 
         return amount, qty, rate
+
+    def _compute_lookup(self, rule):
+        """Aggregate a field from a whitelisted source for the current
+        employee within the payslip date range."""
+        self.ensure_one()
+        source_key = rule.lookup_source
+        field_name = rule.lookup_field
+
+        if not source_key or source_key not in LOOKUP_SOURCES:
+            _logger.warning(
+                'Payslip %s: lookup rule %s — invalid source "%s"',
+                self.number, rule.code, source_key,
+            )
+            return 0.0
+
+        src_def = LOOKUP_SOURCES[source_key]
+        if not field_name or field_name not in src_def['fields']:
+            _logger.warning(
+                'Payslip %s: lookup rule %s — invalid field "%s" for source "%s"',
+                self.number, rule.code, field_name, source_key,
+            )
+            return 0.0
+
+        Model = self.env[src_def['model']].sudo()
+        domain = [
+            (src_def['employee_field'], '=', self.employee_id.id),
+            (src_def['date_field'], '>=', self.date_from),
+            (src_def['date_field'], '<=', self.date_to),
+        ]
+        agg = src_def['fields'][field_name].get('agg', 'sum')
+
+        records = Model.search(domain)
+        if not records:
+            return 0.0
+
+        vals = records.mapped(field_name)
+        if agg == 'sum':
+            return sum(vals)
+        elif agg == 'avg':
+            return sum(vals) / len(vals) if vals else 0.0
+        elif agg == 'count':
+            return float(len(records))
+        elif agg == 'max':
+            return max(vals)
+        elif agg == 'min':
+            return min(vals)
+        _logger.warning(
+            'Payslip %s: lookup rule %s — unknown agg "%s"',
+            self.number, rule.code, agg,
+        )
+        return 0.0
 
     # ── PIT helper (exposed to rule code via payslip._hocba_pit) ──
     def _hocba_pit(self, taxable_income):
