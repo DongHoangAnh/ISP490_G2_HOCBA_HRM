@@ -1,6 +1,6 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
-from odoo.exceptions import ValidationError, UserError
+from odoo.exceptions import AccessError, ValidationError, UserError
 
 from odoo.addons.hocba_hrm.controllers.main import (
     _account_create, _account_payload)
@@ -73,3 +73,36 @@ class TestAccount(TransactionCase):
             'password_confirm': '12345678', 'role': 'truongphong',
             'department_id': self.dept.id, 'confirm_overwrite': True})
         self.assertEqual(self.dept.manager_id, self.emp)
+
+    def test_create_forbidden_non_hr(self):
+        with self.assertRaises(AccessError):
+            _account_create(self._env(self.plain), self.emp.id, {
+                'login': 'x', 'password': '12345678',
+                'password_confirm': '12345678', 'role': 'employee'})
+
+    def test_create_duplicate_login(self):
+        with self.assertRaises(ValidationError):
+            _account_create(self._env(self.hr), self.emp.id, {
+                'login': 'hr_acct', 'password': '12345678',
+                'password_confirm': '12345678', 'role': 'employee'})
+
+    def test_create_password_mismatch(self):
+        with self.assertRaises(ValidationError):
+            _account_create(self._env(self.hr), self.emp.id, {
+                'login': 'y', 'password': '12345678',
+                'password_confirm': '99999999', 'role': 'employee'})
+
+    def test_create_password_too_short(self):
+        with self.assertRaises(ValidationError):
+            _account_create(self._env(self.hr), self.emp.id, {
+                'login': 'z', 'password': '123', 'password_confirm': '123',
+                'role': 'employee'})
+
+    def test_create_already_has_account(self):
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'first', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'employee'})
+        with self.assertRaises(ValidationError):
+            _account_create(self._env(self.hr), self.emp.id, {
+                'login': 'second', 'password': '12345678',
+                'password_confirm': '12345678', 'role': 'employee'})
