@@ -1655,6 +1655,9 @@ class HocBaHRM(http.Controller):
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
 
+        if is_hr:
+            data['account'] = _account_payload(e)
+
         return data
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
@@ -2191,6 +2194,54 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_account_create(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_create(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'needs_confirm', 'message': str(ex)}, status=409)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/reset',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_account_reset(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_reset(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/accounts', auth='user', type='http',
+                methods=['GET'])
+    def api_accounts(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_list(request.env)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
 
     def _me_payload(self, e):
         """Dựng payload /api/me: hồ sơ đầy đủ (tự xem nên is_hr=is_mgr=True) +
