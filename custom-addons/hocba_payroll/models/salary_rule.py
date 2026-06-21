@@ -1,4 +1,5 @@
-from odoo import models, fields, api
+from odoo import models, fields, api, _
+from odoo.exceptions import ValidationError
 
 
 class HbSalaryRule(models.Model):
@@ -26,6 +27,7 @@ class HbSalaryRule(models.Model):
             ('percentage', 'Tỉ lệ %'),
             ('formula', 'Công thức'),
             ('code', 'Python Code'),
+            ('lookup', 'Tra cứu dữ liệu'),
         ],
         string='Loại tính', default='fixed', required=True,
     )
@@ -47,6 +49,17 @@ class HbSalaryRule(models.Model):
         string='Biểu thức base cho %',
     )
 
+    # ── Lookup ──────────────────────────────────────────────────
+    lookup_source = fields.Selection(
+        selection='_get_lookup_source_options',
+        string='Nguồn dữ liệu',
+        help='Chọn nguồn dữ liệu để tra cứu (VD: Chấm công).',
+    )
+    lookup_field = fields.Char(
+        string='Trường tra cứu',
+        help='Mã trường cần tra cứu từ nguồn dữ liệu (VD: work_credit).',
+    )
+
     # ── Condition ────────────────────────────────────────────────
     condition_type = fields.Selection(
         [
@@ -62,6 +75,32 @@ class HbSalaryRule(models.Model):
         string='Hiển thị trên phiếu lương', default=True,
     )
     note = fields.Text(string='Mô tả')
+
+    # ── Lookup helpers ───────────────────────────────────────────
+    @api.model
+    def _get_lookup_source_options(self):
+        from .payslip import LOOKUP_SOURCES
+        return [(key, src['label']) for key, src in LOOKUP_SOURCES.items()]
+
+    @api.constrains('amount_type', 'lookup_source', 'lookup_field')
+    def _check_lookup_fields(self):
+        from .payslip import LOOKUP_SOURCES
+        for rec in self:
+            if rec.amount_type != 'lookup':
+                continue
+            if not rec.lookup_source:
+                raise ValidationError(
+                    _('Rule "%s": phải chọn nguồn dữ liệu cho loại tra cứu.', rec.name))
+            if rec.lookup_source not in LOOKUP_SOURCES:
+                raise ValidationError(
+                    _('Nguồn dữ liệu "%s" không hợp lệ.', rec.lookup_source))
+            src = LOOKUP_SOURCES[rec.lookup_source]
+            if not rec.lookup_field or rec.lookup_field not in src['fields']:
+                valid = ', '.join(src['fields'].keys())
+                raise ValidationError(
+                    _('Trường "%s" không tồn tại trong nguồn "%s". '
+                      'Các trường hợp lệ: %s',
+                      rec.lookup_field, rec.lookup_source, valid))
 
     # ── Formula helper actions ─────────────────────────────────
     def action_insert_formula_func(self):
