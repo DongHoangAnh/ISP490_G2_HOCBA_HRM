@@ -45,8 +45,6 @@
 | `x_sp_phone` | Monetary | Hỗ trợ điện thoại | |
 | `x_sp_meal` | Monetary | Hỗ trợ ăn ca | |
 | `x_sp_uniform` | Monetary | Hỗ trợ trang phục | |
-| `x_kpi_wage` | Monetary | Lương KPI | |
-| `x_is_sale` | Boolean | (suy từ có doanh thu/Level) | Bật rule hoa hồng sale |
 
 > Mỗi loại phụ cấp nên có cờ `is_taxable` (cấu hình ở category, không per-field) để sau này tách
 > phụ cấp miễn thuế (ăn ca, điện thoại, đồng phục…) theo TT111/2013. Giai đoạn này mặc định **gộp** như Excel,
@@ -54,55 +52,7 @@
 
 ---
 
-## 3. Model mới: `hocba.sale.level` (bậc hoa hồng sale)
-
-Dùng để tra cứu %COM + lương cứng theo Level. Suy từ dữ liệu (xác nhận lại với khách):
-
-| Field | Type | Ghi chú |
-|---|---|---|
-| `name` | Char | "Level 0", "Level 1"… |
-| `level` | Integer | 0..n |
-| `kpi_threshold` | Monetary | Ngưỡng doanh thu (KPI) để đạt level |
-| `commission_rate` | Float | %COM (vd 0.03 = 3%) |
-| `base_sale_wage` | Monetary | Lương cứng sale (LC sale) |
-
-Dữ liệu quan sát được (file `5_1`) — **dùng làm seed, khách chốt chính thức**:
-
-| Level | KPI (ngưỡng DT) | %COM | LC sale |
-|---|---|---|---|
-| 0 | 50.000.000 | 3.00% | 6.200.000 |
-| 1 | 90.000.000 | 4.00% | 6.200.000 |
-| 2 | 120.000.000 | 4.50% | 7.000.000 |
-| 4 | 210.000.000 | 3.50% | 8.500.000 |
-| 5 | 270.000.000 | 4.00% | 9.200.000 |
-| 6 | 340.000.000 | 4.40% | 10.200.000 |
-
-> ⚠️ Dữ liệu thực có biến động (cùng level đôi khi %COM khác) và thiếu Level 3.
-> → Bảng bậc trên **chưa hoàn chỉnh**, BẮT BUỘC khách cung cấp **chính sách hoa hồng chính thức**.
-> Engine sẽ: với 1 nhân viên/tháng, lấy `Doanh thu` → tìm level cao nhất có `kpi_threshold <= Doanh thu`
-> → lấy `%COM` & `LC sale` của level đó. COM = `Doanh thu × %COM`.
-
----
-
-## 4. Model mới: `hocba.sale.revenue` (doanh thu sale theo tháng)
-
-Input cho hoa hồng — mỗi NV sale một dòng/tháng.
-
-| Field | Type | Ghi chú |
-|---|---|---|
-| `employee_id` | Many2one hr.employee | |
-| `period_month` | Integer (1..12) | |
-| `period_year` | Integer | |
-| `revenue` | Monetary | Doanh thu (cột "Doanh thu") |
-| `level_id` | Many2one hocba.sale.level | compute hoặc nhập tay |
-| `commission` | Monetary (compute) | = revenue × level.commission_rate |
-| `sale_wage` | Monetary (compute) | = level.base_sale_wage + commission |
-
-> Đây là nguồn cho biến `SALE_REV`, `SALE_COM`, `SALE_BASE` trong salary rule (file 04).
-
----
-
-## 5. Worked days / Công (nhập theo tháng)
+## 3. Worked days / Công (nhập theo tháng)
 
 Tận dụng `hr.payslip.worked_days` của OCA payroll. Các loại cần map:
 
@@ -122,7 +72,7 @@ Xem `cong.md` / `work-entry-analysis.md` trong project để biết cơ chế Wo
 
 ---
 
-## 6. Bảng lương — tận dụng model chuẩn
+## 4. Bảng lương — tận dụng model chuẩn
 
 | Model OCA payroll | Vai trò |
 |---|---|
@@ -137,7 +87,7 @@ State bổ sung cho luồng duyệt (file 01 mục 2): thêm field `x_approval_s
 
 ---
 
-## 7. ERD rút gọn
+## 5. ERD rút gọn
 
 ```
 hr.employee ──1:n── hr.contract ──1:n── hr.payslip ──1:n── hr.payslip.line
@@ -145,7 +95,6 @@ hr.employee ──1:n── hr.contract ──1:n── hr.payslip ──1:n─�
      │                   │                   └── worked_days (n)
      │                   └── x_insurance_base, phụ cấp định mức, NPT
      │
-     ├──1:n── hocba.sale.revenue ──n:1── hocba.sale.level
      └── res.partner.bank (số TK, NH)
 
 hr.payslip.run (batch tháng) ──1:n── hr.payslip
@@ -154,9 +103,8 @@ hr.payroll.structure ──1:n── hr.salary.rule ──n:1── hr.salary.ru
 
 ---
 
-## 8. Index & ràng buộc đề xuất
+## 6. Index & ràng buộc đề xuất
 
 - `hr.employee.x_employee_code`: `unique`, có index.
-- `hocba.sale.revenue`: unique `(employee_id, period_month, period_year)`.
 - `hr.contract.x_insurance_base >= 0`; cảnh báo nếu > trần BH (file 05).
 - Soft validation: NV `x_work_form = offline` & `Chính thức` mà thiếu `x_insurance_base` → warning (giống Odoo "Employees Without …").

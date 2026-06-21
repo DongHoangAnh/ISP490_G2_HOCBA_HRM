@@ -31,9 +31,9 @@ class HrLeave(models.Model):
             if leave.holiday_status_id.responsible_ids:
                 recipients |= leave.holiday_status_id.responsible_ids.mapped('partner_id')
             else:
-                # Fallback: tất cả HR Officer trong hệ thống
+                # Fallback: tất cả HR Manager trong hệ thống (role hocba_users)
                 hr_group = self.env.ref(
-                    'hr_holidays.group_hr_holidays_user', raise_if_not_found=False
+                    'hr.group_hr_manager', raise_if_not_found=False
                 )
                 if hr_group:
                     hr_users = self.env['res.users'].search([

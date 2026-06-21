@@ -7,6 +7,16 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchApprovals, decideRequest } from '../../api/timeoff';
+import SortBar, { sortRows } from './SortBar';
+
+const SORT_FIELDS = [
+  { key: 'employee', label: 'Nhân viên', type: 'text' },
+  { key: 'department', label: 'Phòng ban', type: 'text' },
+  { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
+  { key: 'from', label: 'Từ ngày', type: 'date' },
+  { key: 'to', label: 'Đến ngày', type: 'date' },
+  { key: 'days', label: 'Số ngày', type: 'num' },
+];
 
 const inp = {
   width: '100%', padding: '9px 12px', borderRadius: 10,
@@ -14,10 +24,14 @@ const inp = {
   fontSize: 13.5, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
 };
 
-export default function ApprovalPanel({ isManager }) {
+// Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
+const OVERLAP_WARN = 3;
+
+export default function ApprovalPanel({ isHrManager }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
+  const [sort, setSort] = useState({ key: 'from', dir: 'asc' });
 
   const load = () => {
     setErr(null); setData(null);
@@ -28,8 +42,15 @@ export default function ApprovalPanel({ isManager }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải đơn chờ duyệt…" />;
 
+  const rows = sortRows(data.requests, SORT_FIELDS, sort);
+
   return (
     <div className="card">
+      <div className="card-head">
+        <h3>Đơn chờ duyệt</h3>
+        <span className="sub">{rows.length} đơn</span>
+        <div className="actions"><SortBar fields={SORT_FIELDS} sort={sort} onChange={setSort} /></div>
+      </div>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
@@ -37,7 +58,7 @@ export default function ApprovalPanel({ isManager }) {
             <th className="tbl-num">Số ngày</th><th>Cảnh báo</th><th>Trạng thái</th><th></th>
           </tr></thead>
           <tbody>
-            {data.requests.map((r) => (
+            {rows.map((r) => (
               <tr key={r.id}>
                 <td style={{ fontWeight: 600 }}>{r.employee}</td>
                 <td className="muted">{r.department}</td>
@@ -49,6 +70,9 @@ export default function ApprovalPanel({ isManager }) {
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
                     {r.scheduleConflict && <Badge kind="amber">Xung đột lịch</Badge>}
+                    {r.overlapCount >= OVERLAP_WARN && (
+                      <Badge kind="amber">Trùng lịch: {r.overlapCount}</Badge>
+                    )}
                     {r.supportDocument && (
                       <Badge kind={r.hasMedicalDoc ? 'green' : 'gray'}>
                         {r.hasMedicalDoc ? 'Có chứng từ' : 'Thiếu chứng từ'}</Badge>
@@ -67,7 +91,7 @@ export default function ApprovalPanel({ isManager }) {
       {data.requests.length === 0 && <EmptyState>Không có đơn nào chờ duyệt.</EmptyState>}
 
       {decision && (
-        <DecisionModal req={decision} isManager={isManager}
+        <DecisionModal req={decision} isHrManager={isHrManager}
           onClose={() => setDecision(null)}
           onDone={(payload) => { setDecision(null); setData(payload); }} />
       )}
@@ -76,7 +100,7 @@ export default function ApprovalPanel({ isManager }) {
 }
 
 /* Modal xử lý 1 đơn: duyệt (kèm ghi chú thay thế / override chứng từ) hoặc từ chối. */
-function DecisionModal({ req, isManager, onClose, onDone }) {
+function DecisionModal({ req, isHrManager, onClose, onDone }) {
   const [note, setNote] = useState(req.replacementNote || '');
   const [override, setOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
@@ -119,6 +143,21 @@ function DecisionModal({ req, isManager, onClose, onDone }) {
           <div className="muted" style={{ fontSize: 13 }}><b>Lý do:</b> {req.reason}</div>
         )}
 
+        {req.overlapCount > 0 && (
+          <div style={{
+            padding: '10px 13px', borderRadius: 10, fontSize: 12.5,
+            display: 'flex', alignItems: 'center', gap: 9,
+            background: req.overlapCount >= OVERLAP_WARN ? 'var(--amber-bg,#fff7ed)' : 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            color: req.overlapCount >= OVERLAP_WARN ? 'var(--amber-700,#b45309)' : 'var(--ink)',
+          }}>
+            <Icon name="users" size={16} />
+            <span>Cùng phòng đang nghỉ trùng khoảng ngày này: <b>{req.overlapCount} người</b>
+              {req.overlapCount >= OVERLAP_WARN
+                ? ' — cân nhắc trước khi duyệt, phòng có thể thiếu người.' : '.'}</span>
+          </div>
+        )}
+
         {req.scheduleConflict && (
           <div style={{ padding: '10px 13px', background: 'var(--amber-bg,#fff7ed)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5 }}>
             <b>Xung đột lịch dạy:</b>
@@ -140,7 +179,7 @@ function DecisionModal({ req, isManager, onClose, onDone }) {
         {missingDoc && (
           <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, fontSize: 12.5, color: 'var(--red-700)' }}>
             Đơn cần chứng từ y tế nhưng chưa có (BR-011).
-            {isManager ? (
+            {isHrManager ? (
               <div style={{ marginTop: 8 }}>
                 <label style={{ display: 'flex', gap: 7, alignItems: 'center', color: 'var(--ink)' }}>
                   <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />

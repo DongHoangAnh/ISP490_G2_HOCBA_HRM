@@ -7,6 +7,7 @@ Design:
     - Backward compatible: teaching work-entry methods kept for teacher structures.
 """
 import logging
+import uuid
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError, UserError
@@ -25,12 +26,28 @@ PIT_BRACKETS = [
     (float('inf'), 0.35),
 ]
 
-# Teaching work entry codes (backward compat)
-WORK_ENTRY_TEACHING = 'WORK200'
-WORK_ENTRY_HOLIDAY_OT = 'WORK110_OT_HOLIDAY'
-MAX_SINGLE_ENTRY_HOURS = 24.0
-HOLIDAY_OT_MULTIPLIER = 3.0
-WARN_MONTHLY_HOURS = 200.0
+
+# ── Lookup source registry (whitelist) ────────────────────────
+# Each entry maps a source key to model, date/employee fields,
+# and the set of aggregatable fields with their labels and default
+# aggregation function.  Only sources listed here can be queried
+# by "lookup" salary rules — this is the security boundary.
+LOOKUP_SOURCES = {
+    'attendance': {
+        'model': 'hocba.attendance',
+        'label': 'Chấm công',
+        'employee_field': 'employee_id',
+        'date_field': 'date',
+        'fields': {
+            'work_credit':         {'label': 'Số công (0/0.5/1.0)', 'agg': 'sum'},
+            'working_hours':       {'label': 'Giờ làm việc',        'agg': 'sum'},
+            'late_minutes':        {'label': 'Phút đi trễ',         'agg': 'sum'},
+            'early_leave_minutes': {'label': 'Phút về sớm',         'agg': 'sum'},
+            'morning_credit':      {'label': 'Công sáng',           'agg': 'sum'},
+            'afternoon_credit':    {'label': 'Công chiều',          'agg': 'sum'},
+        },
+    },
+}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -150,18 +167,27 @@ class HbPayslip(models.Model):
     )
 
     # ── Computed status fields ──────────────────────────────
-    x_teaching_total_hours = fields.Float(
-        string='Tổng giờ dạy', digits=(8, 2), readonly=True,
-    )
-    x_holiday_ot_hours = fields.Float(
-        string='Giờ OT ngày lễ', digits=(8, 2), readonly=True,
-    )
     x_compute_warnings = fields.Text(
         string='Cảnh báo tính lương', readonly=True,
     )
     x_teaching_computed = fields.Boolean(
         string='Đã tính', default=False, readonly=True,
     )
+
+    # ── Employee confirmation ────────────────────────────────
+    x_access_token = fields.Char(
+        string='Access Token', copy=False, index=True,
+        default=lambda self: str(uuid.uuid4()),
+    )
+    x_employee_confirm = fields.Selection([
+        ('pending', 'Chờ xác nhận'),
+        ('confirmed', 'Đã xác nhận'),
+        ('rejected', 'Từ chối'),
+    ], string='NV xác nhận', default='pending', tracking=True)
+    x_employee_feedback = fields.Text(string='Phản hồi nhân viên')
+    x_email_sent = fields.Boolean(string='Đã gửi mail', default=False)
+    x_email_sent_date = fields.Datetime(string='Ngày gửi mail')
+    x_confirmed_date = fields.Datetime(string='Ngày xác nhận')
 
     # ── Aggregated amounts ──────────────────────────────────
     gross_amount = fields.Float(
@@ -194,6 +220,8 @@ class HbPayslip(models.Model):
         for vals in vals_list:
             if vals.get('number', _('Mới')) == _('Mới'):
                 vals['number'] = self.env['ir.sequence'].next_by_code('hb.payslip') or '/'
+            if not vals.get('x_access_token'):
+                vals['x_access_token'] = str(uuid.uuid4())
         return super().create(vals_list)
 
     # ═════════════════════════════════════════════════════════
@@ -484,8 +512,7 @@ class HbPayslip(models.Model):
             return True
         return bool(safe_eval(rule.condition_python, localdict))
 
-    @staticmethod
-    def _evaluate_rule_amount(rule, localdict):
+    def _evaluate_rule_amount(self, rule, localdict):
         amount = 0.0
         qty = 1.0
         rate = 0.0
@@ -509,8 +536,61 @@ class HbPayslip(models.Model):
             localdict['result'] = 0.0
             safe_eval(f"result = {expr}", localdict, mode='exec', nocopy=True)
             amount = float(localdict.get('result', 0.0))
+        elif rule.amount_type == 'lookup':
+            amount = self._compute_lookup(rule)
 
         return amount, qty, rate
+
+    def _compute_lookup(self, rule):
+        """Aggregate a field from a whitelisted source for the current
+        employee within the payslip date range."""
+        self.ensure_one()
+        source_key = rule.lookup_source
+        field_name = rule.lookup_field
+
+        if not source_key or source_key not in LOOKUP_SOURCES:
+            _logger.warning(
+                'Payslip %s: lookup rule %s — invalid source "%s"',
+                self.number, rule.code, source_key,
+            )
+            return 0.0
+
+        src_def = LOOKUP_SOURCES[source_key]
+        if not field_name or field_name not in src_def['fields']:
+            _logger.warning(
+                'Payslip %s: lookup rule %s — invalid field "%s" for source "%s"',
+                self.number, rule.code, field_name, source_key,
+            )
+            return 0.0
+
+        Model = self.env[src_def['model']].sudo()
+        domain = [
+            (src_def['employee_field'], '=', self.employee_id.id),
+            (src_def['date_field'], '>=', self.date_from),
+            (src_def['date_field'], '<=', self.date_to),
+        ]
+        agg = src_def['fields'][field_name].get('agg', 'sum')
+
+        records = Model.search(domain)
+        if not records:
+            return 0.0
+
+        vals = records.mapped(field_name)
+        if agg == 'sum':
+            return sum(vals)
+        elif agg == 'avg':
+            return sum(vals) / len(vals) if vals else 0.0
+        elif agg == 'count':
+            return float(len(records))
+        elif agg == 'max':
+            return max(vals)
+        elif agg == 'min':
+            return min(vals)
+        _logger.warning(
+            'Payslip %s: lookup rule %s — unknown agg "%s"',
+            self.number, rule.code, agg,
+        )
+        return 0.0
 
     # ── PIT helper (exposed to rule code via payslip._hocba_pit) ──
     def _hocba_pit(self, taxable_income):
@@ -580,6 +660,95 @@ class HbPayslip(models.Model):
             ))
 
     # ═════════════════════════════════════════════════════════
+    # EMAIL — send payslip to employee
+    # ═════════════════════════════════════════════════════════
+    def action_send_payslip_mail(self):
+        """Send payslip email to employee with public view link."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        base_url = ICP.get_param('web.base.url')
+        subject_tpl = ICP.get_param('hocba_payroll.mail_subject', default=False)
+        body_tpl = ICP.get_param('hocba_payroll.mail_body', default=False)
+
+        for slip in self:
+            employee = slip.employee_id
+            email_to = employee.work_email or getattr(employee, 'email', False)
+            if not email_to:
+                continue
+            if not slip.x_access_token:
+                slip.x_access_token = str(uuid.uuid4())
+
+            view_url = f'{base_url}/payslip/view/{slip.x_access_token}'
+            month = slip.date_from.strftime('%m') if slip.date_from else ''
+            year = slip.date_from.strftime('%Y') if slip.date_from else ''
+
+            tpl_vars = {
+                'employee_name': employee.name,
+                'month': month,
+                'year': year,
+                'gross': f'{slip.gross_amount:,.0f}',
+                'net': f'{slip.net_amount:,.0f}',
+                'view_url': view_url,
+            }
+
+            subject = self._render_mail_tpl(
+                subject_tpl or 'Bảng lương tháng {month}/{year} — {employee_name}',
+                tpl_vars,
+            )
+            body_html = self._render_mail_tpl(
+                body_tpl or slip._default_mail_body(),
+                tpl_vars,
+            )
+
+            mail_vals = {
+                'subject': subject,
+                'email_to': email_to,
+                'body_html': body_html,
+                'auto_delete': True,
+            }
+            mail = self.env['mail.mail'].sudo().create(mail_vals)
+            mail.send()
+
+            slip.write({
+                'x_email_sent': True,
+                'x_email_sent_date': fields.Datetime.now(),
+            })
+
+    @staticmethod
+    def _render_mail_tpl(tpl, variables):
+        """Safely render template with {key} placeholders."""
+        try:
+            return tpl.format(**variables)
+        except (KeyError, IndexError, ValueError):
+            return tpl
+
+    @staticmethod
+    def _default_mail_body():
+        return (
+            '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">'
+            '<h2 style="color:#1f2937;">Bảng lương tháng {month}/{year}</h2>'
+            '<p>Xin chào <strong>{employee_name}</strong>,</p>'
+            '<p>Phiếu lương tháng {month}/{year} của bạn đã sẵn sàng.</p>'
+            '<table style="width:100%;border-collapse:collapse;margin:16px 0;">'
+            '<tr style="background:#f3f4f6;">'
+            '<td style="padding:8px 12px;font-weight:600;">Tổng thu nhập</td>'
+            '<td style="padding:8px 12px;text-align:right;">{gross} ₫</td>'
+            '</tr>'
+            '<tr style="background:#ecfdf5;">'
+            '<td style="padding:8px 12px;font-weight:600;color:#065f46;">Thực lĩnh</td>'
+            '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#065f46;">{net} ₫</td>'
+            '</tr>'
+            '</table>'
+            '<p>Vui lòng nhấn nút bên dưới để xem chi tiết và xác nhận:</p>'
+            '<a href="{view_url}" '
+            'style="display:inline-block;padding:12px 24px;background:#2563eb;'
+            'color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">'
+            'Xem phiếu lương</a>'
+            '<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb;"/>'
+            '<p style="font-size:12px;color:#9ca3af;">Email này được gửi tự động. Vui lòng không reply.</p>'
+            '</div>'
+        )
+
+    # ═════════════════════════════════════════════════════════
     # API serialization
     # ═════════════════════════════════════════════════════════
     def _to_api_dict(self):
@@ -596,12 +765,13 @@ class HbPayslip(models.Model):
             'date_from': str(self.date_from),
             'date_to': str(self.date_to),
             'state': self.state,
-            'teaching_total_hours': self.x_teaching_total_hours,
-            'holiday_ot_hours': self.x_holiday_ot_hours,
             'teaching_computed': self.x_teaching_computed,
             'compute_warnings': self.x_compute_warnings,
             'gross_amount': self.gross_amount,
             'net_amount': self.net_amount,
+            'employee_confirm': self.x_employee_confirm,
+            'employee_feedback': self.x_employee_feedback or '',
+            'email_sent': self.x_email_sent,
             'worked_days': [{
                 'code': wd.code,
                 'name': wd.name,
@@ -621,5 +791,6 @@ class HbPayslip(models.Model):
                 'quantity': l.quantity,
                 'rate': l.rate,
                 'amount': l.amount,
+                'category_code': l.category_id.code if l.category_id else '',
             } for l in self.line_ids.sorted('sequence')],
         }

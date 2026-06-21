@@ -8,7 +8,7 @@
 
 ## 1. Test BH & NET — OFFLINE (hard assert)
 
-### TC-01 — HB.01, Tháng 3/2026 (non-sale, có NPT=1, thuế=0)
+### TC-01 — HB.01, Tháng 3/2026 (có NPT=1, thuế=0)
 | Đầu vào | Giá trị |
 |---|---|
 | Lương hợp đồng (wage) | 20.000.000 |
@@ -29,33 +29,6 @@
 
 ### TC-02 — HB.01, Tháng 1/2026 (không có thưởng)
 - GROSS = 20.000.000; BH NV = 766.500; thuế = 0 → **NET = 19.233.500** (hard ==)
-
-### TC-03 — HB.09, Tháng 3/2026 (sale Level 6, OT, có tạm ứng)
-| Đầu vào | Giá trị |
-|---|---|
-| x_is_sale | True |
-| Doanh thu (SALE_REV) | 349.537.000 |
-| Level/%COM/LC sale | 6 / 4.40% / 10.200.000 |
-| Công tháng / OT / STD_DAYS | 24 / 4.3125 / 24 |
-| Lương đóng BH | 5.700.000 |
-| Số NPT | 0 |
-| Thưởng khác | 1.950.000 |
-| NONTAX_ALW (ăn ca) | 700.000 |
-| Tạm ứng | 1.800.000 |
-
-| Kết quả mong đợi | Giá trị | Assert |
-|---|---|---|
-| HOA_HONG (COM) | 15.379.628 | == (hard) |
-| LUONG_TG | 12.032.812 | == (±1, hard) |
-| GROSS | 29.362.441 | == (±1, hard) |
-| Tổng BH NV | 598.500 | == (hard) |
-| TI | 12.563.941 | == (hard) |
-| TNCN (đúng luật 7 bậc) | **1.134.591** | == (hard) ⚠ KHÁC Excel (756.394) |
-| NET (đúng luật) | **25.829.350** | == (hard) |
-| NET (theo thuế Excel cũ) | 26.207.547 | review-only |
-
-> TC-03 là test "vàng": chứng minh hệ thống tính thuế ĐÚNG trong khi Excel sai.
-> Khi báo cáo khách, trình bày cả 2 con số và giải thích.
 
 ---
 
@@ -82,16 +55,7 @@
 | 32.000.000 | 4.750.000 |
 | 100.000.000 | 25.150.000 |
 
-### TC-07 — `_hocba_sale_rate(rev)` / `_hocba_sale_base(rev)`
-| Doanh thu | Level | %COM | LC sale |
-|---|---|---|---|
-| 25.146.600 | 0 | 3.00% | 6.200.000 |
-| 103.702.000 | 1 | 4.00% | 6.200.000 |
-| 152.685.250 | 2 | 4.50% | 7.000.000 |
-| 349.537.000 | 6 | 4.40% | 10.200.000 |
-> ⚠️ Bảng bậc chưa đầy đủ/nhất quán → test này chỉ bật sau khi khách chốt chính sách hoa hồng.
-
-### TC-08 — BH theo policy
+### TC-07 — BH theo policy
 | Policy | base | BHXH_NV | BHYT_NV | BHTN_NV |
 |---|---|---|---|---|
 | standard | 7.300.000 | 584.000 | 109.500 | 73.000 |
@@ -134,15 +98,6 @@ class TestHocBaPayroll(TransactionCase):
                                   paid_days=24, std_days=24, bonus_other=150_000)
         self.assertEqual(self._line(slip,'NET'), 19_383_500)
 
-    def test_tc03_hb09_tax_correct(self):
-        slip = self._make_payslip('HB.09', '2026-03', is_sale=True,
-                                  revenue=349_537_000, ins_base=5_700_000,
-                                  dependents=0, paid_days=24, ot_days=4.3125,
-                                  std_days=24, bonus_other=1_950_000,
-                                  nontax=700_000, advance=1_800_000)
-        self.assertEqual(self._line(slip,'TNCN'), -1_134_591)   # đúng luật
-        self.assertEqual(self._line(slip,'NET'),  25_829_350)
-
     def test_tc06_pit_brackets(self):
         f = self.env['hr.payslip']._hocba_pit
         self.assertEqual(f(5_000_000), 250_000)
@@ -155,9 +110,8 @@ class TestHocBaPayroll(TransactionCase):
 
 ## 6. Định nghĩa "PASS giai đoạn BE"
 
-- ✅ Tất cả TC hard-assert (TC-01,02,03,04,05,06,08) xanh.
-- ✅ Import 7 tháng lịch sử không lỗi; đối soát tổng (mục 4) đạt.
-- ✅ Cảnh báo thiếu TK ngân hàng/hợp đồng hoạt động.
-- ⏳ TC-07 (hoa hồng) chờ khách chốt bảng bậc.
-- 📄 Có báo cáo chênh lệch thuế Excel↔hệ thống cho khách duyệt.
+- Tất cả TC hard-assert (TC-01, 02, 04, 05, 06, 07) xanh.
+- Import 7 tháng lịch sử không lỗi; đối soát tổng (mục 4) đạt.
+- Cảnh báo thiếu TK ngân hàng/hợp đồng hoạt động.
+- Có báo cáo chênh lệch thuế Excel <-> hệ thống cho khách duyệt.
 → Đạt thì mới chuyển sang làm FE React.

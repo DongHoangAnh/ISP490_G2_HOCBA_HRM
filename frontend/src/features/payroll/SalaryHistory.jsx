@@ -1,11 +1,13 @@
 /* Lịch sử lương — xem lương tất cả nhân viên theo tháng/năm. Owner: Hùng. */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchPayslips } from '../../api/payroll';
+import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { slipState, monthOptions, yearOptions, currentMonth, currentYear } from './util';
 import PayslipDrawer from './PayslipDrawer';
+import TblWrap from '../../components/TblWrap';
 
 export default function SalaryHistory() {
   const [month, setMonth] = useState(currentMonth());
@@ -13,6 +15,17 @@ export default function SalaryHistory() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
+  const [localSearch, setLocalSearch] = useState('');
+  const [periodOpen, setPeriodOpen] = useState(false);
+  const periodRef = useRef(null);
+
+  /* close period dropdown on outside click */
+  useEffect(() => {
+    if (!periodOpen) return;
+    const h = (e) => { if (periodRef.current && !periodRef.current.contains(e.target)) setPeriodOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [periodOpen]);
 
   const load = () => {
     setErr(null); setData(null);
@@ -25,28 +38,96 @@ export default function SalaryHistory() {
   };
   useEffect(load, [month, year]);
 
-  const totalGross = data ? data.reduce((s, p) => s + (p.gross_amount || 0), 0) : 0;
-  const totalNet = data ? data.reduce((s, p) => s + (p.net_amount || 0), 0) : 0;
+  /* filter by local search */
+  const q = localSearch.toLowerCase();
+  const filtered = data ? data.filter((p) => {
+    if (!q) return true;
+    return (p.employee_name || '').toLowerCase().includes(q)
+      || (p.number || '').toLowerCase().includes(q)
+      || (p.structure_code || '').toLowerCase().includes(q);
+  }) : [];
+
+  const totalGross = filtered.reduce((s, p) => s + (p.gross_amount || 0), 0);
+  const totalNet = filtered.reduce((s, p) => s + (p.net_amount || 0), 0);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
 
   return (
     <>
-      <div className="filterbar" style={{ marginBottom: 14 }}>
-        <select className="sel" value={month} onChange={(e) => setMonth(e.target.value)}>
-          <option value="">Tất cả tháng</option>
-          {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className="sel" value={year} onChange={(e) => { setYear(e.target.value); if (!e.target.value) setMonth(''); }}>
-          <option value="">Tất cả năm</option>
-          {yearOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <div style={{ flex: 1 }} />
-        {data && (
-          <div style={{ fontSize: 13.5, color: 'var(--muted)' }}>
-            {data.length} phiếu lương
+      {/* toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+
+        {/* Odoo-style search bar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+          padding: '4px 10px', minWidth: 280, flex: '0 1 380px',
+        }}>
+          <Icon name="search" size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
+
+          {/* Period chip */}
+          <div ref={periodRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setPeriodOpen(!periodOpen)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+                border: 'none', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              T{month}/{year}
+              <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+            </button>
+            {periodOpen && (
+              <div style={{
+                position: 'absolute', top: '110%', left: 0, zIndex: 50,
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,.12)', padding: 12, minWidth: 200,
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 8 }}>Chọn kỳ lương</div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <select className="sel" value={month} onChange={(e) => { setMonth(e.target.value); setPeriodOpen(false); }} style={{ flex: 1 }}>
+                    {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <select className="sel" value={year} onChange={(e) => { setYear(e.target.value); setPeriodOpen(false); }} style={{ flex: 1 }}>
+                    {yearOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Search input */}
+          <input
+            type="text"
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            placeholder="Tìm tên, mã NV, cấu trúc..."
+            style={{
+              flex: 1, border: 'none', outline: 'none', fontSize: 13,
+              background: 'transparent', minWidth: 100,
+            }}
+          />
+          {localSearch && (
+            <button onClick={() => setLocalSearch('')} style={{
+              border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af',
+              display: 'flex', alignItems: 'center',
+            }}>
+              <Icon name="x" size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* metrics */}
+        {data && <>
+          <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 2px' }} />
+          <span style={{ fontSize: 11.5, color: '#6b7280' }}>
+            Phiếu: <b style={{ color: '#111827' }}>{filtered.length}</b>
+          </span>
+        </>}
+
+        <div style={{ flex: 1 }} />
       </div>
 
       <div className="card">
@@ -54,12 +135,12 @@ export default function SalaryHistory() {
           <div style={{ padding: 36 }}>
             <LoadingState label="Đang tải lịch sử lương..." />
           </div>
-        ) : data.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div style={{ padding: 36, textAlign: 'center' }}>
             <EmptyState>Không có phiếu lương{month && year ? ` tháng ${month}/${year}` : year ? ` năm ${year}` : ''}.</EmptyState>
           </div>
         ) : (
-          <div className="tbl-wrap">
+          <TblWrap id="salary-history">
             <table className="tbl">
               <thead>
                 <tr>
@@ -72,7 +153,7 @@ export default function SalaryHistory() {
                 </tr>
               </thead>
               <tbody>
-                {data.map((p) => {
+                {filtered.map((p) => {
                   const [sl, sk] = slipState(p.state);
                   return (
                     <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setSel(p)}>
@@ -95,7 +176,7 @@ export default function SalaryHistory() {
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </TblWrap>
         )}
       </div>
 

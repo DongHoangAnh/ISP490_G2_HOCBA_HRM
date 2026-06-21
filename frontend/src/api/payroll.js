@@ -16,10 +16,14 @@ export const generatePayslips = (batchId) =>
   p(`/hocba-hrm/api/payroll/batch/${batchId}/generate`, {});
 export const closeBatch = (batchId) =>
   p(`/hocba-hrm/api/payroll/batch/${batchId}/close`, {});
+export const closeBatchByPeriod = (month, year) =>
+  p('/hocba-hrm/api/payroll/batch/close-by-period', { month, year });
 
 // ── Payslip ─────────────────────────────────────────────
 export const fetchPayslips = (params) =>
   g('/hocba-hrm/api/payroll/payslip?' + new URLSearchParams(params));
+export const fetchEmployeePayroll = (params) =>
+  g('/hocba-hrm/api/payroll/employee-payroll?' + new URLSearchParams(params));
 export const fetchPayslip = (id) =>
   g(`/hocba-hrm/api/payroll/payslip/${id}`);
 export const computePayslip = (id) =>
@@ -28,14 +32,8 @@ export const confirmPayslip = (id) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/confirm`, {});
 export const resetPayslip = (id, reason) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/reset`, { reason });
-
-// ── Work Entry ──────────────────────────────────────────
-export const fetchWorkEntries = (params) =>
-  g('/hocba-hrm/api/payroll/work-entry?' + new URLSearchParams(params));
-export const createWorkEntry = (payload) =>
-  p('/hocba-hrm/api/payroll/work-entry', payload);
-export const bulkCreateWorkEntries = (entries) =>
-  p('/hocba-hrm/api/payroll/work-entry/bulk-create', { entries });
+export const computeAllPayslips = (month, year) =>
+  p('/hocba-hrm/api/payroll/compute-all', { month, year });
 
 // ── Bank File ───────────────────────────────────────────
 export const fetchBankFiles = (params) =>
@@ -47,53 +45,11 @@ export const markBankFileUploaded = (id) =>
 export const markBankFileConfirmed = (id) =>
   p(`/hocba-hrm/api/payroll/bank-file/${id}/confirm`, {});
 
-// ── BHXH ────────────────────────────────────────────────
-export const fetchBhxhReports = () =>
-  g('/hocba-hrm/api/payroll/bhxh');
-export const fetchBhxhReport = (id) =>
-  g(`/hocba-hrm/api/payroll/bhxh/${id}`);
-export const createBhxhReport = (payload) =>
-  p('/hocba-hrm/api/payroll/bhxh', payload);
-export const computeBhxh = (id) =>
-  p(`/hocba-hrm/api/payroll/bhxh/${id}/compute`, {});
-export const submitBhxh = (id) =>
-  p(`/hocba-hrm/api/payroll/bhxh/${id}/submit`, {});
-
-// ── eTax ────────────────────────────────────────────────
-export const fetchEtaxReports = () =>
-  g('/hocba-hrm/api/payroll/etax');
-export const fetchEtaxReport = (id) =>
-  g(`/hocba-hrm/api/payroll/etax/${id}`);
-export const createEtaxReport = (payload) =>
-  p('/hocba-hrm/api/payroll/etax', payload);
-export const computeEtax = (id) =>
-  p(`/hocba-hrm/api/payroll/etax/${id}/compute`, {});
-export const submitEtax = (id) =>
-  p(`/hocba-hrm/api/payroll/etax/${id}/submit`, {});
-
-// ── Sale Revenue ────────────────────────────────────────
-export const fetchSaleRevenues = (params) =>
-  g('/hocba-hrm/api/payroll/sale-revenue?' + new URLSearchParams(params));
-export const createSaleRevenue = (payload) =>
-  p('/hocba-hrm/api/payroll/sale-revenue', payload);
-export const updateSaleRevenue = (id, payload) =>
-  p(`/hocba-hrm/api/payroll/sale-revenue/${id}`, payload);
-export const deleteSaleRevenue = (id) =>
-  p(`/hocba-hrm/api/payroll/sale-revenue/${id}/delete`, {});
-
-// ── Salary Structure (read-only list) ────────────────────
-export const fetchSalaryStructures = () =>
-  g('/hocba-hrm/api/payroll/salary-structure');
-
 // ── Salary Rule ──────────────────────────────────────────
-export const fetchRuleCategories = () =>
-  g('/hocba-hrm/api/payroll/salary-rule-category');
 export const createRuleCategory = (payload) =>
   p('/hocba-hrm/api/payroll/salary-rule-category', payload);
 export const updateRuleCategory = (id, payload) =>
   p(`/hocba-hrm/api/payroll/salary-rule-category/${id}`, payload);
-export const deleteRuleCategory = (id) =>
-  p(`/hocba-hrm/api/payroll/salary-rule-category/${id}/delete`, {});
 export const fetchSalaryRules = (params) =>
   g('/hocba-hrm/api/payroll/salary-rule?' + new URLSearchParams(params));
 export const createSalaryRule = (payload) =>
@@ -104,6 +60,8 @@ export const deleteSalaryRule = (id) =>
   p(`/hocba-hrm/api/payroll/salary-rule/${id}/delete`, {});
 export const reorderSalaryRules = (order) =>
   p('/hocba-hrm/api/payroll/salary-rule/reorder', { order });
+export const fetchLookupSources = () =>
+  g('/hocba-hrm/api/payroll/lookup-sources');
 
 export const fetchBankFormats = () =>
   g('/hocba-hrm/api/payroll/bank-format');
@@ -113,5 +71,13 @@ export const updateBankFormat = (id, payload) =>
   p(`/hocba-hrm/api/payroll/bank-format/${id}`, payload);
 export const deleteBankFormat = (id) =>
   p(`/hocba-hrm/api/payroll/bank-format/${id}/delete`, {});
-export const fetchContract = (id) =>
-  g(`/hocba-hrm/api/payroll/contract/${id}`);
+
+// ── Send payslip mail ───────────────────────────────────
+export const sendPayslipMail = (payslipIds) =>
+  p('/hocba-hrm/api/payroll/payslip/send-mail', { payslip_ids: payslipIds });
+
+// ── Mail template config ────────────────────────────────
+export const fetchMailTemplate = () =>
+  g('/hocba-hrm/api/payroll/mail-template');
+export const saveMailTemplate = (payload) =>
+  p('/hocba-hrm/api/payroll/mail-template', payload);

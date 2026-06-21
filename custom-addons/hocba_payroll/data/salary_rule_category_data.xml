@@ -1,50 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
-        <record id="rule_categ_basic" model="hb.salary.rule.category">
-            <field name="name">Lương thời gian</field>
-            <field name="code">luong_thoi_gian</field>
-            <field name="sequence">10</field>
-        </record>
-        <record id="rule_categ_com" model="hb.salary.rule.category">
-            <field name="name">Hoa hồng</field>
-            <field name="code">hoa_hong</field>
-            <field name="sequence">20</field>
-        </record>
+    <data noupdate="0">
         <record id="rule_categ_alw" model="hb.salary.rule.category">
             <field name="name">Phụ cấp</field>
             <field name="code">phu_cap</field>
-            <field name="sequence">30</field>
+            <field name="sequence">10</field>
         </record>
         <record id="rule_categ_bonus" model="hb.salary.rule.category">
             <field name="name">Thưởng</field>
             <field name="code">thuong</field>
-            <field name="sequence">40</field>
+            <field name="sequence">20</field>
         </record>
         <record id="rule_categ_gross" model="hb.salary.rule.category">
             <field name="name">Tổng thu nhập</field>
             <field name="code">tong_thu_nhap</field>
-            <field name="sequence">50</field>
+            <field name="sequence">30</field>
         </record>
-        <record id="rule_categ_comp" model="hb.salary.rule.category">
-            <field name="name">BH phần công ty</field>
-            <field name="code">bh_phan_cong_ty</field>
-            <field name="sequence">60</field>
+        <record id="rule_categ_deduct" model="hb.salary.rule.category">
+            <field name="name">Giảm trừ</field>
+            <field name="code">giam_tru</field>
+            <field name="sequence">40</field>
         </record>
         <record id="rule_categ_ded" model="hb.salary.rule.category">
-            <field name="name">Khấu trừ NV</field>
+            <field name="name">BH nhân viên</field>
             <field name="code">khau_tru_nv</field>
-            <field name="sequence">70</field>
+            <field name="sequence">50</field>
         </record>
         <record id="rule_categ_tax" model="hb.salary.rule.category">
             <field name="name">Thuế TNCN</field>
             <field name="code">thue_tncn</field>
-            <field name="sequence">80</field>
+            <field name="sequence">60</field>
         </record>
         <record id="rule_categ_net" model="hb.salary.rule.category">
-            <field name="name">Thực lãnh</field>
+            <field name="name">Thực lĩnh</field>
             <field name="code">thuc_lanh</field>
-            <field name="sequence">99</field>
+            <field name="sequence">70</field>
+        </record>
+        <record id="rule_categ_comp" model="hb.salary.rule.category">
+            <field name="name">BH phần công ty</field>
+            <field name="code">bh_phan_cong_ty</field>
+            <field name="sequence">80</field>
         </record>
     </data>
 </odoo>

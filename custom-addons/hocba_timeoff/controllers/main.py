@@ -9,14 +9,24 @@
 # ============================================================
 import base64
 import binascii
+from datetime import timedelta
 
 from odoo import fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
-from odoo.http import request
+from odoo.http import content_disposition, request
 
 # Chứng từ y tế (BR-012): chỉ chấp nhận PDF / JPG / PNG, tối đa 5MB.
 ALLOWED_MIME = frozenset({'application/pdf', 'image/jpeg', 'image/png'})
 MAX_SIZE_BYTES = 5 * 1024 * 1024
+
+# 7 loại nghỉ chuẩn của Học Bá (theo xml_id). SPA chỉ làm việc với các loại
+# này — DB còn rất nhiều loại nghỉ demo/bản địa hoá của Odoo mà ta không muốn
+# bày ra ở màn tự phục vụ. Lọc theo đây thay vì xoá/lưu trữ dữ liệu demo.
+HB_LEAVE_TYPE_XMLIDS = (
+    'hb_leave_type_annual', 'hb_leave_type_sick', 'hb_leave_type_unpaid',
+    'hb_leave_type_maternity', 'hb_leave_type_emergency',
+    'hb_leave_type_compensatory', 'hb_leave_type_personal',
+)
 
 # Palette hex tương ứng color index 0..11 của Odoo (cho leave type / lịch).
 COLOR_PALETTE = [
@@ -59,15 +69,414 @@ def _balance_kind(remaining):
     return 'teal'
 
 
+# Ngưỡng cảnh báo "sắp hết phép" (Phase 1, bảng Quỹ phép). Số ngày còn lại
+# <= ngưỡng này thì NV bị đếm vào kpi.lowBalance. Chốt cùng nhóm (open Q#3).
+LOW_BALANCE_DAYS = 2.0
+
+# Ngưỡng "còn nhiều Phép Năm chưa dùng" → cảnh báo sắp mất phép cuối năm
+# (Phase 3, open Q#3). Còn >= ngưỡng này (tính riêng Phép Năm) thì at-risk.
+AT_RISK_DAYS = 5.0
+
+# Ngưỡng cảnh báo trùng lịch nghỉ (Phase 4, open Q#3). Ngày có >= ngưỡng này
+# người CÙNG PHÒNG nghỉ thì coi là "quá tải" → FE tô đậm cảnh báo.
+OVERLAP_WARN = 3
+
+
+def _carryover_expire_date(env, year):
+    """Ngày hết hạn phép năm để hiển thị cảnh báo (Phase 3).
+
+    Chưa có cấu hình carry-over trong hb.timeoff.policy.rule (open Q#4) → mặc
+    định cuối năm đang xem. Khi nhóm thêm quy tắc chuyển/hết hạn phép, ĐỔI Ở ĐÂY."""
+    return '%d-12-31' % year
+
+
+# ---------------------------------------------------------------------------
+# Helper cấp module (nhận env) — để controller dùng dưới request VÀ test gọi
+# trực tiếp với self.env(user=...) theo quy ước test của repo (TransactionCase).
+# Các method cùng tên trong controller chỉ là lớp mỏng ủy quyền xuống đây.
+# ---------------------------------------------------------------------------
+def _managed_department_ids(env, emp):
+    """Phòng ban (gồm phòng con) mà emp làm trưởng phòng (manager_id)."""
+    if not emp:
+        return []
+    Dept = env['hr.department'].sudo()
+    managed = Dept.search([('manager_id', '=', emp.id)])
+    if not managed:
+        return []
+    result, frontier = set(managed.ids), managed
+    while frontier:
+        children = Dept.search([('parent_id', 'in', frontier.ids)])
+        frontier = children.filtered(lambda d: d.id not in result)
+        result.update(frontier.ids)
+    return list(result)
+
+
+def _scope_for(env):
+    """Phân quyền Nghỉ phép (xem docstring chi tiết ở HocBaTimeoff._scope)."""
+    user = env.user
+    see_all = (user.has_group('base.group_system')
+               or user.has_group('hr.group_hr_manager')
+               or user.has_group('hr.group_hr_user'))
+    is_hr_manager = (user.has_group('base.group_system')
+                     or user.has_group('hr.group_hr_manager'))
+    is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
+    dept_ids = [] if see_all else _managed_department_ids(env, user.employee_id)
+    is_role_account = see_all or is_giaovu or bool(dept_ids)
+    return {
+        'isHrManager': is_hr_manager,
+        'isDeptManager': bool(dept_ids),
+        'isGiaovu': is_giaovu,
+        'isEmployee': not is_role_account,
+        'canApprove': see_all or bool(dept_ids),
+        'seeAll': see_all,
+        'deptIds': dept_ids,
+    }
+
+
+def _dept_domain(scope):
+    """Domain lọc phòng ban: HR/Admin = tất cả, Trưởng phòng = phòng được giao."""
+    if scope['seeAll']:
+        return []
+    return [('department_id', 'in', scope['deptIds'])]
+
+
+def _scoped_departments(env, scope):
+    """Phòng ban cho dropdown lọc: HR/Admin = tất cả, Trưởng phòng = phòng mình."""
+    Dept = env['hr.department'].sudo()
+    if scope['seeAll']:
+        return Dept.search([], order='name')
+    return Dept.browse(scope['deptIds'])
+
+
+def _hb_leave_type_ids(env):
+    """ID của 7 loại nghỉ Học Bá (theo xml_id, bỏ qua loại thiếu)."""
+    ids = []
+    for xmlid in HB_LEAVE_TYPE_XMLIDS:
+        rec = env.ref('hocba_timeoff.%s' % xmlid, raise_if_not_found=False)
+        if rec:
+            ids.append(rec.id)
+    return ids
+
+
+def _employee_balance_row(employee, alloc_types, annual_type_id=False,
+                          expire_date=None):
+    """1 dòng số dư của 1 NV theo tập loại nghỉ cần phân bổ (đã lọc sẵn).
+
+    Phase 3: nếu truyền annual_type_id → tính atRisk (còn >= AT_RISK_DAYS ngày
+    Phép Năm chưa dùng) + expireDate (ngày hết hạn để hiển thị)."""
+    types_ctx = alloc_types.with_context(employee_id=employee.id)
+    balances = []
+    t_alloc = t_taken = t_remain = 0.0
+    annual_remaining = None
+    for lt in types_ctx:
+        allocated = round(lt.max_leaves, 2)
+        taken = round(lt.leaves_taken, 2)
+        remaining = round(lt.virtual_remaining_leaves, 2)
+        balances.append({
+            'leaveTypeId': lt.id,
+            'leaveType': lt.name,
+            'allocated': allocated,
+            'taken': taken,
+            'remaining': remaining,
+            'kind': _balance_kind(remaining),
+        })
+        t_alloc += allocated
+        t_taken += taken
+        t_remain += remaining
+        if annual_type_id and lt.id == annual_type_id:
+            annual_remaining = remaining
+    at_risk = bool(annual_type_id and annual_remaining is not None
+                   and annual_remaining >= AT_RISK_DAYS)
+    return {
+        'employeeId': employee.id,
+        'employee': employee.name,
+        'department': employee.department_id.name or '—',
+        'balances': balances,
+        'totalAllocated': round(t_alloc, 2),
+        'totalTaken': round(t_taken, 2),
+        'totalRemaining': round(t_remain, 2),
+        'atRisk': at_risk,
+        'expireDate': expire_date,
+    }
+
+
+def _balances_table(env, scope, year, dept_id=False, type_filter=False,
+                    filter_mode=False):
+    """Bảng số dư phép toàn nhân viên trong phạm vi (Phase 1 + Phase 3).
+
+    Tái dùng đúng cơ chế của _balances(): đọc max_leaves / leaves_taken /
+    virtual_remaining_leaves của hr.leave.type qua context employee_id. Cột số
+    dư = các loại HB cần phân bổ (requires_allocation). year được giữ để hiển
+    thị/lọc tương lai; số dư tính theo trạng thái phân bổ hiện tại (như tab
+    "Của tôi"). Lặp NV với context = N+1 đọc — chấp nhận được ở quy mô hiện tại
+    (ghi chú tối ưu _read_group nếu >200 NV).
+
+    Phase 3: mỗi dòng có atRisk (còn >= AT_RISK_DAYS ngày Phép Năm) + expireDate.
+    filter_mode='expiring' → CHỈ trả dòng at-risk; KPI vẫn tính trên TOÀN phạm vi."""
+    Employee = env['hr.employee'].sudo()
+    emp_domain = _dept_domain(scope)
+    if dept_id:
+        emp_domain = emp_domain + [('department_id', '=', dept_id)]
+    employees = Employee.search(emp_domain, order='name')
+
+    LeaveType = env['hr.leave.type'].sudo()
+    alloc_types = LeaveType.browse(_hb_leave_type_ids(env)).filtered('requires_allocation')
+    if type_filter:
+        alloc_types = alloc_types.filtered(lambda t: t.id == type_filter)
+
+    annual = env.ref('hocba_timeoff.hb_leave_type_annual', raise_if_not_found=False)
+    annual_id = annual.id if annual else False
+    expire_date = _carryover_expire_date(env, year)
+
+    rows = []
+    total_remaining_all = 0.0
+    low_balance = 0
+    at_risk_count = 0
+    for emp in employees:
+        row = _employee_balance_row(emp, alloc_types, annual_id, expire_date)
+        rows.append(row)
+        total_remaining_all += row['totalRemaining']
+        if row['totalRemaining'] <= LOW_BALANCE_DAYS:
+            low_balance += 1
+        if row['atRisk']:
+            at_risk_count += 1
+
+    # KPI tính trên toàn phạm vi; chỉ lọc danh sách trả về khi xem "sắp mất phép".
+    out_rows = [r for r in rows if r['atRisk']] if filter_mode == 'expiring' else rows
+
+    return {
+        'year': year,
+        'atRiskDays': AT_RISK_DAYS,
+        'expireDate': expire_date,
+        'rows': out_rows,
+        'leaveTypes': [{'id': lt.id, 'name': lt.name} for lt in alloc_types],
+        'allDepartments': [{'id': d.id, 'name': d.name}
+                           for d in _scoped_departments(env, scope)],
+        'kpi': {
+            'employees': len(rows),
+            'totalRemaining': round(total_remaining_all, 1),
+            'lowBalance': low_balance,
+            'atRisk': at_risk_count,
+        },
+    }
+
+
+def _apply_quota_adjustment(env, employee, leave_type, delta, reason, year):
+    """Áp 1 điều chỉnh quỹ phép thủ công (Phase 2) — trả về delta đã áp.
+
+    Cấp thêm (delta > 0): tạo 1 allocation regular mới đã duyệt = delta ngày.
+    Trừ bớt (delta < 0): KHÔNG tạo allocation âm (DB chặn regular ≤ 0) — thay
+    vào đó giảm các allocation đã duyệt của NV: từ chối (action_refuse) allocation
+    bị trừ trọn, hoặc giảm number_of_days (vẫn > 0) cho phần lẻ. Chặn trừ vượt số
+    dư (không cho remaining âm). Ghi 1 dòng hb.leave.adjustment liên kết allocation
+    bị tác động. Mọi thao tác sudo (vai trò HR mới không có group hr_holidays)."""
+    delta = round(float(delta), 2)
+    if not delta:
+        raise ValidationError('Số ngày điều chỉnh phải khác 0.')
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValidationError('Vui lòng nhập lý do điều chỉnh.')
+
+    Alloc = env['hr.leave.allocation'].sudo()
+    lt_ctx = (env['hr.leave.type'].sudo()
+              .with_context(employee_id=employee.id).browse(leave_type.id))
+    remaining = lt_ctx.virtual_remaining_leaves
+
+    touched = Alloc.browse()
+    if delta > 0:
+        alloc = Alloc.create({
+            'name': 'Điều chỉnh quỹ: %s' % employee.name,
+            'holiday_status_id': leave_type.id,
+            'employee_id': employee.id,
+            'number_of_days': delta,
+            'allocation_type': 'regular',
+            'date_from': '%d-01-01' % year,
+            'date_to': '%d-12-31' % year,
+        })
+        alloc._action_validate()
+        touched = alloc
+    else:
+        need = -delta
+        if need > remaining + 1e-6:
+            raise ValidationError(
+                'Không đủ phép để trừ: nhân viên chỉ còn %.2f ngày.' % remaining)
+        allocs = Alloc.search([
+            ('employee_id', '=', employee.id),
+            ('holiday_status_id', '=', leave_type.id),
+            ('state', '=', 'validate'),
+        ], order='id desc')
+        for a in allocs:
+            if need <= 1e-6:
+                break
+            d = a.number_of_days
+            if d <= 0:
+                continue
+            if not touched:
+                touched = a
+            if d <= need + 1e-6:
+                a.action_refuse()              # trừ trọn allocation
+                need -= d
+            else:
+                a.write({'number_of_days': round(d - need, 2)})  # trừ phần lẻ
+                need = 0
+        if need > 1e-6:
+            raise ValidationError('Không thể trừ đủ số ngày yêu cầu.')
+
+    env['hb.leave.adjustment'].sudo().create({
+        'employee_id': employee.id,
+        'leave_type_id': leave_type.id,
+        'delta_days': delta,
+        'reason': reason,
+        'allocation_id': touched.id if touched else False,
+        'applied_by': env.user.employee_id.id if env.user.employee_id else False,
+    })
+    # max_leaves / virtual_remaining_leaves là field tính KHÔNG lưu — phải xả &
+    # xoá cache sau khi đổi allocation để lần đọc số dư sau (row trả về / FE)
+    # tính lại từ DB, không trả giá trị cũ đã cache trước khi điều chỉnh.
+    env.flush_all()
+    env.invalidate_all()
+    return delta
+
+
+def _adjustment_history(env, scope, employee_id=False, leave_type_id=False):
+    """Lịch sử điều chỉnh quỹ trong phạm vi xem được (HR = tất cả, Trưởng phòng
+    = NV phòng mình). Lọc thêm theo NV / loại nghỉ nếu truyền."""
+    domain = []
+    if not scope['seeAll']:
+        domain.append(('employee_id.department_id', 'in', scope['deptIds']))
+    if employee_id:
+        domain.append(('employee_id', '=', employee_id))
+    if leave_type_id:
+        domain.append(('leave_type_id', '=', leave_type_id))
+    recs = env['hb.leave.adjustment'].sudo().search(domain, limit=200)
+    return [{
+        'id': r.id,
+        'employeeId': r.employee_id.id,
+        'employee': r.employee_id.name,
+        'leaveTypeId': r.leave_type_id.id,
+        'leaveType': r.leave_type_id.name,
+        'deltaDays': round(r.delta_days, 2),
+        'reason': r.reason or '',
+        'appliedBy': r.applied_by.name or '',
+        'appliedDate': _d(r.applied_date),
+    } for r in recs]
+
+
+def _leave_day_bounds(leave):
+    """Khoảng NGÀY thực của 1 đơn nghỉ (ưu tiên request_date_*, fallback date_*)."""
+    d0 = leave.request_date_from or (leave.date_from and leave.date_from.date())
+    d1 = leave.request_date_to or (leave.date_to and leave.date_to.date())
+    return d0, d1
+
+
+def _overlap_count(env, leave):
+    """Số người CÙNG PHÒNG đang nghỉ (đơn đã duyệt) trùng khoảng ngày của đơn này —
+    KHÔNG tính chính đơn. Dùng cho badge ở modal duyệt (Phase 4)."""
+    d0, d1 = _leave_day_bounds(leave)
+    if not d0 or not d1 or not leave.department_id:
+        return 0
+    return env['hr.leave'].sudo().search_count([
+        ('id', '!=', leave.id),
+        ('state', '=', 'validate'),
+        ('department_id', '=', leave.department_id.id),
+        ('date_from', '<=', '%s 23:59:59' % d1),
+        ('date_to', '>=', '%s 00:00:00' % d0),
+    ])
+
+
+def _coverage_table(env, scope, date_from, date_to, dept_id=False):
+    """Mức độ trùng lịch nghỉ theo NGÀY trong khoảng [date_from, date_to] (Phase 4).
+
+    Mỗi ngày có ít nhất 1 người nghỉ (đơn state='validate', đã lọc phòng ban theo
+    scope) → {date, count, employees:[...]}. Ngày không ai nghỉ được BỎ QUA để
+    payload gọn (FE tra theo map date). KPI: tổng số ngày 'quá tải' (>= OVERLAP_WARN).
+    Mọi thao tác sudo (vai trò duyệt không có group hr_holidays)."""
+    start = fields.Date.to_date(date_from)
+    end = fields.Date.to_date(date_to)
+    if not start or not end or end < start:
+        return {'days': [], 'overlapWarn': OVERLAP_WARN, 'overloadedDays': 0}
+
+    domain = [('state', '=', 'validate'),
+              ('date_from', '<=', '%s 23:59:59' % end),
+              ('date_to', '>=', '%s 00:00:00' % start)] + _dept_domain(scope)
+    if dept_id:
+        domain.append(('department_id', '=', dept_id))
+    leaves = env['hr.leave'].sudo().search(domain, order='date_from')
+
+    spans = []
+    for l in leaves:
+        d0, d1 = _leave_day_bounds(l)
+        if d0 and d1:
+            spans.append((d0, d1, l))
+
+    days = []
+    overloaded = 0
+    cur = start
+    while cur <= end:
+        emps = [{
+            'employeeId': l.employee_id.id,
+            'employee': l.employee_id.name,
+            'department': l.department_id.name or '—',
+            'leaveType': l.holiday_status_id.name,
+        } for d0, d1, l in spans if d0 <= cur <= d1]
+        if emps:
+            if len(emps) >= OVERLAP_WARN:
+                overloaded += 1
+            days.append({'date': _d(cur), 'count': len(emps), 'employees': emps})
+        cur += timedelta(days=1)
+
+    return {'days': days, 'overlapWarn': OVERLAP_WARN, 'overloadedDays': overloaded}
+
+
 class HocBaTimeoff(http.Controller):
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-    def _flags(self):
-        user = request.env.user
-        return (user.has_group('hr_holidays.group_hr_holidays_user'),
-                user.has_group('hr_holidays.group_hr_holidays_manager'))
+    def _scope(self):
+        """Phân quyền Nghỉ phép — đồng bộ cách phân vai trò của SPA hocba_hrm.
+
+        Hệ thống role mới KHÔNG gán group hr_holidays cho ai; quyền lấy từ:
+        - Admin/HR : base.group_system / hr.group_hr_manager / hr.group_hr_user
+                     → mọi phòng ban (HR Manager/Admin còn được override chứng từ).
+        - Quản lý  : trưởng phòng ban qua hr.department.manager_id (gồm phòng con)
+                     → chỉ phòng ban mình quản lý. Khớp _is_dept_manager của
+                     hocba_hrm nên chắc chắn qua được cổng canManage của SPA.
+        - Nhân viên: còn lại → chỉ dữ liệu cá nhân.
+
+        "Tài khoản nhân viên" (isEmployee) = KHÔNG thuộc bất kỳ vai trò quản lý
+        nào (Admin/HR Manager/HR User/Giáo vụ/Trưởng phòng) — khớp đúng
+        isRoleAccount của Shell.jsx (họp #2). Chỉ tài khoản nhân viên mới được
+        TẠO đơn nghỉ; các vai trò quản lý chỉ duyệt/theo dõi.
+
+        Vì không dựa được vào record rule của hr.leave (gắn group hr_holidays /
+        leave_manager_id), các endpoint quản lý dùng sudo + lọc phòng ban tường
+        minh theo deptIds (xem _dept_domain).
+
+        Logic thực nằm ở hàm cấp module _scope_for(env) để test gọi trực tiếp.
+        """
+        return _scope_for(request.env)
+
+    def _managed_department_ids(self, emp):
+        return _managed_department_ids(request.env, emp)
+
+    def _scope_flags(self, scope):
+        """Cờ trả cho SPA. isOfficer/isManager giữ tên cũ để tương thích frontend."""
+        return {
+            'isOfficer': scope['canApprove'],     # tab Chờ duyệt/Tổng hợp, lịch cả đội
+            'isManager': scope['canApprove'],     # dashboard chế độ quản lý
+            'isHrManager': scope['isHrManager'],  # override chứng từ y tế (BR-011)
+            'isEmployee': scope['isEmployee'],    # chỉ NV thường mới tạo được đơn
+        }
+
+    def _dept_domain(self, scope):
+        return _dept_domain(scope)
+
+    def _scoped_departments(self, scope):
+        return _scoped_departments(request.env, scope)
+
+    def _hb_leave_type_ids(self):
+        return _hb_leave_type_ids(request.env)
 
     def _emp_type_label(self, employee):
         if not employee.x_hb_leave_emp_type:
@@ -79,7 +488,8 @@ class HocBaTimeoff(http.Controller):
     def _balances(self, employee):
         """Số dư phép theo từng loại nghỉ (chỉ loại có phân bổ hoặc đã dùng)."""
         types = (request.env['hr.leave.type'].sudo()
-                 .with_context(employee_id=employee.id).search([]))
+                 .with_context(employee_id=employee.id)
+                 .search([('id', 'in', self._hb_leave_type_ids())]))
         rows = []
         for lt in types:
             if not lt.requires_allocation:
@@ -102,6 +512,7 @@ class HocBaTimeoff(http.Controller):
         """Loại nghỉ employee được phép chọn khi tạo đơn (theo domain hr.leave)."""
         types = (request.env['hr.leave.type'].sudo()
                  .with_context(employee_id=employee.id).search([
+                     ('id', 'in', self._hb_leave_type_ids()),
                      '|', ('requires_allocation', '=', False),
                           ('has_valid_allocation', '=', True),
                  ]))
@@ -112,6 +523,7 @@ class HocBaTimeoff(http.Controller):
             'isEmergency': lt.x_is_emergency_type,
             'supportDocument': lt.support_document,
             'requestUnit': lt.request_unit,
+            'unpaid': lt.unpaid,            # True = không lương; hiển thị thẻ trên form
         } for lt in types]
 
     def _my_request(self, leave):
@@ -125,7 +537,7 @@ class HocBaTimeoff(http.Controller):
             'state': leave.state,
             'stateLabel': STATE_LABEL.get(leave.state, leave.state),
             'stateKind': STATE_KIND.get(leave.state, 'gray'),
-            'reason': leave.name or '',
+            'reason': leave.sudo().private_name or '',
             'isEmergency': leave.x_is_emergency,
             'scheduleConflict': leave.x_schedule_conflict,
             'supportDocument': leave.holiday_status_id.support_document,
@@ -146,7 +558,7 @@ class HocBaTimeoff(http.Controller):
             'state': leave.state,
             'stateLabel': STATE_LABEL.get(leave.state, leave.state),
             'stateKind': STATE_KIND.get(leave.state, 'gray'),
-            'reason': leave.name or '',
+            'reason': leave.sudo().private_name or '',
             'isEmergency': leave.x_is_emergency,
             'scheduleConflict': leave.x_schedule_conflict,
             'conflictInfo': leave.x_conflict_info or '',
@@ -154,21 +566,45 @@ class HocBaTimeoff(http.Controller):
             'replacementNote': leave.x_replacement_note or '',
             'supportDocument': leave.holiday_status_id.support_document,
             'hasMedicalDoc': leave.x_has_medical_doc,
+            # Phase 4: số người cùng phòng đã duyệt nghỉ trùng khoảng ngày này.
+            'overlapCount': _overlap_count(request.env, leave),
         }
 
+    def _approver_name(self, leave):
+        """Tên người đã duyệt/từ chối đơn. Đơn duyệt qua SPA ghi đè
+        first_approver_id = người đăng nhập thật (xem api_request_decision).
+        Bỏ qua tên của OdooBot/superuser cho dữ liệu cũ duyệt dưới sudo."""
+        # Ưu tiên first_approver_id vì decision endpoint luôn ghi đè field này
+        # bằng người duyệt thật; second_approver_id có thể còn là OdooBot.
+        emp = leave.first_approver_id or leave.second_approver_id
+        if not emp:
+            return ''
+        root = request.env.ref('base.user_root', raise_if_not_found=False)
+        if root and emp.user_id and emp.user_id.id == root.id:
+            return ''
+        return emp.name or ''
+
+    def _leave_attachments(self, leave):
+        """Danh sách chứng từ đính kèm (qua endpoint tải có kiểm quyền sudo)."""
+        return [{
+            'id': a.id,
+            'name': a.name or 'chung-tu',
+            'mimetype': a.mimetype or '',
+            'url': '/hocba-hrm/api/timeoff/attachment/%d' % a.id,
+        } for a in leave.attachment_ids]
+
     def _overview_payload(self):
-        is_officer, is_manager = self._flags()
+        scope = self._scope()
+        flags = self._scope_flags(scope)
         emp = request.env.user.employee_id
         if not emp:
-            return {'isOfficer': is_officer, 'isManager': is_manager,
-                    'employee': None, 'balances': [], 'leaveTypes': [],
-                    'requests': []}
+            return {**flags, 'employee': None, 'balances': [],
+                    'leaveTypes': [], 'requests': []}
         leaves = (request.env['hr.leave'].sudo()
                   .search([('employee_id', '=', emp.id)],
                           order='request_date_from desc, id desc'))
         return {
-            'isOfficer': is_officer,
-            'isManager': is_manager,
+            **flags,
             'employee': {
                 'id': emp.id,
                 'name': emp.name,
@@ -194,16 +630,15 @@ class HocBaTimeoff(http.Controller):
     @http.route('/hocba-hrm/api/timeoff/approvals', auth='user',
                 type='http', methods=['GET'])
     def api_approvals(self, **kw):
-        is_officer, is_manager = self._flags()
-        if not is_officer:
+        scope = self._scope()
+        if not scope['canApprove']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
-        # KHÔNG sudo: record rule của hr.leave giới hạn đúng phạm vi officer duyệt.
-        leaves = request.env['hr.leave'].search(
-            [('state', 'in', list(PENDING_STATES))],
-            order='x_is_emergency desc, request_date_from, id')
+        # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
+        domain = [('state', 'in', list(PENDING_STATES))] + self._dept_domain(scope)
+        leaves = request.env['hr.leave'].sudo().search(
+            domain, order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
-            'isOfficer': is_officer,
-            'isManager': is_manager,
+            **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
         })
 
@@ -216,6 +651,16 @@ class HocBaTimeoff(http.Controller):
         emp = request.env.user.employee_id
         if not emp:
             return request.make_json_response({'error': 'no_employee'}, status=403)
+
+        # Chỉ tài khoản NHÂN VIÊN mới được tạo đơn nghỉ. Các vai trò quản lý
+        # (Admin/HR/Giáo vụ/Trưởng phòng) là tài khoản thuần quản lý, chỉ duyệt
+        # đơn — dùng tài khoản nhân viên riêng cho nghỉ phép cá nhân (họp #2).
+        if not self._scope()['isEmployee']:
+            return request.make_json_response(
+                {'error': 'not_employee',
+                 'message': 'Tài khoản quản lý không thể tạo đơn nghỉ phép. '
+                            'Vui lòng dùng tài khoản nhân viên cá nhân.'},
+                status=403)
 
         payload = request.get_json_data()
         leave_type_id = payload.get('leaveTypeId')
@@ -230,9 +675,18 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response({'error': 'bad_range'}, status=400)
 
         leave_type = request.env['hr.leave.type'].sudo().browse(int(leave_type_id))
-        if not leave_type.exists():
+        if not leave_type.exists() or leave_type.id not in self._hb_leave_type_ids():
             return request.make_json_response(
                 {'error': 'leave_type_not_found'}, status=404)
+
+        # Không cho xin nghỉ nếu cả kỳ rơi vào ngày không làm việc
+        # (Chủ nhật / Thứ 7 không phải ngày đi làm) — ngày đó vốn đã nghỉ.
+        if self._count_working_days(date_from, date_to) == 0:
+            return request.make_json_response(
+                {'error': 'non_working_day',
+                 'message': 'Ngày bạn chọn là ngày nghỉ (Thứ 7/Chủ nhật) — '
+                            'không thể xin nghỉ phép vào ngày không làm việc.'},
+                status=400)
 
         # Kiểm tra chứng từ ở controller (defense); model re-validate ở bước duyệt.
         att_vals = None
@@ -317,10 +771,17 @@ class HocBaTimeoff(http.Controller):
         if action not in ('approve', 'refuse'):
             return request.make_json_response({'error': 'bad_request'}, status=400)
 
-        # KHÔNG sudo: quyền duyệt do model hr.leave quyết định.
-        leave = request.env['hr.leave'].browse(leave_id)
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+
+        # sudo: người duyệt (HR/Admin/Trưởng phòng) không có group hr_holidays.
+        leave = request.env['hr.leave'].sudo().browse(leave_id)
         if not leave.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        # Trưởng phòng chỉ xử lý đơn thuộc phòng ban mình quản lý.
+        if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
 
         try:
             if action == 'refuse':
@@ -331,25 +792,29 @@ class HocBaTimeoff(http.Controller):
                 note = (payload.get('replacementNote') or '').strip()
                 if note:
                     write_vals['x_replacement_note'] = note
-                if payload.get('medicalOverride'):
+                # Override chứng từ y tế (BR-011): chỉ HR/Admin mới được.
+                if payload.get('medicalOverride') and scope['isHrManager']:
                     write_vals['x_medical_override'] = True
                     write_vals['x_medical_override_reason'] = (
                         payload.get('medicalOverrideReason') or '').strip()
                 if write_vals:
                     leave.write(write_vals)
                 leave.action_approve()
+            # Vì duyệt chạy dưới sudo, Odoo ghi người duyệt = OdooBot. Ghi đè lại
+            # bằng nhân viên đang đăng nhập (HR/Trưởng phòng) để hiển thị đúng.
+            approver = request.env.user.employee_id
+            if approver:
+                leave.write({'first_approver_id': approver.id})
         except (AccessError, ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt đã refresh.
-        is_officer, is_manager = self._flags()
-        leaves = request.env['hr.leave'].search(
-            [('state', 'in', list(PENDING_STATES))],
-            order='x_is_emergency desc, request_date_from, id')
+        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban).
+        domain = [('state', 'in', list(PENDING_STATES))] + self._dept_domain(scope)
+        leaves = request.env['hr.leave'].sudo().search(
+            domain, order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
-            'isOfficer': is_officer,
-            'isManager': is_manager,
+            **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
         })
 
@@ -368,26 +833,30 @@ class HocBaTimeoff(http.Controller):
     @http.route('/hocba-hrm/api/timeoff/dashboard', auth='user',
                 type='http', methods=['GET'])
     def api_dashboard(self, **kw):
-        is_officer, is_manager = self._flags()
+        scope = self._scope()
         try:
             year = int(kw.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
-        if is_manager:
-            data = self._dashboard_manager(year, kw.get('dept'))
+        if scope['canApprove']:
+            data = self._dashboard_manager(year, kw.get('dept'), scope)
         else:
             data = self._dashboard_employee(year)
-        data.update({'isOfficer': is_officer, 'isManager': is_manager, 'year': year})
+        data.update({**self._scope_flags(scope), 'year': year})
         return request.make_json_response(data)
 
-    def _dashboard_manager(self, year, dept_raw):
-        Leave = request.env['hr.leave']  # không sudo: record rule giới hạn đúng quyền
+    def _dashboard_manager(self, year, dept_raw, scope):
+        Leave = request.env['hr.leave'].sudo()  # sudo + lọc phòng ban tường minh
         start, end = self._year_bounds(year)
         try:
             dept_id = int(dept_raw) if dept_raw else False
         except (TypeError, ValueError):
             dept_id = False
-        dept_dom = [('department_id', '=', dept_id)] if dept_id else []
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        dept_dom = ([('department_id', '=', dept_id)] if dept_id else []) \
+            + self._dept_domain(scope)
         year_dom = [('date_from', '>=', start), ('date_from', '<=', end)]
         approved_dom = [('state', '=', 'validate')] + year_dom + dept_dom
         pending_dom = [('state', 'in', list(PENDING_STATES))] + dept_dom
@@ -451,7 +920,7 @@ class HocBaTimeoff(http.Controller):
                 'isEmergency': l.x_is_emergency,
             } for l in pending],
             'departments': [{'id': d.id, 'name': d.name}
-                            for d in request.env['hr.department'].search([], order='name')],
+                            for d in self._scoped_departments(scope)],
         }
 
     def _dashboard_employee(self, year):
@@ -471,7 +940,9 @@ class HocBaTimeoff(http.Controller):
         # Số dư theo loại nghỉ (chỉ loại có hoạt động)
         balances = []
         types = (request.env['hr.leave.type'].sudo()
-                 .with_context(employee_id=emp.id).search([('requires_allocation', '=', True)]))
+                 .with_context(employee_id=emp.id)
+                 .search([('requires_allocation', '=', True),
+                          ('id', 'in', self._hb_leave_type_ids())]))
         for lt in types:
             if lt.max_leaves <= 0 and lt.leaves_taken <= 0:
                 continue
@@ -523,24 +994,24 @@ class HocBaTimeoff(http.Controller):
     @http.route('/hocba-hrm/api/timeoff/calendar', auth='user',
                 type='http', methods=['GET'])
     def api_calendar(self, **kw):
-        is_officer, is_manager = self._flags()
+        scope = self._scope()
         try:
             year = int(kw.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
-        # scope='all' chỉ cho officer; mặc định xem lịch của chính mình.
-        scope = kw.get('scope') if kw.get('scope') in ('me', 'all') else 'me'
-        if scope == 'all' and not is_officer:
-            scope = 'me'
+        # view='all' chỉ cho người duyệt; mặc định xem lịch của chính mình.
+        view = kw.get('scope') if kw.get('scope') in ('me', 'all') else 'me'
+        if view == 'all' and not scope['canApprove']:
+            view = 'me'
 
         start, end = self._year_bounds(year)
         overlap = [('date_from', '<=', end), ('date_to', '>=', start)]
-        if scope == 'all':
-            Leave = request.env['hr.leave']  # record rule giới hạn phạm vi officer
-            domain = overlap
+        Leave = request.env['hr.leave'].sudo()
+        if view == 'all':
+            # HR/Admin xem tất cả, Trưởng phòng chỉ phòng ban được giao.
+            domain = overlap + self._dept_domain(scope)
         else:
             emp = request.env.user.employee_id
-            Leave = request.env['hr.leave'].sudo()
             domain = ([('employee_id', '=', emp.id)] + overlap) if emp else [('id', '=', 0)]
 
         leaves = Leave.search(domain, order='date_from')
@@ -576,23 +1047,236 @@ class HocBaTimeoff(http.Controller):
                           'color': COLOR_PALETTE[(m.color or 1) % len(COLOR_PALETTE)]})
 
         return request.make_json_response({
-            'isOfficer': is_officer,
-            'isManager': is_manager,
+            **self._scope_flags(scope),
             'year': year,
-            'scope': scope,
+            'scope': view,
             'leaveTypes': sorted(types.values(), key=lambda t: t['name']),
             'leaves': rows,
             'mandatoryDays': mdays,
+            'workDays': self._work_days(year),
         })
 
     # ------------------------------------------------------------------
-    # 3.8. GET /summary — tổng hợp đơn nghỉ (mọi trạng thái) theo phòng ban
+    # Lịch làm việc — Thứ 2..6 mặc định + các ngày đi làm thêm do HR thêm
+    # ------------------------------------------------------------------
+    def _work_days(self, year):
+        days = request.env['hb.work.day'].sudo().search([
+            ('date', '>=', '%d-01-01' % year),
+            ('date', '<=', '%d-12-31' % year),
+        ], order='date')
+        return [{'id': d.id, 'date': _d(d.date), 'name': d.name or 'Ngày đi làm'}
+                for d in days]
+
+    def _count_working_days(self, date_from, date_to):
+        """Số ngày LÀM VIỆC trong [date_from, date_to]: Thứ 2–Thứ 6, cộng các
+        ngày Thứ 7 do HR đánh dấu đi làm (hb.work.day). Chủ nhật / Thứ 7 thường
+        = ngày nghỉ, không tính."""
+        start = fields.Date.to_date(date_from)
+        end = fields.Date.to_date(date_to)
+        if not start or not end:
+            return 0
+        work_extra = set(request.env['hb.work.day'].sudo().search([
+            ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
+        n, cur = 0, start
+        while cur <= end:
+            if cur.weekday() < 5 or cur in work_extra:  # T2..T6 hoặc T7 đi làm
+                n += 1
+            cur += timedelta(days=1)
+        return n
+
+    @http.route('/hocba-hrm/api/timeoff/workdays', auth='user',
+                type='http', methods=['GET'])
+    def api_workdays(self, **kw):
+        scope = self._scope()
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+        return request.make_json_response({
+            'canEdit': scope['isHrManager'],   # chỉ HR/Admin được thêm/xoá
+            'year': year,
+            'workDays': self._work_days(year),
+        })
+
+    @http.route('/hocba-hrm/api/timeoff/workdays/add', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_workdays_add(self, **kw):
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data()
+        raw_dates = payload.get('dates') or []
+        name = (payload.get('name') or 'Ngày đi làm').strip() or 'Ngày đi làm'
+        try:
+            year = int(payload.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+
+        Model = request.env['hb.work.day'].sudo()
+        for ds in raw_dates:
+            ds = (ds or '').strip()
+            if not ds:
+                continue
+            try:
+                day = fields.Date.to_date(ds)
+            except (ValueError, TypeError):
+                continue
+            if not Model.search_count([('date', '=', day)]):
+                Model.create({'date': day, 'name': name})
+        return request.make_json_response({
+            'canEdit': True, 'year': year, 'workDays': self._work_days(year),
+        })
+
+    @http.route('/hocba-hrm/api/timeoff/workdays/<int:day_id>/delete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_workdays_delete(self, day_id, **kw):
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data() or {}
+        try:
+            year = int(payload.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+        rec = request.env['hb.work.day'].sudo().browse(day_id)
+        if rec.exists():
+            rec.unlink()
+        return request.make_json_response({
+            'canEdit': True, 'year': year, 'workDays': self._work_days(year),
+        })
+
+    # ------------------------------------------------------------------
+    # 3.8. GET /summary — BÁO CÁO CÁ NHÂN của nhân viên đang đăng nhập
+    #   (Tab "Tổng hợp" — chỉ hiển thị cho role Nhân viên ở SPA). Trả về
+    #   thống kê nghỉ phép của CHÍNH user trong năm: quỹ phép năm, KPI,
+    #   phân bổ theo loại nghỉ, theo tháng, và danh sách đơn.
     # ------------------------------------------------------------------
     @http.route('/hocba-hrm/api/timeoff/summary', auth='user',
                 type='http', methods=['GET'])
     def api_summary(self, **kw):
-        is_officer, is_manager = self._flags()
-        if not is_officer:
+        scope = self._scope()
+        flags = self._scope_flags(scope)
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response({
+                **flags, 'year': year, 'empMissing': True,
+            })
+
+        start, end = self._year_bounds(year)
+        Leave = request.env['hr.leave'].sudo()
+        year_dom = [('employee_id', '=', emp.id),
+                    ('date_from', '>=', start), ('date_from', '<=', end)]
+        leaves = Leave.search(year_dom, order='date_from desc, id desc')
+
+        # --- Quỹ phép năm (loại requires_allocation = quỹ 12 ngày cố định) ---
+        annual = None
+        types = (request.env['hr.leave.type'].sudo()
+                 .with_context(employee_id=emp.id)
+                 .search([('requires_allocation', '=', True),
+                          ('id', 'in', self._hb_leave_type_ids())]))
+        for lt in types:
+            allocated = lt.max_leaves
+            remaining = lt.virtual_remaining_leaves
+            taken = lt.leaves_taken
+            row = {
+                'id': lt.id, 'name': lt.name, 'color': _lt_color(lt),
+                'allocated': round(allocated, 2),
+                'taken': round(taken, 2),
+                'remaining': round(remaining, 2),
+                'pct': round(min(100, taken / allocated * 100)) if allocated > 0 else 0,
+                'low': allocated > 0 and remaining <= 2,
+            }
+            # Ưu tiên loại có phân bổ làm "quỹ phép năm" chính.
+            if annual is None or allocated > annual['allocated']:
+                annual = row
+
+        # --- Tổng hợp theo trạng thái / loại nghỉ / tháng ---
+        by_state = {k: 0 for k in STATE_LABEL}
+        approved_days = paid_days = unpaid_days = 0.0
+        type_acc = {}            # id -> {name, color, count, days, unpaid}
+        by_month = [0.0] * 12    # ngày đã duyệt theo tháng
+        for l in leaves:
+            by_state[l.state] = by_state.get(l.state, 0) + 1
+            lt = l.holiday_status_id
+            t = type_acc.setdefault(lt.id, {
+                'id': lt.id, 'name': lt.name, 'color': _lt_color(lt),
+                'count': 0, 'days': 0.0, 'unpaid': lt.unpaid})
+            t['count'] += 1
+            if l.state == 'validate':
+                approved_days += l.number_of_days
+                t['days'] += l.number_of_days
+                if lt.unpaid:
+                    unpaid_days += l.number_of_days
+                else:
+                    paid_days += l.number_of_days
+                if l.date_from:
+                    by_month[l.date_from.month - 1] += l.number_of_days
+
+        by_type = sorted(type_acc.values(), key=lambda t: t['count'], reverse=True)
+        mx_t = max([t['count'] for t in by_type] + [1])
+        for t in by_type:
+            t['pct'] = round(t['count'] / mx_t * 100)
+            t['days'] = round(t['days'], 1)
+
+        mx_m = max(by_month + [1])
+        months = [{
+            'month': i + 1,
+            'days': round(by_month[i], 1),
+            'pct': round(by_month[i] / mx_m * 100),
+        } for i in range(12)]
+
+        requests = [{
+            'id': l.id,
+            'leaveTypeId': l.holiday_status_id.id,
+            'leaveType': l.holiday_status_id.name,
+            'color': _lt_color(l.holiday_status_id),
+            'unpaid': l.holiday_status_id.unpaid,
+            'from': _d(l.request_date_from),
+            'to': _d(l.request_date_to),
+            'days': round(l.number_of_days, 2),
+            'reason': l.sudo().private_name or '',
+            'state': l.state,
+            'stateLabel': STATE_LABEL.get(l.state, l.state),
+            'stateKind': STATE_KIND.get(l.state, 'gray'),
+            'isEmergency': l.x_is_emergency,
+        } for l in leaves]
+
+        return request.make_json_response({
+            **flags,
+            'year': year,
+            'empMissing': False,
+            'employee': {'id': emp.id, 'name': emp.name,
+                         'department': emp.department_id.name or '—'},
+            'annual': annual,
+            'kpi': {
+                'total': len(leaves),
+                'pending': by_state.get('confirm', 0) + by_state.get('validate1', 0),
+                'approved': by_state.get('validate', 0),
+                'refused': by_state.get('refuse', 0),
+                'cancelled': by_state.get('cancel', 0),
+                'approvedDays': round(approved_days, 1),
+                'paidDays': round(paid_days, 1),
+                'unpaidDays': round(unpaid_days, 1),
+            },
+            'byType': by_type,
+            'byMonth': months,
+            'requests': requests,
+        })
+
+    # ------------------------------------------------------------------
+    # 3.9. GET /approved — danh sách đơn nghỉ ĐÃ XỬ LÝ (duyệt / từ chối)
+    #   Trang quản lý: HR/Admin xem mọi phòng ban, Trưởng phòng chỉ phòng mình.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/approved', auth='user',
+                type='http', methods=['GET'])
+    def api_approved(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             year = int(kw.get('year') or self._this_year())
@@ -602,75 +1286,228 @@ class HocBaTimeoff(http.Controller):
             dept_id = int(kw.get('dept')) if kw.get('dept') else False
         except (TypeError, ValueError):
             dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
 
         start, end = self._year_bounds(year)
-        # KHÔNG sudo: record rule giới hạn đúng phạm vi officer được xem.
-        Leave = request.env['hr.leave']
-        domain = [('date_from', '>=', start), ('date_from', '<=', end)]
+        Leave = request.env['hr.leave'].sudo()
+        # Đơn đã xử lý = đã duyệt (validate) hoặc bị từ chối (refuse).
+        domain = [('state', 'in', ['validate', 'refuse']),
+                  ('date_from', '>=', start), ('date_from', '<=', end)] \
+            + self._dept_domain(scope)
         if dept_id:
             domain.append(('department_id', '=', dept_id))
         leaves = Leave.search(domain, order='date_from desc, id desc')
 
-        # --- Tổng quan ---
-        by_state = {k: 0 for k in STATE_LABEL}
-        approved_days = 0.0
-        type_acc = {}  # id -> {name, color, count}
-        depts = {}     # id -> dept bucket
-        for l in leaves:
-            by_state[l.state] = by_state.get(l.state, 0) + 1
-            if l.state == 'validate':
-                approved_days += l.number_of_days
-            lt = l.holiday_status_id
-            t = type_acc.setdefault(lt.id, {'id': lt.id, 'name': lt.name,
-                                            'color': _lt_color(lt), 'count': 0})
-            t['count'] += 1
-
-            dep = l.department_id or l.employee_id.department_id
-            dep_id = dep.id or 0
-            bucket = depts.setdefault(dep_id, {
-                'id': dep.id or False, 'name': dep.name or 'Chưa có phòng ban',
-                'total': 0, 'pending': 0, 'approved': 0, 'days': 0.0, 'requests': []})
-            bucket['total'] += 1
-            if l.state in PENDING_STATES:
-                bucket['pending'] += 1
-            elif l.state == 'validate':
-                bucket['approved'] += 1
-                bucket['days'] += l.number_of_days
-            bucket['requests'].append({
-                'id': l.id,
-                'employee': l.employee_id.name,
-                'leaveType': lt.name,
-                'from': _d(l.request_date_from),
-                'to': _d(l.request_date_to),
-                'days': round(l.number_of_days, 2),
-                'state': l.state,
-                'stateLabel': STATE_LABEL.get(l.state, l.state),
-                'stateKind': STATE_KIND.get(l.state, 'gray'),
-                'isEmergency': l.x_is_emergency,
-            })
-
-        by_type = sorted(type_acc.values(), key=lambda t: t['count'], reverse=True)
-        mx = max([t['count'] for t in by_type] + [1])
-        for t in by_type:
-            t['pct'] = round(t['count'] / mx * 100)
-        dept_list = sorted(depts.values(), key=lambda d: d['total'], reverse=True)
-        for d in dept_list:
-            d['days'] = round(d['days'], 1)
+        approved = leaves.filtered(lambda l: l.state == 'validate')
+        refused = leaves.filtered(lambda l: l.state == 'refuse')
+        rows = [{
+            'id': l.id,
+            'employee': l.employee_id.name,
+            'department': l.department_id.name or l.employee_id.department_id.name or '—',
+            'leaveType': l.holiday_status_id.name,
+            'color': _lt_color(l.holiday_status_id),
+            'unpaid': l.holiday_status_id.unpaid,
+            'from': _d(l.request_date_from),
+            'to': _d(l.request_date_to),
+            'days': round(l.number_of_days, 2),
+            'reason': l.sudo().private_name or '',
+            'state': l.state,
+            'stateLabel': STATE_LABEL.get(l.state, l.state),
+            'stateKind': STATE_KIND.get(l.state, 'gray'),
+            'isEmergency': l.x_is_emergency,
+            'approver': self._approver_name(l),
+            'supportDocument': l.holiday_status_id.support_document,
+            'attachments': self._leave_attachments(l),
+        } for l in leaves]
 
         return request.make_json_response({
-            'isOfficer': is_officer,
-            'isManager': is_manager,
+            **self._scope_flags(scope),
             'year': year,
-            'overview': {
-                'total': len(leaves),
-                'pending': by_state.get('confirm', 0) + by_state.get('validate1', 0),
-                'approved': by_state.get('validate', 0),
-                'refused': by_state.get('refuse', 0),
-                'cancelled': by_state.get('cancel', 0),
-                'approvedDays': round(approved_days, 1),
-                'byType': by_type,
+            'kpi': {
+                'approved': len(approved),
+                'refused': len(refused),
+                'days': round(sum(approved.mapped('number_of_days')), 1),
             },
-            'departments': dept_list,
+            'requests': rows,
             'allDepartments': [{'id': d.id, 'name': d.name}
-                               for d in request.env['hr.department'].search([], order='name')],
+                               for d in self._scoped_departments(scope)],
         })
+
+    # ------------------------------------------------------------------
+    # 3.11. GET /balances — bảng Quỹ phép toàn nhân viên (Phase 1).
+    #   Chỉ vai trò duyệt (HR/Admin = mọi phòng; Trưởng phòng = phòng được
+    #   giao). NV thường → 403. Số dư mỗi loại HB cần phân bổ, theo cơ chế
+    #   context employee_id (như _balances). Params: year, dept, type.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/balances', auth='user',
+                type='http', methods=['GET'])
+    def api_balances(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+        try:
+            dept_id = int(kw.get('dept')) if kw.get('dept') else False
+        except (TypeError, ValueError):
+            dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        try:
+            type_filter = int(kw.get('type')) if kw.get('type') else False
+        except (TypeError, ValueError):
+            type_filter = False
+        # Phase 3: filter=expiring → chỉ NV còn nhiều phép năm (sắp mất phép).
+        filter_mode = kw.get('filter') if kw.get('filter') in ('expiring',) else False
+        data = _balances_table(request.env, scope, year, dept_id, type_filter,
+                               filter_mode)
+        return request.make_json_response({**self._scope_flags(scope), **data})
+
+    # ------------------------------------------------------------------
+    # 3.12. POST /balances/adjust — điều chỉnh quỹ phép thủ công (Phase 2).
+    #   Quyết định (open Q#1): CHỈ HR Manager/Admin được chỉnh quỹ; Trưởng
+    #   phòng KHÔNG. Body: {employeeId, leaveTypeId, deltaDays, reason}.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/balances/adjust', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_balance_adjust(self, **kw):
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+
+        payload = request.get_json_data()
+        try:
+            employee_id = int(payload.get('employeeId'))
+            leave_type_id = int(payload.get('leaveTypeId'))
+        except (TypeError, ValueError):
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        try:
+            delta = float(payload.get('deltaDays'))
+        except (TypeError, ValueError):
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        reason = (payload.get('reason') or '').strip()
+        if not reason:
+            return request.make_json_response(
+                {'error': 'reason_required',
+                 'message': 'Vui lòng nhập lý do điều chỉnh.'}, status=400)
+        if not delta:
+            return request.make_json_response(
+                {'error': 'zero_delta',
+                 'message': 'Số ngày điều chỉnh phải khác 0.'}, status=400)
+
+        employee = request.env['hr.employee'].sudo().browse(employee_id)
+        if not employee.exists():
+            return request.make_json_response(
+                {'error': 'employee_not_found'}, status=404)
+        if leave_type_id not in _hb_leave_type_ids(request.env):
+            return request.make_json_response(
+                {'error': 'leave_type_not_found'}, status=404)
+        leave_type = request.env['hr.leave.type'].sudo().browse(leave_type_id)
+        if not leave_type.requires_allocation:
+            return request.make_json_response(
+                {'error': 'leave_type_no_allocation',
+                 'message': 'Loại nghỉ này không dùng quỹ phép.'}, status=400)
+
+        try:
+            _apply_quota_adjustment(request.env, employee, leave_type,
+                                    delta, reason, self._this_year())
+        except (AccessError, ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+
+        alloc_types = (request.env['hr.leave.type'].sudo()
+                       .browse(_hb_leave_type_ids(request.env))
+                       .filtered('requires_allocation'))
+        row = _employee_balance_row(employee, alloc_types)
+        return request.make_json_response({**self._scope_flags(scope), 'row': row})
+
+    # ------------------------------------------------------------------
+    # 3.13. GET /balances/history — nhật ký điều chỉnh quỹ (Phase 2).
+    #   HR/Admin xem tất cả; Trưởng phòng chỉ NV phòng mình. Lọc theo
+    #   employeeId / leaveTypeId (tùy chọn).
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/balances/history', auth='user',
+                type='http', methods=['GET'])
+    def api_balance_history(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            employee_id = int(kw.get('employeeId')) if kw.get('employeeId') else False
+        except (TypeError, ValueError):
+            employee_id = False
+        try:
+            leave_type_id = int(kw.get('leaveTypeId')) if kw.get('leaveTypeId') else False
+        except (TypeError, ValueError):
+            leave_type_id = False
+        history = _adjustment_history(request.env, scope, employee_id, leave_type_id)
+        return request.make_json_response({
+            **self._scope_flags(scope), 'history': history})
+
+    # ------------------------------------------------------------------
+    # 3.14. GET /coverage — mức độ trùng lịch nghỉ theo ngày (Phase 4).
+    #   Chỉ vai trò duyệt (HR/Admin = mọi phòng; Trưởng phòng = phòng được
+    #   giao). NV thường → 403. Params: from, to (YYYY-MM-DD), dept (lọc 1
+    #   phòng ban). Thiếu from/to → mặc định cả năm hiện tại.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/coverage', auth='user',
+                type='http', methods=['GET'])
+    def api_coverage(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        year = self._this_year()
+        date_from = (kw.get('from') or '').strip() or '%d-01-01' % year
+        date_to = (kw.get('to') or '').strip() or '%d-12-31' % year
+        try:
+            dept_id = int(kw.get('dept')) if kw.get('dept') else False
+        except (TypeError, ValueError):
+            dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        data = _coverage_table(request.env, scope, date_from, date_to, dept_id)
+        return request.make_json_response({
+            **self._scope_flags(scope),
+            'allDepartments': [{'id': d.id, 'name': d.name}
+                               for d in self._scoped_departments(scope)],
+            **data,
+        })
+
+    # ------------------------------------------------------------------
+    # 3.10. GET /attachment/<id> — tải chứng từ đính kèm của 1 đơn nghỉ.
+    #   Vì role mới không có group hr_holidays, /web/content có thể chặn
+    #   Trưởng phòng → phục vụ qua đây với sudo + kiểm quyền tường minh:
+    #   chủ đơn, hoặc người duyệt trong phạm vi phòng ban được giao.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/attachment/<int:att_id>',
+                auth='user', type='http', methods=['GET'])
+    def api_attachment(self, att_id, **kw):
+        att = request.env['ir.attachment'].sudo().browse(att_id)
+        if not att.exists() or att.res_model != 'hr.leave':
+            return request.not_found()
+        leave = request.env['hr.leave'].sudo().browse(att.res_id)
+        if not leave.exists():
+            return request.not_found()
+        scope = self._scope()
+        emp = request.env.user.employee_id
+        is_owner = bool(emp) and leave.employee_id.id == emp.id
+        in_scope = scope['seeAll'] or (
+            scope['canApprove'] and leave.department_id.id in scope['deptIds'])
+        if not (is_owner or in_scope):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            data = base64.b64decode(att.datas or b'')
+        except (binascii.Error, ValueError):
+            return request.not_found()
+        return request.make_response(data, headers=[
+            ('Content-Type', att.mimetype or 'application/octet-stream'),
+            ('Content-Length', len(data)),
+            ('Content-Disposition',
+             content_disposition(att.name or 'chung-tu')),
+        ])

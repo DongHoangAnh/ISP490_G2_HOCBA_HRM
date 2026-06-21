@@ -21,6 +21,10 @@ const NAV = [
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
+    // Nghỉ phép cá nhân của nhân viên/Trưởng phòng. Tài khoản vai trò thuần
+    // (Admin/HR/Giáo vụ) thấy Nghỉ phép ở mục Quản lý nhân sự (need:manage);
+    // component TimeOff tự bổ sung tab Chờ duyệt/Đơn đã duyệt theo data.isOfficer.
+    { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
   ]},
 ];
@@ -58,7 +62,7 @@ export const PAGE_META = {
   employees: { t: 'Nhân viên', c: 'Quản lý nhân sự / Hồ sơ' },
   onboarding: { t: 'Nhận việc', c: 'Quản lý nhân sự / Onboarding' },
   attendance: { t: 'Chấm công', c: 'Quản lý nhân sự / Attendance' },
-  timeoff: { t: 'Nghỉ phép', c: 'Quản lý nhân sự / Time Off' },
+  timeoff: { t: 'Nghỉ phép', c: 'Cá nhân / Nghỉ phép' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },

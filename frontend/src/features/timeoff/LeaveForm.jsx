@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Modal from '../../components/Modal';
 import Icon from '../../components/Icon';
+import Badge from '../../components/Badge';
 import { createRequest } from '../../api/timeoff';
 
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -91,6 +92,20 @@ export default function LeaveForm({ leaveTypes, onClose, onSaved }) {
               <option key={t.id} value={t.id}>{t.name}{t.isEmergency ? ' (khẩn cấp)' : ''}</option>
             ))}
           </select>
+          {type && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 7 }}>
+              <Badge kind={type.unpaid ? 'gray' : 'green'} dot>
+                {type.unpaid ? 'Không lương' : 'Có lương'}
+              </Badge>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {type.unpaid
+                  ? 'Những ngày nghỉ loại này sẽ bị trừ lương.'
+                  : type.requiresAllocation
+                    ? 'Có lương · trừ vào quỹ phép năm.'
+                    : 'Có lương · không trừ quỹ phép năm.'}
+              </span>
+            </div>
+          )}
         </Field>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>

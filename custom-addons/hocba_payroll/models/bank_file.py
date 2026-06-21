@@ -84,13 +84,17 @@ class BankFile(models.Model):
 
     def _to_api_dict(self):
         self.ensure_one()
+        ds = self.batch_id.date_start
         return {
             'id': self.id,
             'name': self.name,
             'batch_id': self.batch_id.id,
             'batch_name': self.batch_id.name,
+            'batch_month': ds.month if ds else None,
+            'batch_year': ds.year if ds else None,
             'bank_code': self.bank_format_id.code,
             'bank_name': self.bank_format_id.name,
+            'format_name': self.bank_format_id.name,
             'payment_date': str(self.payment_date),
             'total_amount': self.total_amount,
             'record_count': self.record_count,
