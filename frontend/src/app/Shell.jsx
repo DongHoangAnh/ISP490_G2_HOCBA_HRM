@@ -17,6 +17,7 @@ const NAV = [
     { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'manage' },
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
+    { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
@@ -31,6 +32,7 @@ const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrU
 
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
+  if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
   if (need === 'self') return !isRoleAccount(me);
   return true;
 };
@@ -59,6 +61,7 @@ export const PAGE_META = {
   timeoff: { t: 'Nghỉ phép', c: 'Quản lý nhân sự / Time Off' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
+  accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
 };
 
