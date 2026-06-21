@@ -1,11 +1,11 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, closeBatchByPeriod } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
-import { monthOptions, yearOptions, currentMonth, currentYear } from './util';
+import { currentMonth, currentYear } from './util';
 import PayslipDrawer from './PayslipDrawer';
 
 /* ── localStorage v2 ── */
@@ -215,8 +215,8 @@ const CONFIRM_MAP = {
 
 /* ── Main ── */
 export default function BatchList({ search }) {
-  const [month, setMonth] = useState(currentMonth());
-  const [year, setYear]   = useState(currentYear());
+  const month = currentMonth();
+  const year  = currentYear();
   const [data, setData]   = useState(null);
   const [err, setErr]     = useState(null);
   const [sel, setSel]     = useState(null);
@@ -226,6 +226,8 @@ export default function BatchList({ search }) {
   const [colWidths, setColWidths] = useState(() => loadWidths());
   const [checked, setChecked] = useState({});
   const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [localSearch, setLocalSearch] = useState('');
   const resizeRef = useRef(null);
 
   const load = () => { setErr(null); setData(null); setChecked({}); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
@@ -290,12 +292,34 @@ export default function BatchList({ search }) {
     }
   };
 
+  /* ── save to history ── */
+  const allConfirmed = empsWithSlip.length > 0 &&
+    empsWithSlip.every((e) => e.employee_confirm === 'confirmed');
+
+  const handleSaveHistory = async () => {
+    if (!allConfirmed || saving) return;
+    if (!confirm(`Lưu lịch sử lương tháng ${month}/${year}? Sau khi lưu sẽ không thể chỉnh sửa.`)) return;
+    setSaving(true);
+    try {
+      await closeBatchByPeriod(Number(month), Number(year));
+      alert(`Đã lưu lịch sử lương tháng ${month}/${year} thành công!`);
+      load();
+    } catch (e) {
+      alert('Lỗi: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (err) return <ErrorState message={err} onRetry={load} />;
 
+  const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (e.name || '').toLowerCase().includes(q) || (e.code || '').toLowerCase().includes(q);
+    if (!q) return true;
+    return (e.name || '').toLowerCase().includes(q)
+      || (e.code || '').toLowerCase().includes(q)
+      || (e.department || '').toLowerCase().includes(q)
+      || (e.job_title || '').toLowerCase().includes(q);
   }) : [];
 
   const allCols = data ? data.columns : [];
@@ -339,21 +363,53 @@ export default function BatchList({ search }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-        <select className="sel" value={month} onChange={(e) => setMonth(e.target.value)} style={{ minWidth: 100 }}>
-          {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select className="sel" value={year} onChange={(e) => setYear(e.target.value)} style={{ minWidth: 72 }}>
-          {yearOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+
+        {/* Odoo-style search bar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+          padding: '4px 10px', minWidth: 280, flex: '0 1 380px',
+        }}>
+          <Icon name="search" size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
+
+          {/* Period label (fixed to current month) */}
+          <span style={{
+            display: 'inline-flex', alignItems: 'center',
+            padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+            background: '#eff6ff', color: '#1d4ed8', whiteSpace: 'nowrap',
+          }}>
+            T{month}/{year}
+          </span>
+
+          {/* Search input */}
+          <input
+            type="text"
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            placeholder="Tìm tên, mã NV, phòng ban..."
+            style={{
+              flex: 1, border: 'none', outline: 'none', fontSize: 13,
+              background: 'transparent', minWidth: 100,
+            }}
+          />
+          {localSearch && (
+            <button onClick={() => setLocalSearch('')} style={{
+              border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af',
+              display: 'flex', alignItems: 'center',
+            }}>
+              <Icon name="x" size={14} />
+            </button>
+          )}
+        </div>
 
         {/* metrics inline */}
         {data && <>
-          <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 4px' }} />
+          <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 2px' }} />
           {[
-            ['NV:', total], ['Phieu:', withSlip],
-            ['Thuc linh:', hbVND(totalNet)], ['TB:', hbVND(avgNet)],
+            ['NV:', total], ['Phiếu:', withSlip],
+            ['Thực lĩnh:', hbVND(totalNet)], ['TB:', hbVND(avgNet)],
           ].map(([l, v]) => (
-            <span key={l} style={{ fontSize: 12, color: '#6b7280' }}>
+            <span key={l} style={{ fontSize: 11.5, color: '#6b7280' }}>
               {l} <b style={{ color: '#111827' }}>{v}</b>
             </span>
           ))}
@@ -361,19 +417,32 @@ export default function BatchList({ search }) {
 
         <div style={{ flex: 1 }} />
 
-        {checkedCount > 0 && (
-          <button onClick={handleSendMail} disabled={sending}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '6px 14px', borderRadius: 7,
-              border: 'none', background: '#2563eb', color: '#fff',
-              fontSize: 12.5, fontWeight: 600, cursor: sending ? 'wait' : 'pointer',
-              opacity: sending ? .7 : 1,
-            }}>
-            <Icon name="send" size={14} />
-            {sending ? 'Đang gửi...' : `Gửi mail (${checkedCount})`}
-          </button>
-        )}
+        <button onClick={handleSendMail} disabled={sending || checkedCount === 0}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', borderRadius: 7,
+            border: 'none', background: '#2563eb', color: '#fff',
+            fontSize: 12.5, fontWeight: 600,
+            cursor: (sending || checkedCount === 0) ? 'not-allowed' : 'pointer',
+            opacity: (sending || checkedCount === 0) ? .5 : 1,
+          }}>
+          <Icon name="mail" size={14} />
+          {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
+        </button>
+
+        <button onClick={handleSaveHistory} disabled={saving || !allConfirmed}
+          title={allConfirmed ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận trước khi lưu'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', borderRadius: 7,
+            border: 'none', background: allConfirmed ? '#16a34a' : '#9ca3af', color: '#fff',
+            fontSize: 12.5, fontWeight: 600,
+            cursor: (saving || !allConfirmed) ? 'not-allowed' : 'pointer',
+            opacity: (saving || !allConfirmed) ? .6 : 1,
+          }}>
+          <Icon name="check" size={14} />
+          {saving ? 'Đang lưu...' : 'Lưu lịch sử'}
+        </button>
 
         <button onClick={() => setCfgOpen(true)}
           style={{
@@ -457,15 +526,19 @@ export default function BatchList({ search }) {
               <tbody>
                 {emps.map((emp, idx) => {
                   const cs = CONFIRM_MAP[emp.employee_confirm] || CONFIRM_MAP.pending;
+                  const rowBg = emp.employee_confirm === 'confirmed' ? '#f0fdf4'
+                    : emp.employee_confirm === 'rejected' ? '#fef2f2' : '#fff';
+                  const rowHover = emp.employee_confirm === 'confirmed' ? '#dcfce7'
+                    : emp.employee_confirm === 'rejected' ? '#fee2e2' : '#f8fafc';
                   return (
                   <tr key={emp.id}
                     onClick={() => emp.payslip_id && setSel(emp)}
                     style={{
                       cursor: emp.payslip_id ? 'pointer' : 'default',
-                      background: '#fff',
+                      background: rowBg,
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
+                    onMouseEnter={(e) => { e.currentTarget.style.background = rowHover; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = rowBg; }}>
                     {/* checkbox cell */}
                     <td style={{
                       ...P, position: 'sticky', left: 0, zIndex: 2,

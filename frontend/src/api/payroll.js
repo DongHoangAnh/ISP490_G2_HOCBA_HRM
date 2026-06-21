@@ -16,6 +16,8 @@ export const generatePayslips = (batchId) =>
   p(`/hocba-hrm/api/payroll/batch/${batchId}/generate`, {});
 export const closeBatch = (batchId) =>
   p(`/hocba-hrm/api/payroll/batch/${batchId}/close`, {});
+export const closeBatchByPeriod = (month, year) =>
+  p('/hocba-hrm/api/payroll/batch/close-by-period', { month, year });
 
 // ── Payslip ─────────────────────────────────────────────
 export const fetchPayslips = (params) =>
@@ -87,3 +89,9 @@ export const fetchContract = (id) =>
 // ── Send payslip mail ───────────────────────────────────
 export const sendPayslipMail = (payslipIds) =>
   p('/hocba-hrm/api/payroll/payslip/send-mail', { payslip_ids: payslipIds });
+
+// ── Mail template config ────────────────────────────────
+export const fetchMailTemplate = () =>
+  g('/hocba-hrm/api/payroll/mail-template');
+export const saveMailTemplate = (payload) =>
+  p('/hocba-hrm/api/payroll/mail-template', payload);

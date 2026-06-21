@@ -602,7 +602,11 @@ class HbPayslip(models.Model):
     # ═════════════════════════════════════════════════════════
     def action_send_payslip_mail(self):
         """Send payslip email to employee with public view link."""
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        ICP = self.env['ir.config_parameter'].sudo()
+        base_url = ICP.get_param('web.base.url')
+        subject_tpl = ICP.get_param('hocba_payroll.mail_subject', default=False)
+        body_tpl = ICP.get_param('hocba_payroll.mail_body', default=False)
+
         for slip in self:
             employee = slip.employee_id
             email_to = employee.work_email or getattr(employee, 'email', False)
@@ -615,10 +619,28 @@ class HbPayslip(models.Model):
             month = slip.date_from.strftime('%m') if slip.date_from else ''
             year = slip.date_from.strftime('%Y') if slip.date_from else ''
 
+            tpl_vars = {
+                'employee_name': employee.name,
+                'month': month,
+                'year': year,
+                'gross': f'{slip.gross_amount:,.0f}',
+                'net': f'{slip.net_amount:,.0f}',
+                'view_url': view_url,
+            }
+
+            subject = self._render_mail_tpl(
+                subject_tpl or 'Bảng lương tháng {month}/{year} — {employee_name}',
+                tpl_vars,
+            )
+            body_html = self._render_mail_tpl(
+                body_tpl or slip._default_mail_body(),
+                tpl_vars,
+            )
+
             mail_vals = {
-                'subject': f'Bảng lương tháng {month}/{year} — {employee.name}',
+                'subject': subject,
                 'email_to': email_to,
-                'body_html': slip._build_payslip_email_body(view_url, month, year),
+                'body_html': body_html,
                 'auto_delete': True,
             }
             mail = self.env['mail.mail'].sudo().create(mail_vals)
@@ -629,36 +651,40 @@ class HbPayslip(models.Model):
                 'x_email_sent_date': fields.Datetime.now(),
             })
 
-    def _build_payslip_email_body(self, view_url, month, year):
-        """Build HTML body for payslip notification email."""
-        self.ensure_one()
-        gross = f'{self.gross_amount:,.0f}'
-        net = f'{self.net_amount:,.0f}'
-        return f'''
-        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-            <h2 style="color:#1f2937;">Bảng lương tháng {month}/{year}</h2>
-            <p>Xin chào <strong>{self.employee_id.name}</strong>,</p>
-            <p>Phiếu lương tháng {month}/{year} của bạn đã sẵn sàng.</p>
-            <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-                <tr style="background:#f3f4f6;">
-                    <td style="padding:8px 12px;font-weight:600;">Tổng thu nhập</td>
-                    <td style="padding:8px 12px;text-align:right;">{gross} ₫</td>
-                </tr>
-                <tr style="background:#ecfdf5;">
-                    <td style="padding:8px 12px;font-weight:600;color:#065f46;">Thực lĩnh</td>
-                    <td style="padding:8px 12px;text-align:right;font-weight:700;color:#065f46;">{net} ₫</td>
-                </tr>
-            </table>
-            <p>Vui lòng nhấn nút bên dưới để xem chi tiết và xác nhận:</p>
-            <a href="{view_url}"
-               style="display:inline-block;padding:12px 24px;background:#2563eb;
-                      color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
-                Xem phiếu lương
-            </a>
-            <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb;"/>
-            <p style="font-size:12px;color:#9ca3af;">Email này được gửi tự động. Vui lòng không reply.</p>
-        </div>
-        '''
+    @staticmethod
+    def _render_mail_tpl(tpl, variables):
+        """Safely render template with {key} placeholders."""
+        try:
+            return tpl.format(**variables)
+        except (KeyError, IndexError, ValueError):
+            return tpl
+
+    @staticmethod
+    def _default_mail_body():
+        return (
+            '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">'
+            '<h2 style="color:#1f2937;">Bảng lương tháng {month}/{year}</h2>'
+            '<p>Xin chào <strong>{employee_name}</strong>,</p>'
+            '<p>Phiếu lương tháng {month}/{year} của bạn đã sẵn sàng.</p>'
+            '<table style="width:100%;border-collapse:collapse;margin:16px 0;">'
+            '<tr style="background:#f3f4f6;">'
+            '<td style="padding:8px 12px;font-weight:600;">Tổng thu nhập</td>'
+            '<td style="padding:8px 12px;text-align:right;">{gross} ₫</td>'
+            '</tr>'
+            '<tr style="background:#ecfdf5;">'
+            '<td style="padding:8px 12px;font-weight:600;color:#065f46;">Thực lĩnh</td>'
+            '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#065f46;">{net} ₫</td>'
+            '</tr>'
+            '</table>'
+            '<p>Vui lòng nhấn nút bên dưới để xem chi tiết và xác nhận:</p>'
+            '<a href="{view_url}" '
+            'style="display:inline-block;padding:12px 24px;background:#2563eb;'
+            'color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">'
+            'Xem phiếu lương</a>'
+            '<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb;"/>'
+            '<p style="font-size:12px;color:#9ca3af;">Email này được gửi tự động. Vui lòng không reply.</p>'
+            '</div>'
+        )
 
     # ═════════════════════════════════════════════════════════
     # API serialization

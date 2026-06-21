@@ -207,6 +207,63 @@ class PayrollAPI(http.Controller):
             _logger.exception('close_batch error')
             return _error_response(str(e), status=500)
 
+    @http.route('/hocba-hrm/api/payroll/batch/close-by-period', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def close_batch_by_period(self, **kw):
+        """Close all batches that have payslips in the given month/year.
+        Only succeeds when every payslip employee has confirmed."""
+        try:
+            body = _get_json_body()
+            month = int(body.get('month', 0))
+            year = int(body.get('year', 0))
+            if not month or not year:
+                return _error_response('month and year are required.')
+
+            nm = month + 1 if month < 12 else 1
+            ny = year if month < 12 else year + 1
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{ny}-{nm:02d}-01'
+
+            env = request.env
+            slips = env['hb.payslip'].sudo().search([
+                ('date_from', '>=', date_start),
+                ('date_from', '<', date_end),
+                ('state', '!=', 'cancel'),
+            ])
+
+            if not slips:
+                return _error_response('Không có phiếu lương trong kỳ này.')
+
+            # Check all employees confirmed
+            not_confirmed = slips.filtered(
+                lambda s: s.x_employee_confirm != 'confirmed'
+            )
+            if not_confirmed:
+                names = ', '.join(not_confirmed.mapped('employee_id.name')[:5])
+                remain = len(not_confirmed) - 5
+                msg = f'Còn {len(not_confirmed)} nhân viên chưa xác nhận: {names}'
+                if remain > 0:
+                    msg += f' và {remain} người khác'
+                return _error_response(msg)
+
+            # Close all related batches
+            batch_ids = slips.mapped('payslip_run_id')
+            closed = []
+            for batch in batch_ids:
+                if batch.state != 'close':
+                    batch.action_close()
+                closed.append({'id': batch.id, 'name': batch.name, 'state': batch.state})
+
+            return _success_response({
+                'closed_batches': closed,
+                'payslip_count': len(slips),
+            }, message=f'Đã lưu lịch sử lương tháng {month:02d}/{year}.')
+        except (ValidationError, UserError) as e:
+            return _error_response(str(e))
+        except Exception as e:
+            _logger.exception('close_batch_by_period error')
+            return _error_response(str(e), status=500)
+
     # ═════════════════════════════════════════════════════════
     # PAYSLIP
     # ═════════════════════════════════════════════════════════
@@ -547,14 +604,15 @@ class PayrollAPI(http.Controller):
     def generate_bank_file(self, **kw):
         try:
             body = _get_json_body()
-            for f in ('batch_id', 'bank_format_id', 'payment_date'):
+            for f in ('batch_id', 'bank_format_id'):
                 if f not in body:
                     return _error_response(f'Missing required field: {f}')
+            payment_date = body.get('payment_date') or str(fields.Date.today())
             wiz = request.env['hb.bank.file.wizard'].sudo().create({
                 'payslip_batch_id': int(body['batch_id']),
                 'bank_format_id': int(body['bank_format_id']),
                 'company_bank_id': int(body.get('company_bank_id', 0)) or False,
-                'payment_date': body['payment_date'],
+                'payment_date': payment_date,
                 'description': body.get('description', 'Luong T{month}/{year}'),
             })
             wiz.action_generate()
@@ -1001,5 +1059,66 @@ class PayrollAPI(http.Controller):
             }, message='Contract teaching config updated.')
         except (ValidationError, UserError) as e:
             return _error_response(str(e))
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
+    # ══════════════════════════════════════════════════════════
+    #  Email Template Config
+    # ══════════════════════════════════════════════════════════
+    _MAIL_TPL_KEYS = {
+        'subject': 'hocba_payroll.mail_subject',
+        'body': 'hocba_payroll.mail_body',
+    }
+    _MAIL_TPL_DEFAULTS = {
+        'subject': 'Bảng lương tháng {month}/{year} — {employee_name}',
+        'body': (
+            '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">'
+            '<h2 style="color:#1f2937;">Bảng lương tháng {month}/{year}</h2>'
+            '<p>Xin chào <strong>{employee_name}</strong>,</p>'
+            '<p>Phiếu lương tháng {month}/{year} của bạn đã sẵn sàng.</p>'
+            '<table style="width:100%;border-collapse:collapse;margin:16px 0;">'
+            '<tr style="background:#f3f4f6;">'
+            '<td style="padding:8px 12px;font-weight:600;">Tổng thu nhập</td>'
+            '<td style="padding:8px 12px;text-align:right;">{gross} ₫</td>'
+            '</tr>'
+            '<tr style="background:#ecfdf5;">'
+            '<td style="padding:8px 12px;font-weight:600;color:#065f46;">Thực lĩnh</td>'
+            '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#065f46;">{net} ₫</td>'
+            '</tr>'
+            '</table>'
+            '<p>Vui lòng nhấn nút bên dưới để xem chi tiết và xác nhận:</p>'
+            '<a href="{view_url}" '
+            'style="display:inline-block;padding:12px 24px;background:#2563eb;'
+            'color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">'
+            'Xem phiếu lương</a>'
+            '<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb;"/>'
+            '<p style="font-size:12px;color:#9ca3af;">Email này được gửi tự động. Vui lòng không reply.</p>'
+            '</div>'
+        ),
+    }
+
+    @http.route('/hocba-hrm/api/payroll/mail-template', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_mail_template(self, **kw):
+        try:
+            ICP = request.env['ir.config_parameter'].sudo()
+            result = {}
+            for key, param in self._MAIL_TPL_KEYS.items():
+                val = ICP.get_param(param, default=False)
+                result[key] = val if val else self._MAIL_TPL_DEFAULTS[key]
+            return _success_response(result)
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/mail-template', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def save_mail_template(self, **kw):
+        try:
+            body = _get_json_body()
+            ICP = request.env['ir.config_parameter'].sudo()
+            for key, param in self._MAIL_TPL_KEYS.items():
+                if key in body:
+                    ICP.set_param(param, body[key])
+            return _success_response({'saved': True}, message='Mail template saved.')
         except Exception as e:
             return _error_response(str(e), status=500)

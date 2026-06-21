@@ -22,9 +22,9 @@ export default function Payroll({ search }) {
     <div className="content fade-in" style={{
       display: 'flex', flexDirection: 'column',
       height: 'calc(100vh - var(--topbar-h, 64px))',
-      paddingBottom: 0, overflow: 'hidden',
+      paddingTop: 10, paddingBottom: 0, overflow: 'hidden',
     }}>
-      <div className="tabs" style={{ marginTop: 0, flexShrink: 0 }}>
+      <div className="tabs" style={{ marginTop: 0, marginBottom: 10, flexShrink: 0 }}>
         {TABS.map(([id, l]) => (
           <button key={id} className={'tab' + (tab === id ? ' active' : '')} onClick={() => select(id)}>{l}</button>
         ))}

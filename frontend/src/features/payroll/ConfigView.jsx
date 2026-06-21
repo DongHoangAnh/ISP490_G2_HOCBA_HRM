@@ -1,17 +1,19 @@
-/* Cấu hình lương — CRUD quy tắc lương + kéo thứ tự + danh sách ngân hàng. Owner: Hùng. */
+/* Cấu hình lương — CRUD quy tắc lương + kéo thứ tự + danh sách ngân hàng + mẫu email. Owner: Hùng. */
 import { useState, useEffect, useRef } from 'react';
 import {
   fetchSalaryRules, deleteSalaryRule, reorderSalaryRules,
   fetchBankFormats, deleteBankFormat,
+  fetchMailTemplate, saveMailTemplate,
 } from '../../api/payroll';
 import Icon from '../../components/Icon';
+import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import SalaryRuleForm from './SalaryRuleForm';
 import BankFormatForm from './BankFormatForm';
 import TblWrap from '../../components/TblWrap';
 
 const TYPE_LABEL = { fixed: 'Số cố định', formula: 'Công thức' };
-const SUB_TABS = [['rules', 'Quy tắc lương'], ['banks', 'Ngân hàng']];
+const SUB_TABS = [['rules', 'Quy tắc lương'], ['banks', 'Ngân hàng'], ['mail', 'Mẫu email']];
 
 const segWrap = {
   display: 'inline-flex', gap: 0, background: 'var(--gray-100)',
@@ -38,6 +40,14 @@ export default function ConfigView() {
   const [bankForm, setBankForm] = useState(null);
   const [bankBusy, setBankBusy] = useState(null);
 
+  /* mail template state */
+  const [mailSubject, setMailSubject] = useState('');
+  const [mailBody, setMailBody] = useState('');
+  const [mailLoaded, setMailLoaded] = useState(false);
+  const [mailSaving, setMailSaving] = useState(false);
+  const [mailMsg, setMailMsg] = useState('');
+  const [mailPreview, setMailPreview] = useState(false);
+
   /* drag state */
   const dragIdx = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -48,7 +58,14 @@ export default function ConfigView() {
   const loadBanks = () => {
     fetchBankFormats().then(setBanks).catch((e) => setErr(e.message));
   };
-  useEffect(() => { loadRules(); loadBanks(); }, []);
+  const loadMailTpl = () => {
+    fetchMailTemplate().then((d) => {
+      setMailSubject(d.subject || '');
+      setMailBody(d.body || '');
+      setMailLoaded(true);
+    }).catch(() => setMailLoaded(true));
+  };
+  useEffect(() => { loadRules(); loadBanks(); loadMailTpl(); }, []);
 
   const delRule = async (r) => {
     if (!confirm(`Xoá rule "${r.name}" (${r.code})?`)) return;
@@ -281,6 +298,154 @@ export default function ConfigView() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          TAB: MẪU EMAIL
+          ════════════════════════════════════════════════════════ */}
+      {tab === 'mail' && (
+        <div style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          border: '1px solid #e5e7eb', borderRadius: 10,
+          background: '#fff', overflow: 'hidden',
+        }}>
+          {/* Header with buttons */}
+          <div style={{
+            padding: '14px 20px', borderBottom: '1px solid #e5e7eb', flexShrink: 0,
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Mẫu email gửi phiếu lương</h3>
+              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>
+                Tuỳ chỉnh nội dung email gửi cho nhân viên khi xác nhận bảng lương
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setMailPreview(true)}>
+                <Icon name="eye" size={14} />Xem trước
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={mailSaving}
+                onClick={async () => {
+                  setMailSaving(true);
+                  setMailMsg('');
+                  try {
+                    await saveMailTemplate({ subject: mailSubject, body: mailBody });
+                    setMailMsg('Đã lưu thành công!');
+                  } catch (e) {
+                    setMailMsg('Lỗi: ' + e.message);
+                  } finally {
+                    setMailSaving(false);
+                  }
+                }}
+              >
+                <Icon name="check" size={14} />
+                {mailSaving ? 'Đang lưu...' : 'Lưu mẫu email'}
+              </button>
+              {mailMsg && (
+                <span style={{
+                  fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap',
+                  color: mailMsg.startsWith('Lỗi') ? '#dc2626' : '#16a34a',
+                }}>{mailMsg}</span>
+              )}
+            </div>
+          </div>
+
+          {!mailLoaded ? (
+            <LoadingState label="Đang tải mẫu email..." />
+          ) : (
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
+              {/* Placeholders guide */}
+              <div style={{
+                padding: '10px 14px', marginBottom: 16, borderRadius: 8,
+                background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12.5, color: '#1e40af',
+              }}>
+                <strong>Biến có thể dùng:</strong>{' '}
+                <code>{'{employee_name}'}</code> — Tên nhân viên, {' '}
+                <code>{'{month}'}</code> — Tháng, {' '}
+                <code>{'{year}'}</code> — Năm, {' '}
+                <code>{'{gross}'}</code> — Tổng thu nhập, {' '}
+                <code>{'{net}'}</code> — Thực lĩnh, {' '}
+                <code>{'{view_url}'}</code> — Link xem phiếu lương
+              </div>
+
+              {/* Subject */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>
+                  Tiêu đề email (Subject)
+                </label>
+                <input
+                  type="text"
+                  className="inp"
+                  value={mailSubject}
+                  onChange={(e) => { setMailSubject(e.target.value); setMailMsg(''); }}
+                  placeholder="Bảng lương tháng {month}/{year} — {employee_name}"
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* Body */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>
+                  Nội dung email (HTML)
+                </label>
+                <textarea
+                  className="inp"
+                  value={mailBody}
+                  onChange={(e) => { setMailBody(e.target.value); setMailMsg(''); }}
+                  rows={14}
+                  style={{
+                    width: '100%', fontFamily: 'monospace', fontSize: 12.5,
+                    lineHeight: 1.5, resize: 'vertical',
+                  }}
+                  placeholder="<div>Nội dung email HTML...</div>"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Preview modal ── */}
+      {mailPreview && (
+        <Modal onClose={() => setMailPreview(false)} lg>
+          <div className="modal-head">
+            <h3>Xem trước email</h3>
+            <button className="modal-x" onClick={() => setMailPreview(false)}>✕</button>
+          </div>
+          <div style={{ padding: 20 }}>
+            <div style={{
+              fontSize: 13, color: '#6b7280', marginBottom: 12,
+              padding: '8px 12px', background: '#f9fafb', borderRadius: 6,
+            }}>
+              <strong>Subject:</strong>{' '}
+              {mailSubject
+                .replace(/\{employee_name\}/g, 'Nguyễn Văn A')
+                .replace(/\{month\}/g, '06')
+                .replace(/\{year\}/g, '2026')
+                .replace(/\{gross\}/g, '15,000,000')
+                .replace(/\{net\}/g, '12,500,000')
+                .replace(/\{view_url\}/g, '#')}
+            </div>
+            <div style={{
+              border: '1px solid #e5e7eb', borderRadius: 8, padding: 16,
+              background: '#fff', minHeight: 120, fontSize: 13,
+            }}>
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: mailBody
+                    .replace(/\{employee_name\}/g, 'Nguyễn Văn A')
+                    .replace(/\{month\}/g, '06')
+                    .replace(/\{year\}/g, '2026')
+                    .replace(/\{gross\}/g, '15,000,000')
+                    .replace(/\{net\}/g, '12,500,000')
+                    .replace(/\{view_url\}/g, '#'),
+                }}
+              />
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ── Modals ── */}
