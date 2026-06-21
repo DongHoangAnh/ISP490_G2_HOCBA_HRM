@@ -1292,6 +1292,71 @@ def _account_payload(emp):
     return {'hasAccount': True, 'login': u.login, 'active': u.active}
 
 
+def _is_hr(env):
+    return env.user.has_group('hr.group_hr_user')
+
+
+def _validate_password(body):
+    pw = body.get('password') or ''
+    pw2 = body.get('password_confirm') or ''
+    if len(pw) < MIN_PASSWORD_LEN:
+        raise ValidationError(
+            'Mật khẩu phải có ít nhất %d ký tự.' % MIN_PASSWORD_LEN)
+    if pw != pw2:
+        raise ValidationError('Xác nhận mật khẩu không khớp.')
+    return pw
+
+
+def _account_create(env, emp_id, body):
+    """HR/Admin cấp tài khoản đăng nhập cho 1 nhân viên.
+    AccessError nếu không phải HR; ValidationError nếu dữ liệu sai;
+    UserError nếu trưởng phòng cần xác nhận ghi đè."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp tài khoản.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if emp.user_id:
+        raise ValidationError('Nhân viên đã có tài khoản. Dùng cấp lại mật khẩu.')
+    login = (body.get('login') or '').strip()
+    if not login:
+        raise ValidationError('Vui lòng nhập tên đăng nhập.')
+    if env['res.users'].sudo().with_context(active_test=False).search_count(
+            [('login', '=', login)]):
+        raise ValidationError('Tên đăng nhập đã tồn tại.')
+    password = _validate_password(body)
+    role = body.get('role') or 'employee'
+    if role not in ACCOUNT_ROLES:
+        raise ValidationError('Loại tài khoản không hợp lệ.')
+
+    group_ids = [env.ref('base.group_user').id]
+    if role == 'giaovu':
+        group_ids.append(env.ref('hocba_employees.group_hocba_giaovu').id)
+
+    dept = None
+    if role == 'truongphong':
+        dept_id = body.get('department_id')
+        if not dept_id:
+            raise ValidationError('Trưởng phòng cần chọn phòng ban.')
+        dept = env['hr.department'].sudo().browse(int(dept_id))
+        if not dept.exists():
+            raise ValidationError('Phòng ban không hợp lệ.')
+        if (dept.manager_id and dept.manager_id != emp
+                and not body.get('confirm_overwrite')):
+            raise UserError(
+                'Phòng "%s" đã có trưởng phòng (%s). Xác nhận để ghi đè.'
+                % (dept.name, dept.manager_id.name))
+
+    user = env['res.users'].sudo().create({
+        'name': emp.name, 'login': login, 'password': password,
+        'group_ids': [(6, 0, group_ids)],
+    })
+    emp.sudo().user_id = user.id
+    if dept is not None:
+        dept.manager_id = emp.id
+    return _account_payload(emp)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,

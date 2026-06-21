@@ -1,7 +1,8 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
-from odoo.addons.hocba_hrm.controllers.main import _account_payload
+from odoo.addons.hocba_hrm.controllers.main import (
+    _account_create, _account_payload)
 
 
 @tagged('post_install', '-at_install')
@@ -26,3 +27,13 @@ class TestAccount(TransactionCase):
 
     def test_payload_empty(self):
         self.assertEqual(_account_payload(self.emp), {'hasAccount': False})
+
+    def test_create_normal(self):
+        out = _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'va', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'employee'})
+        self.assertEqual(out, {'hasAccount': True, 'login': 'va', 'active': True})
+        self.assertEqual(self.emp.user_id.login, 'va')
+        self.assertTrue(self.emp.user_id.has_group('base.group_user'))
+        self.assertFalse(self.emp.user_id.has_group(
+            'hocba_employees.group_hocba_giaovu'))
