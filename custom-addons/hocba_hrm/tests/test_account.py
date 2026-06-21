@@ -3,7 +3,7 @@ from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
 
 from odoo.addons.hocba_hrm.controllers.main import (
-    _account_create, _account_payload)
+    _account_create, _account_reset, _account_payload)
 
 
 @tagged('post_install', '-at_install')
@@ -106,3 +106,21 @@ class TestAccount(TransactionCase):
             _account_create(self._env(self.hr), self.emp.id, {
                 'login': 'second', 'password': '12345678',
                 'password_confirm': '12345678', 'role': 'employee'})
+
+    def test_reset_changes_password(self):
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'rst', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'employee'})
+        out = _account_reset(self._env(self.hr), self.emp.id, {
+            'password': 'newpass99', 'password_confirm': 'newpass99'})
+        self.assertEqual(out['login'], 'rst')
+
+    def test_reset_forbidden_non_hr(self):
+        with self.assertRaises(AccessError):
+            _account_reset(self._env(self.plain), self.emp.id, {
+                'password': 'newpass99', 'password_confirm': 'newpass99'})
+
+    def test_reset_no_account(self):
+        with self.assertRaises(ValidationError):
+            _account_reset(self._env(self.hr), self.emp.id, {
+                'password': 'newpass99', 'password_confirm': 'newpass99'})

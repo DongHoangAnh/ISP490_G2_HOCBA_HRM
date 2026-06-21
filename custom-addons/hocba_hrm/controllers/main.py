@@ -1357,6 +1357,18 @@ def _account_create(env, emp_id, body):
     return _account_payload(emp)
 
 
+def _account_reset(env, emp_id, body):
+    """HR/Admin cấp lại mật khẩu cho nhân viên đã có tài khoản."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp lại mật khẩu.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists() or not emp.user_id:
+        raise ValidationError('Nhân viên chưa có tài khoản.')
+    password = _validate_password(body)
+    emp.user_id.sudo().write({'password': password})
+    return _account_payload(emp)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
