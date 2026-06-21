@@ -1,5 +1,6 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
+from odoo.exceptions import ValidationError, UserError
 
 from odoo.addons.hocba_hrm.controllers.main import (
     _account_create, _account_payload)
@@ -37,3 +38,38 @@ class TestAccount(TransactionCase):
         self.assertTrue(self.emp.user_id.has_group('base.group_user'))
         self.assertFalse(self.emp.user_id.has_group(
             'hocba_employees.group_hocba_giaovu'))
+
+    def test_create_giaovu(self):
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'gv', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'giaovu'})
+        self.assertTrue(self.emp.user_id.has_group(
+            'hocba_employees.group_hocba_giaovu'))
+
+    def test_create_truongphong_sets_manager(self):
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'tp', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'truongphong',
+            'department_id': self.dept.id})
+        self.assertEqual(self.dept.manager_id, self.emp)
+
+    def test_truongphong_requires_department(self):
+        with self.assertRaises(ValidationError):
+            _account_create(self._env(self.hr), self.emp.id, {
+                'login': 'tp2', 'password': '12345678',
+                'password_confirm': '12345678', 'role': 'truongphong'})
+
+    def test_truongphong_overwrite_needs_confirm(self):
+        other = self.env['hr.employee'].create({
+            'name': 'Other', 'x_employee_code': 'EMP-ACCT-2'})
+        self.dept.manager_id = other.id
+        with self.assertRaises(UserError):
+            _account_create(self._env(self.hr), self.emp.id, {
+                'login': 'tp3', 'password': '12345678',
+                'password_confirm': '12345678', 'role': 'truongphong',
+                'department_id': self.dept.id})
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'tp3', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'truongphong',
+            'department_id': self.dept.id, 'confirm_overwrite': True})
+        self.assertEqual(self.dept.manager_id, self.emp)
