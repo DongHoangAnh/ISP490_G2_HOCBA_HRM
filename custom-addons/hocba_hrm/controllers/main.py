@@ -1369,6 +1369,28 @@ def _account_reset(env, emp_id, body):
     return _account_payload(emp)
 
 
+def _account_list(env):
+    """Danh sách NV đã có tài khoản + danh mục phòng ban (cho form). Chỉ HR."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách tài khoản.')
+    Dept = env['hr.department'].sudo()
+    emps = env['hr.employee'].sudo().search(
+        [('user_id', '!=', False)], order='x_employee_code, id')
+    rows = []
+    for e in emps:
+        u = e.user_id
+        is_tp = bool(Dept.search_count([('manager_id', '=', e.id)]))
+        is_gv = u.has_group('hocba_employees.group_hocba_giaovu')
+        role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
+        rows.append({
+            'employeeId': e.id, 'name': e.name,
+            'code': e.x_employee_code or '', 'depName': e.department_id.name or '',
+            'login': u.login, 'active': u.active, 'role': role,
+        })
+    depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
+    return {'accounts': rows, 'departments': depts}
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,

@@ -3,7 +3,7 @@ from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
 
 from odoo.addons.hocba_hrm.controllers.main import (
-    _account_create, _account_reset, _account_payload)
+    _account_create, _account_reset, _account_list, _account_payload)
 
 
 @tagged('post_install', '-at_install')
@@ -124,3 +124,16 @@ class TestAccount(TransactionCase):
         with self.assertRaises(ValidationError):
             _account_reset(self._env(self.hr), self.emp.id, {
                 'password': 'newpass99', 'password_confirm': 'newpass99'})
+
+    def test_list_hr(self):
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': 'lst', 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'employee'})
+        out = _account_list(self._env(self.hr))
+        logins = [r['login'] for r in out['accounts']]
+        self.assertIn('lst', logins)
+        self.assertTrue(any(d['id'] == self.dept.id for d in out['departments']))
+
+    def test_list_forbidden_non_hr(self):
+        with self.assertRaises(AccessError):
+            _account_list(self._env(self.plain))
