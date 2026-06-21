@@ -1279,6 +1279,19 @@ def _user_can_manage(env):
             or is_manager)
 
 
+# --- Quản lý tài khoản đăng nhập (account management) --------------------
+ACCOUNT_ROLES = ('employee', 'giaovu', 'truongphong')
+MIN_PASSWORD_LEN = 8
+
+
+def _account_payload(emp):
+    """Khối trạng thái tài khoản đăng nhập cho hồ sơ NV."""
+    u = emp.user_id
+    if not u:
+        return {'hasAccount': False}
+    return {'hasAccount': True, 'login': u.login, 'active': u.active}
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
