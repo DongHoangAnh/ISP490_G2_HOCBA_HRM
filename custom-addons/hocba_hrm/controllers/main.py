@@ -1421,6 +1421,22 @@ def _dept_list(env, archived=False):
     }
 
 
+def _dept_create(env, body):
+    """HR/Admin tạo phòng ban mới."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được tạo phòng ban.')
+    name = (body.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập tên phòng ban.')
+    vals = {'name': name,
+            'x_function_desc': (body.get('functionDesc') or '').strip()}
+    manager_id = body.get('managerId')
+    if manager_id:
+        vals['manager_id'] = int(manager_id)
+    dept = env['hr.department'].sudo().create(vals)
+    return _dept_payload(dept)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -2284,6 +2300,22 @@ class HocBaHRM(http.Controller):
         except AccessError as ex:
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_department_create(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_create(request.env, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(data)
 
     def _me_payload(self, e):

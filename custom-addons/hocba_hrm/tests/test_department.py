@@ -1,7 +1,7 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
-from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list
+from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list, _dept_create
 
 
 @tagged('post_install', '-at_install')
@@ -66,3 +66,20 @@ class TestDepartment(TransactionCase):
         names = [d['name'] for d in
                  _dept_list(self._env(self.hr), archived=True)['departments']]
         self.assertIn('Phòng A', names)
+
+    # ---- _dept_create (Task 3) ----
+    def test_create_ok(self):
+        out = _dept_create(self._env(self.hr), {
+            'name': 'Phòng Mới', 'functionDesc': 'Mô tả', 'managerId': self.emp.id})
+        self.assertEqual(out['name'], 'Phòng Mới')
+        self.assertEqual(out['functionDesc'], 'Mô tả')
+        self.assertEqual(out['managerId'], self.emp.id)
+        self.assertTrue(out['active'])
+
+    def test_create_empty_name_rejected(self):
+        with self.assertRaises(ValidationError):
+            _dept_create(self._env(self.hr), {'name': '   '})
+
+    def test_create_forbidden(self):
+        with self.assertRaises(AccessError):
+            _dept_create(self._env(self.plain), {'name': 'X'})
