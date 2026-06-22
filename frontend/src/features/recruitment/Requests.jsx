@@ -23,7 +23,7 @@ export default function Requests({ search }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải phiếu yêu cầu…" />;
 
-  const { rows, stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs, isRecruiter } = data;
+  const { rows, stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs, isRecruiter, canApprove } = data;
   const meta = { stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs };
 
   const applyRow = (det) => setData((p) => {
@@ -85,7 +85,7 @@ export default function Requests({ search }) {
       </div>
 
       {sel && (
-        <RequestDrawer req={sel} meta={meta} isRecruiter={isRecruiter}
+        <RequestDrawer req={sel} meta={meta} isRecruiter={isRecruiter} canApprove={canApprove}
           onClose={() => setSel(null)} onChanged={applyRow} />
       )}
       {creating && (

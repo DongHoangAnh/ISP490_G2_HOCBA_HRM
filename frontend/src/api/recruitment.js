@@ -51,3 +51,7 @@ export const createInterviewSlots = (userId, slots) =>
   hbPost('/hocba-hrm/api/recruitment/interview-slots', { userId, slots });
 export const deleteInterviewSlot = (id) =>
   hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/delete`, {});
+export const bookInterviewSlot = (id, applicantId) =>
+  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/book`, { applicantId });
+export const unbookInterviewSlot = (id) =>
+  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/unbook`, {});

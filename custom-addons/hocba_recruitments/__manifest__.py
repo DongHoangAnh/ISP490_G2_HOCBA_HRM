@@ -13,7 +13,7 @@
         - Constraint: không trùng tên vị trí trong cùng phòng ban (active)
         - Constraint: phòng Giảng viên / Trợ giảng bắt buộc chọn trình độ ≠ N/A
     ''',
-    'depends': ['hr_recruitment'],
+    'depends': ['hr_recruitment', 'hocba_employees'],
     'data': [
         'security/ir.model.access.csv',
         'data/hr_recruitment_stages.xml',
