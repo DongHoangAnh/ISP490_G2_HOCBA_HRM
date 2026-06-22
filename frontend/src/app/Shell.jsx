@@ -18,6 +18,7 @@ const NAV = [
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
+    { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
@@ -66,6 +67,7 @@ export const PAGE_META = {
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
+  departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
 };
 

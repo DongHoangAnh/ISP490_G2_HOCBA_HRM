@@ -8,6 +8,7 @@ import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
 import Accounts from '../features/accounts/Accounts';
+import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
 import Payroll from '../features/payroll/Payroll';
 import { LoadingState, ErrorState } from '../components/states';
@@ -48,6 +49,7 @@ export default function App() {
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
+        {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
         {view === 'profile' && <Profile />}
       </div>
     </div>
