@@ -1,7 +1,7 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
-from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list, _dept_create
+from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list, _dept_create, _dept_update
 
 
 @tagged('post_install', '-at_install')
@@ -83,3 +83,26 @@ class TestDepartment(TransactionCase):
     def test_create_forbidden(self):
         with self.assertRaises(AccessError):
             _dept_create(self._env(self.plain), {'name': 'X'})
+
+    # ---- _dept_update (Task 4) ----
+    def test_update_changes_fields(self):
+        out = _dept_update(self._env(self.hr), self.dept.id, {
+            'name': 'Phòng A2', 'functionDesc': 'Mới', 'managerId': self.emp.id})
+        self.assertEqual(out['name'], 'Phòng A2')
+        self.assertEqual(out['functionDesc'], 'Mới')
+        self.assertEqual(self.dept.manager_id, self.emp)
+
+    def test_update_clears_manager(self):
+        self.dept.manager_id = self.emp.id
+        out = _dept_update(self._env(self.hr), self.dept.id, {
+            'name': 'Phòng A', 'managerId': False})
+        self.assertFalse(out['managerId'])
+        self.assertFalse(self.dept.manager_id)
+
+    def test_update_empty_name_rejected(self):
+        with self.assertRaises(ValidationError):
+            _dept_update(self._env(self.hr), self.dept.id, {'name': ''})
+
+    def test_update_forbidden(self):
+        with self.assertRaises(AccessError):
+            _dept_update(self._env(self.plain), self.dept.id, {'name': 'X'})

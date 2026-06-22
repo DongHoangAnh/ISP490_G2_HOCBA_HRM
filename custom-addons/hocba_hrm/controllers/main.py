@@ -1437,6 +1437,26 @@ def _dept_create(env, body):
     return _dept_payload(dept)
 
 
+def _dept_update(env, dept_id, body):
+    """HR/Admin sửa tên / chức năng / trưởng phòng. managerId rỗng → gỡ trưởng phòng."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được sửa phòng ban.')
+    dept = env['hr.department'].sudo().with_context(
+        active_test=False).browse(dept_id)
+    if not dept.exists():
+        raise ValidationError('Không tìm thấy phòng ban.')
+    name = (body.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập tên phòng ban.')
+    manager_id = body.get('managerId')
+    dept.write({
+        'name': name,
+        'x_function_desc': (body.get('functionDesc') or '').strip(),
+        'manager_id': int(manager_id) if manager_id else False,
+    })
+    return _dept_payload(dept)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -2309,6 +2329,22 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         try:
             data = _dept_create(request.env, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department/<int:dept_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_department_update(self, dept_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_update(request.env, dept_id, request.get_json_data())
         except AccessError as ex:
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)
