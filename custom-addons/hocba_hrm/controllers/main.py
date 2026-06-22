@@ -1457,6 +1457,19 @@ def _dept_update(env, dept_id, body):
     return _dept_payload(dept)
 
 
+def _dept_archive(env, dept_id, body):
+    """HR/Admin lưu trữ (active=False) / khôi phục (active=True) phòng ban.
+    Đây là đường thay cho xóa cứng — xóa cứng bị chặn bởi ràng buộc model."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được lưu trữ phòng ban.')
+    dept = env['hr.department'].sudo().with_context(
+        active_test=False).browse(dept_id)
+    if not dept.exists():
+        raise ValidationError('Không tìm thấy phòng ban.')
+    dept.write({'active': bool(body.get('active'))})
+    return _dept_payload(dept)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -2345,6 +2358,22 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         try:
             data = _dept_update(request.env, dept_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department/<int:dept_id>/archive', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_department_archive(self, dept_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_archive(request.env, dept_id, request.get_json_data())
         except AccessError as ex:
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)

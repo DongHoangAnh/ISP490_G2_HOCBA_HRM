@@ -1,7 +1,7 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
-from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list, _dept_create, _dept_update
+from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list, _dept_create, _dept_update, _dept_archive
 
 
 @tagged('post_install', '-at_install')
@@ -106,3 +106,20 @@ class TestDepartment(TransactionCase):
     def test_update_forbidden(self):
         with self.assertRaises(AccessError):
             _dept_update(self._env(self.plain), self.dept.id, {'name': 'X'})
+
+    # ---- _dept_archive (Task 5) ----
+    def test_archive_sets_inactive(self):
+        empty = self.env['hr.department'].create({'name': 'Trống'})
+        out = _dept_archive(self._env(self.hr), empty.id, {'active': False})
+        self.assertFalse(out['active'])
+        self.assertFalse(empty.active)
+
+    def test_archive_restore(self):
+        self.dept.active = False
+        out = _dept_archive(self._env(self.hr), self.dept.id, {'active': True})
+        self.assertTrue(out['active'])
+        self.assertTrue(self.dept.active)
+
+    def test_archive_forbidden(self):
+        with self.assertRaises(AccessError):
+            _dept_archive(self._env(self.plain), self.dept.id, {'active': False})
