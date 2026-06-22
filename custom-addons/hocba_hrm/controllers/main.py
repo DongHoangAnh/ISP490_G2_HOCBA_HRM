@@ -1391,6 +1391,36 @@ def _account_list(env):
     return {'accounts': rows, 'departments': depts}
 
 
+def _dept_payload(dept):
+    """Một dòng phòng ban cho SPA. employeeCount đếm trực tiếp member_ids
+    (chắc chắn, không phụ thuộc tên field computed của Odoo)."""
+    return {
+        'id': dept.id,
+        'name': dept.name,
+        'functionDesc': dept.x_function_desc or '',
+        'managerId': dept.manager_id.id or False,
+        'managerName': dept.manager_id.name or '',
+        'employeeCount': len(dept.member_ids),
+        'active': dept.active,
+    }
+
+
+def _dept_list(env, archived=False):
+    """Danh sách phòng ban + danh mục NV (cho dropdown trưởng phòng). Chỉ HR.
+    archived=True → gồm cả phòng đã lưu trữ (active=False)."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách phòng ban.')
+    Dept = env['hr.department'].sudo().with_context(active_test=not archived)
+    depts = Dept.search([], order='name')
+    employees = env['hr.employee'].sudo().search(
+        [], order='x_employee_code, name')
+    return {
+        'departments': [_dept_payload(d) for d in depts],
+        'employees': [{'id': e.id, 'name': e.name, 'code': e.x_employee_code or ''}
+                      for e in employees],
+    }
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -2238,6 +2268,19 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         try:
             data = _account_list(request.env)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/departments', auth='user', type='http',
+                methods=['GET'])
+    def api_departments(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        archived = kw.get('archived') in ('1', 'true', 'True')
+        try:
+            data = _dept_list(request.env, archived=archived)
         except AccessError as ex:
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)
