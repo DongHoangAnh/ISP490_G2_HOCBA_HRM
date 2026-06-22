@@ -1279,6 +1279,118 @@ def _user_can_manage(env):
             or is_manager)
 
 
+# --- Quản lý tài khoản đăng nhập (account management) --------------------
+ACCOUNT_ROLES = ('employee', 'giaovu', 'truongphong')
+MIN_PASSWORD_LEN = 8
+
+
+def _account_payload(emp):
+    """Khối trạng thái tài khoản đăng nhập cho hồ sơ NV."""
+    u = emp.user_id
+    if not u:
+        return {'hasAccount': False}
+    return {'hasAccount': True, 'login': u.login, 'active': u.active}
+
+
+def _is_hr(env):
+    return env.user.has_group('hr.group_hr_user')
+
+
+def _validate_password(body):
+    pw = body.get('password') or ''
+    pw2 = body.get('password_confirm') or ''
+    if len(pw) < MIN_PASSWORD_LEN:
+        raise ValidationError(
+            'Mật khẩu phải có ít nhất %d ký tự.' % MIN_PASSWORD_LEN)
+    if pw != pw2:
+        raise ValidationError('Xác nhận mật khẩu không khớp.')
+    return pw
+
+
+def _account_create(env, emp_id, body):
+    """HR/Admin cấp tài khoản đăng nhập cho 1 nhân viên.
+    AccessError nếu không phải HR; ValidationError nếu dữ liệu sai;
+    UserError nếu trưởng phòng cần xác nhận ghi đè."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp tài khoản.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if emp.user_id:
+        raise ValidationError('Nhân viên đã có tài khoản. Dùng cấp lại mật khẩu.')
+    login = (body.get('login') or '').strip()
+    if not login:
+        raise ValidationError('Vui lòng nhập tên đăng nhập.')
+    if env['res.users'].sudo().with_context(active_test=False).search_count(
+            [('login', '=', login)]):
+        raise ValidationError('Tên đăng nhập đã tồn tại.')
+    password = _validate_password(body)
+    role = body.get('role') or 'employee'
+    if role not in ACCOUNT_ROLES:
+        raise ValidationError('Loại tài khoản không hợp lệ.')
+
+    group_ids = [env.ref('base.group_user').id]
+    if role == 'giaovu':
+        group_ids.append(env.ref('hocba_employees.group_hocba_giaovu').id)
+
+    dept = None
+    if role == 'truongphong':
+        dept_id = body.get('department_id')
+        if not dept_id:
+            raise ValidationError('Trưởng phòng cần chọn phòng ban.')
+        dept = env['hr.department'].sudo().browse(int(dept_id))
+        if not dept.exists():
+            raise ValidationError('Phòng ban không hợp lệ.')
+        if (dept.manager_id and dept.manager_id != emp
+                and not body.get('confirm_overwrite')):
+            raise UserError(
+                'Phòng "%s" đã có trưởng phòng (%s). Xác nhận để ghi đè.'
+                % (dept.name, dept.manager_id.name))
+
+    user = env['res.users'].sudo().create({
+        'name': emp.name, 'login': login, 'password': password,
+        'group_ids': [(6, 0, group_ids)],
+    })
+    emp.sudo().user_id = user.id
+    if dept is not None:
+        dept.manager_id = emp.id
+    return _account_payload(emp)
+
+
+def _account_reset(env, emp_id, body):
+    """HR/Admin cấp lại mật khẩu cho nhân viên đã có tài khoản."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp lại mật khẩu.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists() or not emp.user_id:
+        raise ValidationError('Nhân viên chưa có tài khoản.')
+    password = _validate_password(body)
+    emp.user_id.sudo().write({'password': password})
+    return _account_payload(emp)
+
+
+def _account_list(env):
+    """Danh sách NV đã có tài khoản + danh mục phòng ban (cho form). Chỉ HR."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách tài khoản.')
+    Dept = env['hr.department'].sudo()
+    emps = env['hr.employee'].sudo().search(
+        [('user_id', '!=', False)], order='x_employee_code, id')
+    rows = []
+    for e in emps:
+        u = e.user_id
+        is_tp = bool(Dept.search_count([('manager_id', '=', e.id)]))
+        is_gv = u.has_group('hocba_employees.group_hocba_giaovu')
+        role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
+        rows.append({
+            'employeeId': e.id, 'name': e.name,
+            'code': e.x_employee_code or '', 'depName': e.department_id.name or '',
+            'login': u.login, 'active': u.active, 'role': role,
+        })
+    depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
+    return {'accounts': rows, 'departments': depts}
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -1542,6 +1654,9 @@ class HocBaHRM(http.Controller):
                 'levelId': s.skill_level_id.id or False,
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
+
+        if is_hr:
+            data['account'] = _account_payload(e)
 
         return data
 
@@ -2079,6 +2194,54 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_account_create(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_create(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'needs_confirm', 'message': str(ex)}, status=409)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/reset',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_account_reset(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_reset(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/accounts', auth='user', type='http',
+                methods=['GET'])
+    def api_accounts(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_list(request.env)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
 
     def _me_payload(self, e):
         """Dựng payload /api/me: hồ sơ đầy đủ (tự xem nên is_hr=is_mgr=True) +

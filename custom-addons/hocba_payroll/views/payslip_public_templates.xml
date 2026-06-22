@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- ─── Public payslip view (token-based, no login) ─── -->
+    <template id="payslip_public_view" name="Phiếu lương nhân viên">
+        <html>
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>Phiếu lương — <t t-esc="employee.name"/></title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; color: #1f2937; }
+                .wrap { max-width: 640px; margin: 32px auto; padding: 0 16px; }
+                .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+                .header { background: linear-gradient(135deg, #1e40af, #2563eb); color: #fff; padding: 24px; }
+                .header h1 { font-size: 20px; font-weight: 700; }
+                .header p { margin-top: 6px; opacity: .85; font-size: 14px; }
+                .info { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 24px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+                .info span { display: inline-flex; gap: 4px; }
+                .info b { color: #374151; }
+                .lines { padding: 0; }
+                .line { display: flex; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+                .line:last-child { border-bottom: none; }
+                .line-net { background: #ecfdf5; }
+                .line-net .lbl { color: #065f46; font-weight: 700; }
+                .line-net .val { color: #065f46; font-weight: 800; font-size: 15px; }
+                .val { font-variant-numeric: tabular-nums; text-align: right; }
+                .total-bar { margin: 0; padding: 16px 24px; background: linear-gradient(135deg, #065f46, #047857); display: flex; justify-content: space-between; align-items: center; }
+                .total-bar .lbl { color: #d1fae5; font-size: 14px; font-weight: 600; }
+                .total-bar .val { color: #fff; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+                .actions { padding: 24px; text-align: center; }
+                .msg { padding: 16px 24px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+                .msg-ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+                .msg-err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+                .msg-warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+                .btn { display: inline-block; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; text-decoration: none; }
+                .btn-confirm { background: #059669; color: #fff; }
+                .btn-confirm:hover { background: #047857; }
+                .btn-reject { background: #fff; color: #dc2626; border: 1px solid #fca5a5; margin-left: 12px; }
+                .btn-reject:hover { background: #fef2f2; }
+                .feedback-area { width: 100%; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 80px; margin-top: 12px; font-family: inherit; }
+                .reject-form { display: none; margin-top: 16px; text-align: left; }
+                .reject-form.show { display: block; }
+                .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+                .badge-pending { background: #fef3c7; color: #92400e; }
+                .badge-confirmed { background: #d1fae5; color: #065f46; }
+                .badge-rejected { background: #fee2e2; color: #991b1b; }
+                .footer { text-align: center; padding: 24px; font-size: 12px; color: #9ca3af; }
+                @media (max-width: 480px) {
+                    .wrap { margin: 16px auto; }
+                    .header { padding: 20px; }
+                    .line { padding: 10px 16px; }
+                    .actions { padding: 20px 16px; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="wrap">
+                <!-- Flash messages -->
+                <t t-if="request.params.get('msg') == 'confirmed'">
+                    <div class="msg msg-ok">&#10004; Bạn đã xác nhận phiếu lương thành công. Cảm ơn!</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'rejected'">
+                    <div class="msg msg-err">Bạn đã từ chối phiếu lương. Phản hồi đã được ghi nhận.</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'already_actioned'">
+                    <div class="msg msg-warn">Phiếu lương này đã được xử lý trước đó.</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'feedback_required'">
+                    <div class="msg msg-err">Vui lòng nhập lý do từ chối.</div>
+                </t>
+
+                <div class="card">
+                    <div class="header">
+                        <h1>Phiếu lương tháng <t t-esc="month"/>/<t t-esc="year"/></h1>
+                        <p><t t-esc="employee.name"/> · <t t-esc="employee.job_title or ''"/></p>
+                    </div>
+
+                    <div class="info">
+                        <span>Mã NV: <b><t t-esc="employee.barcode or employee.id"/></b></span>
+                        <span>Phòng ban: <b><t t-esc="employee.department_id.name or '—'"/></b></span>
+                        <span>Trạng thái:
+                            <t t-if="slip.x_employee_confirm == 'pending'"><span class="badge badge-pending">Chờ xác nhận</span></t>
+                            <t t-if="slip.x_employee_confirm == 'confirmed'"><span class="badge badge-confirmed">Đã xác nhận</span></t>
+                            <t t-if="slip.x_employee_confirm == 'rejected'"><span class="badge badge-rejected">Từ chối</span></t>
+                        </span>
+                    </div>
+
+                    <div class="lines">
+                        <t t-foreach="lines" t-as="line">
+                            <div t-attf-class="line #{'thuc_lanh' in line.code and 'line-net' or ''}">
+                                <span class="lbl"><t t-esc="line.name"/></span>
+                                <span class="val"><t t-esc="'{:,.0f}'.format(line.amount)"/> ₫</span>
+                            </div>
+                        </t>
+                    </div>
+
+                    <div class="total-bar">
+                        <span class="lbl">Thực lĩnh</span>
+                        <span class="val"><t t-esc="'{:,.0f}'.format(net)"/> ₫</span>
+                    </div>
+
+                    <!-- Action buttons — only if pending -->
+                    <t t-if="slip.x_employee_confirm == 'pending'">
+                        <div class="actions">
+                            <p style="margin-bottom:16px;color:#6b7280;font-size:13px;">
+                                Vui lòng kiểm tra phiếu lương và xác nhận hoặc phản hồi nếu có vấn đề.
+                            </p>
+                            <form t-attf-action="/payslip/view/#{token}/confirm" method="post" style="display:inline;">
+                                <button type="submit" class="btn btn-confirm">Xác nhận</button>
+                            </form>
+                            <button class="btn btn-reject" onclick="document.getElementById('reject-form').classList.toggle('show')">
+                                Từ chối
+                            </button>
+                            <form id="reject-form" class="reject-form" t-attf-action="/payslip/view/#{token}/reject" method="post">
+                                <label style="font-weight:600;font-size:13px;color:#374151;">Lý do từ chối:</label>
+                                <textarea name="feedback" class="feedback-area" placeholder="Nhập lý do từ chối..." required="required"/>
+                                <div style="margin-top:12px;text-align:right;">
+                                    <button type="submit" class="btn" style="background:#dc2626;color:#fff;">Gửi phản hồi</button>
+                                </div>
+                            </form>
+                        </div>
+                    </t>
+
+                    <!-- Already confirmed/rejected -->
+                    <t t-if="slip.x_employee_confirm == 'confirmed'">
+                        <div class="actions">
+                            <div class="msg msg-ok" style="margin:0;">&#10004; Bạn đã xác nhận phiếu lương này.</div>
+                        </div>
+                    </t>
+                    <t t-if="slip.x_employee_confirm == 'rejected'">
+                        <div class="actions">
+                            <div class="msg msg-err" style="margin:0;">
+                                Bạn đã từ chối phiếu lương này.<br/>
+                                <strong>Phản hồi:</strong> <t t-esc="slip.x_employee_feedback"/>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+
+                <div class="footer">
+                    <p>Hoc Ba Education — Hệ thống quản lý lương</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    </template>
+
+    <!-- ─── Not found page ─── -->
+    <template id="payslip_public_not_found" name="Phiếu lương không tìm thấy">
+        <html>
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>Không tìm thấy</title>
+            <style>
+                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+                .box { text-align: center; padding: 40px; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+                .box h1 { font-size: 48px; color: #d1d5db; }
+                .box p { margin-top: 12px; color: #6b7280; font-size: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h1>404</h1>
+                <p>Phiếu lương không tồn tại hoặc đường link đã hết hạn.</p>
+            </div>
+        </body>
+        </html>
+    </template>
+</odoo>

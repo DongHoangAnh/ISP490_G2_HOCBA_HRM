@@ -132,6 +132,12 @@
                         <field name="amount_python_compute" widget="code" nolabel="1"/>
                     </group>
 
+                    <!-- ── Lookup section ── -->
+                    <group string="Tra cứu dữ liệu" invisible="amount_type != 'lookup'">
+                        <field name="lookup_source"/>
+                        <field name="lookup_field"/>
+                    </group>
+
                     <group string="Điều kiện">
                         <field name="condition_type"/>
                         <field name="condition_python" widget="code"
