@@ -11,6 +11,8 @@ import ShiftCalendar from './ShiftCalendar';
 import RequestList from './RequestList';
 import ShiftAttendance from './ShiftAttendance';
 import AttendanceHistory from './AttendanceHistory';
+import TeachingSchedule from './TeachingSchedule';
+import TeachingCalendar from './TeachingCalendar';
 
 export default function Attendance({ search }) {
   const [me, setMe] = useState(null);
@@ -45,13 +47,16 @@ export default function Attendance({ search }) {
     return <EmptyState>Tài khoản này chưa gắn hồ sơ nhân viên nên không có dữ liệu chấm công.</EmptyState>;
 
   const isManager = me.canManage;
-  const isCtv = !isManager && !me.isOfficial;
+  const isTeacher = !isManager && !!me.isTeacher;
+  const isCtv = !isManager && !me.isOfficial && !isTeacher;
   const tabs = isManager
     ? [['mgr', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)']]
-    : isCtv
-      ? [['shift', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']]
-      : [['me', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['shift', 'Chấm công OT'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
-  const activeTab = tab || (isManager ? 'mgr' : isCtv ? 'shift' : 'me');
+    : isTeacher
+      ? [['teaching', 'Chấm công hôm nay'], ['cal', 'Lịch tuần'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi']]
+      : isCtv
+        ? [['shift', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']]
+        : [['me', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['shift', 'Chấm công OT'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
+  const activeTab = tab || (isManager ? 'mgr' : isTeacher ? 'teaching' : isCtv ? 'shift' : 'me');
 
   const goTab = (id) => {
     setTab(id);
@@ -98,6 +103,12 @@ export default function Attendance({ search }) {
         </div>
       )}
       {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
+      {activeTab === 'teaching' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <TeachingSchedule me={me} onChanged={load} />
+        </div>
+      )}
+      {activeTab === 'cal' && <TeachingCalendar />}
 
     </div>
   );

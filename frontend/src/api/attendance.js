@@ -61,3 +61,13 @@ export const fetchManagerSummary = (month) =>
   hbGet(`/hocba-hrm/api/attendance/manager-summary?month=${month}`);
 export const fetchEmpHistory = (empId, month, type) =>
   hbGet(`/hocba-hrm/api/attendance/emp-history?empId=${empId}&month=${month}&type=${type}`);
+
+// Teaching schedule (giáo viên — lịch từ CMS)
+export const fetchTeachingSchedule = (date) =>
+  hbGet(`/hocba-hrm/api/teaching/schedule?date=${date}`);
+export const fetchTeachingWeek = (monday) =>
+  hbGet(`/hocba-hrm/api/teaching/schedule?monday=${monday}`);
+export const teachingCheckIn = (sessionId, payload) =>
+  hbPost(`/hocba-hrm/api/teaching/sessions/${sessionId}/check-in`, payload);
+export const teachingCheckOut = (sessionId, payload) =>
+  hbPost(`/hocba-hrm/api/teaching/sessions/${sessionId}/check-out`, payload);

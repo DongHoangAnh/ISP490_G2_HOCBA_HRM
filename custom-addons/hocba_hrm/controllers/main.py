@@ -10,6 +10,10 @@ from odoo.http import request, Response
 from odoo.tools import file_open
 from odoo.osv import expression
 
+from odoo.addons.hocba_attendance.utils.cms_connector import (
+    get_sessions_for_tutor, get_sessions_for_week, session_to_dict
+)
+
 # 13/06/2026: SPA là frontend chính thức (FE/BE tách riêng qua API).
 # Dev:   cd frontend && npm run dev   (Vite :5173, proxy API về Odoo)
 # Build: cd frontend && npm run build → static/spa/, route này serve bản build.
@@ -156,6 +160,97 @@ def _att_row(rec, policy):
     }
 
 
+# ── Teaching schedule helpers ────────────────────────────────────────────────
+
+def _teaching_session_row(session_dict, att_rec, policy, now_utc):
+    """Chuẩn hóa 1 buổi dạy thành dict trả về API."""
+    window = policy.shift_window_minutes or 15
+
+    def _utc_from_local_time(d, t_str):
+        """Parse 'HH:MM' (ICT) → UTC datetime."""
+        if not d or not t_str:
+            return None
+        try:
+            h, m = map(int, t_str.split(':')[:2])
+            return datetime(d.year, d.month, d.day, h, m) - timedelta(hours=7)
+        except Exception:
+            return None
+
+    d = session_dict['_date_raw']
+    start_utc = _utc_from_local_time(d, session_dict['startTime'])
+    end_utc = _utc_from_local_time(d, session_dict['endTime'])
+
+    check_in_open = (start_utc and
+                     abs((now_utc - start_utc).total_seconds()) <= window * 60)
+    check_out_open = (end_utc and att_rec and att_rec.check_in and
+                      abs((now_utc - end_utc).total_seconds()) <= window * 60)
+
+    return {
+        'id': session_dict['id'],
+        'classId': session_dict['classId'],
+        'className': session_dict['className'],
+        'date': session_dict['date'],
+        'startTime': session_dict['startTime'],
+        'endTime': session_dict['endTime'],
+        'status': session_dict['status'],
+        'roleType': session_dict['roleType'],
+        'checkIn': att_rec.check_in.isoformat() if att_rec and att_rec.check_in else None,
+        'checkOut': att_rec.check_out.isoformat() if att_rec and att_rec.check_out else None,
+        'workedHours': att_rec.worked_hours if att_rec else 0.0,
+        'faceSuspect': att_rec.face_suspect if att_rec else False,
+        'outOfZone': att_rec.out_of_zone if att_rec else False,
+        'outOfWindow': att_rec.out_of_window if att_rec else False,
+        'checkInOpen': bool(check_in_open),
+        'checkOutOpen': bool(check_out_open),
+    }
+
+
+def _teaching_today_rows(env, emp, today, policy):
+    """Buổi dạy hôm nay của giáo viên. Trả về [] nếu không có x_cms_user_id."""
+    if not emp.x_cms_user_id:
+        return []
+    sessions_raw = get_sessions_for_tutor(emp.x_cms_user_id, today)
+    if not sessions_raw:
+        return []
+
+    session_ids = [r['id'] for r in sessions_raw]
+    att_map = {}
+    for att in env['hocba.teaching.attendance'].sudo().search(
+            [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+        att_map[att.cms_session_id] = att
+
+    now_utc = fields.Datetime.now()
+    rows = []
+    for raw in sessions_raw:
+        sd = session_to_dict(raw)
+        att = att_map.get(sd['id'])
+        rows.append(_teaching_session_row(sd, att, policy, now_utc))
+    return rows
+
+
+def _teaching_week_rows(env, emp, monday, policy):
+    """Buổi dạy của giáo viên trong tuần."""
+    if not emp.x_cms_user_id:
+        return []
+    sessions_raw = get_sessions_for_week(emp.x_cms_user_id, monday)
+    if not sessions_raw:
+        return []
+
+    session_ids = [r['id'] for r in sessions_raw]
+    att_map = {}
+    for att in env['hocba.teaching.attendance'].sudo().search(
+            [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+        att_map[att.cms_session_id] = att
+
+    now_utc = fields.Datetime.now()
+    rows = []
+    for raw in sessions_raw:
+        sd = session_to_dict(raw)
+        att = att_map.get(sd['id'])
+        rows.append(_teaching_session_row(sd, att, policy, now_utc))
+    return rows
+
+
 def _att_me_info(env):
     """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -202,6 +297,9 @@ def _att_me_info(env):
                 'checkOutOpen': abs((now_local - co).total_seconds()) <= window * 60,
             }
     info['shiftsToday'] = _shift_today_rows(env, emp)
+    # Lịch dạy giáo viên từ CMS (chỉ khi employee có x_cms_user_id)
+    info['teachingToday'] = _teaching_today_rows(env, emp, today, policy)
+    info['isTeacher'] = bool(emp.x_cms_user_id)
     return info
 
 
@@ -1496,7 +1594,9 @@ class HocBaHRM(http.Controller):
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
                     'npm install &amp;&amp; npm run build</code> rồi tải lại trang '
                     '(xem docs/QUY_UOC_FRONTEND.md §8).</p>')
-        return Response(html, content_type='text/html; charset=utf-8')
+        resp = Response(html, content_type='text/html; charset=utf-8')
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     # ------------------------------------------------------------------
     # JSON API cho SPA — dữ liệu thật từ hocba_employees.
@@ -2927,3 +3027,114 @@ class HocBaHRM(http.Controller):
     def api_employee_search(self, q=None, **kw):
         return request.make_json_response(
             {'rows': _employee_search(request.env, q)})
+
+    # ── Teaching Schedule API ─────────────────────────────────────────────────
+
+    @http.route('/hocba-hrm/api/teaching/schedule', auth='user',
+                type='http', methods=['GET'])
+    def api_teaching_schedule(self, date=None, monday=None, **kw):
+        """Lịch dạy của giáo viên đang đăng nhập.
+        ?date=YYYY-MM-DD  → buổi dạy trong ngày đó
+        ?monday=YYYY-MM-DD → buổi dạy trong tuần (7 ngày)
+        """
+        env = request.env
+        emp = env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        if not emp.x_cms_user_id:
+            return request.make_json_response({'error': 'not_teacher', 'rows': []})
+
+        policy = env['hocba.attendance.policy'].sudo().get_policy()
+
+        if monday:
+            try:
+                mon = datetime.strptime(monday, '%Y-%m-%d').date()
+            except ValueError:
+                return request.make_json_response({'error': 'invalid_date'}, status=400)
+            rows = _teaching_week_rows(env, emp, mon, policy)
+            return request.make_json_response({'monday': monday, 'rows': rows})
+
+        if date:
+            try:
+                target = datetime.strptime(date, '%Y-%m-%d').date()
+            except ValueError:
+                return request.make_json_response({'error': 'invalid_date'}, status=400)
+        else:
+            target = fields.Date.context_today(env.user)
+
+        sessions_raw = get_sessions_for_tutor(emp.x_cms_user_id, target)
+        session_ids = [r['id'] for r in sessions_raw]
+        att_map = {}
+        for att in env['hocba.teaching.attendance'].sudo().search(
+                [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+            att_map[att.cms_session_id] = att
+
+        now_utc = fields.Datetime.now()
+        rows = []
+        for raw in sessions_raw:
+            sd = session_to_dict(raw)
+            att = att_map.get(sd['id'])
+            rows.append(_teaching_session_row(sd, att, policy, now_utc))
+
+        return request.make_json_response({'date': str(target), 'rows': rows})
+
+    @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-in',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_teaching_check_in(self, session_id, **kw):
+        return self._teaching_do_check(session_id, 'in')
+
+    @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-out',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_teaching_check_out(self, session_id, **kw):
+        return self._teaching_do_check(session_id, 'out')
+
+    def _teaching_do_check(self, session_id, kind):
+        env = request.env
+        emp = env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        if not emp.x_cms_user_id:
+            return request.make_json_response({'error': 'not_teacher'}, status=403)
+
+        payload = request.get_json_data() or {}
+
+        # Tìm buổi học trong CMS theo session_id (không phụ thuộc ngày)
+        today = fields.Date.context_today(env.user)
+        # Thử ngày hôm nay trước, nếu không có thì lấy từ attendance record đã có
+        sessions_today = get_sessions_for_tutor(emp.x_cms_user_id, today)
+        session_info = next((r for r in sessions_today if r['id'] == session_id), None)
+
+        if not session_info:
+            # Kiểm tra xem có attendance record không để lấy ngày
+            att = env['hocba.teaching.attendance'].sudo().search(
+                [('cms_session_id', '=', session_id), ('employee_id', '=', emp.id)], limit=1)
+            if att and att.session_date:
+                sessions_on_date = get_sessions_for_tutor(emp.x_cms_user_id, att.session_date)
+                session_info = next((r for r in sessions_on_date if r['id'] == session_id), None)
+
+        if not session_info:
+            return request.make_json_response({'error': 'session_not_found'}, status=404)
+
+        att_model = env['hocba.teaching.attendance']
+        try:
+            att_model.sudo()._assert_allowed(session_info, emp, kind)
+        except UserError as ex:
+            err = str(ex)
+            status_map = {
+                'outside_shift_window': 403,
+                'already_checked_in': 409,
+                'not_checked_in': 409,
+                'already_checked_out': 409,
+            }
+            return request.make_json_response(
+                {'error': err}, status=status_map.get(err, 400))
+
+        rec = att_model.sudo()._do_check(session_info, emp, payload, kind)
+        return request.make_json_response({
+            'recordId': rec.id,
+            'kind': kind,
+            'faceSuspect': rec.face_suspect,
+            'outOfZone': rec.out_of_zone,
+            'outOfWindow': rec.out_of_window,
+            'faceScore': rec.check_in_face_score if kind == 'in' else rec.check_out_face_score,
+        })

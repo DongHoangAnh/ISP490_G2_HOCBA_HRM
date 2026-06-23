@@ -99,6 +99,15 @@ class HrEmployee(models.Model):
     x_health_insurance_no = fields.Char(string='Số thẻ BHYT')
     x_health_care_place = fields.Char(string='Nơi KCB ban đầu')
 
+    # --- Liên kết CMS (lịch dạy giáo viên) ---
+    x_cms_user_id = fields.Char(
+        string='CMS User ID',
+        copy=False,
+        index=True,
+        help='ID người dùng trong hệ thống CMS (erp_database.user.id). '
+             'Dùng để lấy lịch dạy của giáo viên từ CMS MySQL.',
+    )
+
     # --- Face enrollment (for hocba_attendance face check-in) ---
     x_face_image = fields.Binary(string='Ảnh khuôn mặt mẫu', attachment=True)
     x_face_descriptor = fields.Text(
