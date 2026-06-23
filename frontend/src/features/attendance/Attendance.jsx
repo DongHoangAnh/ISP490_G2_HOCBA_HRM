@@ -1,8 +1,9 @@
 /* Màn Chấm công — điều phối tab theo quyền (mẫu chuẩn: màn Nhân viên).
    Owner: Hoàng Anh. Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md */
 import { useState, useEffect } from 'react';
-import { LoadingState, ErrorState } from '../../components/states';
+import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
+import { fetchRoles } from '../../api/employees';
 import CheckInPanel from './CheckInPanel';
 import AttendanceTable from './AttendanceTable';
 import ManagerAttendanceBoard from './ManagerAttendanceBoard';
@@ -26,12 +27,22 @@ export default function Attendance({ search }) {
 
   const load = () => {
     setErr(null); setMe(null);
-    fetchMyAttendance().then(setMe).catch((e) => setErr(e.message));
+    // Tài khoản vai trò (HR/Admin/Giáo vụ) có thể KHÔNG gắn hồ sơ NV (tách tài khoản
+    // quản lý ↔ cá nhân — họp #2). /api/attendance/me trả 400 'no_employee' cho các
+    // tài khoản này, nên đọc cờ vai trò trước và chỉ gọi endpoint cá nhân khi có hồ sơ NV.
+    fetchRoles().then((roles) => {
+      if (roles.hasEmployee) return fetchMyAttendance().then(setMe);
+      setMe({ canManage: roles.canManage, hasEmployee: false, isOfficial: false });
+    }).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!me) return <LoadingState label="Đang tải dữ liệu chấm công…" />;
+  // Không có hồ sơ NV và cũng không phải tài khoản quản lý → không có dữ liệu chấm công
+  // cá nhân để hiển thị (tránh rơi vào tab cá nhân vốn cần employeeId).
+  if (me.hasEmployee === false && !me.canManage)
+    return <EmptyState>Tài khoản này chưa gắn hồ sơ nhân viên nên không có dữ liệu chấm công.</EmptyState>;
 
   const isManager = me.canManage;
   const isCtv = !isManager && !me.isOfficial;
