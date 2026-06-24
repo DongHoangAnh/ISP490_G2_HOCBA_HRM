@@ -1,5 +1,6 @@
 /* Shell: Sidebar + Topbar — file CHUNG, sửa phải qua review (quy ước §2) */
 import Icon from '../components/Icon';
+import NotificationBell from '../components/NotificationBell';
 
 /* Nav theo vai trò (họp #2 — tách tài khoản quản lý ↔ cá nhân).
    need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; không gắn need = mọi nhân viên.
@@ -116,7 +117,7 @@ export function Sidebar({ view, setView, me }) {
   );
 }
 
-export function Topbar({ view, onSearch }) {
+export function Topbar({ view, onSearch, onOpenRequest }) {
   const m = PAGE_META[view] || { t: '', c: '' };
   return (
     <header className="topbar">
@@ -129,6 +130,7 @@ export function Topbar({ view, onSearch }) {
         <input placeholder="Tìm nhân viên, mã HB, phòng ban…"
           onChange={(e) => onSearch && onSearch(e.target.value)} />
       </label>
+      <NotificationBell onOpenRequest={onOpenRequest} />
       <button className="icon-btn" title="Mở Odoo backend"
         onClick={() => window.open('/odoo', '_blank')}>
         <Icon name="settings" size={20} />

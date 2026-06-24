@@ -18,6 +18,13 @@ export default function App() {
   const [err, setErr] = useState(null);
   const [view, setView] = useState(() => localStorage.getItem('hocba_view') || 'dashboard');
   const [search, setSearch] = useState('');
+  // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
+  const [focus, setFocus] = useState(null);
+
+  const openRequest = (requestId) => {
+    setView('timeoff');
+    setFocus({ requestId, nonce: Date.now() });
+  };
 
   const loadRoles = () => {
     setErr(null);
@@ -40,12 +47,12 @@ export default function App() {
     <div className="app">
       <Sidebar view={view} setView={setView} me={me} />
       <div className="main">
-        <Topbar view={view} onSearch={setSearch} me={me} />
+        <Topbar view={view} onSearch={setSearch} me={me} onOpenRequest={openRequest} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && <Attendance search={search} />}
-        {view === 'timeoff' && <TimeOff search={search} />}
+        {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}

@@ -10,6 +10,7 @@ import { fmtDate } from '../../utils/format';
 import { fetchApproved } from '../../api/timeoff';
 import { downloadXlsx } from '../../utils/xlsx';
 import SortBar, { sortRows } from './SortBar';
+import HistoryTimeline from './HistoryTimeline';
 
 const THIS_YEAR = new Date().getFullYear();
 
@@ -172,6 +173,11 @@ function DetailModal({ req, onClose }) {
         </Row>
         <Row label="Lý do">
           <span style={{ color: req.reason ? 'var(--ink)' : 'var(--muted)' }}>{req.reason || '— Không có —'}</span>
+        </Row>
+
+        {/* Lịch sử xử lý (Phase 5, audit) */}
+        <Row label="Lịch sử xử lý">
+          <HistoryTimeline requestId={req.id} />
         </Row>
 
         {/* Chứng từ y tế — chỉ với loại nghỉ yêu cầu chứng từ (nghỉ ốm) */}

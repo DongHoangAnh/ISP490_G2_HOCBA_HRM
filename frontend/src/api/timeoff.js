@@ -119,3 +119,25 @@ export const fetchAdjustHistory = (employeeId, leaveTypeId) => {
   const q = p.toString();
   return hbGet('/hocba-hrm/api/timeoff/balances/history' + (q ? '?' + q : ''));
 };
+
+/* Phase 5 — Thông báo in-app (chuông góc phải). Trả { items: [...], unread: N }.
+   onlyUnread=true → chỉ tin chưa đọc. */
+export const fetchNotifications = (limit, onlyUnread) => {
+  const p = new URLSearchParams();
+  if (limit) p.set('limit', limit);
+  if (onlyUnread) p.set('onlyUnread', '1');
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/notifications' + (q ? '?' + q : ''));
+};
+
+/* Đánh dấu 1 thông báo đã đọc → trả { items, unread } mới. */
+export const markNotificationRead = (id) =>
+  hbPost(`/hocba-hrm/api/timeoff/notifications/${id}/read`, {});
+
+/* Đánh dấu tất cả thông báo đã đọc → trả { items, unread } mới. */
+export const markAllNotificationsRead = () =>
+  hbPost('/hocba-hrm/api/timeoff/notifications/read-all', {});
+
+/* Nhật ký thao tác (audit) của 1 đơn nghỉ. → { history: [{date, author, body, type}] } */
+export const fetchRequestHistory = (id) =>
+  hbGet(`/hocba-hrm/api/timeoff/request/${id}/history`);

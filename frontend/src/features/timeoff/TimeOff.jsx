@@ -5,9 +5,10 @@
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
+import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchOverview, cancelRequest } from '../../api/timeoff';
+import { fetchOverview, cancelRequest, fetchApprovals } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
 import LeaveForm from './LeaveForm';
 import ApprovalPanel from './ApprovalPanel';
@@ -17,20 +18,35 @@ import DashboardPanel from './DashboardPanel';
 import CalendarPanel from './CalendarPanel';
 import SummaryPanel from './SummaryPanel';
 import WorkScheduleModal from './WorkScheduleModal';
+import HistoryTimeline from './HistoryTimeline';
 
-export default function TimeOff({ search }) {
+export default function TimeOff({ search, focus }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
   const [creating, setCreating] = useState(false);
   const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
   const [busy, setBusy] = useState(null); // id đơn đang hủy
+  const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
+  const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
 
   const load = () => {
     setErr(null); setData(null);
     fetchOverview().then(setData).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
+
+  // Officer: lấy số đơn đang chờ để hiện badge trên tab "Chờ duyệt".
+  useEffect(() => {
+    if (data && data.isOfficer) {
+      fetchApprovals().then((d) => setPendingCount((d.requests || []).length)).catch(() => {});
+    }
+  }, [data]);
+
+  // Bấm 1 thông báo ở chuông → mở modal "Lịch sử xử lý" của đúng đơn đó.
+  useEffect(() => {
+    if (focus && focus.requestId) setHistoryReq(focus.requestId);
+  }, [focus]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải dữ liệu nghỉ phép…" />;
@@ -83,7 +99,12 @@ export default function TimeOff({ search }) {
       <div className="tabs">
         {tabs.map(([id, l]) => (
           <button key={id} className={'tab' + (activeTab === id ? ' active' : '')}
-            onClick={() => setTab(id)}>{l}</button>
+            onClick={() => setTab(id)}>
+            {l}
+            {id === 'approvals' && pendingCount > 0 && (
+              <span style={{ marginLeft: 6 }}><Badge kind="amber">{pendingCount}</Badge></span>
+            )}
+          </button>
         ))}
       </div>
 
@@ -107,6 +128,27 @@ export default function TimeOff({ search }) {
       )}
 
       {schedOpen && <WorkScheduleModal onClose={() => setSchedOpen(false)} />}
+
+      {historyReq && (
+        <Modal onClose={() => setHistoryReq(null)}>
+          <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <Icon name="clock" size={20} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Lịch sử xử lý đơn</h2>
+              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Dòng thời gian thao tác của đơn nghỉ</div>
+            </div>
+            <button className="icon-btn" onClick={() => setHistoryReq(null)}><Icon name="x" size={20} /></button>
+          </div>
+          <div style={{ padding: '18px 24px' }}>
+            <HistoryTimeline requestId={historyReq} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+            <button className="btn btn-ghost" onClick={() => setHistoryReq(null)}>Đóng</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
