@@ -9,3 +9,4 @@ from . import test_shift_scope
 from . import test_shift_deadline_guard
 from . import test_employee_search
 from . import test_request_preview
+from . import test_employee_bank

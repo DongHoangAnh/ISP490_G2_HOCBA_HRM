@@ -96,6 +96,12 @@ class HrEmployee(models.Model):
     x_social_insurance_no = fields.Char(
         string='Số sổ BHXH', groups='hr.group_hr_manager',
         help='Số sổ Bảo hiểm xã hội (10 chữ số).')
+    x_bank_account_no = fields.Char(
+        string='Số tài khoản nhận lương', groups='hr.group_hr_manager',
+        help='Số tài khoản nhân viên nhận lương.')
+    x_bank_code = fields.Char(
+        string='Ngân hàng nhận lương', groups='hr.group_hr_manager',
+        help='Mã ngân hàng chuẩn hoá (vd VCB), đồng bộ với danh sách cấu hình payroll (hb.bank.format).')
     x_health_insurance_no = fields.Char(string='Số thẻ BHYT')
     x_health_care_place = fields.Char(string='Nơi KCB ban đầu')
 
