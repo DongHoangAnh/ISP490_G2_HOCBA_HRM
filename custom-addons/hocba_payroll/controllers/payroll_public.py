@@ -56,6 +56,11 @@ class PayrollPublicController(http.Controller):
             'x_employee_confirm': 'confirmed',
             'x_confirmed_date': fields.Datetime.now(),
         })
+        slip.sudo().message_post(
+            body=_('Nhân viên <b>%(name)s</b> đã <b>xác nhận</b> phiếu lương.', name=slip.employee_id.name),
+            message_type='comment',
+            subtype_xmlid='mail.mt_note',
+        )
         return request.redirect(f'/payslip/view/{token}?msg=confirmed')
 
     @http.route('/payslip/view/<string:token>/reject', type='http',
@@ -77,4 +82,12 @@ class PayrollPublicController(http.Controller):
             'x_employee_feedback': feedback,
             'x_confirmed_date': fields.Datetime.now(),
         })
+        slip.sudo().message_post(
+            body=_(
+                'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. Lý do: %(fb)s',
+                name=slip.employee_id.name, fb=feedback,
+            ),
+            message_type='comment',
+            subtype_xmlid='mail.mt_note',
+        )
         return request.redirect(f'/payslip/view/{token}?msg=rejected')

@@ -72,12 +72,26 @@ export const updateBankFormat = (id, payload) =>
 export const deleteBankFormat = (id) =>
   p(`/hocba-hrm/api/payroll/bank-format/${id}/delete`, {});
 
-// ── Send payslip mail ───────────────────────────────────
+// ── Payslip messages (chatter) ──────────────────────────
+export const fetchPayslipMessages = (id) =>
+  g(`/hocba-hrm/api/payroll/payslip/${id}/messages`);
+
+// ── Send payslip mail (Odoo SMTP fallback) ───────────────
 export const sendPayslipMail = (payslipIds) =>
   p('/hocba-hrm/api/payroll/payslip/send-mail', { payslip_ids: payslipIds });
+
+// ── Mark payslips as sent (after EmailJS) ────────────────
+export const markPayslipsSent = (payslipIds) =>
+  p('/hocba-hrm/api/payroll/payslip/mark-sent', { payslip_ids: payslipIds });
 
 // ── Mail template config ────────────────────────────────
 export const fetchMailTemplate = () =>
   g('/hocba-hrm/api/payroll/mail-template');
 export const saveMailTemplate = (payload) =>
   p('/hocba-hrm/api/payroll/mail-template', payload);
+
+// ── EmailJS config ──────────────────────────────────────
+export const fetchEmailjsConfig = () =>
+  g('/hocba-hrm/api/payroll/emailjs-config');
+export const saveEmailjsConfig = (payload) =>
+  p('/hocba-hrm/api/payroll/emailjs-config', payload);

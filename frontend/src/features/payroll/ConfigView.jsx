@@ -4,6 +4,7 @@ import {
   fetchSalaryRules, deleteSalaryRule, reorderSalaryRules,
   fetchBankFormats, deleteBankFormat,
   fetchMailTemplate, saveMailTemplate,
+  fetchEmailjsConfig, saveEmailjsConfig,
 } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
@@ -48,6 +49,13 @@ export default function ConfigView() {
   const [mailMsg, setMailMsg] = useState('');
   const [mailPreview, setMailPreview] = useState(false);
 
+  /* emailjs config state */
+  const [ejsServiceId, setEjsServiceId] = useState('');
+  const [ejsTemplateId, setEjsTemplateId] = useState('');
+  const [ejsPublicKey, setEjsPublicKey] = useState('');
+  const [ejsSaving, setEjsSaving] = useState(false);
+  const [ejsMsg, setEjsMsg] = useState('');
+
   /* drag state */
   const dragIdx = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -65,7 +73,14 @@ export default function ConfigView() {
       setMailLoaded(true);
     }).catch(() => setMailLoaded(true));
   };
-  useEffect(() => { loadRules(); loadBanks(); loadMailTpl(); }, []);
+  const loadEjsCfg = () => {
+    fetchEmailjsConfig().then((d) => {
+      setEjsServiceId(d.service_id || '');
+      setEjsTemplateId(d.template_id || '');
+      setEjsPublicKey(d.public_key || '');
+    }).catch(() => {});
+  };
+  useEffect(() => { loadRules(); loadBanks(); loadMailTpl(); loadEjsCfg(); }, []);
 
   const delRule = async (r) => {
     if (!confirm(`Xoá rule "${r.name}" (${r.code})?`)) return;
@@ -391,7 +406,7 @@ export default function ConfigView() {
               </div>
 
               {/* Body */}
-              <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 24 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>
                   Nội dung email (HTML)
                 </label>
@@ -406,6 +421,92 @@ export default function ConfigView() {
                   }}
                   placeholder="<div>Nội dung email HTML...</div>"
                 />
+              </div>
+
+              {/* ── EmailJS Config ── */}
+              <div style={{
+                borderTop: '2px solid #e5e7eb', paddingTop: 20, marginTop: 4,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
+                      Cấu hình EmailJS (dịch vụ gửi mail)
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      Thay thế SMTP — gửi qua tài khoản Gmail/Outlook của bạn
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={ejsSaving}
+                      onClick={async () => {
+                        setEjsSaving(true); setEjsMsg('');
+                        try {
+                          await saveEmailjsConfig({
+                            service_id: ejsServiceId,
+                            template_id: ejsTemplateId,
+                            public_key: ejsPublicKey,
+                          });
+                          setEjsMsg('Đã lưu!');
+                        } catch (e) {
+                          setEjsMsg('Lỗi: ' + e.message);
+                        } finally { setEjsSaving(false); }
+                      }}
+                    >
+                      {ejsSaving ? 'Đang lưu...' : 'Lưu EmailJS'}
+                    </button>
+                    {ejsMsg && (
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: ejsMsg.startsWith('Lỗi') ? '#dc2626' : '#16a34a' }}>
+                        {ejsMsg}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* EmailJS guide */}
+                <div style={{
+                  padding: '10px 14px', marginBottom: 14, borderRadius: 8,
+                  background: '#fefce8', border: '1px solid #fde68a', fontSize: 12.5, color: '#92400e',
+                }}>
+                  <strong>Cách lấy thông tin:</strong> Đăng nhập{' '}
+                  <strong>emailjs.com</strong> → Email Services (lấy Service ID) →
+                  Email Templates (tạo template, lấy Template ID) →
+                  Account → API Keys (lấy Public Key).
+                  <br />
+                  <strong>Biến trong template EmailJS:</strong>{' '}
+                  <code>{'{{to_email}}'}</code>, <code>{'{{employee_name}}'}</code>,{' '}
+                  <code>{'{{month}}'}</code>, <code>{'{{year}}'}</code>,{' '}
+                  <code>{'{{gross}}'}</code>, <code>{'{{net}}'}</code>,{' '}
+                  <code>{'{{view_url}}'}</code>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#374151' }}>
+                      Service ID
+                    </label>
+                    <input className="inp" value={ejsServiceId}
+                      onChange={(e) => { setEjsServiceId(e.target.value); setEjsMsg(''); }}
+                      placeholder="service_xxxxxxx" style={{ width: '100%' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#374151' }}>
+                      Template ID
+                    </label>
+                    <input className="inp" value={ejsTemplateId}
+                      onChange={(e) => { setEjsTemplateId(e.target.value); setEjsMsg(''); }}
+                      placeholder="template_xxxxxxx" style={{ width: '100%' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#374151' }}>
+                      Public Key
+                    </label>
+                    <input className="inp" value={ejsPublicKey}
+                      onChange={(e) => { setEjsPublicKey(e.target.value); setEjsMsg(''); }}
+                      placeholder="xxxxxxxxxxxxxxxxxxxx" style={{ width: '100%' }} />
+                  </div>
+                </div>
               </div>
             </div>
           )}
