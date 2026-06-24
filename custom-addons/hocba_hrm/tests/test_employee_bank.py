@@ -17,3 +17,17 @@ class TestEmployeeBankField(TransactionCase):
             'x_bank_account_no': '0123456789'})
         self.assertEqual(emp.x_bank_code, 'VCB')
         self.assertEqual(emp.x_bank_account_no, '0123456789')
+
+    def test_form_payload_mgr_includes_bank(self):
+        emp_vals, _ver = self.ctrl._split_form_payload(
+            {'name': 'X', 'bankCode': 'VCB', 'bankAccountNo': '0123456789'},
+            is_hr=True, is_mgr=True)
+        self.assertEqual(emp_vals.get('x_bank_code'), 'VCB')
+        self.assertEqual(emp_vals.get('x_bank_account_no'), '0123456789')
+
+    def test_form_payload_non_mgr_excludes_bank(self):
+        emp_vals, _ver = self.ctrl._split_form_payload(
+            {'name': 'X', 'bankCode': 'VCB', 'bankAccountNo': '0123456789'},
+            is_hr=True, is_mgr=False)
+        self.assertNotIn('x_bank_code', emp_vals)
+        self.assertNotIn('x_bank_account_no', emp_vals)

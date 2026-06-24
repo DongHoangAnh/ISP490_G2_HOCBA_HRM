@@ -42,6 +42,8 @@ EMP_FORM_FIELDS = {
     'hiPlace': ('x_health_care_place', 'hr'),
     'pit': ('x_pit_code', 'mgr'),
     'si': ('x_social_insurance_no', 'mgr'),
+    'bankAccountNo': ('x_bank_account_no', 'mgr'),
+    'bankCode': ('x_bank_code', 'mgr'),
 }
 # Field nằm trên hr.version (Odoo 19): CCCD + lương
 EMP_FORM_VERSION_FIELDS = {
