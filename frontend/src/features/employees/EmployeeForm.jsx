@@ -43,6 +43,7 @@ function initForm(emp) {
     idIssue: emp?.idIssue || '', idPlace: emp?.idPlace || '',
     hi: emp?.hi || '', hiPlace: emp?.hiPlace || '',
     pit: emp?.pit || '', si: emp?.si || '', wage: emp?.wage || '',
+    bankAccountNo: emp?.bankAccountNo || '', bankCode: emp?.bankCode || '',
   };
 }
 
@@ -151,6 +152,13 @@ export default function EmployeeForm({ emp, isMgr, onClose, onSaved }) {
                   <input style={inp} value={f.pit} onChange={set('pit')} /></Field>
                 <Field label="Số sổ BHXH (10 số)">
                   <input style={inp} value={f.si} onChange={set('si')} /></Field>
+                <Field label="Ngân hàng nhận lương">
+                  <select style={inp} value={f.bankCode} onChange={set('bankCode')}>
+                    <option value="">— Chọn —</option>
+                    {(meta.banks || []).map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}
+                  </select></Field>
+                <Field label="Số tài khoản nhận lương">
+                  <input style={inp} value={f.bankAccountNo} onChange={set('bankAccountNo')} placeholder="VD: 0123456789" /></Field>
               </Section>
             )}
           </>
