@@ -12,3 +12,5 @@ access_hb_work_day_base_user,hb.work.day base user,model_hb_work_day,base.group_
 access_hb_work_day_hr_manager,hb.work.day hr_manager,model_hb_work_day,hr.group_hr_manager,1,1,1,1
 access_hb_leave_adjustment_hr_user,hb.leave.adjustment hr_user,model_hb_leave_adjustment,hr.group_hr_user,1,0,0,0
 access_hb_leave_adjustment_hr_manager,hb.leave.adjustment hr_manager,model_hb_leave_adjustment,hr.group_hr_manager,1,1,1,0
+access_hb_leave_notification_base_user,hb.leave.notification base user,model_hb_leave_notification,base.group_user,1,0,0,0
+access_hb_leave_notification_hr_manager,hb.leave.notification hr_manager,model_hb_leave_notification,hr.group_hr_manager,1,1,1,1

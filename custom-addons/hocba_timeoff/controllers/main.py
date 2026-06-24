@@ -14,6 +14,7 @@ from datetime import timedelta
 from odoo import fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import content_disposition, request
+from odoo.tools import html2plaintext
 
 # Chứng từ y tế (BR-012): chỉ chấp nhận PDF / JPG / PNG, tối đa 5MB.
 ALLOWED_MIME = frozenset({'application/pdf', 'image/jpeg', 'image/png'})
@@ -428,6 +429,158 @@ def _coverage_table(env, scope, date_from, date_to, dept_id=False):
     return {'days': days, 'overlapWarn': OVERLAP_WARN, 'overloadedDays': overloaded}
 
 
+# ---------------------------------------------------------------------------
+# Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn (audit).
+# Chuông: model riêng hb.leave.notification (xem docstring model để biết vì sao
+# KHÔNG dùng mail.message needaction). Audit: message_post chatter trên hr.leave.
+# Helper cấp module để controller dùng dưới request VÀ test gọi trực tiếp.
+# ---------------------------------------------------------------------------
+def _approver_users(env, leave):
+    """Tập res.users được duyệt đơn này (để báo khi có đơn mới chờ duyệt):
+    trưởng phòng theo chuỗi phòng ban của NV (gồm phòng cha) + toàn bộ HR Manager.
+    Loại chính chủ đơn ra (không tự báo cho mình)."""
+    users = env['res.users']
+    dept = leave.employee_id.department_id
+    seen = set()
+    while dept and dept.id not in seen:
+        seen.add(dept.id)
+        mgr = dept.manager_id
+        if mgr and mgr.user_id:
+            users |= mgr.user_id
+        dept = dept.parent_id
+    hr_group = env.ref('hr.group_hr_manager', raise_if_not_found=False)
+    if hr_group:
+        users |= env['res.users'].sudo().search([
+            ('all_group_ids', 'in', hr_group.id), ('active', '=', True),
+        ])
+    if leave.employee_id.user_id:
+        users -= leave.employee_id.user_id
+    return users
+
+
+def _leave_span_label(leave):
+    d0, d1 = _leave_day_bounds(leave)
+    f = d0.strftime('%d/%m/%Y') if d0 else '?'
+    t = d1.strftime('%d/%m/%Y') if d1 else '?'
+    return f if f == t else '%s → %s' % (f, t)
+
+
+def _push_notification(env, recipient, leave, kind, title, body):
+    """Tạo 1 thông báo chuông cho 1 user (sudo: chủ đơn/người duyệt không có ACL ghi)."""
+    if not recipient:
+        return
+    env['hb.leave.notification'].sudo().create({
+        'recipient_id': recipient.id,
+        'leave_id': leave.id,
+        'kind': kind,
+        'title': title,
+        'body': body,
+    })
+
+
+def _notify_request_created(env, leave):
+    """Đơn mới → báo người duyệt phạm vi + ghi chú audit vào chatter."""
+    span = _leave_span_label(leave)
+    title = 'Đơn nghỉ mới chờ duyệt'
+    body = '%s — %s (%s)' % (
+        leave.employee_id.name, leave.holiday_status_id.name, span)
+    for user in _approver_users(env, leave):
+        _push_notification(env, user, leave, 'pending', title, body)
+    leave.sudo().message_post(
+        body='Đơn nghỉ được tạo và gửi chờ duyệt bởi %s.' % leave.employee_id.name,
+        subtype_xmlid='mail.mt_note',
+    )
+
+
+def _notify_decision(env, leave, action):
+    """Duyệt/từ chối → báo chủ đơn + ghi chú audit vào chatter."""
+    approved = action == 'approve'
+    kind = 'approved' if approved else 'refused'
+    span = _leave_span_label(leave)
+    title = 'Đơn nghỉ đã được duyệt' if approved else 'Đơn nghỉ bị từ chối'
+    actor = (env.user.employee_id.name if env.user.employee_id
+             else env.user.name) or 'người duyệt'
+    body = '%s (%s) — %s bởi %s' % (
+        leave.holiday_status_id.name, span,
+        'đã duyệt' if approved else 'bị từ chối', actor)
+    _push_notification(env, leave.employee_id.user_id, leave, kind, title, body)
+    leave.sudo().message_post(
+        body='Đơn nghỉ %s bởi %s.' % ('được duyệt' if approved else 'bị từ chối', actor),
+        subtype_xmlid='mail.mt_note',
+    )
+
+
+def _notif_row(rec):
+    return {
+        'id': rec.id,
+        'requestId': rec.leave_id.id,
+        'title': rec.title,
+        'body': rec.body or '',
+        'kind': rec.kind,
+        'isRead': rec.is_read,
+        'createdAt': _d(rec.create_date),
+    }
+
+
+def _list_notifications(env, limit=20, only_unread=False):
+    """Thông báo của chính user đăng nhập (mới nhất trước) + số chưa đọc cho badge."""
+    Notif = env['hb.leave.notification'].sudo()
+    base = [('recipient_id', '=', env.uid)]
+    domain = base + ([('is_read', '=', False)] if only_unread else [])
+    recs = Notif.search(domain, limit=limit or 20)
+    unread = Notif.search_count(base + [('is_read', '=', False)])
+    return {'items': [_notif_row(r) for r in recs], 'unread': unread}
+
+
+def _mark_notification_read(env, notif_id):
+    """Đánh dấu 1 thông báo đã đọc — chỉ khi thuộc về chính user. Trả True/False."""
+    rec = env['hb.leave.notification'].sudo().browse(notif_id)
+    if not rec.exists() or rec.recipient_id.id != env.uid:
+        return False
+    if not rec.is_read:
+        rec.is_read = True
+    return True
+
+
+def _mark_all_notifications_read(env):
+    """Đánh dấu tất cả thông báo của user là đã đọc — trả số dòng vừa đổi."""
+    recs = env['hb.leave.notification'].sudo().search(
+        [('recipient_id', '=', env.uid), ('is_read', '=', False)])
+    recs.write({'is_read': True})
+    return len(recs)
+
+
+def _request_history(env, scope, leave_id):
+    """Dòng thời gian thao tác của 1 đơn (audit). Trả:
+    - None nếu đơn không tồn tại (controller → 404).
+    - False nếu ngoài phạm vi xem (controller → 403).
+    - list[{date, author, body, type}] theo thứ tự thời gian tăng dần.
+    Xem được nếu là chủ đơn HOẶC người duyệt trong phạm vi (HR mọi phòng /
+    trưởng phòng phòng mình)."""
+    leave = env['hr.leave'].sudo().browse(leave_id)
+    if not leave.exists():
+        return None
+    emp = env.user.employee_id
+    is_owner = bool(emp) and leave.employee_id.id == emp.id
+    in_scope = scope['canApprove'] and (
+        scope['seeAll'] or leave.department_id.id in scope['deptIds'])
+    if not (is_owner or in_scope):
+        return False
+    rows = []
+    for m in leave.sudo().message_ids.sorted('id'):
+        text = html2plaintext(m.body or '').strip()
+        if not text:
+            continue  # bỏ các message tracking rỗng (chỉ đổi field)
+        rows.append({
+            'id': m.id,
+            'date': _d(m.date),
+            'author': m.author_id.name or '',
+            'body': text,
+            'type': m.message_type,
+        })
+    return rows
+
+
 class HocBaTimeoff(http.Controller):
 
     # ------------------------------------------------------------------
@@ -731,6 +884,9 @@ class HocBaTimeoff(http.Controller):
             request.env['ir.attachment'].sudo().create(att_vals)
             leave.invalidate_recordset(['attachment_ids', 'x_has_medical_doc'])
 
+        # Phase 5: báo người duyệt phạm vi + ghi chú audit (chatter).
+        _notify_request_created(request.env, leave)
+
         return request.make_json_response(self._overview_payload())
 
     # ------------------------------------------------------------------
@@ -805,6 +961,8 @@ class HocBaTimeoff(http.Controller):
             approver = request.env.user.employee_id
             if approver:
                 leave.write({'first_approver_id': approver.id})
+            # Phase 5: báo chủ đơn kết quả + ghi chú audit (chatter).
+            _notify_decision(request.env, leave, action)
         except (AccessError, ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
@@ -817,6 +975,46 @@ class HocBaTimeoff(http.Controller):
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
         })
+
+    # ------------------------------------------------------------------
+    # 3.5b. Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/notifications', auth='user',
+                type='http', methods=['GET'])
+    def api_notifications(self, **kw):
+        """Thông báo của chính user (cho chuông góc phải). Ai cũng xem của mình."""
+        try:
+            limit = int(kw.get('limit')) if kw.get('limit') else 20
+        except (TypeError, ValueError):
+            limit = 20
+        only_unread = kw.get('onlyUnread') in ('1', 'true', 'True')
+        return request.make_json_response(
+            _list_notifications(request.env, limit, only_unread))
+
+    @http.route('/hocba-hrm/api/timeoff/notifications/<int:notif_id>/read',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_notification_read(self, notif_id, **kw):
+        if not _mark_notification_read(request.env, notif_id):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        return request.make_json_response(_list_notifications(request.env))
+
+    @http.route('/hocba-hrm/api/timeoff/notifications/read-all',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_notifications_read_all(self, **kw):
+        _mark_all_notifications_read(request.env)
+        return request.make_json_response(_list_notifications(request.env))
+
+    @http.route('/hocba-hrm/api/timeoff/request/<int:leave_id>/history',
+                auth='user', type='http', methods=['GET'])
+    def api_request_history(self, leave_id, **kw):
+        """Dòng thời gian thao tác của 1 đơn (audit) — chủ đơn / người duyệt phạm vi."""
+        scope = self._scope()
+        history = _request_history(request.env, scope, leave_id)
+        if history is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if history is False:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        return request.make_json_response({'history': history})
 
     # ------------------------------------------------------------------
     # Helpers cho Dashboard + Lịch
