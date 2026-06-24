@@ -1,6 +1,7 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, closeBatchByPeriod, computeAllPayslips } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig } from '../../api/payroll';
+import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
@@ -294,13 +295,65 @@ export default function BatchList({ search }) {
     }
   };
 
-  /* ── send mail ── */
+  /* ── send mail via EmailJS ── */
   const handleSendMail = async () => {
     if (checkedCount === 0 || sending) return;
     setSending(true);
     try {
-      const res = await sendPayslipMail(checkedIds);
-      const msg = `Đã gửi ${res.sent} email` + (res.skipped?.length ? `, bỏ qua ${res.skipped.length}` : '');
+      // 1. Load EmailJS config
+      const cfg = await fetchEmailjsConfig();
+      if (!cfg.service_id || !cfg.template_id || !cfg.public_key) {
+        alert('Chưa cấu hình EmailJS.\nVào tab Cấu hình → Mẫu email → phần "Cấu hình EmailJS" để nhập Service ID, Template ID, Public Key.');
+        return;
+      }
+
+      // 2. Find employee rows for checked payslip IDs
+      const allEmps = data ? data.employees : [];
+      const checkedSet = new Set(checkedIds);
+      const targets = allEmps.filter((e) => e.payslip_id && checkedSet.has(e.payslip_id));
+
+      const baseUrl = window.location.origin;
+      const sentIds = [];
+      const errors = [];
+
+      for (const emp of targets) {
+        if (!emp.work_email) {
+          errors.push(`${emp.name}: không có work_email`);
+          continue;
+        }
+        const gross = emp.gross_amount ? emp.gross_amount.toLocaleString('vi-VN') : '0';
+        const net = emp.net_amount ? emp.net_amount.toLocaleString('vi-VN') : '0';
+        const viewUrl = emp.access_token
+          ? `${baseUrl}/payslip/view/${emp.access_token}`
+          : baseUrl;
+        try {
+          await emailjs.send(
+            cfg.service_id,
+            cfg.template_id,
+            {
+              to_email: emp.work_email,
+              employee_name: emp.name,
+              month: String(month).padStart(2, '0'),
+              year: String(year),
+              gross,
+              net,
+              view_url: viewUrl,
+            },
+            { publicKey: cfg.public_key },
+          );
+          sentIds.push(emp.payslip_id);
+        } catch (e) {
+          errors.push(`${emp.name}: ${e?.text || e?.message || JSON.stringify(e)}`);
+        }
+      }
+
+      // 3. Mark as sent on backend
+      if (sentIds.length > 0) {
+        await markPayslipsSent(sentIds);
+      }
+
+      const msg = `Đã gửi ${sentIds.length} email`
+        + (errors.length ? `\nLỗi (${errors.length}):\n${errors.join('\n')}` : '');
       alert(msg);
       setChecked({});
       load();
@@ -379,7 +432,7 @@ export default function BatchList({ search }) {
   const dataDefW = 110;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
 
@@ -488,9 +541,9 @@ export default function BatchList({ search }) {
         </button>
       </div>
 
-      {/* table — flex:1 fills remaining height */}
+      {/* table — shrink-wrap content, cap at available screen */}
       <div style={{
-        flex: 1, minHeight: 0,
+        flex: '0 1 auto', minHeight: 0,
         border: '1px solid var(--border,#e5e7eb)', borderRadius: 10,
         background: '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column',
       }}>

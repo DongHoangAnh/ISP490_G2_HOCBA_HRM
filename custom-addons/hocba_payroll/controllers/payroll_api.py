@@ -305,43 +305,60 @@ class PayrollAPI(http.Controller):
                     ('payslip_run_id', '=', batch.id),
                 ]).mapped('employee_id.id')
             )
-            # Search open contracts first, then get unique employees
+            # Build a map of open contracts (employee_id → contract) for the period
             contracts = env['hb.contract'].sudo().search([
                 ('state', '=', 'open'),
                 ('employee_id.active', '=', True),
                 ('date_start', '<=', batch.date_end),
                 '|', ('date_end', '=', False), ('date_end', '>=', batch.date_start),
             ])
-            created = 0
-            seen_emp_ids = set()
-            for contract in contracts:
-                emp = contract.employee_id
-                if emp.id in existing_emp_ids or emp.id in seen_emp_ids:
+            contract_map = {}
+            for c in contracts:
+                if c.employee_id.id not in contract_map:
+                    contract_map[c.employee_id.id] = c
+
+            # Create payslips for ALL active employees, with or without a contract
+            employees = env['hr.employee'].sudo().search(
+                [('active', '=', True)], order='id',
+            )
+            # Gom vals rồi bulk INSERT 1 lần thay vì N+1 INSERT riêng lẻ
+            slip_vals_list = []
+            for emp in employees:
+                if emp.id in existing_emp_ids:
                     continue
-                seen_emp_ids.add(emp.id)
-                slip_vals = {
+                contract = contract_map.get(emp.id)
+                vals = {
                     'employee_id': emp.id,
-                    'contract_id': contract.id,
                     'date_from': batch.date_start,
                     'date_to': batch.date_end,
                     'payslip_run_id': batch.id,
                 }
-                struct = getattr(contract, 'x_structure_id', None)
-                if struct:
-                    slip_vals['structure_id'] = struct.id
-                Slip.create(slip_vals)
-                created += 1
+                if contract:
+                    vals['contract_id'] = contract.id
+                    if contract.x_structure_id:
+                        vals['structure_id'] = contract.x_structure_id.id
+                slip_vals_list.append(vals)
+            if slip_vals_list:
+                Slip.create(slip_vals_list)  # 1 DB trip duy nhất
+            created = len(slip_vals_list)
 
             # 3) Compute all draft/verify payslips in the batch
             to_compute = Slip.search([
                 ('payslip_run_id', '=', batch.id),
                 ('state', 'in', ('draft', 'verify')),
             ])
+
+            # Pre-fetch rules 1 lần duy nhất — tất cả NV dùng chung bộ rule
+            # → bỏ qua O(E) lần resolve structure/rules per slip
+            global_rules = env['hb.salary.rule'].sudo().search(
+                [('active', '=', True)], order='sequence, id',
+            )
+
             computed = 0
             errors = []
             for slip in to_compute:
                 try:
-                    slip.action_compute_sheet()
+                    slip.action_compute_sheet(prefetched_rules=global_rules)
                     computed += 1
                 except Exception as e:
                     errors.append(f'{slip.employee_id.name}: {e}')
@@ -450,11 +467,15 @@ class PayrollAPI(http.Controller):
                     'name': emp.name or '',
                     'job_title': emp.job_id.name if emp.job_id else '',
                     'department': emp.department_id.name if emp.department_id else '',
+                    'work_email': emp.work_email or '',
                     'payslip_id': slip.id if slip else None,
                     'payslip_state': slip.state if slip else None,
                     'employee_confirm': slip.x_employee_confirm if slip else None,
                     'employee_feedback': slip.x_employee_feedback or '' if slip else '',
                     'email_sent': slip.x_email_sent if slip else False,
+                    'gross_amount': slip.gross_amount if slip else 0,
+                    'net_amount': slip.net_amount if slip else 0,
+                    'access_token': slip.x_access_token if slip else None,
                     'amounts': amounts,
                 })
 
@@ -525,6 +546,37 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e))
         except Exception as e:
             _logger.exception('reset_payslip error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
+    # PAYSLIP MESSAGES (CHATTER)
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/payslip/<int:payslip_id>/messages', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_payslip_messages(self, payslip_id, **kw):
+        """Fetch chatter messages for a payslip."""
+        try:
+            slip = request.env['hb.payslip'].sudo().browse(payslip_id)
+            if not slip.exists():
+                return _error_response('Payslip not found.', status=404)
+            messages = request.env['mail.message'].sudo().search([
+                ('model', '=', 'hb.payslip'),
+                ('res_id', '=', payslip_id),
+                ('message_type', 'in', ('comment', 'email')),
+            ], order='date desc', limit=50)
+            result = []
+            for m in messages:
+                author_name = m.author_id.name if m.author_id else 'Hệ thống'
+                result.append({
+                    'id': m.id,
+                    'body': m.body or '',
+                    'date': m.date.isoformat() if m.date else None,
+                    'author': author_name,
+                    'message_type': m.message_type,
+                })
+            return _success_response(result)
+        except Exception as e:
+            _logger.exception('get_payslip_messages error')
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
@@ -1240,4 +1292,69 @@ class PayrollAPI(http.Controller):
                     ICP.set_param(param, body[key])
             return _success_response({'saved': True}, message='Mail template saved.')
         except Exception as e:
+            return _error_response(str(e), status=500)
+
+    # ══════════════════════════════════════════════════════════
+    #  EmailJS Config
+    # ══════════════════════════════════════════════════════════
+    _EMAILJS_KEYS = {
+        'service_id':  'hocba_payroll.emailjs_service_id',
+        'template_id': 'hocba_payroll.emailjs_template_id',
+        'public_key':  'hocba_payroll.emailjs_public_key',
+    }
+
+    @http.route('/hocba-hrm/api/payroll/emailjs-config', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_emailjs_config(self, **kw):
+        try:
+            ICP = request.env['ir.config_parameter'].sudo()
+            return _success_response({
+                k: ICP.get_param(v, default='') for k, v in self._EMAILJS_KEYS.items()
+            })
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/emailjs-config', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def save_emailjs_config(self, **kw):
+        try:
+            body = _get_json_body()
+            ICP = request.env['ir.config_parameter'].sudo()
+            for key, param in self._EMAILJS_KEYS.items():
+                if key in body:
+                    ICP.set_param(param, body[key])
+            return _success_response({'saved': True})
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
+    # ══════════════════════════════════════════════════════════
+    #  Mark payslips as sent (used by frontend EmailJS flow)
+    # ══════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/payslip/mark-sent', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def mark_payslips_sent(self, **kw):
+        """Mark payslips as email-sent and log chatter. Called by frontend after EmailJS send."""
+        try:
+            body = _get_json_body()
+            ids = body.get('payslip_ids', [])
+            if not ids:
+                return _error_response('Missing payslip_ids.')
+            slips = request.env['hb.payslip'].sudo().browse(ids)
+            now = fields.Datetime.now()
+            for slip in slips.filtered(lambda s: s.exists()):
+                slip.write({'x_email_sent': True, 'x_email_sent_date': now})
+                month = slip.date_from.strftime('%m') if slip.date_from else ''
+                year = slip.date_from.strftime('%Y') if slip.date_from else ''
+                email_to = slip.employee_id.work_email or ''
+                slip.message_post(
+                    body=_(
+                        'Đã gửi phiếu lương tháng %(m)s/%(y)s tới <b>%(email)s</b> (qua EmailJS).',
+                        m=month, y=year, email=email_to,
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            return _success_response({'marked': len(slips)})
+        except Exception as e:
+            _logger.exception('mark_payslips_sent error')
             return _error_response(str(e), status=500)
