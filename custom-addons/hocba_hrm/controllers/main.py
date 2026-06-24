@@ -1473,6 +1473,8 @@ class HocBaHRM(http.Controller):
             data.update({
                 'pit': e.x_pit_code or '',
                 'si': e.x_social_insurance_no or '',
+                'bankCode': e.x_bank_code or '',
+                'bankAccountNo': e.x_bank_account_no or '',
             })
 
         # --- Thử việc 2 cổng (F-004/005) — Nhóm B ---
