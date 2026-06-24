@@ -5,8 +5,9 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchInterviewSlots, deleteInterviewSlot, fetchCvList, updateApplicant, fetchMailTemplates } from '../../api/recruitment';
+import { fetchInterviewSlots, deleteInterviewSlot, bookInterviewSlot, unbookInterviewSlot, fetchCvList, updateApplicant, fetchMailTemplates } from '../../api/recruitment';
 import { ATTENDANCE_KIND, INTERVIEW_RESULT_KIND } from './util';
+import Modal from '../../components/Modal';
 import SlotForm from './SlotForm';
 import SlotImport from './SlotImport';
 import MailSendModal from './MailSendModal';
@@ -26,6 +27,7 @@ export default function InterviewSlots() {
   const [err, setErr] = useState(null);
   const [creating, setCreating] = useState(null); // null | defaultDate
   const [importing, setImporting] = useState(false);
+  const [booking, setBooking] = useState(null); // null | slot đang đặt UV
   const [cv, setCv] = useState(null); // danh sách CV (để lọc ứng viên đang phỏng vấn)
   const [tmpls, setTmpls] = useState(null); // mail mẫu (cho nút Gửi mail)
 
@@ -47,6 +49,16 @@ export default function InterviewSlots() {
     if (!window.confirm('Xoá slot lịch rảnh này?')) return;
     try { await deleteInterviewSlot(id); load(); } catch (e) { alert(e.message); }
   };
+
+  // Đặt slot lại về Rảnh; lịch PV đã ghi trên hồ sơ ứng viên vẫn giữ nguyên.
+  const unbookSlot = async (id) => {
+    if (!window.confirm('Hủy đặt slot này (trả về Rảnh)?')) return;
+    try { await unbookInterviewSlot(id); load(); fetchCvList().then(setCv).catch(() => {}); }
+    catch (e) { alert(e.message); }
+  };
+
+  // Sau khi đặt UV: refresh cả lịch (slot → Đã đặt) lẫn danh sách CV (ngày/giờ PV mới).
+  const afterBook = () => { setBooking(null); load(); fetchCvList().then(setCv).catch(() => {}); };
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải lịch phỏng vấn…" />;
@@ -102,9 +114,20 @@ export default function InterviewSlots() {
                     </div>
                     <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>{s.interviewer}</div>
                     {s.applicant && <div style={{ fontSize: 11.5, marginTop: 2, fontWeight: 600 }}>UV: {s.applicant}</div>}
-                    {canManage && s.state !== 'booked' && (
-                      <button className="icon-btn" title="Xoá" style={{ marginTop: 2 }} onClick={() => removeSlot(s.id)}>
-                        <Icon name="trash" size={14} className="faint" /></button>
+                    {canManage && (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                        {s.state === 'booked' ? (
+                          <button className="btn btn-ghost btn-sm" style={{ padding: '2px 7px', fontSize: 11 }} onClick={() => unbookSlot(s.id)}>
+                            <Icon name="x" size={12} />Hủy đặt</button>
+                        ) : (
+                          <>
+                            <button className="btn btn-soft btn-sm" style={{ padding: '2px 7px', fontSize: 11 }} onClick={() => setBooking(s)}>
+                              <Icon name="user" size={12} />Đặt UV</button>
+                            <button className="icon-btn" title="Xoá" onClick={() => removeSlot(s.id)}>
+                              <Icon name="trash" size={14} className="faint" /></button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -126,7 +149,66 @@ export default function InterviewSlots() {
           onClose={() => setImporting(false)}
           onSaved={() => { setImporting(false); load(); }} />
       )}
+      {booking && (
+        <SlotBookModal slot={booking} candidates={(cv && cv.rows) || []}
+          onClose={() => setBooking(null)} onBooked={afterBook} />
+      )}
     </div>
+  );
+}
+
+/* Modal chọn ứng viên để đặt vào 1 slot rảnh. Đặt xong: slot -> Đã đặt và lịch PV
+   (ngày/giờ/người PV) tự điền lên hồ sơ ứng viên. */
+function SlotBookModal({ slot, candidates, onClose, onBooked }) {
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const list = candidates.filter((c) => {
+    if (!q) return true;
+    const s = q.toLowerCase();
+    return [c.name, c.phone, c.email, c.jobName].some((v) => (v || '').toLowerCase().includes(s));
+  });
+
+  const book = async (aid) => {
+    setBusy(true); setErr(null);
+    try { await bookInterviewSlot(slot.id, aid); onBooked(); }
+    catch (e) { setErr(e.message || 'Không đặt được lịch.'); setBusy(false); }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="calendar" size={22} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Đặt lịch phỏng vấn</h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            {ddmm(slot.date)}/{slot.date.split('-')[0]} · {slot.startTime}–{slot.endTime} · {slot.interviewer}</div>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+      </div>
+      <div style={{ padding: '16px 22px' }}>
+        <input type="text" autoFocus placeholder="Tìm ứng viên theo tên / SĐT / email / vị trí…"
+          value={q} onChange={(e) => setQ(e.target.value)}
+          style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border-strong)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+        {err && <div style={{ color: 'var(--red-600)', fontSize: 12.5, marginTop: 8 }}>{err}</div>}
+        <div style={{ marginTop: 12, maxHeight: '46vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {list.length === 0 && <EmptyState>Không có ứng viên phù hợp.</EmptyState>}
+          {list.map((c) => (
+            <div key={c.id} className="card between" style={{ padding: '9px 12px', alignItems: 'center' }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="nm" style={{ fontWeight: 600 }}>{c.name || '—'}</div>
+                <div className="id muted" style={{ fontSize: 12 }}>
+                  {[c.jobName, c.phone, c.stage].filter(Boolean).join(' · ') || '—'}</div>
+              </div>
+              <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => book(c.id)}>Chọn</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

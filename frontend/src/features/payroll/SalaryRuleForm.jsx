@@ -1,12 +1,13 @@
 /* Form tạo/sửa salary rule — Owner: Hùng. */
 import { useState, useEffect, useRef } from 'react';
-import { createSalaryRule, updateSalaryRule } from '../../api/payroll';
+import { createSalaryRule, updateSalaryRule, fetchLookupSources } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 
 const AMOUNT_TYPES = [
   ['fixed', 'Số cố định'],
   ['formula', 'Công thức'],
+  ['lookup', 'Tra cứu dữ liệu'],
 ];
 
 /* Vietnamese diacritics → ASCII slug */
@@ -46,10 +47,17 @@ export default function SalaryRuleForm({ item, structureId, nextSequence = 10, o
     amount_type: item?.amount_type || 'fixed',
     amount_fixed: item?.amount_fixed ?? '',
     amount_formula: item?.amount_formula || '',
+    lookup_source: item?.lookup_source || '',
+    lookup_field: item?.lookup_field || '',
     note: item?.note || '',
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [lookupSources, setLookupSources] = useState(null);
+
+  useEffect(() => {
+    fetchLookupSources().then(setLookupSources).catch(() => setLookupSources({}));
+  }, []);
 
   const set = (k, v) => {
     setForm((f) => {
@@ -135,6 +143,10 @@ export default function SalaryRuleForm({ item, structureId, nextSequence = 10, o
 
         {form.amount_type === 'formula' && (
           <FormulaSection form={form} set={set} ta={ta} hint={hint} taRef={taRef} />
+        )}
+
+        {form.amount_type === 'lookup' && lookupSources && (
+          <LookupSection form={form} set={set} lookupSources={lookupSources} />
         )}
 
         <div style={{ marginBottom: 16 }}>
@@ -269,6 +281,74 @@ function FormulaSection({ form, set, ta, hint, taRef }) {
           <div style={{ padding: '6px 10px', fontSize: 11.5, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>
             Toán tử hỗ trợ: <code>+ - * / {'>'} {'<'} {'>'}= {'<'}= == !=</code>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── LookupSection component ─────────────────────────────── */
+function LookupSection({ form, set, lookupSources }) {
+  const sourceOptions = lookupSources
+    ? Object.entries(lookupSources).map(([key, src]) => [key, src.label])
+    : [];
+
+  const fieldOptions = (form.lookup_source && lookupSources && lookupSources[form.lookup_source])
+    ? Object.entries(lookupSources[form.lookup_source].fields).map(
+        ([key, f]) => [key, f.label]
+      )
+    : [];
+
+  const handleSourceChange = (val) => {
+    set('lookup_source', val);
+    set('lookup_field', '');
+  };
+
+  const sel = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--border)', fontSize: 14, background: '#fff',
+  };
+  const hint = { fontSize: 12, color: 'var(--muted)', marginTop: 4 };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 5, display: 'block' }}>
+          Nguồn dữ liệu
+        </label>
+        <select style={sel} value={form.lookup_source} onChange={(e) => handleSourceChange(e.target.value)}>
+          <option value="">-- Chọn nguồn --</option>
+          {sourceOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <div style={hint}>Chọn bảng dữ liệu để tra cứu (VD: Chấm công)</div>
+      </div>
+
+      {form.lookup_source && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 5, display: 'block' }}>
+            Trường tra cứu
+          </label>
+          <select style={sel} value={form.lookup_field} onChange={(e) => set('lookup_field', e.target.value)}>
+            <option value="">-- Chọn trường --</option>
+            {fieldOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <div style={hint}>
+            Giá trị của trường này sẽ được tổng hợp (sum) cho nhân viên trong kỳ lương
+          </div>
+        </div>
+      )}
+
+      {form.lookup_source && form.lookup_field && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8,
+          background: '#eff6ff', border: '1px solid #bfdbfe',
+          fontSize: 12.5, color: '#1e40af',
+        }}>
+          <strong>Gợi ý:</strong> Giá trị lookup sẽ được lưu vào{' '}
+          <code>rules['{form.code || 'ma_rule'}']</code>.
+          Các rule tiếp theo có thể tham chiếu bằng mã rule này trong công thức.
+          <br />
+          VD: <code>{form.code || 'so_cong'} * don_gia_gio</code>
         </div>
       )}
     </div>

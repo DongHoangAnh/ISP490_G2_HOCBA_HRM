@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- ─── Public payslip view (token-based, no login) ─── -->
+    <template id="payslip_public_view" name="Phiếu lương nhân viên">
+        <html>
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>Phiếu lương — <t t-esc="employee.name"/></title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; color: #1f2937; font-size: 14px; }
+                a { color: inherit; text-decoration: none; }
+
+                /* ── Layout ── */
+                .wrap { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; }
+
+                /* ── Brand header ── */
+                .brand-bar {
+                    display: flex; align-items: center; gap: 12px;
+                    margin-bottom: 20px; padding: 0 4px;
+                }
+                .brand-logo {
+                    width: 40px; height: 40px; border-radius: 10px;
+                    background: #b91c1c; display: flex; align-items: center; justify-content: center;
+                    font-size: 18px; font-weight: 900; color: #fff; letter-spacing: -1px; flex-shrink: 0;
+                }
+                .brand-name { font-size: 15px; font-weight: 700; color: #111827; line-height: 1.2; }
+                .brand-sub  { font-size: 11.5px; color: #6b7280; }
+
+                /* ── Card ── */
+                .card {
+                    background: #fff; border-radius: 14px;
+                    box-shadow: 0 1px 6px rgba(0,0,0,.09); overflow: hidden;
+                }
+
+                /* ── Slip header ── */
+                .slip-head {
+                    background: linear-gradient(135deg, #991b1b 0%, #b91c1c 60%, #dc2626 100%);
+                    padding: 22px 24px 20px; color: #fff;
+                }
+                .slip-head-title { font-size: 18px; font-weight: 800; letter-spacing: -.3px; }
+                .slip-head-sub { margin-top: 4px; font-size: 13px; opacity: .85; }
+                .slip-head-number { margin-top: 6px; font-size: 11px; opacity: .6; font-family: monospace; }
+
+                /* ── Status badge ── */
+                .badge { display: inline-block; padding: 3px 11px; border-radius: 20px; font-size: 11.5px; font-weight: 700; vertical-align: middle; }
+                .badge-pending   { background: rgba(255,255,255,.22); color: #fff; border: 1px solid rgba(255,255,255,.35); }
+                .badge-confirmed { background: #d1fae5; color: #065f46; }
+                .badge-rejected  { background: #fee2e2; color: #991b1b; }
+
+                /* ── Employee info ── */
+                .emp-info {
+                    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+                    border-bottom: 1px solid #f3f4f6; font-size: 13px;
+                }
+                .emp-cell {
+                    padding: 11px 20px; border-right: 1px solid #f3f4f6;
+                    display: flex; flex-direction: column; gap: 2px;
+                }
+                .emp-cell:last-child { border-right: none; }
+                .emp-cell:nth-child(n+3) { border-top: 1px solid #f3f4f6; }
+                .emp-cell .lbl { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+                .emp-cell .val { font-weight: 600; color: #111827; }
+
+                /* ── Category group ── */
+                .cat-header {
+                    padding: 9px 20px 5px;
+                    font-size: 11px; font-weight: 700; letter-spacing: .06em;
+                    text-transform: uppercase; color: #6b7280;
+                    background: #f9fafb; border-top: 1px solid #f3f4f6;
+                    border-bottom: 1px solid #f0f0f0;
+                }
+                .cat-header.cat-net { color: #065f46; background: #f0fdf4; border-top: 2px solid #6ee7b7; }
+                .cat-header.cat-deduct { color: #991b1b; background: #fff7f7; border-top: 2px solid #fca5a5; }
+
+                /* ── Salary line ── */
+                .line {
+                    display: flex; justify-content: space-between; align-items: center;
+                    padding: 10px 20px; border-bottom: 1px solid #f9fafb;
+                    gap: 8px;
+                }
+                .line:last-child { border-bottom: none; }
+                .line-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+                .line-name { font-size: 13.5px; color: #374151; font-weight: 500; }
+                .line-code { font-size: 11px; color: #9ca3af; font-family: monospace; }
+                .line-amount { font-size: 14px; font-weight: 600; color: #111827; white-space: nowrap; font-variant-numeric: tabular-nums; }
+                .line-amount.negative { color: #dc2626; }
+                .line-amount.zero { color: #9ca3af; font-weight: 400; }
+
+                /* Highlight net row */
+                .line.is-net {
+                    background: #f0fdf4; padding: 13px 20px;
+                    border-top: 1px solid #a7f3d0; border-bottom: 1px solid #a7f3d0;
+                }
+                .line.is-net .line-name { font-size: 14px; font-weight: 700; color: #065f46; }
+                .line.is-net .line-amount { font-size: 16px; font-weight: 800; color: #065f46; }
+
+                /* ── Net summary bar ── */
+                .net-bar {
+                    margin: 0; padding: 16px 20px;
+                    background: linear-gradient(135deg, #14532d, #166534);
+                    display: flex; justify-content: space-between; align-items: center;
+                }
+                .net-bar .lbl { color: #bbf7d0; font-size: 13px; font-weight: 600; }
+                .net-bar .val { color: #fff; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+                /* ── Gross / deduction summary ── */
+                .summary-row {
+                    display: flex; gap: 0; border-bottom: 1px solid #f3f4f6;
+                }
+                .summary-cell {
+                    flex: 1; padding: 12px 20px; text-align: center;
+                    border-right: 1px solid #f3f4f6;
+                }
+                .summary-cell:last-child { border-right: none; }
+                .summary-cell .s-lbl { font-size: 11px; color: #9ca3af; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+                .summary-cell .s-val { font-size: 15px; font-weight: 700; }
+                .s-gross { color: #1d4ed8; }
+                .s-deduct { color: #dc2626; }
+                .s-net { color: #15803d; }
+
+                /* ── Actions ── */
+                .actions { padding: 20px 24px; }
+                .action-hint { font-size: 12.5px; color: #6b7280; margin-bottom: 14px; text-align: center; }
+                .action-btns { display: flex; gap: 10px; justify-content: center; }
+                .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 26px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; border: none; font-family: inherit; }
+                .btn-confirm { background: #16a34a; color: #fff; }
+                .btn-confirm:hover { background: #15803d; }
+                .btn-reject-toggle { background: #fff; color: #dc2626; border: 1.5px solid #fca5a5; }
+                .btn-reject-toggle:hover { background: #fef2f2; }
+                .btn-submit-reject { background: #dc2626; color: #fff; width: 100%; margin-top: 10px; padding: 11px 20px; }
+                .btn-submit-reject:hover { background: #b91c1c; }
+
+                .reject-form { display: none; margin-top: 16px; }
+                .reject-form.show { display: block; }
+                .feedback-area {
+                    width: 100%; padding: 10px 14px; border: 1.5px solid #e5e7eb;
+                    border-radius: 8px; font-size: 13.5px; resize: vertical; min-height: 80px;
+                    font-family: inherit; color: #111827; outline: none;
+                }
+                .feedback-area:focus { border-color: #b91c1c; box-shadow: 0 0 0 3px rgba(185,28,28,.12); }
+
+                /* ── Flash messages ── */
+                .msg { padding: 13px 18px; border-radius: 10px; margin-bottom: 16px; font-size: 13.5px; font-weight: 500; }
+                .msg-ok   { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+                .msg-err  { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+                .msg-warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+                /* ── Status area (confirmed/rejected) ── */
+                .status-area { padding: 20px 24px; }
+                .status-box { padding: 14px 18px; border-radius: 10px; font-size: 13.5px; }
+
+                /* ── Footer ── */
+                .footer { text-align: center; padding: 20px 16px 0; font-size: 11.5px; color: #9ca3af; }
+
+                /* ── Responsive ── */
+                @media (max-width: 500px) {
+                    .emp-info { grid-template-columns: 1fr; }
+                    .emp-cell { border-right: none; }
+                    .emp-cell:nth-child(n+2) { border-top: 1px solid #f3f4f6; }
+                    .action-btns { flex-direction: column; }
+                    .btn { width: 100%; }
+                    .summary-row { flex-direction: column; }
+                    .summary-cell { border-right: none; border-bottom: 1px solid #f3f4f6; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="wrap">
+                <!-- Flash messages -->
+                <t t-if="request.params.get('msg') == 'confirmed'">
+                    <div class="msg msg-ok">&#10004; Bạn đã xác nhận phiếu lương thành công. Cảm ơn!</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'rejected'">
+                    <div class="msg msg-err">&#10006; Bạn đã từ chối phiếu lương. Phản hồi đã được ghi nhận.</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'already_actioned'">
+                    <div class="msg msg-warn">&#9888; Phiếu lương này đã được xử lý trước đó.</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'feedback_required'">
+                    <div class="msg msg-err">Vui lòng nhập lý do từ chối.</div>
+                </t>
+
+                <!-- Brand bar -->
+                <div class="brand-bar">
+                    <div class="brand-logo">HB</div>
+                    <div>
+                        <div class="brand-name">Học Bá Education</div>
+                        <div class="brand-sub">Hệ thống quản lý nhân sự</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <!-- Slip header -->
+                    <div class="slip-head">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                            <div>
+                                <div class="slip-head-title">Phiếu lương tháng <t t-esc="month"/>/<t t-esc="year"/></div>
+                                <div class="slip-head-sub"><t t-esc="employee.name"/><t t-if="employee.job_title"> · <t t-esc="employee.job_title"/></t></div>
+                                <div class="slip-head-number">Số phiếu: <t t-esc="slip.number or '—'"/></div>
+                            </div>
+                            <div style="padding-top:4px;">
+                                <t t-if="slip.x_employee_confirm == 'pending'">
+                                    <span class="badge badge-pending">Chờ xác nhận</span>
+                                </t>
+                                <t t-if="slip.x_employee_confirm == 'confirmed'">
+                                    <span class="badge badge-confirmed">&#10004; Đã xác nhận</span>
+                                </t>
+                                <t t-if="slip.x_employee_confirm == 'rejected'">
+                                    <span class="badge badge-rejected">Từ chối</span>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Employee info grid -->
+                    <div class="emp-info">
+                        <div class="emp-cell">
+                            <span class="lbl">Mã nhân viên</span>
+                            <span class="val"><t t-esc="employee.barcode or ('NV%04d' % employee.id)"/></span>
+                        </div>
+                        <div class="emp-cell">
+                            <span class="lbl">Phòng ban</span>
+                            <span class="val"><t t-esc="employee.department_id.name or '—'"/></span>
+                        </div>
+                        <div class="emp-cell">
+                            <span class="lbl">Kỳ lương</span>
+                            <span class="val">Tháng <t t-esc="month"/>/<t t-esc="year"/></span>
+                        </div>
+                        <div class="emp-cell">
+                            <span class="lbl">Ngày tính lương</span>
+                            <span class="val"><t t-esc="slip.date_from.strftime('%d/%m/%Y') if slip.date_from else '—'"/> – <t t-esc="slip.date_to.strftime('%d/%m/%Y') if slip.date_to else '—'"/></span>
+                        </div>
+                    </div>
+
+                    <!-- Gross / deduction / net summary -->
+                    <div class="summary-row">
+                        <div class="summary-cell">
+                            <div class="s-lbl">Tổng thu nhập</div>
+                            <div class="s-val s-gross"><t t-esc="'{:,.0f}'.format(gross)"/> ₫</div>
+                        </div>
+                        <div class="summary-cell">
+                            <div class="s-lbl">Khấu trừ</div>
+                            <div class="s-val s-deduct"><t t-esc="'{:,.0f}'.format(gross - net if gross > net else 0)"/> ₫</div>
+                        </div>
+                        <div class="summary-cell">
+                            <div class="s-lbl">Thực lĩnh</div>
+                            <div class="s-val s-net"><t t-esc="'{:,.0f}'.format(net)"/> ₫</div>
+                        </div>
+                    </div>
+
+                    <!-- Salary detail lines grouped by category -->
+                    <div class="lines">
+                        <t t-set="last_cat" t-value="None"/>
+                        <t t-foreach="lines" t-as="line">
+                            <!-- Category header when category changes -->
+                            <t t-if="line.category_id and line.category_id.code != last_cat">
+                                <t t-set="last_cat" t-value="line.category_id.code"/>
+                                <t t-set="cat_code_lower" t-value="(line.category_id.code or '').lower()"/>
+                                <div t-attf-class="cat-header #{'cat-net' if 'net' in cat_code_lower or 'thuc' in cat_code_lower else 'cat-deduct' if 'deduct' in cat_code_lower or 'tru' in cat_code_lower else ''}">
+                                    <t t-esc="line.category_id.name or line.category_id.code"/>
+                                </div>
+                            </t>
+                            <!-- Line row -->
+                            <t t-set="is_net_line" t-value="'thuc_lanh' in (line.code or '')"/>
+                            <div t-attf-class="line #{'is-net' if is_net_line else ''}">
+                                <div class="line-info">
+                                    <span class="line-name"><t t-esc="line.name"/></span>
+                                    <span class="line-code"><t t-esc="line.code"/></span>
+                                </div>
+                                <span t-attf-class="line-amount #{'negative' if line.amount &lt; 0 else 'zero' if line.amount == 0 else ''}">
+                                    <t t-esc="'{:,.0f}'.format(line.amount)"/> ₫
+                                </span>
+                            </div>
+                        </t>
+                    </div>
+
+                    <!-- Net pay bar -->
+                    <div class="net-bar">
+                        <span class="lbl">&#128176; Thực lĩnh tháng <t t-esc="month"/>/<t t-esc="year"/></span>
+                        <span class="val"><t t-esc="'{:,.0f}'.format(net)"/> ₫</span>
+                    </div>
+
+                    <!-- Action buttons — only if pending -->
+                    <t t-if="slip.x_employee_confirm == 'pending'">
+                        <div class="actions">
+                            <p class="action-hint">
+                                Vui lòng kiểm tra kỹ các khoản lương bên trên, sau đó xác nhận hoặc gửi phản hồi nếu có sai sót.
+                            </p>
+                            <div class="action-btns">
+                                <form t-attf-action="/payslip/view/#{token}/confirm" method="post" style="display:contents;">
+                                    <button type="submit" class="btn btn-confirm">&#10004; Xác nhận phiếu lương</button>
+                                </form>
+                                <button class="btn btn-reject-toggle" onclick="document.getElementById('reject-form').classList.toggle('show');this.textContent=this.textContent.includes('Từ chối')?'▲ Đóng':'&#10006; Từ chối';">
+                                    &#10006; Từ chối
+                                </button>
+                            </div>
+                            <form id="reject-form" class="reject-form" t-attf-action="/payslip/view/#{token}/reject" method="post">
+                                <label style="font-weight:700;font-size:13px;color:#374151;display:block;margin-bottom:6px;">
+                                    Lý do từ chối <span style="color:#dc2626;">*</span>
+                                </label>
+                                <textarea name="feedback" class="feedback-area" placeholder="Ví dụ: Sai số ngày công, thiếu phụ cấp..." required="required"/>
+                                <button type="submit" class="btn btn-submit-reject">Gửi phản hồi</button>
+                            </form>
+                        </div>
+                    </t>
+
+                    <!-- Already confirmed -->
+                    <t t-if="slip.x_employee_confirm == 'confirmed'">
+                        <div class="status-area">
+                            <div class="status-box msg-ok">
+                                &#10004; <strong>Đã xác nhận</strong> — Bạn đã xác nhận phiếu lương này.
+                                <t t-if="slip.x_confirmed_date">
+                                    <br/><span style="font-size:12px;opacity:.8;">Lúc: <t t-esc="slip.x_confirmed_date.strftime('%H:%M %d/%m/%Y')"/></span>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Already rejected -->
+                    <t t-if="slip.x_employee_confirm == 'rejected'">
+                        <div class="status-area">
+                            <div class="status-box msg-err">
+                                &#10006; <strong>Đã từ chối</strong> — Phản hồi đã được ghi nhận.
+                                <t t-if="slip.x_employee_feedback">
+                                    <br/><span style="font-size:12px;margin-top:4px;display:block;">Lý do: <t t-esc="slip.x_employee_feedback"/></span>
+                                </t>
+                                <t t-if="slip.x_confirmed_date">
+                                    <br/><span style="font-size:12px;opacity:.8;">Lúc: <t t-esc="slip.x_confirmed_date.strftime('%H:%M %d/%m/%Y')"/></span>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+
+                <div class="footer">
+                    <p>&#169; Học Bá Education · Hệ thống HRM</p>
+                    <p style="margin-top:4px;">Phiếu lương được tạo tự động. Mọi thắc mắc vui lòng liên hệ bộ phận Nhân sự.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    </template>
+
+    <!-- ─── Not found page ─── -->
+    <template id="payslip_public_not_found" name="Phiếu lương không tìm thấy">
+        <html>
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>Không tìm thấy — Học Bá HRM</title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; gap: 16px; }
+                .box { text-align: center; padding: 48px 40px; background: #fff; border-radius: 16px; box-shadow: 0 1px 6px rgba(0,0,0,.09); }
+                .brand { font-size: 22px; font-weight: 900; color: #b91c1c; letter-spacing: -0.5px; margin-bottom: 20px; }
+                .code { font-size: 64px; font-weight: 900; color: #e5e7eb; line-height: 1; }
+                .msg { margin-top: 12px; color: #6b7280; font-size: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <div class="brand">HB</div>
+                <div class="code">404</div>
+                <div class="msg">Phiếu lương không tồn tại hoặc đường link đã hết hạn.</div>
+            </div>
+        </body>
+        </html>
+    </template>
+</odoo>

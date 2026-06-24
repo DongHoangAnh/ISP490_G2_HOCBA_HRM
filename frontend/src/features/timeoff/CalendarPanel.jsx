@@ -17,7 +17,12 @@ const parseISO = (s) => { const [y, m, d] = s.split('-').map(Number); return new
 /* Thứ hạng trạng thái để chọn "đơn mạnh nhất" khi 1 ngày trùng nhiều đơn. */
 const RANK = { validate: 3, validate1: 2, confirm: 2, draft: 1, refuse: 1, cancel: 0 };
 
-/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). */
+/* Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
+   Ngày có >= ngần này người nghỉ (đã duyệt) tô cảnh báo "quá tải". */
+const OVERLAP_WARN = 3;
+
+/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). count = số người đã DUYỆT
+   nghỉ trong ngày (Phase 4: cảnh báo ngày trùng lịch khi xem "Cả đội"). */
 function buildDayMap(leaves, activeIds) {
   const map = {};
   for (const lv of leaves) {
@@ -27,8 +32,11 @@ function buildDayMap(leaves, activeIds) {
     for (let cur = parseISO(lv.from); cur <= end; cur.setDate(cur.getDate() + 1)) {
       const key = isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate());
       const r = RANK[lv.state] ?? 1;
-      if (!map[key] || r > map[key].rank) {
-        map[key] = { rank: r, color: lv.color, state: lv.state, leaveType: lv.leaveType, employee: lv.employee };
+      const slot = map[key] || (map[key] = { rank: -1, count: 0 });
+      if (lv.state === 'validate') slot.count += 1;
+      if (r > slot.rank) {
+        slot.rank = r; slot.color = lv.color; slot.state = lv.state;
+        slot.leaveType = lv.leaveType; slot.employee = lv.employee;
       }
     }
   }
@@ -44,6 +52,15 @@ function buildMandatory(mdays) {
     for (let cur = parseISO(m.from); cur <= end; cur.setDate(cur.getDate() + 1)) {
       set.set(isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate()), m.name);
     }
+  }
+  return set;
+}
+
+/* Tập ngày đi làm thêm (date string) → nhãn. */
+function buildWorkdays(workDays) {
+  const set = new Map();
+  for (const w of (workDays || [])) {
+    if (w.date) set.set(w.date, w.name || 'Ngày đi làm');
   }
   return set;
 }
@@ -65,7 +82,7 @@ function cellStyle(info, big) {
   return { ...base, background: info.color + '26', boxShadow: `inset 0 0 0 1.5px ${info.color}` };
 }
 
-function MonthGrid({ year, month, dayMap, mandatory, big }) {
+function MonthGrid({ year, month, dayMap, mandatory, workdays, big }) {
   const firstDow = new Date(year, month, 1).getDay(); // 0 = CN
   const nDays = new Date(year, month + 1, 0).getDate();
   const cells = [];
@@ -86,17 +103,31 @@ function MonthGrid({ year, month, dayMap, mandatory, big }) {
           const key = isoOf(year, month, d);
           const info = dayMap[key];
           const mdName = mandatory.get(key);
+          const wdName = workdays.get(key);
           const dow = (firstDow + d - 1) % 7;
           const st = cellStyle(info, big);
-          if (!info && (dow === 0 || dow === 6)) st.background = st.background || 'var(--surface-2)';
+          if (!info) {
+            if (wdName) { st.background = 'rgba(16,185,129,.12)'; st.boxShadow = 'inset 0 0 0 1.5px var(--green)'; }
+            else if (dow === 0 || dow === 6) st.background = st.background || 'var(--surface-2)';
+          }
+          const overloaded = info && info.count >= OVERLAP_WARN;
+          if (overloaded) st.boxShadow = 'inset 0 0 0 2px var(--amber-600,#d97706)';
           return (
             <div key={key} style={st} title={[
               info && `${info.leaveType}${info.employee ? ' — ' + info.employee : ''}`,
+              info && info.count > 1 && (info.count + ' người nghỉ ngày này'),
+              wdName && ('Đi làm: ' + wdName),
               mdName,
             ].filter(Boolean).join(' · ')}>
               {d}
+              {overloaded && (
+                <span style={{ position: 'absolute', top: 2, left: 2, minWidth: 13, height: 13, padding: '0 3px', borderRadius: 7, background: 'var(--amber-600,#d97706)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'grid', placeItems: 'center', lineHeight: 1 }}>{info.count}</span>
+              )}
               {mdName && (
                 <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--red-600)' }}></span>
+              )}
+              {wdName && (
+                <span style={{ position: 'absolute', bottom: 2, left: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--green)' }}></span>
               )}
             </div>
           );
@@ -126,6 +157,7 @@ export default function CalendarPanel({ isOfficer }) {
 
   const dayMap = useMemo(() => data ? buildDayMap(data.leaves, active) : {}, [data, active]);
   const mandatory = useMemo(() => data ? buildMandatory(data.mandatoryDays) : new Map(), [data]);
+  const workdays = useMemo(() => data ? buildWorkdays(data.workDays) : new Map(), [data]);
 
   if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
   if (!data) return <LoadingState label="Đang tải lịch nghỉ phép…" />;
@@ -163,11 +195,11 @@ export default function CalendarPanel({ isOfficer }) {
         {mode === 'year' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(230px,1fr))', gap: 12 }}>
             {Array.from({ length: 12 }, (_, m) => (
-              <MonthGrid key={m} year={year} month={m} dayMap={dayMap} mandatory={mandatory} />
+              <MonthGrid key={m} year={year} month={m} dayMap={dayMap} mandatory={mandatory} workdays={workdays} />
             ))}
           </div>
         ) : (
-          <MonthGrid year={year} month={month} dayMap={dayMap} mandatory={mandatory} big />
+          <MonthGrid year={year} month={month} dayMap={dayMap} mandatory={mandatory} workdays={workdays} big />
         )}
       </div>
 
@@ -200,7 +232,27 @@ export default function CalendarPanel({ isOfficer }) {
           <LegendRow swatch={{ background: 'var(--red-600)' }} label="Đã duyệt" />
           <LegendRow swatch={{ background: 'rgba(200,16,46,.15)', boxShadow: 'inset 0 0 0 1.5px var(--red-600)' }} label="Chờ duyệt" />
           <LegendRow swatch={{ border: '1px solid var(--border-strong)' }} label="Từ chối (gạch ngang)" />
+          <LegendRow swatch={{ background: 'rgba(16,185,129,.12)', boxShadow: 'inset 0 0 0 1.5px var(--green)' }} label="Ngày đi làm (Thứ 7)" />
+          <LegendRow swatch={{ boxShadow: 'inset 0 0 0 2px var(--amber-600,#d97706)' }} label={`Trùng lịch (≥ ${OVERLAP_WARN} người nghỉ)`} />
           <LegendRow dot label="Ngày bắt buộc / nghỉ lễ" />
+        </div>
+
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Lịch làm việc</div>
+          <div className="muted" style={{ fontSize: 12.5, marginBottom: workdays.size ? 10 : 0 }}>
+            Chuẩn: Thứ 2 – Thứ 6. Các ngày Thứ 7 đi làm do HR thêm.
+          </div>
+          {workdays.size > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {[...workdays.entries()].sort().map(([d, name]) => (
+                <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 3, background: 'var(--green)', flexShrink: 0 }}></span>
+                  <span className="mono" style={{ fontWeight: 600 }}>{fmtDate(d)}</span>
+                  <span className="muted">{name}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {data.mandatoryDays.length > 0 && (

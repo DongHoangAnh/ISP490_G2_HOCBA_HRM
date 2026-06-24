@@ -1,12 +1,13 @@
 /* Chi tiết phiếu lương — Owner: Hùng. */
 import { useState, useEffect } from 'react';
-import { fetchPayslip, computePayslip, confirmPayslip, resetPayslip } from '../../api/payroll';
+import { fetchPayslip, computePayslip, confirmPayslip, resetPayslip, fetchPayslipMessages } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { slipState, CATEGORY_LABEL, HIGHLIGHT_CODES, MUTED_CATEGORIES } from './util';
+import TblWrap from '../../components/TblWrap';
 
 export default function PayslipDrawer({ slip, onClose, onChanged }) {
   const [det, setDet] = useState(null);
@@ -16,12 +17,19 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
   const [err, setErr] = useState(null);
   const [resetReason, setResetReason] = useState('');
   const [showReset, setShowReset] = useState(false);
+  const [messages, setMessages] = useState(null);
 
   const loadDet = () => {
     setDerr(null);
     fetchPayslip(slip.id).then(setDet).catch((e) => setDerr(e.message));
   };
   useEffect(loadDet, [slip.id]);
+
+  useEffect(() => {
+    if (tab === 'messages') {
+      fetchPayslipMessages(slip.id).then(setMessages).catch(() => setMessages([]));
+    }
+  }, [tab, slip.id]);
 
   const doAction = async (fn, label) => {
     setBusy(true); setErr(null);
@@ -50,6 +58,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
     ['lines', 'Chi tiết lương'],
     ['work', `Ngày công${det ? ` (${det.worked_days?.length || 0})` : ''}`],
     ['inputs', `Đầu vào${det ? ` (${det.inputs?.length || 0})` : ''}`],
+    ['messages', 'Tin nhắn'],
   ];
 
   /* Group lines by category for visual separators */
@@ -103,7 +112,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           det.lines.length === 0 ? (
             <EmptyState>Chưa có dòng lương. Nhấn "Tính lương" để tính.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="slip-lines">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -144,7 +153,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                         <td className="mono" style={{
                           textAlign: 'right',
                           fontWeight: isHL ? 800 : 500,
-                          color: item._catCode === 'NET' ? 'var(--green)' : isNeg ? 'var(--red-600)' : undefined,
+                          color: item._catCode === 'thuc_lanh' ? 'var(--green)' : isNeg ? 'var(--red-600)' : undefined,
                           fontSize: isHL ? 15 : 14,
                         }}>
                           {hbVND(item.total)}
@@ -154,7 +163,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TblWrap>
           )
         )}
 
@@ -163,7 +172,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           det.worked_days?.length === 0 ? (
             <EmptyState>Chưa có dữ liệu ngày công.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="slip-work">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -184,7 +193,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TblWrap>
           )
         )}
 
@@ -193,7 +202,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           det.inputs?.length === 0 ? (
             <EmptyState>Chưa có dữ liệu đầu vào.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="slip-inputs">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -212,6 +221,35 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
                   ))}
                 </tbody>
               </table>
+            </TblWrap>
+          )
+        )}
+
+        {/* Tab: Tin nhắn */}
+        {tab === 'messages' && (
+          messages === null ? (
+            <EmptyState>Đang tải tin nhắn...</EmptyState>
+          ) : messages.length === 0 ? (
+            <EmptyState>Chưa có tin nhắn. Tin nhắn sẽ xuất hiện sau khi gửi mail hoặc NV xác nhận.</EmptyState>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {messages.map((m) => (
+                <div key={m.id} style={{
+                  background: '#f9fafb', border: '1px solid #e5e7eb',
+                  borderRadius: 8, padding: '10px 14px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 12.5, color: '#374151' }}>{m.author}</span>
+                    <span style={{ fontSize: 11.5, color: '#9ca3af' }}>
+                      {m.date ? new Date(m.date).toLocaleString('vi-VN') : ''}
+                    </span>
+                  </div>
+                  <div
+                    style={{ fontSize: 13, color: '#111827', lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{ __html: m.body }}
+                  />
+                </div>
+              ))}
             </div>
           )
         )}

@@ -33,42 +33,12 @@
               action="action_hb_work_entry"
               sequence="25"/>
 
-    <!-- Sale -->
-    <menuitem id="menu_hb_payroll_sale"
-              name="Sale"
-              parent="menu_hb_payroll_root"
-              sequence="27"/>
-
-    <menuitem id="menu_sale_revenue"
-              name="Doanh thu Sale"
-              parent="menu_hb_payroll_sale"
-              action="action_sale_revenue"
-              sequence="10"/>
-
     <!-- Bank Files -->
     <menuitem id="menu_bank_files"
               name="File Ngân hàng"
               parent="menu_hb_payroll_root"
               action="action_hb_bank_file"
               sequence="30"/>
-
-    <!-- Reports sub-menu -->
-    <menuitem id="menu_hb_payroll_reports"
-              name="Báo cáo"
-              parent="menu_hb_payroll_root"
-              sequence="40"/>
-
-    <menuitem id="menu_bhxh_report"
-              name="Báo cáo BHXH"
-              parent="menu_hb_payroll_reports"
-              action="action_hb_bhxh_report"
-              sequence="10"/>
-
-    <menuitem id="menu_etax_report"
-              name="Báo cáo thuế TNCN"
-              parent="menu_hb_payroll_reports"
-              action="action_hb_etax_report"
-              sequence="20"/>
 
     <!-- Configuration sub-menu -->
     <menuitem id="menu_hb_payroll_config"
@@ -82,12 +52,6 @@
               parent="menu_hb_payroll_config"
               action="action_salary_structure"
               sequence="5"/>
-
-    <menuitem id="menu_sale_level_config"
-              name="Bậc hoa hồng Sale"
-              parent="menu_hb_payroll_config"
-              action="action_sale_level"
-              sequence="6"/>
 
     <menuitem id="menu_bank_format_config"
               name="Cấu hình Ngân hàng"

@@ -18,7 +18,7 @@ function Sum({ val, lbl, col }) {
   );
 }
 
-function SummaryBar({ summary, filter }) {
+function SummaryBar({ summary, filter, isTeacher }) {
   if (filter === 'regular') return (
     <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
       <Sum val={summary.daysPresent} lbl="Ngày có mặt" />
@@ -35,8 +35,8 @@ function SummaryBar({ summary, filter }) {
   );
   if (filter === 'ctv') return (
     <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(2,1fr)', marginBottom: 16 }}>
-      <Sum val={summary.ctvHours} lbl="Giờ CTV" />
-      <Sum val={summary.congCtv} lbl="Công CTV" col="var(--green)" />
+      <Sum val={summary.ctvHours} lbl={isTeacher ? 'Giờ' : 'Giờ CTV'} />
+      <Sum val={summary.congCtv} lbl={isTeacher ? 'Công' : 'Công CTV'} col="var(--green)" />
     </div>
   );
   // all
@@ -56,6 +56,7 @@ const ROW_TYPE_LABEL = { regular: 'Thường', ot: 'OT', ctv: 'CTV' };
 const ROW_TYPE_COLOR = { regular: 'gray', ot: 'amber', ctv: 'blue' };
 
 export default function AttendanceHistory({ me }) {
+  const isTeacher = me && !!me.isTeacher;
   const isCtv = me && !me.isOfficial;
 
   // filter: 'all' | 'regular' | 'ot' (chính thức) | 'ctv' (CTV)
@@ -99,7 +100,7 @@ export default function AttendanceHistory({ me }) {
 
       {data && (
         <>
-          <SummaryBar summary={data.summary} filter={filter} />
+          <SummaryBar summary={data.summary} filter={filter} isTeacher={isTeacher} />
 
           <div className="tbl-wrap">
             <table className="tbl">

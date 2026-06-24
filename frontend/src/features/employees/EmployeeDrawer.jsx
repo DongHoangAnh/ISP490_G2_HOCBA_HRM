@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert } from '../../api/employees';
+import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert, fetchAccounts } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
@@ -11,6 +11,7 @@ import DependentForm from './DependentForm';
 import AssetForm from './AssetForm';
 import PromotionForm from './PromotionForm';
 import CertForm from './CertForm';
+import AccountForm from './AccountForm';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
@@ -29,6 +30,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
     ['assets', det ? `Tài sản (${det.assets.length})` : 'Tài sản'],
     ['promo', det ? `Thăng tiến (${det.promotions.length})` : 'Thăng tiến'],
   ];
+  if (isHr) tabs.push(['account', 'Tài khoản']);
 
   return (
     <Modal onClose={onClose} lg>
@@ -69,6 +71,7 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={setDet} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={setDet} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={setDet} />}
+        {det && tab === 'account' && isHr && <AccountTab det={det} emp={emp} onUpdated={setDet} />}
       </div>
 
       {editing && det && (
@@ -540,6 +543,43 @@ function PromoTimeline({ path, isMgr }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* Tab tài khoản đăng nhập — chỉ HR/Admin (det.account chỉ có khi BE trả cho HR).
+   Cho tạo tài khoản mới hoặc cấp lại mật khẩu qua AccountForm. */
+function AccountTab({ det, emp, onUpdated }) {
+  const acc = det.account || { hasAccount: false };
+  const [mode, setMode] = useState(null); // null | 'create' | 'reset'
+  const [depts, setDepts] = useState([]);
+  useEffect(() => {
+    fetchAccounts().then((d) => setDepts(d.departments || [])).catch(() => {});
+  }, []);
+  const done = (accountPayload) => { onUpdated({ ...det, account: accountPayload }); setMode(null); };
+  return (
+    <div>
+      {acc.hasAccount ? (
+        <div className="card" style={{ padding: 16 }}>
+          <div className="kv"><div className="k">Đăng nhập</div><div className="v">{acc.login}</div></div>
+          <div className="kv" style={{ marginTop: 8 }}>
+            <div className="k">Trạng thái</div>
+            <div className="v"><Badge kind={acc.active ? 'green' : 'gray'} dot>{acc.active ? 'Hoạt động' : 'Khóa'}</Badge></div>
+          </div>
+          <button className="btn btn-ghost btn-sm" style={{ marginTop: 14 }} onClick={() => setMode('reset')}>
+            <Icon name="rotateCcw" size={14} />Cấp lại mật khẩu</button>
+        </div>
+      ) : (
+        <div className="card" style={{ padding: 16 }}>
+          <div className="muted" style={{ fontSize: 12.5 }}>Nhân viên chưa có tài khoản đăng nhập.</div>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={() => setMode('create')}>
+            <Icon name="shield" size={14} />Tạo tài khoản</button>
+        </div>
+      )}
+      {mode && (
+        <AccountForm emp={emp} mode={mode} departments={depts}
+          onClose={() => setMode(null)} onDone={done} />
+      )}
     </div>
   );
 }

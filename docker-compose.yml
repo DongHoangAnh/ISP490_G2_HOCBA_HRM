@@ -10,6 +10,11 @@ services:
       - PORT=${DB_PORT:-5432}
       - USER=${DB_USER}
       - PASSWORD=${DB_PASSWORD}
+      - CMS_MYSQL_HOST=${CMS_MYSQL_HOST}
+      - CMS_MYSQL_PORT=${CMS_MYSQL_PORT:-58008}
+      - CMS_MYSQL_USER=${CMS_MYSQL_USER:-root}
+      - CMS_MYSQL_PASSWORD=${CMS_MYSQL_PASSWORD}
+      - CMS_MYSQL_DB=${CMS_MYSQL_DB:-erp_database}
     env_file:
       - .env
     dns:

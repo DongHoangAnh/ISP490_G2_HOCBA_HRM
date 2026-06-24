@@ -20,5 +20,6 @@ export default defineConfig({
   build: {
     outDir: '../custom-addons/hocba_hrm/static/spa',
     emptyOutDir: true,
+    rollupOptions: {},
   },
 });

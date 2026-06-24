@@ -3,13 +3,8 @@
 
 export const BATCH_STATE = {
   draft: ['Nháp', 'gray'],
-  computed: ['Đã tính', 'blue'],
-  manager_approved: ['QL duyệt', 'teal'],
-  sent: ['Đã gửi', 'violet'],
-  employees_confirmed: ['NV xác nhận', 'amber'],
-  applied: ['Áp dụng', 'green'],
-  paid: ['Đã trả', 'green'],
-  cancelled: ['Huỷ', 'red'],
+  verify: ['Đang xác nhận', 'amber'],
+  close: ['Hoàn tất', 'green'],
 };
 
 export const SLIP_STATE = {
@@ -23,19 +18,18 @@ export const batchState = (key) => BATCH_STATE[key] || ['?', 'gray'];
 export const slipState = (key) => SLIP_STATE[key] || ['?', 'gray'];
 
 export const CATEGORY_LABEL = {
-  BASIC: 'Lương thời gian',
-  COM: 'Hoa hồng',
-  ALW: 'Phụ cấp',
-  BONUS: 'Thưởng',
-  GROSS: 'Tổng thu nhập',
-  COMP: 'BH công ty đóng',
-  DED: 'Khấu trừ',
-  TAX: 'Thuế TNCN',
-  NET: 'Thực lĩnh',
+  phu_cap: 'Phụ cấp',
+  thuong: 'Thưởng',
+  tong_thu_nhap: 'Tổng thu nhập',
+  giam_tru: 'Giảm trừ',
+  khau_tru_nv: 'Khấu trừ NV',
+  thue_tncn: 'Thuế TNCN',
+  thuc_lanh: 'Thực lĩnh',
+  bh_phan_cong_ty: 'BH công ty đóng',
 };
 
-export const HIGHLIGHT_CODES = new Set(['GROSS', 'NET']);
-export const MUTED_CATEGORIES = new Set(['COMP']);
+export const HIGHLIGHT_CODES = new Set(['tong_thu_nhap', 'thuc_lanh']);
+export const MUTED_CATEGORIES = new Set(['bh_phan_cong_ty']);
 
 export const currentMonth = () => String(new Date().getMonth() + 1).padStart(2, '0');
 export const currentYear = () => String(new Date().getFullYear());

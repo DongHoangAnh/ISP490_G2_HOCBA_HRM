@@ -7,9 +7,10 @@ import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
+import Accounts from '../features/accounts/Accounts';
+import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
 import Payroll from '../features/payroll/Payroll';
-import ComingSoon from '../components/ComingSoon';
 import { LoadingState, ErrorState } from '../components/states';
 
 export default function App() {
@@ -44,9 +45,11 @@ export default function App() {
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && <Attendance search={search} />}
-        {view === 'timeoff' && canManage && <TimeOff search={search} />}
+        {view === 'timeoff' && <TimeOff search={search} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
+        {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
+        {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
         {view === 'profile' && <Profile />}
       </div>
     </div>

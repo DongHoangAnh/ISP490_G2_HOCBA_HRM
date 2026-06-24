@@ -1,8 +1,6 @@
 from . import salary_rule_category
 from . import salary_structure
 from . import salary_rule
-from . import sale_level
-from . import sale_revenue
 from . import hr_contract
 from . import work_entry_type
 from . import work_entry
@@ -14,7 +12,3 @@ from . import payslip_line
 from . import bank_format
 from . import bank_file
 from . import bank_formatter
-from . import bhxh_report
-from . import bhxh_report_line
-from . import etax_report
-from . import etax_report_line

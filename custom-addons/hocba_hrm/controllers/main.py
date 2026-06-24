@@ -10,6 +10,10 @@ from odoo.http import request, Response
 from odoo.tools import file_open
 from odoo.osv import expression
 
+from odoo.addons.hocba_attendance.utils.cms_connector import (
+    get_sessions_for_tutor, get_sessions_for_week, session_to_dict
+)
+
 # 13/06/2026: SPA là frontend chính thức (FE/BE tách riêng qua API).
 # Dev:   cd frontend && npm run dev   (Vite :5173, proxy API về Odoo)
 # Build: cd frontend && npm run build → static/spa/, route này serve bản build.
@@ -168,6 +172,97 @@ def _att_row(rec, policy):
     }
 
 
+# ── Teaching schedule helpers ────────────────────────────────────────────────
+
+def _teaching_session_row(session_dict, att_rec, policy, now_utc):
+    """Chuẩn hóa 1 buổi dạy thành dict trả về API."""
+    window = policy.shift_window_minutes or 15
+
+    def _utc_from_local_time(d, t_str):
+        """Parse 'HH:MM' (ICT) → UTC datetime."""
+        if not d or not t_str:
+            return None
+        try:
+            h, m = map(int, t_str.split(':')[:2])
+            return datetime(d.year, d.month, d.day, h, m) - timedelta(hours=7)
+        except Exception:
+            return None
+
+    d = session_dict['_date_raw']
+    start_utc = _utc_from_local_time(d, session_dict['startTime'])
+    end_utc = _utc_from_local_time(d, session_dict['endTime'])
+
+    check_in_open = (start_utc and
+                     abs((now_utc - start_utc).total_seconds()) <= window * 60)
+    check_out_open = (end_utc and att_rec and att_rec.check_in and
+                      abs((now_utc - end_utc).total_seconds()) <= window * 60)
+
+    return {
+        'id': session_dict['id'],
+        'classId': session_dict['classId'],
+        'className': session_dict['className'],
+        'date': session_dict['date'],
+        'startTime': session_dict['startTime'],
+        'endTime': session_dict['endTime'],
+        'status': session_dict['status'],
+        'roleType': session_dict['roleType'],
+        'checkIn': att_rec.check_in.isoformat() if att_rec and att_rec.check_in else None,
+        'checkOut': att_rec.check_out.isoformat() if att_rec and att_rec.check_out else None,
+        'workedHours': att_rec.worked_hours if att_rec else 0.0,
+        'faceSuspect': att_rec.face_suspect if att_rec else False,
+        'outOfZone': att_rec.out_of_zone if att_rec else False,
+        'outOfWindow': att_rec.out_of_window if att_rec else False,
+        'checkInOpen': bool(check_in_open),
+        'checkOutOpen': bool(check_out_open),
+    }
+
+
+def _teaching_today_rows(env, emp, today, policy):
+    """Buổi dạy hôm nay của giáo viên. Trả về [] nếu không có x_cms_user_id."""
+    if not emp.x_cms_user_id:
+        return []
+    sessions_raw = get_sessions_for_tutor(emp.x_cms_user_id, today)
+    if not sessions_raw:
+        return []
+
+    session_ids = [r['id'] for r in sessions_raw]
+    att_map = {}
+    for att in env['hocba.teaching.attendance'].sudo().search(
+            [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+        att_map[att.cms_session_id] = att
+
+    now_utc = fields.Datetime.now()
+    rows = []
+    for raw in sessions_raw:
+        sd = session_to_dict(raw)
+        att = att_map.get(sd['id'])
+        rows.append(_teaching_session_row(sd, att, policy, now_utc))
+    return rows
+
+
+def _teaching_week_rows(env, emp, monday, policy):
+    """Buổi dạy của giáo viên trong tuần."""
+    if not emp.x_cms_user_id:
+        return []
+    sessions_raw = get_sessions_for_week(emp.x_cms_user_id, monday)
+    if not sessions_raw:
+        return []
+
+    session_ids = [r['id'] for r in sessions_raw]
+    att_map = {}
+    for att in env['hocba.teaching.attendance'].sudo().search(
+            [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+        att_map[att.cms_session_id] = att
+
+    now_utc = fields.Datetime.now()
+    rows = []
+    for raw in sessions_raw:
+        sd = session_to_dict(raw)
+        att = att_map.get(sd['id'])
+        rows.append(_teaching_session_row(sd, att, policy, now_utc))
+    return rows
+
+
 def _att_me_info(env):
     """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -214,6 +309,9 @@ def _att_me_info(env):
                 'checkOutOpen': abs((now_local - co).total_seconds()) <= window * 60,
             }
     info['shiftsToday'] = _shift_today_rows(env, emp)
+    # Lịch dạy giáo viên từ CMS (chỉ khi employee có x_cms_user_id)
+    info['teachingToday'] = _teaching_today_rows(env, emp, today, policy)
+    info['isTeacher'] = bool(emp.x_cms_user_id)
     return info
 
 
@@ -1291,6 +1389,197 @@ def _user_can_manage(env):
             or is_manager)
 
 
+# --- Quản lý tài khoản đăng nhập (account management) --------------------
+ACCOUNT_ROLES = ('employee', 'giaovu', 'truongphong')
+MIN_PASSWORD_LEN = 8
+
+
+def _account_payload(emp):
+    """Khối trạng thái tài khoản đăng nhập cho hồ sơ NV."""
+    u = emp.user_id
+    if not u:
+        return {'hasAccount': False}
+    return {'hasAccount': True, 'login': u.login, 'active': u.active}
+
+
+def _is_hr(env):
+    return env.user.has_group('hr.group_hr_user')
+
+
+def _validate_password(body):
+    pw = body.get('password') or ''
+    pw2 = body.get('password_confirm') or ''
+    if len(pw) < MIN_PASSWORD_LEN:
+        raise ValidationError(
+            'Mật khẩu phải có ít nhất %d ký tự.' % MIN_PASSWORD_LEN)
+    if pw != pw2:
+        raise ValidationError('Xác nhận mật khẩu không khớp.')
+    return pw
+
+
+def _account_create(env, emp_id, body):
+    """HR/Admin cấp tài khoản đăng nhập cho 1 nhân viên.
+    AccessError nếu không phải HR; ValidationError nếu dữ liệu sai;
+    UserError nếu trưởng phòng cần xác nhận ghi đè."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp tài khoản.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if emp.user_id:
+        raise ValidationError('Nhân viên đã có tài khoản. Dùng cấp lại mật khẩu.')
+    login = (body.get('login') or '').strip()
+    if not login:
+        raise ValidationError('Vui lòng nhập tên đăng nhập.')
+    if env['res.users'].sudo().with_context(active_test=False).search_count(
+            [('login', '=', login)]):
+        raise ValidationError('Tên đăng nhập đã tồn tại.')
+    password = _validate_password(body)
+    role = body.get('role') or 'employee'
+    if role not in ACCOUNT_ROLES:
+        raise ValidationError('Loại tài khoản không hợp lệ.')
+
+    group_ids = [env.ref('base.group_user').id]
+    if role == 'giaovu':
+        group_ids.append(env.ref('hocba_employees.group_hocba_giaovu').id)
+
+    dept = None
+    if role == 'truongphong':
+        dept_id = body.get('department_id')
+        if not dept_id:
+            raise ValidationError('Trưởng phòng cần chọn phòng ban.')
+        dept = env['hr.department'].sudo().browse(int(dept_id))
+        if not dept.exists():
+            raise ValidationError('Phòng ban không hợp lệ.')
+        if (dept.manager_id and dept.manager_id != emp
+                and not body.get('confirm_overwrite')):
+            raise UserError(
+                'Phòng "%s" đã có trưởng phòng (%s). Xác nhận để ghi đè.'
+                % (dept.name, dept.manager_id.name))
+
+    user = env['res.users'].sudo().create({
+        'name': emp.name, 'login': login, 'password': password,
+        'group_ids': [(6, 0, group_ids)],
+    })
+    emp.sudo().user_id = user.id
+    if dept is not None:
+        dept.manager_id = emp.id
+    return _account_payload(emp)
+
+
+def _account_reset(env, emp_id, body):
+    """HR/Admin cấp lại mật khẩu cho nhân viên đã có tài khoản."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp lại mật khẩu.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists() or not emp.user_id:
+        raise ValidationError('Nhân viên chưa có tài khoản.')
+    password = _validate_password(body)
+    emp.user_id.sudo().write({'password': password})
+    return _account_payload(emp)
+
+
+def _account_list(env):
+    """Danh sách NV đã có tài khoản + danh mục phòng ban (cho form). Chỉ HR."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách tài khoản.')
+    Dept = env['hr.department'].sudo()
+    emps = env['hr.employee'].sudo().search(
+        [('user_id', '!=', False)], order='x_employee_code, id')
+    rows = []
+    for e in emps:
+        u = e.user_id
+        is_tp = bool(Dept.search_count([('manager_id', '=', e.id)]))
+        is_gv = u.has_group('hocba_employees.group_hocba_giaovu')
+        role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
+        rows.append({
+            'employeeId': e.id, 'name': e.name,
+            'code': e.x_employee_code or '', 'depName': e.department_id.name or '',
+            'login': u.login, 'active': u.active, 'role': role,
+        })
+    depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
+    return {'accounts': rows, 'departments': depts}
+
+
+def _dept_payload(dept):
+    """Một dòng phòng ban cho SPA. employeeCount đếm trực tiếp member_ids
+    (chắc chắn, không phụ thuộc tên field computed của Odoo)."""
+    return {
+        'id': dept.id,
+        'name': dept.name,
+        'functionDesc': dept.x_function_desc or '',
+        'managerId': dept.manager_id.id or False,
+        'managerName': dept.manager_id.name or '',
+        'employeeCount': len(dept.member_ids),
+        'active': dept.active,
+    }
+
+
+def _dept_list(env, archived=False):
+    """Danh sách phòng ban + danh mục NV (cho dropdown trưởng phòng). Chỉ HR.
+    archived=True → gồm cả phòng đã lưu trữ (active=False)."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách phòng ban.')
+    Dept = env['hr.department'].sudo().with_context(active_test=not archived)
+    depts = Dept.search([], order='name')
+    employees = env['hr.employee'].sudo().search(
+        [], order='x_employee_code, name')
+    return {
+        'departments': [_dept_payload(d) for d in depts],
+        'employees': [{'id': e.id, 'name': e.name, 'code': e.x_employee_code or ''}
+                      for e in employees],
+    }
+
+
+def _dept_create(env, body):
+    """HR/Admin tạo phòng ban mới."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được tạo phòng ban.')
+    name = (body.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập tên phòng ban.')
+    vals = {'name': name,
+            'x_function_desc': (body.get('functionDesc') or '').strip()}
+    manager_id = body.get('managerId')
+    if manager_id:
+        vals['manager_id'] = int(manager_id)
+    dept = env['hr.department'].sudo().create(vals)
+    return _dept_payload(dept)
+
+
+def _dept_update(env, dept_id, body):
+    """HR/Admin sửa tên / chức năng / trưởng phòng. managerId rỗng → gỡ trưởng phòng."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được sửa phòng ban.')
+    dept = env['hr.department'].sudo().with_context(
+        active_test=False).browse(dept_id)
+    if not dept.exists():
+        raise ValidationError('Không tìm thấy phòng ban.')
+    name = (body.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập tên phòng ban.')
+    manager_id = body.get('managerId')
+    dept.write({
+        'name': name,
+        'x_function_desc': (body.get('functionDesc') or '').strip(),
+        'manager_id': int(manager_id) if manager_id else False,
+    })
+    return _dept_payload(dept)
+
+
+def _dept_archive(env, dept_id, body):
+    """HR/Admin lưu trữ (active=False) / khôi phục (active=True) phòng ban.
+    Đây là đường thay cho xóa cứng — xóa cứng bị chặn bởi ràng buộc model."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được lưu trữ phòng ban.')
+    dept = env['hr.department'].sudo().with_context(
+        active_test=False).browse(dept_id)
+    if not dept.exists():
+        raise ValidationError('Không tìm thấy phòng ban.')
+    dept.write({'active': bool(body.get('active'))})
+    return _dept_payload(dept)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -1317,7 +1606,9 @@ class HocBaHRM(http.Controller):
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
                     'npm install &amp;&amp; npm run build</code> rồi tải lại trang '
                     '(xem docs/QUY_UOC_FRONTEND.md §8).</p>')
-        return Response(html, content_type='text/html; charset=utf-8')
+        resp = Response(html, content_type='text/html; charset=utf-8')
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     # ------------------------------------------------------------------
     # JSON API cho SPA — dữ liệu thật từ hocba_employees.
@@ -1556,6 +1847,9 @@ class HocBaHRM(http.Controller):
                 'levelId': s.skill_level_id.id or False,
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
+
+        if is_hr:
+            data['account'] = _account_payload(e)
 
         return data
 
@@ -2094,6 +2388,115 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_account_create(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_create(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'needs_confirm', 'message': str(ex)}, status=409)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/reset',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_account_reset(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_reset(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/accounts', auth='user', type='http',
+                methods=['GET'])
+    def api_accounts(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_list(request.env)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/departments', auth='user', type='http',
+                methods=['GET'])
+    def api_departments(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        archived = kw.get('archived') in ('1', 'true', 'True')
+        try:
+            data = _dept_list(request.env, archived=archived)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_department_create(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_create(request.env, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department/<int:dept_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_department_update(self, dept_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_update(request.env, dept_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department/<int:dept_id>/archive', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_department_archive(self, dept_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_archive(request.env, dept_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
 
     def _me_payload(self, e):
         """Dựng payload /api/me: hồ sơ đầy đủ (tự xem nên is_hr=is_mgr=True) +
@@ -2639,3 +3042,114 @@ class HocBaHRM(http.Controller):
     def api_employee_search(self, q=None, **kw):
         return request.make_json_response(
             {'rows': _employee_search(request.env, q)})
+
+    # ── Teaching Schedule API ─────────────────────────────────────────────────
+
+    @http.route('/hocba-hrm/api/teaching/schedule', auth='user',
+                type='http', methods=['GET'])
+    def api_teaching_schedule(self, date=None, monday=None, **kw):
+        """Lịch dạy của giáo viên đang đăng nhập.
+        ?date=YYYY-MM-DD  → buổi dạy trong ngày đó
+        ?monday=YYYY-MM-DD → buổi dạy trong tuần (7 ngày)
+        """
+        env = request.env
+        emp = env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        if not emp.x_cms_user_id:
+            return request.make_json_response({'error': 'not_teacher', 'rows': []})
+
+        policy = env['hocba.attendance.policy'].sudo().get_policy()
+
+        if monday:
+            try:
+                mon = datetime.strptime(monday, '%Y-%m-%d').date()
+            except ValueError:
+                return request.make_json_response({'error': 'invalid_date'}, status=400)
+            rows = _teaching_week_rows(env, emp, mon, policy)
+            return request.make_json_response({'monday': monday, 'rows': rows})
+
+        if date:
+            try:
+                target = datetime.strptime(date, '%Y-%m-%d').date()
+            except ValueError:
+                return request.make_json_response({'error': 'invalid_date'}, status=400)
+        else:
+            target = fields.Date.context_today(env.user)
+
+        sessions_raw = get_sessions_for_tutor(emp.x_cms_user_id, target)
+        session_ids = [r['id'] for r in sessions_raw]
+        att_map = {}
+        for att in env['hocba.teaching.attendance'].sudo().search(
+                [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+            att_map[att.cms_session_id] = att
+
+        now_utc = fields.Datetime.now()
+        rows = []
+        for raw in sessions_raw:
+            sd = session_to_dict(raw)
+            att = att_map.get(sd['id'])
+            rows.append(_teaching_session_row(sd, att, policy, now_utc))
+
+        return request.make_json_response({'date': str(target), 'rows': rows})
+
+    @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-in',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_teaching_check_in(self, session_id, **kw):
+        return self._teaching_do_check(session_id, 'in')
+
+    @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-out',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_teaching_check_out(self, session_id, **kw):
+        return self._teaching_do_check(session_id, 'out')
+
+    def _teaching_do_check(self, session_id, kind):
+        env = request.env
+        emp = env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        if not emp.x_cms_user_id:
+            return request.make_json_response({'error': 'not_teacher'}, status=403)
+
+        payload = request.get_json_data() or {}
+
+        # Tìm buổi học trong CMS theo session_id (không phụ thuộc ngày)
+        today = fields.Date.context_today(env.user)
+        # Thử ngày hôm nay trước, nếu không có thì lấy từ attendance record đã có
+        sessions_today = get_sessions_for_tutor(emp.x_cms_user_id, today)
+        session_info = next((r for r in sessions_today if r['id'] == session_id), None)
+
+        if not session_info:
+            # Kiểm tra xem có attendance record không để lấy ngày
+            att = env['hocba.teaching.attendance'].sudo().search(
+                [('cms_session_id', '=', session_id), ('employee_id', '=', emp.id)], limit=1)
+            if att and att.session_date:
+                sessions_on_date = get_sessions_for_tutor(emp.x_cms_user_id, att.session_date)
+                session_info = next((r for r in sessions_on_date if r['id'] == session_id), None)
+
+        if not session_info:
+            return request.make_json_response({'error': 'session_not_found'}, status=404)
+
+        att_model = env['hocba.teaching.attendance']
+        try:
+            att_model.sudo()._assert_allowed(session_info, emp, kind)
+        except UserError as ex:
+            err = str(ex)
+            status_map = {
+                'outside_shift_window': 403,
+                'already_checked_in': 409,
+                'not_checked_in': 409,
+                'already_checked_out': 409,
+            }
+            return request.make_json_response(
+                {'error': err}, status=status_map.get(err, 400))
+
+        rec = att_model.sudo()._do_check(session_info, emp, payload, kind)
+        return request.make_json_response({
+            'recordId': rec.id,
+            'kind': kind,
+            'faceSuspect': rec.face_suspect,
+            'outOfZone': rec.out_of_zone,
+            'outOfWindow': rec.out_of_window,
+            'faceScore': rec.check_in_face_score if kind == 'in' else rec.check_out_face_score,
+        })

@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/states';
 import { hbVND, fmtDate } from '../../utils/format';
 import { batchState, slipState } from './util';
 import PayslipDrawer from './PayslipDrawer';
+import TblWrap from '../../components/TblWrap';
 
 export default function BatchDrawer({ batch, onClose, onChanged }) {
   const [det, setDet] = useState(null);
@@ -94,7 +95,7 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
           det.payslips.length === 0 ? (
             <EmptyState>Chưa có phiếu lương. Nhấn "Sinh phiếu lương" để tạo.</EmptyState>
           ) : (
-            <div className="tbl-wrap">
+            <TblWrap id="batch-drawer">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -120,7 +121,7 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TblWrap>
           )
         )}
       </div>

@@ -17,9 +17,15 @@ const NAV = [
     { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'manage' },
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
+    { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
+    { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
+    // Nghỉ phép cá nhân của nhân viên/Trưởng phòng. Tài khoản vai trò thuần
+    // (Admin/HR/Giáo vụ) thấy Nghỉ phép ở mục Quản lý nhân sự (need:manage);
+    // component TimeOff tự bổ sung tab Chờ duyệt/Đơn đã duyệt theo data.isOfficer.
+    { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
   ]},
 ];
@@ -31,6 +37,7 @@ const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrU
 
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
+  if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
   if (need === 'self') return !isRoleAccount(me);
   return true;
 };
@@ -56,9 +63,11 @@ export const PAGE_META = {
   employees: { t: 'Nhân viên', c: 'Quản lý nhân sự / Hồ sơ' },
   onboarding: { t: 'Nhận việc', c: 'Quản lý nhân sự / Onboarding' },
   attendance: { t: 'Chấm công', c: 'Quản lý nhân sự / Attendance' },
-  timeoff: { t: 'Nghỉ phép', c: 'Quản lý nhân sự / Time Off' },
+  timeoff: { t: 'Nghỉ phép', c: 'Cá nhân / Nghỉ phép' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
+  accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
+  departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
 };
 
