@@ -1,7 +1,7 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
-from odoo.addons.hocba_hrm.controllers.main import HocBaHRM
+from odoo.addons.hocba_hrm.controllers.main import HocBaHRM, _bank_options
 
 
 @tagged('post_install', '-at_install')
@@ -31,3 +31,14 @@ class TestEmployeeBankField(TransactionCase):
             is_hr=True, is_mgr=False)
         self.assertNotIn('x_bank_code', emp_vals)
         self.assertNotIn('x_bank_account_no', emp_vals)
+
+    def test_bank_options_lists_active_formats(self):
+        if 'hb.bank.format' not in self.env:
+            self.skipTest('hocba_payroll chưa cài')
+        self.env['hb.bank.format'].create({
+            'name': 'Test Bank', 'code': 'TSTBANK',
+            'formatter_class': 'VCBFormatter'})
+        opts = _bank_options(self.env)
+        self.assertIn(
+            {'code': 'TSTBANK', 'name': 'Test Bank'},
+            [{'code': o['code'], 'name': o['name']} for o in opts])

@@ -98,6 +98,16 @@ def _d(v):
     return v.isoformat() if v else None
 
 
+def _bank_options(env):
+    """Danh sách ngân hàng cho dropdown form NV — đọc từ cấu hình payroll
+    (hb.bank.format). Trả [] nếu module payroll chưa cài (loose coupling)."""
+    if 'hb.bank.format' not in env:
+        return []
+    return [{'code': b.code, 'name': b.name}
+            for b in env['hb.bank.format'].sudo().search(
+                [('active', '=', True)], order='sequence, name')]
+
+
 def _fmt_hm(hour_float):
     """8.5 -> '08:30' (giờ float local -> chuỗi HH:MM)."""
     h = int(hour_float)
@@ -1995,6 +2005,7 @@ class HocBaHRM(http.Controller):
                 'levels': [{'id': lv.id, 'name': lv.name} for lv in t.skill_level_ids],
             } for t in self._cert_skill_types(env)],
             'canManager': is_mgr,
+            'banks': _bank_options(env),
         })
 
     def _split_form_payload(self, payload, is_hr, is_mgr):
