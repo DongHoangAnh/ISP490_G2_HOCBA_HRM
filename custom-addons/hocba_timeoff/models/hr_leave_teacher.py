@@ -67,3 +67,21 @@ class HrLeave(models.Model):
                 'employee_id': (session.original_employee_id.id
                                 or session.employee_id.id),
                 'state': 'planned', 'source_leave_id': False})
+
+
+class HbLeaveNotification(models.Model):
+    """Mở rộng 'kind' chuông cho 3 sự kiện dạy thay."""
+    _inherit = 'hb.leave.notification'
+
+    kind = fields.Selection(
+        selection_add=[
+            ('sub_request', 'Yêu cầu dạy thay'),
+            ('sub_accepted', 'GV thay đồng ý'),
+            ('sub_declined', 'GV thay từ chối'),
+        ],
+        ondelete={
+            'sub_request': 'cascade',
+            'sub_accepted': 'cascade',
+            'sub_declined': 'cascade',
+        },
+    )

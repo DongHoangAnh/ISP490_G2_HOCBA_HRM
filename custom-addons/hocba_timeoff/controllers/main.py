@@ -11,7 +11,7 @@ import base64
 import binascii
 from datetime import timedelta
 
-from odoo import _, fields, http
+from odoo import fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import content_disposition, request
 from odoo.tools import html2plaintext
@@ -564,9 +564,9 @@ def _apply_resolutions(env, leave, conflicts, resolutions):
 
     missing = [sid for sid in conflict_ids if sid not in by_session]
     if missing:
-        raise ValidationError(_(
+        raise ValidationError(
             'Còn %d buổi dạy trong kỳ nghỉ chưa chọn cách xử lý '
-            '(cả lớp nghỉ hoặc đổi giáo viên dạy thay).', len(missing)))
+            '(cả lớp nghỉ hoặc đổi giáo viên dạy thay).' % len(missing))
 
     Res = env['hocba.leave.session.resolution'].sudo()
     created = Res.browse()
@@ -574,12 +574,83 @@ def _apply_resolutions(env, leave, conflicts, resolutions):
         r = by_session[sid]
         rtype = (r.get('type') or '').strip()
         if rtype not in ('class_off', 'substitute'):
-            raise ValidationError(_('Cách xử lý buổi dạy không hợp lệ.'))
+            raise ValidationError('Cách xử lý buổi dạy không hợp lệ.')
         vals = {'leave_id': leave.id, 'session_id': sid, 'resolution': rtype}
         if rtype == 'substitute':
             vals['substitute_id'] = int(r.get('substituteId') or 0) or False
-        created |= Res.create(vals)
+        row = Res.create(vals)
+        if row.resolution == 'substitute':
+            _notify_substitute_request(env, row)
+        created |= row
     return created
+
+
+def _notify_substitute_request(env, resolution):
+    """Báo chuông cho GV thay khi nhận yêu cầu dạy thay."""
+    sub_user = resolution.substitute_id.user_id
+    if not sub_user:
+        return
+    leave = resolution.leave_id
+    _push_notification(
+        env, sub_user, leave, 'sub_request', 'Yêu cầu dạy thay',
+        '%s nhờ bạn dạy thay buổi %s' % (
+            leave.employee_id.name, resolution.session_id.display_name))
+
+
+def _notify_substitute_decision(env, resolution, accept):
+    """Báo chuông cho người xin nghỉ khi GV thay đồng ý/từ chối."""
+    req_user = resolution.leave_id.employee_id.user_id
+    if not req_user:
+        return
+    verb = 'đồng ý' if accept else 'từ chối'
+    _push_notification(
+        env, req_user, resolution.leave_id,
+        'sub_accepted' if accept else 'sub_declined',
+        'Giáo viên thay đã %s dạy thay' % verb,
+        '%s đã %s dạy thay buổi %s' % (
+            resolution.substitute_id.name, verb,
+            resolution.session_id.display_name))
+
+
+def _substitution_rows(env, employee):
+    """Yêu cầu dạy thay gửi tới 1 giáo viên (mới nhất trước)."""
+    if not employee:
+        return []
+    recs = env['hocba.leave.session.resolution'].sudo().search(
+        [('substitute_id', '=', employee.id), ('resolution', '=', 'substitute')],
+        order='id desc')
+    rows = []
+    for r in recs:
+        s = r.session_id
+        rows.append({
+            'id': r.id,
+            'requester': r.leave_id.employee_id.name,
+            'leaveId': r.leave_id.id,
+            'className': s.class_name or '',
+            'date': str(s.session_date) if s.session_date else '',
+            'startTime': s.start_time or '',
+            'endTime': s.end_time or '',
+            'state': r.state,
+        })
+    return rows
+
+
+def _decide_substitution(env, res_id, employee, accept, reason=''):
+    """GV thay đồng ý/từ chối 1 yêu cầu của mình. Trả record hoặc False.
+
+    False khi: yêu cầu không tồn tại / không thuộc về employee / đã xử lý."""
+    r = env['hocba.leave.session.resolution'].sudo().browse(res_id)
+    if not r.exists() or r.substitute_id.id != (employee.id if employee else 0):
+        return False
+    if r.resolution != 'substitute' or r.state != 'pending':
+        return False
+    r.write({
+        'state': 'accepted' if accept else 'declined',
+        'decided_at': fields.Datetime.now(),
+        'decline_reason': '' if accept else (reason or ''),
+    })
+    _notify_substitute_decision(env, r, accept)
+    return r
 
 
 # ---------------------------------------------------------------------------
@@ -1044,6 +1115,32 @@ class HocBaTimeoff(http.Controller):
             'conflicts': [_conflict_row(s) for s in conflicts],
             'substitutes': substitutes,
         })
+
+    # ------------------------------------------------------------------
+    # 3.2c. Yêu cầu dạy thay gửi tới giáo viên thay — liệt kê + quyết định
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/substitutions', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_substitutions(self, **kw):
+        emp = request.env.user.employee_id
+        return request.make_json_response(
+            {'items': _substitution_rows(request.env, emp)})
+
+    @http.route('/hocba-hrm/api/timeoff/substitutions/<int:res_id>/decide',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_substitution_decide(self, res_id, **kw):
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        payload = request.get_json_data() or {}
+        accept = bool(payload.get('accept'))
+        reason = (payload.get('reason') or '').strip()
+        r = _decide_substitution(request.env, res_id, emp, accept, reason)
+        if not r:
+            return request.make_json_response(
+                {'error': 'not_found_or_decided'}, status=400)
+        return request.make_json_response(
+            {'items': _substitution_rows(request.env, emp)})
 
     # ------------------------------------------------------------------
     # 3.3. POST /request — tạo đơn nghỉ cho chính mình
