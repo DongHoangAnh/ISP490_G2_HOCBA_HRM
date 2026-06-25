@@ -89,3 +89,22 @@ class TestPromotionEvaluation(TransactionCase):
         ev.action_confirm()
         with self.assertRaises(UserError):
             ev.unlink()
+
+    def test_24h_rule_blocks_content_edit_but_allows_confirm(self):
+        from odoo.exceptions import AccessError
+        ev = self._make_eval(4, 4)
+        # backdate create_date quá 24h
+        self.env.cr.execute(
+            "UPDATE hr_promotion_evaluation "
+            "SET create_date = (now() - interval '2 days') WHERE id = %s",
+            (ev.id,))
+        ev.invalidate_recordset()
+        user = self.env['res.users'].create({
+            'name': 'NonMgr Eval', 'login': 'eval_24h_user',
+            'group_ids': [(6, 0, [self.env.ref('hr.group_hr_user').id])]})
+        # sửa nội dung sau 24h → chặn
+        with self.assertRaises(AccessError):
+            ev.with_user(user).write({'conclusion_note': 'late edit'})
+        # nhưng chuyển trạng thái (confirm) vẫn cho phép
+        ev.with_user(user).write({'state': 'confirmed'})
+        self.assertEqual(ev.state, 'confirmed')

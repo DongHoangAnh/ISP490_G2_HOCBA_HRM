@@ -77,8 +77,13 @@ class HrPromotionEvaluation(models.Model):
         return True
 
     def write(self, vals):
-        # Sau 24h chỉ HR Manager được sửa (giống hr.promotion.history)
-        if not self.env.su and not self.env.user.has_group('hr.group_hr_manager'):
+        # Sau 24h chỉ HR Manager được sửa NỘI DUNG (điểm/kết luận/ghi chú).
+        # Chuyển trạng thái (confirm) vẫn cho phép — đánh giá có thể chấm hôm
+        # nay, xác nhận vài ngày sau. Giống hr.promotion.history nhưng nới cho
+        # bước confirm.
+        content_edit = set(vals) - {'state'}
+        if content_edit and not self.env.su \
+                and not self.env.user.has_group('hr.group_hr_manager'):
             cutoff = fields.Datetime.now() - timedelta(hours=24)
             for rec in self:
                 if rec.create_date and rec.create_date < cutoff:
