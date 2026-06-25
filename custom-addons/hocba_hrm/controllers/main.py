@@ -2147,6 +2147,42 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
 
+    @http.route('/hocba-hrm/api/promotion/eval/<int:emp_id>', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_eval_get(self, emp_id, **kw):
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_emp(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        crits = request.env['hr.promotion.criteria'].sudo().search(
+            [('active', '=', True)])
+        criteria = [{'id': c.id, 'name': c.name, 'code': c.code,
+                     'weight': c.weight, 'maxScore': c.max_score,
+                     'guideline': c.guideline or ''} for c in crits]
+        evals = []
+        for ev in e.sudo().x_evaluation_ids.sorted('eval_date'):
+            evals.append({
+                'id': ev.id,
+                'date': _d(ev.eval_date),
+                'evaluator': ev.evaluator_id.name or '',
+                'state': ev.state,
+                'totalScore': round(ev.total_score, 1),
+                'verdictAuto': ev.verdict_auto or '',
+                'verdictFinal': ev.verdict_final or '',
+                'note': ev.conclusion_note or '',
+                'lines': [{'criteriaId': l.criteria_id.id,
+                           'name': l.criteria_id.name,
+                           'score': l.score, 'maxScore': l.max_score,
+                           'weight': l.weight, 'note': l.note or ''}
+                          for l in ev.line_ids],
+            })
+        return request.make_json_response({
+            'criteria': criteria,
+            'autoMetrics': e.sudo()._promo_auto_metrics(),
+            'evaluations': evals,
+        })
+
     # ------------------------------------------------------------------
     # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
     # Bản ghi nằm trên hr.employee.skill (đã gắn x_cert_* của hocba).
