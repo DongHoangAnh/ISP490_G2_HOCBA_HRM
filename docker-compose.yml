@@ -24,11 +24,12 @@ services:
       - ./custom-addons:/mnt/extra-addons
       - odoo_data:/var/lib/odoo
       - ./odoo.conf:/etc/odoo/odoo.conf
+      - ./tools/fix_stale_assets.py:/fix_stale_assets.py:ro
     command: >
-      odoo
+      bash -c "python3 /fix_stale_assets.py; exec odoo
       --database=${DB_NAME:-neondb}
       --addons-path=/mnt/extra-addons
-      --dev=xml
+      --dev=xml"
 
 volumes:
   odoo_data:
