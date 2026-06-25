@@ -50,7 +50,7 @@ export default function MailLogs({ search }) {
       </div>
 
       <div className="card">
-        <div className="tbl-wrap">
+        <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
             <thead><tr>
               <th>Ứng viên</th><th>Email</th><th>Tiêu đề</th><th>Ngày gửi</th><th>Trạng thái</th>
