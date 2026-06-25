@@ -6,3 +6,4 @@ from . import test_day_calc
 from . import test_teaching_session
 from . import test_leave_resolution
 from . import test_teaching_conflict
+from . import test_teacher_approval
