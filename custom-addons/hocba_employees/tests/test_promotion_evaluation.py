@@ -1,3 +1,4 @@
+from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
@@ -108,3 +109,17 @@ class TestPromotionEvaluation(TransactionCase):
         # nhưng chuyển trạng thái (confirm) vẫn cho phép
         ev.with_user(user).write({'state': 'confirmed'})
         self.assertEqual(ev.state, 'confirmed')
+
+    def test_auto_metrics_keys_and_attendance_guard(self):
+        # Tạo 1 mốc thăng tiến để có "tháng từ thăng tiến gần nhất"
+        self.env['hr.promotion.history'].create({
+            'employee_id': self.emp.id,
+            'x_change_type': 'join',
+            'date_effective': fields.Date.today(),
+        })
+        m = self.emp._promo_auto_metrics()
+        for key in ('tenureMonths', 'monthsSincePromo', 'currentJob',
+                    'attendance'):
+            self.assertIn(key, m)
+        # Không có module chấm công/khoá → attendance là None hoặc dict, không lỗi
+        self.assertTrue(m['attendance'] is None or isinstance(m['attendance'], dict))
