@@ -16,3 +16,5 @@ access_hb_leave_notification_base_user,hb.leave.notification base user,model_hb_
 access_hb_leave_notification_hr_manager,hb.leave.notification hr_manager,model_hb_leave_notification,hr.group_hr_manager,1,1,1,1
 access_hocba_teaching_session_base_user,hocba.teaching.session base user,model_hocba_teaching_session,base.group_user,1,0,0,0
 access_hocba_teaching_session_hr_manager,hocba.teaching.session hr_manager,model_hocba_teaching_session,hr.group_hr_manager,1,1,1,1
+access_hocba_leave_resolution_base_user,hocba.leave.session.resolution base user,model_hocba_leave_session_resolution,base.group_user,1,0,0,0
+access_hocba_leave_resolution_hr_manager,hocba.leave.session.resolution hr_manager,model_hocba_leave_session_resolution,hr.group_hr_manager,1,1,1,1
