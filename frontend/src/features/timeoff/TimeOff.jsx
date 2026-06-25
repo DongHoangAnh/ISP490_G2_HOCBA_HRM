@@ -8,7 +8,7 @@ import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchOverview, cancelRequest, fetchApprovals } from '../../api/timeoff';
+import { fetchOverview, cancelRequest, fetchApprovals, withdrawRequest } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
 import LeaveForm from './LeaveForm';
 import ApprovalPanel from './ApprovalPanel';
@@ -111,7 +111,8 @@ export default function TimeOff({ search, focus }) {
       {activeTab === 'overview' && data.isOfficer && <DashboardPanel />}
       {activeTab === 'summary' && !data.isOfficer && <SummaryPanel />}
       {activeTab === 'me' && !data.isOfficer && (
-        <MyTimeOff data={data} search={search} busy={busy} onCancel={onCancel} />
+        <MyTimeOff data={data} search={search} busy={busy}
+          onCancel={onCancel} onUpdated={setData} />
       )}
       {activeTab === 'calendar' && <CalendarPanel isOfficer={data.isOfficer} />}
       {activeTab === 'approvals' && data.isOfficer && (
@@ -156,14 +157,16 @@ export default function TimeOff({ search, focus }) {
 /* ---- Tab "Của tôi": số dư phép + danh sách đơn ---- */
 const MY_SORT_FIELDS = [
   { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
+  { key: 'createdAt', label: 'Ngày tạo', type: 'date' },
   { key: 'from', label: 'Từ ngày', type: 'date' },
   { key: 'to', label: 'Đến ngày', type: 'date' },
   { key: 'days', label: 'Số ngày', type: 'num' },
   { key: 'stateLabel', label: 'Trạng thái', type: 'text' },
 ];
 
-function MyTimeOff({ data, search, busy, onCancel }) {
+function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
+  const [withdrawing, setWithdrawing] = useState(null); // đơn đang mở modal rút
   if (!data.employee) {
     return <EmptyState>Tài khoản chưa gắn với hồ sơ nhân viên — chưa có dữ liệu nghỉ phép.</EmptyState>;
   }
@@ -205,7 +208,7 @@ function MyTimeOff({ data, search, busy, onCancel }) {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>Loại nghỉ</th><th>Từ ngày</th><th>Đến ngày</th><th className="tbl-num">Số ngày</th>
+              <th>Loại nghỉ</th><th>Ngày tạo</th><th>Từ ngày</th><th>Đến ngày</th><th className="tbl-num">Số ngày</th>
               <th>Lý do</th><th>Trạng thái</th><th></th>
             </tr></thead>
             <tbody>
@@ -213,9 +216,14 @@ function MyTimeOff({ data, search, busy, onCancel }) {
                 <tr key={r.id}>
                   <td>
                     <span style={{ fontWeight: 600 }}>{r.leaveType}</span>
+                    {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
                     {r.scheduleConflict && <Badge kind="amber">Xung đột lịch</Badge>}
+                    {r.withdrawState === 'pending' && (
+                      <Badge kind="amber">Chờ duyệt rút</Badge>
+                    )}
                   </td>
+                  <td className="mono muted">{fmtDate(r.createdAt)}</td>
                   <td className="mono muted">{fmtDate(r.from)}</td>
                   <td className="mono muted">{fmtDate(r.to)}</td>
                   <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
@@ -227,6 +235,10 @@ function MyTimeOff({ data, search, busy, onCancel }) {
                         onClick={() => onCancel(r.id)}>
                         {busy === r.id ? 'Đang hủy…' : 'Hủy'}</button>
                     )}
+                    {r.canWithdraw && (
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => setWithdrawing(r)}>Rút đơn</button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -235,6 +247,80 @@ function MyTimeOff({ data, search, busy, onCancel }) {
         </div>
         {requests.length === 0 && <EmptyState>Chưa có đơn nghỉ nào.</EmptyState>}
       </div>
+
+      {withdrawing && (
+        <WithdrawModal req={withdrawing}
+          onClose={() => setWithdrawing(null)}
+          onDone={(payload) => { setWithdrawing(null); onUpdated && onUpdated(payload); }} />
+      )}
     </div>
+  );
+}
+
+/* Modal nhập lý do rút đơn (Phase 7). */
+function WithdrawModal({ req, onClose, onDone }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const submit = () => {
+    const r = reason.trim();
+    if (!r) { setErr('Vui lòng nhập lý do rút đơn.'); return; }
+    setBusy(true); setErr(null);
+    withdrawRequest(req.id, r)
+      .then(onDone)
+      .catch((e) => setErr(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="alertCircle" size={20} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Rút đơn nghỉ đã duyệt</h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)
+          </div>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+      </div>
+
+      <div style={{ padding: '18px 24px', display: 'grid', gap: 12 }}>
+        <div className="muted" style={{ fontSize: 13 }}>
+          Yêu cầu rút sẽ được gửi tới người duyệt ban đầu (HR/Trưởng phòng).
+          Khi được duyệt rút, đơn sẽ chuyển sang <b>"Từ chối"</b> và quỹ phép
+          được hoàn lại đầy đủ.
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+            Lý do rút đơn *
+          </span>
+          <textarea rows={3}
+            style={{
+              width: '100%', padding: '9px 12px', borderRadius: 10,
+              border: '1px solid var(--border-strong)', background: '#fff',
+              fontSize: 13.5, color: 'var(--ink)', outline: 'none',
+              fontFamily: 'inherit', resize: 'vertical',
+            }}
+            value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder="VD: Đổi kế hoạch, không cần nghỉ nữa…" />
+        </label>
+        {err && (
+          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
+            {err}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+        <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Đóng</button>
+        <button className="btn btn-primary" onClick={submit} disabled={busy}>
+          {busy ? 'Đang gửi…' : 'Gửi yêu cầu rút'}
+        </button>
+      </div>
+    </Modal>
   );
 }

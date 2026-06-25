@@ -6,13 +6,14 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchApprovals, decideRequest } from '../../api/timeoff';
+import { fetchApprovals, decideRequest, decideWithdraw } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
 
 const SORT_FIELDS = [
   { key: 'employee', label: 'Nhân viên', type: 'text' },
   { key: 'department', label: 'Phòng ban', type: 'text' },
   { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
+  { key: 'createdAt', label: 'Ngày tạo', type: 'date' },
   { key: 'from', label: 'Từ ngày', type: 'date' },
   { key: 'to', label: 'Đến ngày', type: 'date' },
   { key: 'days', label: 'Số ngày', type: 'num' },
@@ -31,6 +32,7 @@ export default function ApprovalPanel({ isHrManager }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
+  const [withdrawDecision, setWithdrawDecision] = useState(null); // yêu cầu rút đang xử lý
   const [sort, setSort] = useState({ key: 'from', dir: 'asc' });
 
   const load = () => {
@@ -54,7 +56,7 @@ export default function ApprovalPanel({ isHrManager }) {
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Nhân viên</th><th>Phòng ban</th><th>Loại nghỉ</th><th>Từ ngày</th><th>Đến ngày</th>
+            <th>Nhân viên</th><th>Phòng ban</th><th>Loại nghỉ</th><th>Ngày tạo</th><th>Từ ngày</th><th>Đến ngày</th>
             <th className="tbl-num">Số ngày</th><th>Cảnh báo</th><th>Trạng thái</th><th></th>
           </tr></thead>
           <tbody>
@@ -63,11 +65,19 @@ export default function ApprovalPanel({ isHrManager }) {
                 <td style={{ fontWeight: 600 }}>{r.employee}</td>
                 <td className="muted">{r.department}</td>
                 <td>{r.leaveType}</td>
+                <td className="mono muted">{fmtDate(r.createdAt)}</td>
                 <td className="mono muted">{fmtDate(r.from)}</td>
                 <td className="mono muted">{fmtDate(r.to)}</td>
                 <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
                 <td>
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {r.withdrawState === 'pending' && (
+                      <Badge kind="red">Yêu cầu rút</Badge>
+                    )}
+                    {r.overdue && (
+                      <Badge kind="red">Quá hạn {r.ageDays} ngày</Badge>
+                    )}
+                    {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
                     {r.scheduleConflict && <Badge kind="amber">Xung đột lịch</Badge>}
                     {r.overlapCount >= OVERLAP_WARN && (
@@ -81,7 +91,13 @@ export default function ApprovalPanel({ isHrManager }) {
                 </td>
                 <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                 <td>
-                  <button className="btn btn-primary btn-sm" onClick={() => setDecision(r)}>Xử lý</button>
+                  {r.withdrawState === 'pending' ? (
+                    <button className="btn btn-primary btn-sm"
+                      onClick={() => setWithdrawDecision(r)}>Xử lý rút</button>
+                  ) : (
+                    <button className="btn btn-primary btn-sm"
+                      onClick={() => setDecision(r)}>Xử lý</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -95,7 +111,91 @@ export default function ApprovalPanel({ isHrManager }) {
           onClose={() => setDecision(null)}
           onDone={(payload) => { setDecision(null); setData(payload); }} />
       )}
+
+      {withdrawDecision && (
+        <WithdrawDecisionModal req={withdrawDecision}
+          onClose={() => setWithdrawDecision(null)}
+          onDone={(payload) => { setWithdrawDecision(null); setData(payload); }} />
+      )}
     </div>
+  );
+}
+
+/* Phase 7 — modal duyệt/từ chối yêu cầu rút đơn. Duyệt rút = đơn về 'refuse'
+   và quỹ phép tự hoàn lại; Từ chối rút = đơn giữ 'validate'. */
+function WithdrawDecisionModal({ req, onClose, onDone }) {
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const decide = (approve) => {
+    setErr(null); setBusy(true);
+    decideWithdraw(req.id, { approve, note: note.trim() })
+      .then(onDone)
+      .catch((e) => setErr(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="alertCircle" size={22} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Xử lý yêu cầu rút đơn</h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            {req.employee} · {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)
+          </div>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+      </div>
+
+      <div style={{ padding: '22px 24px', display: 'grid', gap: 14 }}>
+        {req.withdrawReason && (
+          <div style={{ padding: '10px 13px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 13 }}>
+            <b>Lý do nhân viên rút:</b>
+            <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{req.withdrawReason}</pre>
+          </div>
+        )}
+
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          <b>Duyệt rút</b>: đơn chuyển sang <i>Từ chối</i> và quỹ phép được hoàn lại đầy đủ.
+          {' '}<b>Từ chối rút</b>: đơn giữ nguyên <i>Đã duyệt</i>, quỹ phép không đổi.
+        </div>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+            Ghi chú (tùy chọn)
+          </span>
+          <textarea rows={2}
+            style={{
+              width: '100%', padding: '9px 12px', borderRadius: 10,
+              border: '1px solid var(--border-strong)', background: '#fff',
+              fontSize: 13.5, color: 'var(--ink)', outline: 'none',
+              fontFamily: 'inherit', resize: 'vertical',
+            }}
+            value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="Ghi chú cho nhân viên (hiển thị ở lịch sử xử lý)…" />
+        </label>
+
+        {err && (
+          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
+            {err}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+        <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Đóng</button>
+        <button className="btn btn-soft" onClick={() => decide(false)} disabled={busy}>
+          <Icon name="x" size={16} />Từ chối rút
+        </button>
+        <button className="btn btn-primary" onClick={() => decide(true)} disabled={busy}>
+          <Icon name="check" size={16} />{busy ? 'Đang xử lý…' : 'Duyệt rút'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

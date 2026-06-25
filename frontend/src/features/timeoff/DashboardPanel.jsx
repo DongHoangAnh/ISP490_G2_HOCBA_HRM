@@ -87,10 +87,56 @@ function ManagerView({ data, dept, setDept, nav }) {
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
         <Kpi label="Tổng đơn (năm)" value={k.total} />
         <Kpi label="Chờ duyệt" value={k.pending} color="var(--amber)" sub="cần xử lý" />
+        <Kpi label={`Đơn quá hạn (> ${k.slaDays} ngày)`} value={k.overdue}
+          color={k.overdue > 0 ? 'var(--red-600)' : 'var(--ink)'}
+          sub={k.overdue > 0 ? 'cần xử lý gấp' : 'trong SLA'} />
+        <Kpi label="Tuổi đơn cũ nhất" value={k.oldestAgeDays}
+          sub={`TB: ${k.avgAgeDays} ngày làm việc`} />
         <Kpi label="Đã duyệt" value={k.approved} color="var(--green)" />
         <Kpi label="Ngày phép đã duyệt" value={k.approvedDays} sub="tổng số ngày" />
         <Kpi label="Đang nghỉ hôm nay" value={k.onLeaveToday} color="var(--blue)" />
       </div>
+
+      {data.overdueRequests && data.overdueRequests.length > 0 && (
+        <div className="card">
+          <div className="card-head">
+            <h3>Đơn quá hạn duyệt</h3>
+            <span className="sub">{data.overdueRequests.length} đơn vượt SLA {k.slaDays} ngày làm việc</span>
+          </div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr>
+                <th>Nhân viên</th><th>Phòng ban</th><th>Loại</th>
+                <th>Ngày tạo</th><th>Từ</th><th>Đến</th>
+                <th className="tbl-num">Ngày</th><th className="tbl-num">Tuổi đơn</th>
+                <th>Trạng thái</th>
+              </tr></thead>
+              <tbody>
+                {data.overdueRequests.map((r) => (
+                  <tr key={r.requestId} style={{
+                    background: r.ageDays > k.slaDays * 2
+                      ? 'var(--red-50)' : 'var(--amber-bg,#fff7ed)',
+                  }}>
+                    <td style={{ fontWeight: 600 }}>{r.employee}
+                      {r.isEmergency && <Badge kind="red">Khẩn</Badge>}</td>
+                    <td className="muted">{r.department}</td>
+                    <td>{r.leaveType}</td>
+                    <td className="mono muted">{fmtDate(r.submittedAt)}</td>
+                    <td className="mono muted">{fmtDate(r.from)}</td>
+                    <td className="mono muted">{fmtDate(r.to)}</td>
+                    <td className="tbl-num mono">{r.days}</td>
+                    <td className="tbl-num mono" style={{
+                      fontWeight: 700,
+                      color: r.ageDays > k.slaDays * 2 ? 'var(--red-700)' : 'var(--amber-700,#b45309)',
+                    }}>{r.ageDays} ngày</td>
+                    <td><Badge kind="amber" dot>{r.stateLabel}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="card">

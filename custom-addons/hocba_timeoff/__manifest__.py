@@ -1,6 +1,6 @@
 {
     'name': 'Học Bá — Nghỉ phép (Time Off)',
-    'version': '19.0.7.0.0',
+    'version': '19.0.11.0.0',
     'category': 'Human Resources/Time Off',
     'summary': (
         'Module nghỉ phép hợp nhất cho Trung tâm Học Bá: cấu hình loại nghỉ, '
@@ -20,6 +20,7 @@
         'data/hr_leave_type_data.xml',
         'data/hr_leave_accrual_plan_data.xml',
         'data/hr_leave_mandatory_day_data.xml',
+        'data/resource_calendar_leaves_data.xml',
         'data/hb_sick_leave_support_doc.xml',
         'data/hb_emergency_leave_type_flag.xml',
         'data/hb_timeoff_policy_rule_data.xml',

@@ -82,6 +82,11 @@ AT_RISK_DAYS = 5.0
 # người CÙNG PHÒNG nghỉ thì coi là "quá tải" → FE tô đậm cảnh báo.
 OVERLAP_WARN = 3
 
+# Phase 8 — SLA duyệt đơn. Đơn ở trạng thái chờ duyệt (confirm/validate1) >
+# SLA_DAYS ngày làm việc thì coi là "quá hạn". Đếm theo NGÀY LÀM VIỆC (T2–T6,
+# trừ ngày lễ + cộng workday HR đánh dấu) cho khớp văn hoá HR Việt Nam.
+SLA_DAYS = 3
+
 
 def _carryover_expire_date(env, year):
     """Ngày hết hạn phép năm để hiển thị cảnh báo (Phase 3).
@@ -363,6 +368,34 @@ def _adjustment_history(env, scope, employee_id=False, leave_type_id=False):
     } for r in recs]
 
 
+def _period_request_vals(leave_type, date_from, period):
+    """Phase 6 — vals bổ sung cho đơn NỬA NGÀY.
+
+    `period` ∈ {'am','pm'} (sáng/chiều) và loại nghỉ phải hỗ trợ half_day.
+    Khi hợp lệ: đơn co về đúng 1 ngày (date_to = date_from) và đặt cùng buổi
+    sáng/chiều → Odoo tính number_of_days = 0.5. Mọi trường hợp khác (cả ngày,
+    loại nghỉ theo ngày, period rỗng/sai) → trả {} để giữ luồng cũ.
+    """
+    if not leave_type or leave_type.request_unit != 'half_day':
+        return {}
+    if period not in ('am', 'pm'):
+        return {}
+    return {
+        'request_date_to': date_from,            # nửa ngày = đúng 1 ngày
+        'request_date_from_period': period,
+        'request_date_to_period': period,
+    }
+
+
+def _half_day_label(leave):
+    """Nhãn buổi nghỉ nửa ngày: '' (cả ngày) / 'Sáng' / 'Chiều'. (Phase 6)"""
+    if not leave.request_unit_half:
+        return ''
+    if leave.request_date_from_period != leave.request_date_to_period:
+        return ''   # sáng → chiều = trọn 1 ngày
+    return 'Sáng' if leave.request_date_from_period == 'am' else 'Chiều'
+
+
 def _leave_day_bounds(leave):
     """Khoảng NGÀY thực của 1 đơn nghỉ (ưu tiên request_date_*, fallback date_*)."""
     d0 = leave.request_date_from or (leave.date_from and leave.date_from.date())
@@ -427,6 +460,60 @@ def _coverage_table(env, scope, date_from, date_to, dept_id=False):
         cur += timedelta(days=1)
 
     return {'days': days, 'overlapWarn': OVERLAP_WARN, 'overloadedDays': overloaded}
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 — SLA duyệt đơn. Tuổi đơn = số ngày làm việc giữa create_date và today.
+# ---------------------------------------------------------------------------
+def _public_holiday_dates_env(env, start, end):
+    """Tập date các ngày lễ toàn cục giao [start, end]. Dùng được ngoài request."""
+    rows = env['resource.calendar.leaves'].sudo().search([
+        ('calendar_id', '=', False),
+        ('resource_id', '=', False),
+        ('time_type', '=', 'leave'),
+        ('date_from', '<=', '%s 23:59:59' % end),
+        ('date_to', '>=', '%s 00:00:00' % start),
+    ])
+    days = set()
+    for r in rows:
+        d0 = max(r.date_from.date(), start)
+        d1 = min(r.date_to.date(), end)
+        cur = d0
+        while cur <= d1:
+            days.add(cur)
+            cur += timedelta(days=1)
+    return days
+
+
+def _count_working_days_env(env, start, end):
+    """Số ngày làm việc (T2–T6 + workday HR đánh dấu, trừ ngày lễ) trong
+    [start, end]. Helper module-level — tách logic khỏi controller để
+    _request_age_working_days dùng được dưới request VÀ test gọi trực tiếp."""
+    if not start or not end or end < start:
+        return 0
+    work_extra = set(env['hb.work.day'].sudo().search([
+        ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
+    holidays = _public_holiday_dates_env(env, start, end)
+    n, cur = 0, start
+    while cur <= end:
+        is_workday = cur.weekday() < 5 or cur in work_extra
+        if is_workday and cur not in holidays:
+            n += 1
+        cur += timedelta(days=1)
+    return n
+
+
+def _request_age_working_days(env, leave):
+    """Tuổi đơn (Phase 8): số ngày làm việc kể từ ngày tạo đơn đến hôm nay.
+    Đơn tạo trong-ngày → tuổi = 1 (đếm cả ngày tạo) để KPI khớp văn hoá HR Việt
+    ('đơn nộp hôm nay = 1 ngày chờ'). Đơn chưa có create_date → 0."""
+    if not leave.create_date:
+        return 0
+    start = leave.create_date.date()
+    today = fields.Date.context_today(env.user)
+    if today < start:
+        return 0
+    return _count_working_days_env(env, start, today)
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +635,42 @@ def _mark_all_notifications_read(env):
         [('recipient_id', '=', env.uid), ('is_read', '=', False)])
     recs.write({'is_read': True})
     return len(recs)
+
+
+def _notify_withdraw_requested(env, leave):
+    """Phase 7: chủ đơn gửi yêu cầu rút → báo người duyệt phạm vi + audit."""
+    span = _leave_span_label(leave)
+    title = 'Yêu cầu rút đơn nghỉ'
+    body = '%s — %s (%s) — yêu cầu rút đơn đã duyệt' % (
+        leave.employee_id.name, leave.holiday_status_id.name, span)
+    for user in _approver_users(env, leave):
+        _push_notification(env, user, leave, 'withdraw_pending', title, body)
+    leave.sudo().message_post(
+        body='Chủ đơn (%s) yêu cầu rút đơn nghỉ đã duyệt. Lý do: %s' % (
+            leave.employee_id.name,
+            (leave.x_withdraw_reason or '').strip() or '—'),
+        subtype_xmlid='mail.mt_note',
+    )
+
+
+def _notify_withdraw_decision(env, leave, approved, note):
+    """Phase 7: kết quả duyệt rút → báo chủ đơn + audit (chatter)."""
+    kind = 'withdraw_approved' if approved else 'withdraw_refused'
+    span = _leave_span_label(leave)
+    title = ('Yêu cầu rút đơn đã được duyệt'
+             if approved else 'Yêu cầu rút đơn bị từ chối')
+    actor = (env.user.employee_id.name if env.user.employee_id
+             else env.user.name) or 'người duyệt'
+    body = '%s (%s) — %s bởi %s' % (
+        leave.holiday_status_id.name, span,
+        'duyệt rút' if approved else 'từ chối rút', actor)
+    _push_notification(env, leave.employee_id.user_id, leave, kind, title, body)
+    chatter = ('Yêu cầu rút đơn được %s bởi %s.' %
+               ('duyệt — đơn chuyển sang TỪ CHỐI, quỹ phép được hoàn lại'
+                if approved else 'TỪ CHỐI, đơn giữ nguyên ĐÃ DUYỆT', actor))
+    if note:
+        chatter += ' Ghi chú: %s' % note
+    leave.sudo().message_post(body=chatter, subtype_xmlid='mail.mt_note')
 
 
 def _request_history(env, scope, leave_id):
@@ -680,13 +803,24 @@ class HocBaTimeoff(http.Controller):
         } for lt in types]
 
     def _my_request(self, leave):
+        # Phase 7: chỉ rút được đơn đã duyệt, chưa có yêu cầu rút, và còn ngày
+        # nghỉ trong tương lai (date_to >= hôm nay).
+        today = fields.Date.context_today(request.env.user)
+        can_withdraw = (
+            leave.state == 'validate'
+            and leave.x_withdraw_state == 'none'
+            and bool(leave.request_date_to)
+            and leave.request_date_to >= today
+        )
         return {
             'id': leave.id,
             'leaveTypeId': leave.holiday_status_id.id,
             'leaveType': leave.holiday_status_id.name,
             'from': _d(leave.request_date_from),
             'to': _d(leave.request_date_to),
+            'createdAt': _d(leave.create_date.date() if leave.create_date else None),
             'days': round(leave.number_of_days, 2),
+            'halfDay': _half_day_label(leave),
             'state': leave.state,
             'stateLabel': STATE_LABEL.get(leave.state, leave.state),
             'stateKind': STATE_KIND.get(leave.state, 'gray'),
@@ -696,9 +830,13 @@ class HocBaTimeoff(http.Controller):
             'supportDocument': leave.holiday_status_id.support_document,
             'hasMedicalDoc': leave.x_has_medical_doc,
             'canCancel': leave.state in PENDING_STATES,
+            'withdrawState': leave.x_withdraw_state,
+            'withdrawReason': leave.x_withdraw_reason or '',
+            'canWithdraw': can_withdraw,
         }
 
     def _approval_request(self, leave):
+        age = _request_age_working_days(request.env, leave)
         return {
             'id': leave.id,
             'employeeId': leave.employee_id.id,
@@ -707,7 +845,9 @@ class HocBaTimeoff(http.Controller):
             'leaveType': leave.holiday_status_id.name,
             'from': _d(leave.request_date_from),
             'to': _d(leave.request_date_to),
+            'createdAt': _d(leave.create_date.date() if leave.create_date else None),
             'days': round(leave.number_of_days, 2),
+            'halfDay': _half_day_label(leave),
             'state': leave.state,
             'stateLabel': STATE_LABEL.get(leave.state, leave.state),
             'stateKind': STATE_KIND.get(leave.state, 'gray'),
@@ -721,6 +861,14 @@ class HocBaTimeoff(http.Controller):
             'hasMedicalDoc': leave.x_has_medical_doc,
             # Phase 4: số người cùng phòng đã duyệt nghỉ trùng khoảng ngày này.
             'overlapCount': _overlap_count(request.env, leave),
+            # Phase 7: yêu cầu rút đơn (FE hiện badge "Yêu cầu rút" + modal riêng).
+            'withdrawState': leave.x_withdraw_state,
+            'withdrawReason': leave.x_withdraw_reason or '',
+            # Phase 8 — SLA: tuổi đơn (ngày làm việc) + cờ quá hạn.
+            'ageDays': age,
+            'slaDays': SLA_DAYS,
+            'overdue': age > SLA_DAYS and leave.state in PENDING_STATES,
+            'submittedAt': _d(leave.create_date.date() if leave.create_date else None),
         }
 
     def _approver_name(self, leave):
@@ -787,7 +935,14 @@ class HocBaTimeoff(http.Controller):
         if not scope['canApprove']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
-        domain = [('state', 'in', list(PENDING_STATES))] + self._dept_domain(scope)
+        # Tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có yêu cầu
+        # rút đang chờ (Phase 7) — FE phân biệt bằng withdrawState + Badge riêng.
+        domain = ['|',
+                  '&', ('state', 'in', list(PENDING_STATES)),
+                       ('x_withdraw_state', '=', 'none'),
+                  '&', ('state', '=', 'validate'),
+                       ('x_withdraw_state', '=', 'pending')]
+        domain += self._dept_domain(scope)
         leaves = request.env['hr.leave'].sudo().search(
             domain, order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
@@ -819,6 +974,7 @@ class HocBaTimeoff(http.Controller):
         leave_type_id = payload.get('leaveTypeId')
         date_from = (payload.get('dateFrom') or '').strip()
         date_to = (payload.get('dateTo') or '').strip()
+        period = (payload.get('period') or '').strip().lower()  # ''/'am'/'pm' (Phase 6)
         reason = (payload.get('reason') or '').strip()
         att = payload.get('attachment')
 
@@ -832,13 +988,42 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response(
                 {'error': 'leave_type_not_found'}, status=404)
 
+        # Phase 6 — nửa ngày: nếu chọn buổi sáng/chiều, đơn co về đúng date_from.
+        period_vals = _period_request_vals(leave_type, date_from, period)
+        if period_vals:
+            date_to = date_from   # số ngày làm việc kiểm trên đúng 1 ngày
+
         # Không cho xin nghỉ nếu cả kỳ rơi vào ngày không làm việc
-        # (Chủ nhật / Thứ 7 không phải ngày đi làm) — ngày đó vốn đã nghỉ.
+        # (Thứ 7 / Chủ nhật / ngày lễ đã seed) — ngày đó vốn đã nghỉ.
         if self._count_working_days(date_from, date_to) == 0:
             return request.make_json_response(
                 {'error': 'non_working_day',
-                 'message': 'Ngày bạn chọn là ngày nghỉ (Thứ 7/Chủ nhật) — '
-                            'không thể xin nghỉ phép vào ngày không làm việc.'},
+                 'message': 'Khoảng ngày bạn chọn trùng hoàn toàn vào ngày '
+                            'nghỉ (cuối tuần hoặc ngày lễ) — không cần xin '
+                            'nghỉ phép cho những ngày này.'},
+                status=400)
+
+        # Chặn trùng đơn nghỉ đã tạo trước đó của chính nhân viên (chờ duyệt +
+        # đã duyệt). Đơn đã `refuse`/`cancel` không tính. Khoảng ngày giao nhau
+        # = date_from <= other.to AND date_to >= other.from.
+        ACTIVE_STATES = ('confirm', 'validate1', 'validate')
+        clash = request.env['hr.leave'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', 'in', list(ACTIVE_STATES)),
+            ('request_date_from', '<=', date_to),
+            ('request_date_to', '>=', date_from),
+        ], limit=1)
+        if clash:
+            clash_label = STATE_LABEL.get(clash.state, clash.state)
+            d0 = clash.request_date_from.strftime('%d/%m/%Y') if clash.request_date_from else ''
+            d1 = clash.request_date_to.strftime('%d/%m/%Y') if clash.request_date_to else ''
+            return request.make_json_response(
+                {'error': 'overlap_self',
+                 'message': 'Bạn đã có đơn nghỉ "%s" (%s) từ %s đến %s '
+                            'trùng khoảng ngày này. Vui lòng kiểm tra lại '
+                            'hoặc hủy đơn cũ trước.' % (
+                                clash.holiday_status_id.name or '',
+                                clash_label, d0, d1)},
                 status=400)
 
         # Kiểm tra chứng từ ở controller (defense); model re-validate ở bước duyệt.
@@ -869,6 +1054,7 @@ class HocBaTimeoff(http.Controller):
             'request_date_from': date_from,
             'request_date_to': date_to,
         }
+        vals.update(period_vals)   # Phase 6 — nửa ngày (nếu có)
         if reason:
             vals['name'] = reason
 
@@ -977,6 +1163,106 @@ class HocBaTimeoff(http.Controller):
         })
 
     # ------------------------------------------------------------------
+    # 3.6. POST /request/<id>/withdraw — Phase 7: chủ đơn gửi yêu cầu rút
+    #      đơn đã duyệt. Đơn vào trạng thái "chờ duyệt rút" (x_withdraw_state).
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/request/<int:leave_id>/withdraw',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_request_withdraw(self, leave_id, **kw):
+        emp = request.env.user.employee_id
+        leave = request.env['hr.leave'].sudo().browse(leave_id)
+        if not leave.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not emp or leave.employee_id.id != emp.id:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Chỉ rút được đơn đã duyệt; đơn chờ duyệt đã có nút Hủy (cancel) riêng.
+        if leave.state != 'validate':
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Chỉ rút được đơn đã được duyệt.'}, status=403)
+        if leave.x_withdraw_state == 'pending':
+            return request.make_json_response(
+                {'error': 'already_pending',
+                 'message': 'Yêu cầu rút đã được gửi và đang chờ duyệt.'},
+                status=400)
+        # Không rút được nếu mọi ngày nghỉ đều đã trôi qua (không còn gì để rút).
+        today = fields.Date.context_today(request.env.user)
+        if leave.request_date_to and leave.request_date_to < today:
+            return request.make_json_response(
+                {'error': 'past_only',
+                 'message': 'Đơn này đã kết thúc — không thể rút đơn '
+                            'cho ngày đã qua.'}, status=400)
+
+        payload = request.get_json_data() or {}
+        reason = (payload.get('reason') or '').strip()
+        if not reason:
+            return request.make_json_response(
+                {'error': 'reason_required',
+                 'message': 'Vui lòng nhập lý do rút đơn.'}, status=400)
+
+        leave.sudo().write({
+            'x_withdraw_state': 'pending',
+            'x_withdraw_reason': reason,
+        })
+        _notify_withdraw_requested(request.env, leave)
+        return request.make_json_response(self._overview_payload())
+
+    # ------------------------------------------------------------------
+    # 3.7. POST /request/<id>/withdraw/decide — Phase 7: người duyệt phạm vi
+    #      duyệt / từ chối yêu cầu rút. approve → action_refuse (hoàn quỹ).
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/request/<int:leave_id>/withdraw/decide',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_request_withdraw_decide(self, leave_id, **kw):
+        payload = request.get_json_data() or {}
+        approve = bool(payload.get('approve'))
+        note = (payload.get('note') or '').strip()
+
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+
+        leave = request.env['hr.leave'].sudo().browse(leave_id)
+        if not leave.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if leave.x_withdraw_state != 'pending':
+            return request.make_json_response(
+                {'error': 'not_pending',
+                 'message': 'Đơn này không có yêu cầu rút đang chờ.'},
+                status=400)
+        # Trưởng phòng chỉ xử lý đơn thuộc phòng ban mình quản lý.
+        if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+
+        try:
+            if approve:
+                # action_refuse trên đơn validate → leaves_taken không còn tính
+                # đơn này → virtual_remaining_leaves tự cộng lại number_of_days.
+                leave.action_refuse()
+                # Giữ x_withdraw_state='pending' để FE phân biệt "hủy do rút"
+                # với "từ chối ban đầu" qua state+x_withdraw_state.
+            else:
+                leave.write({'x_withdraw_state': 'none'})
+            _notify_withdraw_decision(request.env, leave, approve, note)
+        except (AccessError, ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=403)
+
+        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh.
+        domain = ['|',
+                  '&', ('state', 'in', list(PENDING_STATES)),
+                       ('x_withdraw_state', '=', 'none'),
+                  '&', ('state', '=', 'validate'),
+                       ('x_withdraw_state', '=', 'pending')]
+        domain += self._dept_domain(scope)
+        leaves = request.env['hr.leave'].sudo().search(
+            domain, order='x_is_emergency desc, request_date_from, id')
+        return request.make_json_response({
+            **self._scope_flags(scope),
+            'requests': [self._approval_request(l) for l in leaves],
+        })
+
+    # ------------------------------------------------------------------
     # 3.5b. Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn.
     # ------------------------------------------------------------------
     @http.route('/hocba-hrm/api/timeoff/notifications', auth='user',
@@ -1062,6 +1348,16 @@ class HocBaTimeoff(http.Controller):
 
         approved_days = sum(
             r[0] for r in Leave._read_group(approved_dom, [], ['number_of_days:sum']))
+
+        # Phase 8 — SLA: tải toàn bộ đơn chờ duyệt trong phạm vi để tính tuổi.
+        # Quy mô đội nhỏ (vài chục đơn) → N+1 queries chấp nhận được; tối ưu
+        # bằng batch lookup nếu vượt 100 đơn.
+        pending_all = Leave.search(pending_dom, order='create_date asc')
+        ages = [_request_age_working_days(request.env, l) for l in pending_all]
+        overdue_idx = [i for i, a in enumerate(ages) if a > SLA_DAYS]
+        avg_age = round(sum(ages) / len(ages), 1) if ages else 0
+        oldest_age = max(ages) if ages else 0
+
         kpi = {
             'total': Leave.search_count(year_dom + dept_dom),
             'pending': Leave.search_count(pending_dom),
@@ -1071,7 +1367,30 @@ class HocBaTimeoff(http.Controller):
                 ('state', '=', 'validate'),
                 ('date_from', '<=', '%s 23:59:59' % today),
                 ('date_to', '>=', '%s 00:00:00' % today)] + dept_dom),
+            # Phase 8 — SLA duyệt đơn (đếm theo ngày làm việc).
+            'slaDays': SLA_DAYS,
+            'overdue': len(overdue_idx),
+            'avgAgeDays': avg_age,
+            'oldestAgeDays': oldest_age,
         }
+
+        overdue_requests = [{
+            'requestId': pending_all[i].id,
+            'employee': pending_all[i].employee_id.name,
+            'department': pending_all[i].department_id.name
+                or pending_all[i].employee_id.department_id.name or '—',
+            'leaveType': pending_all[i].holiday_status_id.name,
+            'from': _d(pending_all[i].request_date_from),
+            'to': _d(pending_all[i].request_date_to),
+            'days': round(pending_all[i].number_of_days, 2),
+            'ageDays': ages[i],
+            'submittedAt': _d(pending_all[i].create_date.date()
+                              if pending_all[i].create_date else None),
+            'state': pending_all[i].state,
+            'stateLabel': STATE_LABEL.get(pending_all[i].state, pending_all[i].state),
+            'isEmergency': pending_all[i].x_is_emergency,
+        } for i in overdue_idx]
+        overdue_requests.sort(key=lambda r: r['ageDays'], reverse=True)
 
         def _bars(groups, get_id, get_name):
             rows = []
@@ -1117,6 +1436,8 @@ class HocBaTimeoff(http.Controller):
                 'days': round(l.number_of_days, 2),
                 'isEmergency': l.x_is_emergency,
             } for l in pending],
+            # Phase 8 — danh sách đơn quá hạn (sort age desc).
+            'overdueRequests': overdue_requests,
             'departments': [{'id': d.id, 'name': d.name}
                             for d in self._scoped_departments(scope)],
         }
@@ -1265,19 +1586,42 @@ class HocBaTimeoff(http.Controller):
         return [{'id': d.id, 'date': _d(d.date), 'name': d.name or 'Ngày đi làm'}
                 for d in days]
 
+    def _public_holiday_dates(self, start, end):
+        """Tập NGÀY lễ toàn cục (resource.calendar.leaves) trong [start, end].
+        Trừ khỏi số ngày làm việc để chặn xin nghỉ vào ngày đã là lễ."""
+        rows = request.env['resource.calendar.leaves'].sudo().search([
+            ('calendar_id', '=', False),
+            ('resource_id', '=', False),
+            ('time_type', '=', 'leave'),
+            ('date_from', '<=', '%s 23:59:59' % end),
+            ('date_to', '>=', '%s 00:00:00' % start),
+        ])
+        days = set()
+        for r in rows:
+            d0 = max(r.date_from.date(), start)
+            d1 = min(r.date_to.date(), end)
+            cur = d0
+            while cur <= d1:
+                days.add(cur)
+                cur += timedelta(days=1)
+        return days
+
     def _count_working_days(self, date_from, date_to):
         """Số ngày LÀM VIỆC trong [date_from, date_to]: Thứ 2–Thứ 6, cộng các
-        ngày Thứ 7 do HR đánh dấu đi làm (hb.work.day). Chủ nhật / Thứ 7 thường
-        = ngày nghỉ, không tính."""
+        ngày Thứ 7 do HR đánh dấu đi làm (hb.work.day), TRỪ các ngày lễ toàn
+        cục (resource.calendar.leaves đã seed Phase 6). Chủ nhật / Thứ 7 thường
+        / ngày lễ = ngày nghỉ, không tính."""
         start = fields.Date.to_date(date_from)
         end = fields.Date.to_date(date_to)
         if not start or not end:
             return 0
         work_extra = set(request.env['hb.work.day'].sudo().search([
             ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
+        holidays = self._public_holiday_dates(start, end)
         n, cur = 0, start
         while cur <= end:
-            if cur.weekday() < 5 or cur in work_extra:  # T2..T6 hoặc T7 đi làm
+            is_workday = cur.weekday() < 5 or cur in work_extra
+            if is_workday and cur not in holidays:
                 n += 1
             cur += timedelta(days=1)
         return n
@@ -1436,6 +1780,7 @@ class HocBaTimeoff(http.Controller):
             'unpaid': l.holiday_status_id.unpaid,
             'from': _d(l.request_date_from),
             'to': _d(l.request_date_to),
+            'createdAt': _d(l.create_date.date() if l.create_date else None),
             'days': round(l.number_of_days, 2),
             'reason': l.sudo().private_name or '',
             'state': l.state,
@@ -1509,6 +1854,7 @@ class HocBaTimeoff(http.Controller):
             'unpaid': l.holiday_status_id.unpaid,
             'from': _d(l.request_date_from),
             'to': _d(l.request_date_to),
+            'createdAt': _d(l.create_date.date() if l.create_date else None),
             'days': round(l.number_of_days, 2),
             'reason': l.sudo().private_name or '',
             'state': l.state,

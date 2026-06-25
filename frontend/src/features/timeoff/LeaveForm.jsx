@@ -38,6 +38,7 @@ export default function LeaveForm({ leaveTypes, onClose, onSaved }) {
   const [typeId, setTypeId] = useState(leaveTypes[0]?.id || '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [span, setSpan] = useState('day'); // 'day' | 'am' | 'pm' (Phase 6 — nửa ngày)
   const [reason, setReason] = useState('');
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -45,11 +46,15 @@ export default function LeaveForm({ leaveTypes, onClose, onSaved }) {
 
   const type = leaveTypes.find((t) => t.id === Number(typeId));
   const needDoc = !!type?.supportDocument;
+  const allowHalf = type?.requestUnit === 'half_day';
+  const isHalf = allowHalf && span !== 'day';
 
   const submit = async () => {
     setErr(null);
-    if (!typeId || !from || !to) { setErr('Vui lòng chọn loại nghỉ và khoảng ngày.'); return; }
-    if (to < from) { setErr('Ngày kết thúc phải sau ngày bắt đầu.'); return; }
+    if (!typeId || !from) { setErr('Vui lòng chọn loại nghỉ và ngày bắt đầu.'); return; }
+    // Nghỉ nửa ngày = đúng 1 ngày → khoá theo ngày bắt đầu; còn lại cần "đến ngày".
+    if (!isHalf && !to) { setErr('Vui lòng chọn khoảng ngày.'); return; }
+    if (!isHalf && to < from) { setErr('Ngày kết thúc phải sau ngày bắt đầu.'); return; }
 
     let attachment = null;
     if (file) {
@@ -61,7 +66,9 @@ export default function LeaveForm({ leaveTypes, onClose, onSaved }) {
     setBusy(true);
     try {
       const payload = await createRequest({
-        leaveTypeId: Number(typeId), dateFrom: from, dateTo: to,
+        leaveTypeId: Number(typeId), dateFrom: from,
+        dateTo: isHalf ? from : to,
+        period: isHalf ? span : undefined,
         reason: reason.trim(), attachment,
       });
       onSaved(payload);
@@ -87,7 +94,8 @@ export default function LeaveForm({ leaveTypes, onClose, onSaved }) {
 
       <div style={{ padding: '22px 24px', maxHeight: '58vh', overflowY: 'auto', display: 'grid', gap: 14 }}>
         <Field label="Loại nghỉ *" full>
-          <select style={inp} value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+          <select style={inp} value={typeId}
+            onChange={(e) => { setTypeId(e.target.value); setSpan('day'); }}>
             {leaveTypes.map((t) => (
               <option key={t.id} value={t.id}>{t.name}{t.isEmergency ? ' (khẩn cấp)' : ''}</option>
             ))}
@@ -108,11 +116,36 @@ export default function LeaveForm({ leaveTypes, onClose, onSaved }) {
           )}
         </Field>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label="Từ ngày *">
+        {allowHalf && (
+          <Field label="Thời lượng" full>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[['day', 'Cả ngày'], ['am', 'Sáng'], ['pm', 'Chiều']].map(([v, l]) => (
+                <button key={v} type="button"
+                  onClick={() => setSpan(v)}
+                  style={{
+                    flex: 1, padding: '9px 12px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    border: '1px solid ' + (span === v ? 'var(--red-600)' : 'var(--border-strong)'),
+                    background: span === v ? 'var(--red-50)' : '#fff',
+                    color: span === v ? 'var(--red-700)' : 'var(--ink)',
+                  }}>{l}</button>
+              ))}
+            </div>
+            {isHalf && (
+              <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Nghỉ nửa ngày {span === 'am' ? '(buổi sáng)' : '(buổi chiều)'} — chỉ trừ 0,5 ngày.
+              </span>
+            )}
+          </Field>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: isHalf ? '1fr' : '1fr 1fr', gap: 14 }}>
+          <Field label={isHalf ? 'Ngày nghỉ *' : 'Từ ngày *'}>
             <input type="date" style={inp} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-          <Field label="Đến ngày *">
-            <input type="date" style={inp} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+          {!isHalf && (
+            <Field label="Đến ngày *">
+              <input type="date" style={inp} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+          )}
         </div>
 
         <Field label="Lý do" full>

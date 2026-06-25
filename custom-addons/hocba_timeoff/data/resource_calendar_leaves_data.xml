@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        PHASE 6 — Ngày lễ chính thức để LOẠI TRỪ khỏi số ngày nghỉ.
+
+        Model: resource.calendar.leaves (time_type='leave', resource_id=False,
+        calendar_id=False → áp cho MỌI lịch làm việc của công ty). Đây là model
+        Odoo dùng khi tính `hr.leave.number_of_days`: ngày lễ toàn cục bị trừ ra
+        khỏi thời lượng đơn (loại nghỉ để mặc định include_public_holidays_in_duration=False).
+
+        LƯU Ý: khác với `hr.leave.mandatory.day` (đã seed riêng cho lịch SPA) —
+        mandatory.day chỉ để HIỂN THỊ "ngày bắt buộc có mặt" và KHÔNG trừ thời
+        lượng đơn. Ở đây seed cùng dải ngày dưới dạng nghỉ lễ toàn cục để đơn
+        nghỉ vắt qua lễ không bị tính ngày lễ vào quỹ.
+
+        Giờ: seed 00:00:00 → 23:59:59 UTC. Giờ làm việc theo Asia/Ho_Chi_Minh
+        (+7) là 08:00–17:00 ICT = 01:00–10:00 UTC cùng ngày → luôn nằm trong cửa
+        sổ UTC của ngày lễ, nên trừ đúng.
+
+        Nguồn luật: Điều 112 Bộ Luật Lao Động 2019. Năm sau HR cập nhật tay
+        (ngày âm lịch thay đổi).
+    -->
+    <data noupdate="1">
+
+        <!-- ================= 2025 ================= -->
+        <record id="hb_phol_2025_new_year" model="resource.calendar.leaves">
+            <field name="name">Tết Dương Lịch</field>
+            <field name="date_from">2025-01-01 00:00:00</field>
+            <field name="date_to">2025-01-01 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2025_tet" model="resource.calendar.leaves">
+            <field name="name">Tết Nguyên Đán 2025 (Ất Tỵ)</field>
+            <field name="date_from">2025-01-27 00:00:00</field>
+            <field name="date_to">2025-01-31 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2025_hung_kings" model="resource.calendar.leaves">
+            <field name="name">Giỗ Tổ Hùng Vương</field>
+            <field name="date_from">2025-04-07 00:00:00</field>
+            <field name="date_to">2025-04-07 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2025_liberation" model="resource.calendar.leaves">
+            <field name="name">Ngày Giải Phóng Miền Nam (30/4)</field>
+            <field name="date_from">2025-04-30 00:00:00</field>
+            <field name="date_to">2025-04-30 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2025_labor" model="resource.calendar.leaves">
+            <field name="name">Ngày Quốc Tế Lao Động (1/5)</field>
+            <field name="date_from">2025-05-01 00:00:00</field>
+            <field name="date_to">2025-05-01 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2025_national_day" model="resource.calendar.leaves">
+            <field name="name">Quốc Khánh (2/9)</field>
+            <field name="date_from">2025-09-02 00:00:00</field>
+            <field name="date_to">2025-09-03 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+
+        <!-- ================= 2026 ================= -->
+        <record id="hb_phol_2026_new_year" model="resource.calendar.leaves">
+            <field name="name">Tết Dương Lịch</field>
+            <field name="date_from">2026-01-01 00:00:00</field>
+            <field name="date_to">2026-01-01 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2026_tet" model="resource.calendar.leaves">
+            <field name="name">Tết Nguyên Đán 2026 (Bính Ngọ)</field>
+            <field name="date_from">2026-02-16 00:00:00</field>
+            <field name="date_to">2026-02-20 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2026_hung_kings" model="resource.calendar.leaves">
+            <field name="name">Giỗ Tổ Hùng Vương</field>
+            <field name="date_from">2026-04-27 00:00:00</field>
+            <field name="date_to">2026-04-27 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2026_liberation" model="resource.calendar.leaves">
+            <field name="name">Ngày Giải Phóng Miền Nam (30/4)</field>
+            <field name="date_from">2026-04-30 00:00:00</field>
+            <field name="date_to">2026-04-30 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2026_labor" model="resource.calendar.leaves">
+            <field name="name">Ngày Quốc Tế Lao Động (1/5)</field>
+            <field name="date_from">2026-05-01 00:00:00</field>
+            <field name="date_to">2026-05-01 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+        <record id="hb_phol_2026_national_day" model="resource.calendar.leaves">
+            <field name="name">Quốc Khánh (2/9)</field>
+            <field name="date_from">2026-09-02 00:00:00</field>
+            <field name="date_to">2026-09-03 23:59:59</field>
+            <field name="time_type">leave</field>
+        </record>
+
+    </data>
+</odoo>

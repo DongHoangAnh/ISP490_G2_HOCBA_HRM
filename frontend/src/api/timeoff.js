@@ -8,7 +8,8 @@ export const fetchOverview = () => hbGet('/hocba-hrm/api/timeoff/overview');
 export const fetchApprovals = () => hbGet('/hocba-hrm/api/timeoff/approvals');
 
 /* Tạo đơn nghỉ cho chính mình. payload:
-   { leaveTypeId, dateFrom, dateTo, reason, attachment? }
+   { leaveTypeId, dateFrom, dateTo, period?, reason, attachment? }
+   period = 'am'|'pm' cho nghỉ NỬA NGÀY (chỉ loại requestUnit='half_day'); bỏ trống = cả ngày.
    attachment = { filename, mimetype, data(base64) } — chỉ cho loại cần chứng từ. */
 export const createRequest = (payload) =>
   hbPost('/hocba-hrm/api/timeoff/request', payload);
@@ -22,6 +23,17 @@ export const cancelRequest = (id) =>
    → trả payload approvals mới. */
 export const decideRequest = (id, payload) =>
   hbPost(`/hocba-hrm/api/timeoff/request/${id}/decision`, payload);
+
+/* Phase 7 — chủ đơn gửi yêu cầu rút đơn đã duyệt. payload: { reason }
+   → trả payload overview mới (đơn vào state "chờ duyệt rút"). */
+export const withdrawRequest = (id, reason) =>
+  hbPost(`/hocba-hrm/api/timeoff/request/${id}/withdraw`, { reason });
+
+/* Phase 7 — người duyệt phạm vi duyệt/từ chối yêu cầu rút. payload: { approve, note }
+   approve=true → đơn về 'refuse' + hoàn quỹ; false → đơn giữ 'validate'.
+   → trả payload approvals mới. */
+export const decideWithdraw = (id, payload) =>
+  hbPost(`/hocba-hrm/api/timeoff/request/${id}/withdraw/decide`, payload);
 
 /* Tổng quan (dashboard) — tự đổi view Manager/Nhân viên theo quyền.
    year: số năm; dept: id phòng ban (chỉ Manager dùng để lọc). */
