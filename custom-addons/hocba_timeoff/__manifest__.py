@@ -1,6 +1,6 @@
 {
     'name': 'Học Bá — Nghỉ phép (Time Off)',
-    'version': '19.0.11.0.0',
+    'version': '19.0.12.0.0',
     'category': 'Human Resources/Time Off',
     'summary': (
         'Module nghỉ phép hợp nhất cho Trung tâm Học Bá: cấu hình loại nghỉ, '
@@ -9,7 +9,7 @@
     ),
     'author': 'Học Bá HRM Team',
     'license': 'LGPL-3',
-    'depends': ['hr_holidays'],
+    'depends': ['hr_holidays', 'hocba_attendance'],
     'data': [
         # ---- Security (groups -> access -> record rules) ----
         'security/res_groups.xml',
