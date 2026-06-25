@@ -2140,7 +2140,12 @@ class HocBaHRM(http.Controller):
                     v = v if v not in ('', None) else False
                 vals[field] = v
         try:
-            request.env['hr.promotion.history'].create(vals)
+            promo = request.env['hr.promotion.history'].create(vals)
+            ev_id = self._conv_id(payload.get('evaluationId'))
+            if ev_id:
+                ev = request.env['hr.promotion.evaluation'].sudo().browse(ev_id)
+                if ev.exists() and ev.employee_id.id == emp_id:
+                    ev.promotion_id = promo.id
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -2182,6 +2187,45 @@ class HocBaHRM(http.Controller):
             'autoMetrics': e.sudo()._promo_auto_metrics(),
             'evaluations': evals,
         })
+
+    @http.route('/hocba-hrm/api/promotion/eval/save', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_eval_save(self, **kw):
+        payload = request.get_json_data()
+        emp_id = self._conv_id(payload.get('employeeId'))
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_emp(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        lines = []
+        for ln in payload.get('lines', []):
+            cid = self._conv_id(ln.get('criteriaId'))
+            if not cid:
+                continue
+            lines.append((0, 0, {
+                'criteria_id': cid,
+                'score': float(ln.get('score') or 0),
+                'note': ln.get('note') or False,
+            }))
+        vals = {
+            'employee_id': emp_id,
+            'eval_date': payload.get('date') or fields.Date.context_today(
+                request.env['hr.promotion.evaluation']),
+            'verdict_final': payload.get('verdictFinal') or False,
+            'conclusion_note': payload.get('note') or False,
+            'line_ids': lines,
+            'snapshot_job_id': e.job_id.id or False,
+        }
+        try:
+            ev = request.env['hr.promotion.evaluation'].sudo().create(vals)
+            if payload.get('confirm'):
+                ev.action_confirm()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self.api_eval_get(emp_id)
 
     # ------------------------------------------------------------------
     # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
