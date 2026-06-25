@@ -14,3 +14,9 @@ access_hocba_employee_type_giaovu,access.hocba.employee.type.giaovu,model_hocba_
 access_hr_promotion_criteria_user,access.hr.promotion.criteria.user,model_hr_promotion_criteria,hr.group_hr_user,1,0,0,0
 access_hr_promotion_criteria_manager,access.hr.promotion.criteria.manager,model_hr_promotion_criteria,hr.group_hr_manager,1,1,1,1
 access_hr_promotion_criteria_giaovu,access.hr.promotion.criteria.giaovu,model_hr_promotion_criteria,hocba_employees.group_hocba_giaovu,1,0,0,0
+access_hr_promotion_evaluation_user,access.hr.promotion.evaluation.user,model_hr_promotion_evaluation,hr.group_hr_user,1,1,1,0
+access_hr_promotion_evaluation_manager,access.hr.promotion.evaluation.manager,model_hr_promotion_evaluation,hr.group_hr_manager,1,1,1,1
+access_hr_promotion_evaluation_giaovu,access.hr.promotion.evaluation.giaovu,model_hr_promotion_evaluation,hocba_employees.group_hocba_giaovu,1,1,1,0
+access_hr_promotion_evaluation_line_user,access.hr.promotion.evaluation.line.user,model_hr_promotion_evaluation_line,hr.group_hr_user,1,1,1,1
+access_hr_promotion_evaluation_line_manager,access.hr.promotion.evaluation.line.manager,model_hr_promotion_evaluation_line,hr.group_hr_manager,1,1,1,1
+access_hr_promotion_evaluation_line_giaovu,access.hr.promotion.evaluation.line.giaovu,model_hr_promotion_evaluation_line,hocba_employees.group_hocba_giaovu,1,1,1,1

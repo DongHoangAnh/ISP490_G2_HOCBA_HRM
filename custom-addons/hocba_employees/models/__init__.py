@@ -8,3 +8,4 @@ from . import hocba_asset_type
 from . import hr_employee_asset
 from . import hr_promotion_history
 from . import hr_promotion_criteria
+from . import hr_promotion_evaluation
