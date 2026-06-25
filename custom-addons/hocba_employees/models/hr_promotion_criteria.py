@@ -14,6 +14,7 @@ class HrPromotionCriteria(models.Model):
     guideline = fields.Text(string='Hướng dẫn chấm')
     active = fields.Boolean(string='Hiệu lực', default=True)
 
-    _sql_constraints = [
-        ('code_uniq', 'unique(code)', 'Mã tiêu chí phải duy nhất.'),
-    ]
+    _code_unique = models.Constraint(
+        'unique (code)',
+        'Mã tiêu chí phải duy nhất.',
+    )
