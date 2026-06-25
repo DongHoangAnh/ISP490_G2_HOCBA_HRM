@@ -227,18 +227,21 @@ thời gian thao tác đầy đủ.
 
 **Vấn đề:** Chỉ nghỉ nguyên ngày; nghỉ qua dịp lễ vẫn bị trừ phép.
 
-### Backend
-- **Nửa ngày:** dùng `request_unit='half_day'`/`request_date_from_period` của `hr.leave` (Odoo hỗ trợ sẵn theo `hr.leave.type.request_unit`). Mở `request_unit` cho loại HB phù hợp + nhận `period` (morning/afternoon) ở `POST /request`.
-- **Loại trừ lễ/cuối tuần:** đảm bảo `number_of_days` tính theo `resource.calendar` (working days) — kiểm tra lịch làm việc chuẩn + `hr.leave.mandatory.day`/`hb.work.day` đã seed; bổ sung nếu cần.
+### Backend ✅ đã làm
+- **Nửa ngày:** bật `request_unit='half_day'` cho 4 loại HB phù hợp (Phép năm, Ốm, Việc riêng, Nghỉ bù) trong `hr_leave_type_data.xml`; vì record gốc `noupdate=1` nên thêm migration `migrations/19.0.8.0.0/post-migrate.py` ép cập nhật DB đã cài. `POST /request` nhận `period` ∈ {`am`,`pm`}; helper `_period_request_vals` co đơn về 1 ngày + đặt `request_date_from/to_period` → Odoo tính `number_of_days=0.5`. Helper `_half_day_label` trả `Sáng`/`Chiều`/`''` cho FE.
+- **Loại trừ lễ/cuối tuần:** `number_of_days` của Odoo đã trừ cuối tuần theo `resource.calendar`. Ngày lễ: seed thêm `resource.calendar.leaves` toàn cục (`resource_calendar_leaves_data.xml`, 2025–2026) — đây mới là model Odoo trừ khỏi thời lượng đơn (khác `hr.leave.mandatory.day` vốn chỉ hiển thị "ngày bắt buộc có mặt", không trừ ngày).
 
-### Test (BE)
-- Đơn nửa ngày → `number_of_days = 0.5`; đơn vắt qua T7/CN hoặc ngày lễ → không tính ngày nghỉ vào đó.
+### Test (BE) — ✅ đã xanh (7 test, `tests/test_day_calc.py`)
+- Cấu hình 4 loại nghỉ = `half_day`, Không lương giữ `day`.
+- `_period_request_vals` chỉ áp cho loại half_day + period hợp lệ.
+- Nửa ngày sáng/chiều → `number_of_days = 0.5`; cả ngày trên loại half_day → 1.0.
+- Đơn T6→T2 = 2 ngày (bỏ T7/CN); đơn vắt Quốc Khánh = 1 ngày (bỏ lễ).
 
-### Frontend
-- `LeaveForm`: chọn "Cả ngày / Sáng / Chiều" khi loại nghỉ cho phép; hiển thị số ngày thực trừ.
+### Frontend ✅ đã làm
+- `LeaveForm`: hiện chọn "Cả ngày / Sáng / Chiều" khi `requestUnit==='half_day'`; chọn nửa ngày → ẩn "Đến ngày" (đơn 1 ngày), gửi `period`. Badge "Sáng/Chiều" ở bảng "Của tôi" và màn duyệt.
 
-### Acceptance
-Nhân viên xin nửa ngày; số ngày trừ đúng, bỏ qua cuối tuần/lễ.
+### Acceptance ✅
+Nhân viên xin nửa ngày; số ngày trừ đúng (0,5), bỏ qua cuối tuần/lễ.
 
 ---
 
