@@ -58,3 +58,9 @@ class TestPromotionEvaluation(TransactionCase):
         self.assertEqual(self._make_eval(5, 5).verdict_auto, 'qualified')   # 100
         self.assertEqual(self._make_eval(4, 2).verdict_auto, 'consider')    # 64
         self.assertEqual(self._make_eval(2, 2).verdict_auto, 'not_yet')     # 40
+
+    def test_empty_evaluation_scores_zero(self):
+        ev = self.env['hr.promotion.evaluation'].create({
+            'employee_id': self.emp.id})
+        self.assertEqual(ev.total_score, 0.0)
+        self.assertEqual(ev.verdict_auto, 'not_yet')

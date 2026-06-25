@@ -44,10 +44,10 @@ class HrPromotionEvaluation(models.Model):
         q = float(ICP.get_param('hocba_employees.promo_eval_qualified', 80))
         c = float(ICP.get_param('hocba_employees.promo_eval_consider', 60))
         for rec in self:
-            wsum = sum(l.weight for l in rec.line_ids)
+            scored = rec.line_ids.filtered(lambda l: l.max_score)
+            wsum = sum(l.weight for l in scored)
             if wsum:
-                acc = sum((l.score / l.max_score) * l.weight
-                          for l in rec.line_ids if l.max_score)
+                acc = sum((l.score / l.max_score) * l.weight for l in scored)
                 rec.total_score = acc / wsum * 100
             else:
                 rec.total_score = 0.0
@@ -79,8 +79,8 @@ class HrPromotionEvaluationLine(models.Model):
         for vals in vals_list:
             crit = self.env['hr.promotion.criteria'].browse(
                 vals.get('criteria_id'))
-            if crit and not vals.get('weight'):
+            if crit and 'weight' not in vals:
                 vals['weight'] = crit.weight
-            if crit and not vals.get('max_score'):
+            if crit and 'max_score' not in vals:
                 vals['max_score'] = crit.max_score
         return super().create(vals_list)
