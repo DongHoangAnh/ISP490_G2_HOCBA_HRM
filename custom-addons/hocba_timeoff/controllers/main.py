@@ -11,7 +11,7 @@ import base64
 import binascii
 from datetime import timedelta
 
-from odoo import fields, http
+from odoo import _, fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import content_disposition, request
 from odoo.tools import html2plaintext
@@ -517,6 +517,72 @@ def _request_age_working_days(env, leave):
 
 
 # ---------------------------------------------------------------------------
+# Nghỉ phép giáo viên — dò xung đột lịch dạy + áp dụng cách xử lý từng buổi.
+# Lịch dạy là nguồn chính trong Neon (hocba.teaching.session). Helper cấp module
+# để controller dùng dưới request VÀ test gọi trực tiếp.
+# ---------------------------------------------------------------------------
+def _find_teaching_conflicts(env, employee, date_from, date_to):
+    """Buổi dạy 'planned' của giáo viên trùng khoảng nghỉ [date_from, date_to].
+
+    Chỉ áp dụng cho giáo viên (có x_cms_user_id). Bỏ qua buổi đã hủy/đổi GV
+    (state != 'planned') để tránh xử lý chồng chéo giữa các đơn."""
+    if not employee or not employee.x_cms_user_id:
+        return env['hocba.teaching.session']
+    return env['hocba.teaching.session'].sudo().search([
+        ('employee_id', '=', employee.id),
+        ('state', '=', 'planned'),
+        ('session_date', '>=', date_from),
+        ('session_date', '<=', date_to),
+    ], order='session_date, start_time')
+
+
+def _conflict_row(session):
+    """1 dòng buổi dạy xung đột trả cho SPA."""
+    return {
+        'sessionId': session.id,
+        'className': session.class_name or '',
+        'date': str(session.session_date) if session.session_date else '',
+        'startTime': session.start_time or '',
+        'endTime': session.end_time or '',
+    }
+
+
+def _apply_resolutions(env, leave, conflicts, resolutions):
+    """Tạo dòng xử lý cho TỪNG buổi xung đột. Chặn nếu chưa phủ hết / sai loại.
+
+    Mỗi buổi phải có 1 lựa chọn ('class_off' / 'substitute'). Ràng buộc GV thay
+    (bắt buộc & khác người nghỉ) do model hocba.leave.session.resolution kiểm.
+    Chạy sudo: chủ đơn (NV thường) không có ACL ghi trên model resolution."""
+    conflict_ids = list(conflicts.ids)
+    by_session = {}
+    for r in (resolutions or []):
+        try:
+            sid = int(r.get('sessionId'))
+        except (TypeError, ValueError):
+            continue
+        by_session[sid] = r
+
+    missing = [sid for sid in conflict_ids if sid not in by_session]
+    if missing:
+        raise ValidationError(_(
+            'Còn %d buổi dạy trong kỳ nghỉ chưa chọn cách xử lý '
+            '(cả lớp nghỉ hoặc đổi giáo viên dạy thay).', len(missing)))
+
+    Res = env['hocba.leave.session.resolution'].sudo()
+    created = Res.browse()
+    for sid in conflict_ids:
+        r = by_session[sid]
+        rtype = (r.get('type') or '').strip()
+        if rtype not in ('class_off', 'substitute'):
+            raise ValidationError(_('Cách xử lý buổi dạy không hợp lệ.'))
+        vals = {'leave_id': leave.id, 'session_id': sid, 'resolution': rtype}
+        if rtype == 'substitute':
+            vals['substitute_id'] = int(r.get('substituteId') or 0) or False
+        created |= Res.create(vals)
+    return created
+
+
+# ---------------------------------------------------------------------------
 # Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn (audit).
 # Chuông: model riêng hb.leave.notification (xem docstring model để biết vì sao
 # KHÔNG dùng mail.message needaction). Audit: message_post chatter trên hr.leave.
@@ -951,6 +1017,35 @@ class HocBaTimeoff(http.Controller):
         })
 
     # ------------------------------------------------------------------
+    # 3.2b. POST /teaching-conflicts — dò buổi dạy trùng kỳ nghỉ (giáo viên)
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/teaching-conflicts', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_teaching_conflicts(self, **kw):
+        """Trả buổi dạy trùng + danh sách GV có thể dạy thay. Dò trên Neon."""
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+
+        payload = request.get_json_data()
+        date_from = (payload.get('dateFrom') or '').strip()
+        date_to = (payload.get('dateTo') or date_from).strip()
+        if not date_from:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+
+        conflicts = _find_teaching_conflicts(request.env, emp, date_from, date_to)
+        substitutes = []
+        if conflicts:
+            others = request.env['hr.employee'].sudo().search([
+                ('x_cms_user_id', '!=', False), ('id', '!=', emp.id)],
+                order='name')
+            substitutes = [{'id': e.id, 'name': e.name} for e in others]
+        return request.make_json_response({
+            'conflicts': [_conflict_row(s) for s in conflicts],
+            'substitutes': substitutes,
+        })
+
+    # ------------------------------------------------------------------
     # 3.3. POST /request — tạo đơn nghỉ cho chính mình
     # ------------------------------------------------------------------
     @http.route('/hocba-hrm/api/timeoff/request', auth='user',
@@ -1058,9 +1153,19 @@ class HocBaTimeoff(http.Controller):
         if reason:
             vals['name'] = reason
 
-        # KHÔNG sudo: model áp domain employee + quyền tạo của user.
+        # Giáo viên: dò buổi dạy trùng kỳ nghỉ (trên Neon). Nếu có, phải xử lý
+        # hết TỪNG buổi (cả lớp nghỉ / đổi GV thay) thì mới được tạo đơn.
+        conflicts = _find_teaching_conflicts(request.env, emp, date_from, date_to)
+
+        # KHÔNG sudo cho hr.leave: model áp domain employee + quyền tạo của user.
+        # Bọc savepoint để khi xử lý buổi dạy lỗi thì KHÔNG để lại đơn mồ côi.
         try:
-            leave = request.env['hr.leave'].create(vals)
+            with request.env.cr.savepoint():
+                leave = request.env['hr.leave'].create(vals)
+                if conflicts:
+                    _apply_resolutions(
+                        request.env, leave, conflicts,
+                        payload.get('resolutions'))
         except (AccessError, ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
