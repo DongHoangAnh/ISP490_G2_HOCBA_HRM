@@ -123,3 +123,11 @@ class TestPromotionEvaluation(TransactionCase):
             self.assertIn(key, m)
         # Không có module chấm công/khoá → attendance là None hoặc dict, không lỗi
         self.assertTrue(m['attendance'] is None or isinstance(m['attendance'], dict))
+
+    def test_tenure_months_uses_probation_start(self):
+        from dateutil.relativedelta import relativedelta
+        self.emp.x_probation_start = fields.Date.today() - relativedelta(months=3)
+        m = self.emp._promo_auto_metrics()
+        # ~3 tháng, không bị rơi về create_date (hôm nay → ~0)
+        self.assertGreater(m['tenureMonths'], 2.5)
+        self.assertLess(m['tenureMonths'], 3.5)

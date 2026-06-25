@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import timedelta
 
@@ -6,6 +7,8 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError, UserError, ValidationError
+
+_logger = logging.getLogger(__name__)
 
 # Kết quả cổng đánh giá — khách họp #2 yêu cầu thêm "Gia hạn"
 GATE_RESULT_SEL = [
@@ -247,7 +250,7 @@ class HrEmployee(models.Model):
         """Chỉ số tự động cho dashboard đánh giá thăng tiến (read-only).
         Chấm công lấy best-effort: thiếu model/khoá → trả None, không vỡ."""
         self.ensure_one()
-        today = fields.Date.today()
+        today = fields.Date.context_today(self)
 
         def _months(d):
             if not d:
@@ -257,8 +260,8 @@ class HrEmployee(models.Model):
         last_promo = self.env['hr.promotion.history'].search(
             [('employee_id', '=', self.id)], order='date_effective desc', limit=1)
         metrics = {
-            'tenureMonths': _months(self.x_probation_start)
-            or _months(self.create_date and self.create_date.date()),
+            'tenureMonths': (_months(self.x_probation_start) if self.x_probation_start
+                             else _months(self.create_date and self.create_date.date())),
             'officialMonths': round(self.x_official_months or 0, 1),
             'monthsSincePromo': _months(last_promo.date_effective)
             if last_promo else None,
@@ -280,6 +283,8 @@ class HrEmployee(models.Model):
             ])
             return {'days': len(recs)}
         except Exception:
+            _logger.exception(
+                'Tổng hợp chấm công thất bại cho NV %s', self.id)
             return None
 
     def action_view_hocba_assets(self):
