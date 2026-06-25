@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from odoo import models, fields, api, _
+from odoo.exceptions import UserError, AccessError, ValidationError
 
 
 class HrPromotionEvaluation(models.Model):
@@ -58,6 +61,38 @@ class HrPromotionEvaluation(models.Model):
             else:
                 rec.verdict_auto = 'not_yet'
 
+    def action_confirm(self):
+        for rec in self:
+            if not rec.line_ids:
+                raise UserError(_('Cần chấm ít nhất một tiêu chí trước khi xác nhận.'))
+            if not rec.verdict_final:
+                raise UserError(_('Cần chọn Kết luận (verdict) trước khi xác nhận.'))
+            rec.state = 'confirmed'
+            rec.employee_id.message_post(body=_(
+                '📋 Đợt đánh giá thăng tiến %(d)s: %(score).0f%% — %(v)s.') % {
+                    'd': rec.eval_date,
+                    'score': rec.total_score,
+                    'v': dict(rec.VERDICT_SEL).get(rec.verdict_final, ''),
+                })
+        return True
+
+    def write(self, vals):
+        # Sau 24h chỉ HR Manager được sửa (giống hr.promotion.history)
+        if not self.env.su and not self.env.user.has_group('hr.group_hr_manager'):
+            cutoff = fields.Datetime.now() - timedelta(hours=24)
+            for rec in self:
+                if rec.create_date and rec.create_date < cutoff:
+                    raise AccessError(_(
+                        'Đợt đánh giá quá 24h — chỉ HR Manager được sửa.'))
+        return super().write(vals)
+
+    def unlink(self):
+        for rec in self:
+            if rec.state == 'confirmed':
+                raise UserError(_(
+                    'Không được xóa đợt đánh giá đã xác nhận (audit trail).'))
+        return super().unlink()
+
 
 class HrPromotionEvaluationLine(models.Model):
     _name = 'hr.promotion.evaluation.line'
@@ -84,3 +119,10 @@ class HrPromotionEvaluationLine(models.Model):
             if crit and 'max_score' not in vals:
                 vals['max_score'] = crit.max_score
         return super().create(vals_list)
+
+    @api.constrains('score', 'max_score')
+    def _check_score_range(self):
+        for line in self:
+            if line.score < 0 or (line.max_score and line.score > line.max_score):
+                raise ValidationError(_(
+                    'Điểm phải trong khoảng 0..%s.') % line.max_score)

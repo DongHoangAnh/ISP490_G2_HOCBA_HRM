@@ -64,3 +64,28 @@ class TestPromotionEvaluation(TransactionCase):
             'employee_id': self.emp.id})
         self.assertEqual(ev.total_score, 0.0)
         self.assertEqual(ev.verdict_auto, 'not_yet')
+
+    def test_score_out_of_range_raises(self):
+        from odoo.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.env['hr.promotion.evaluation'].create({
+                'employee_id': self.emp.id,
+                'line_ids': [(0, 0, {'criteria_id': self.c1.id, 'score': 9})],
+            })
+
+    def test_confirm_requires_verdict_final(self):
+        from odoo.exceptions import UserError
+        ev = self._make_eval(4, 4)
+        with self.assertRaises(UserError):
+            ev.action_confirm()
+        ev.verdict_final = 'qualified'
+        ev.action_confirm()
+        self.assertEqual(ev.state, 'confirmed')
+
+    def test_confirmed_cannot_be_deleted(self):
+        from odoo.exceptions import UserError
+        ev = self._make_eval(4, 4)
+        ev.verdict_final = 'qualified'
+        ev.action_confirm()
+        with self.assertRaises(UserError):
+            ev.unlink()
