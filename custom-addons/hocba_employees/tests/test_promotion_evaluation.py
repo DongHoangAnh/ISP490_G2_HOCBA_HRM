@@ -131,3 +131,24 @@ class TestPromotionEvaluation(TransactionCase):
         # ~3 tháng, không bị rơi về create_date (hôm nay → ~0)
         self.assertGreater(m['tenureMonths'], 2.5)
         self.assertLess(m['tenureMonths'], 3.5)
+
+
+@tagged('post_install', '-at_install')
+class TestPromotionEvalAccess(TransactionCase):
+    def setUp(self):
+        super().setUp()
+        self.emp = self.env['hr.employee'].create({
+            'name': 'Acc Target', 'identification_id': '019999999901'})
+        self.crit = self.env['hr.promotion.criteria'].create(
+            {'name': 'X', 'code': 'accx', 'weight': 100, 'max_score': 5})
+        self.regular = self.env['res.users'].create({
+            'name': 'Reg', 'login': 'reg_eval_acc',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+
+    def test_regular_user_cannot_create_evaluation(self):
+        from odoo.exceptions import AccessError
+        Ev = self.env['hr.promotion.evaluation'].with_user(self.regular)
+        with self.assertRaises(AccessError):
+            Ev.create({
+                'employee_id': self.emp.id,
+                'line_ids': [(0, 0, {'criteria_id': self.crit.id, 'score': 3})]})
