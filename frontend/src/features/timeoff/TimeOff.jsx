@@ -8,9 +8,10 @@ import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchOverview, cancelRequest, fetchApprovals, withdrawRequest } from '../../api/timeoff';
+import { fetchOverview, cancelRequest, fetchApprovals, withdrawRequest, fetchSubstitutions } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
 import LeaveForm from './LeaveForm';
+import SubstitutionsPanel from './SubstitutionsPanel';
 import ApprovalPanel from './ApprovalPanel';
 import ApprovedPanel from './ApprovedPanel';
 import BalancesPanel from './BalancesPanel';
@@ -28,6 +29,7 @@ export default function TimeOff({ search, focus }) {
   const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
   const [busy, setBusy] = useState(null); // id đơn đang hủy
   const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
+  const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
 
   const load = () => {
@@ -43,9 +45,23 @@ export default function TimeOff({ search, focus }) {
     }
   }, [data]);
 
-  // Bấm 1 thông báo ở chuông → mở modal "Lịch sử xử lý" của đúng đơn đó.
+  // Giáo viên: đếm yêu cầu dạy thay đang chờ để hiện badge trên tab.
+  const refreshSubCount = () => fetchSubstitutions()
+    .then((d) => setSubCount((d.items || []).filter((r) => r.state === 'pending').length))
+    .catch(() => {});
   useEffect(() => {
-    if (focus && focus.requestId) setHistoryReq(focus.requestId);
+    if (data && data.employee && data.employee.isTeacher) refreshSubCount();
+  }, [data]);
+
+  // Bấm 1 thông báo ở chuông → tới đúng nơi xử lý:
+  //  - yêu cầu/hủy dạy thay (sub_request, sub_cancelled) → tab "Yêu cầu dạy thay";
+  //  - GV thay trả buổi (sub_returned) → tab "Của tôi" để người giao xử lý lại;
+  //  - còn lại → mở modal "Lịch sử xử lý" của đơn.
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.kind === 'sub_request' || focus.kind === 'sub_cancelled') setTab('substitutions');
+    else if (focus.kind === 'sub_returned') setTab('me');
+    else if (focus.requestId) setHistoryReq(focus.requestId);
   }, [focus]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
@@ -71,6 +87,10 @@ export default function TimeOff({ search, focus }) {
               ['balances', 'Quỹ phép']);
   } else {
     tabs.push(['summary', 'Tổng hợp'], ['me', 'Của tôi'], ['calendar', 'Lịch']);
+  }
+  // Giáo viên (mọi vai trò) có thêm tab xử lý yêu cầu dạy thay gửi tới mình.
+  if (data.employee && data.employee.isTeacher) {
+    tabs.push(['substitutions', 'Yêu cầu dạy thay']);
   }
 
   const activeTab = tab || tabs[0][0];
@@ -104,6 +124,9 @@ export default function TimeOff({ search, focus }) {
             {id === 'approvals' && pendingCount > 0 && (
               <span style={{ marginLeft: 6 }}><Badge kind="amber">{pendingCount}</Badge></span>
             )}
+            {id === 'substitutions' && subCount > 0 && (
+              <span style={{ marginLeft: 6 }}><Badge kind="amber">{subCount}</Badge></span>
+            )}
           </button>
         ))}
       </div>
@@ -120,10 +143,14 @@ export default function TimeOff({ search, focus }) {
       )}
       {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
       {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
+      {activeTab === 'substitutions' && data.employee && data.employee.isTeacher && (
+        <SubstitutionsPanel onChanged={refreshSubCount} />
+      )}
 
       {creating && (
         <LeaveForm
           leaveTypes={data.leaveTypes}
+          isTeacher={!!(data.employee && data.employee.isTeacher)}
           onClose={() => setCreating(false)}
           onSaved={(payload) => { setCreating(false); setData(payload); }} />
       )}
@@ -209,7 +236,7 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
           <table className="tbl">
             <thead><tr>
               <th>Loại nghỉ</th><th>Ngày tạo</th><th>Từ ngày</th><th>Đến ngày</th><th className="tbl-num">Số ngày</th>
-              <th>Lý do</th><th>Trạng thái</th><th></th>
+              <th>Lý do</th><th>GV dạy thay</th><th>Trạng thái</th><th></th>
             </tr></thead>
             <tbody>
               {requests.map((r) => (
@@ -218,7 +245,6 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
                     <span style={{ fontWeight: 600 }}>{r.leaveType}</span>
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
-                    {r.scheduleConflict && <Badge kind="amber">Xung đột lịch</Badge>}
                     {r.withdrawState === 'pending' && (
                       <Badge kind="amber">Chờ duyệt rút</Badge>
                     )}
@@ -226,8 +252,12 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
                   <td className="mono muted">{fmtDate(r.createdAt)}</td>
                   <td className="mono muted">{fmtDate(r.from)}</td>
                   <td className="mono muted">{fmtDate(r.to)}</td>
-                  <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
+                  <td className="tbl-num mono" style={{ fontWeight: 600 }}>
+                    {r.isTeachingOff ? `${r.sessionCount} buổi` : r.days}</td>
                   <td className="muted">{r.reason || '—'}</td>
+                  <td className="muted" title={(r.sessionResolutions || []).map((s) =>
+                    `${fmtDate(s.date)} ${s.className}: ${s.kind === 'class_off' ? 'Cả lớp nghỉ' : (s.substituteName || '—')}`).join('\n')}>
+                    {r.isTeachingOff ? (r.substituteNames || '—') : '—'}</td>
                   <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                   <td>
                     {r.canCancel && (

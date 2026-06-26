@@ -10,7 +10,11 @@ import {
 const POLL_MS = 60000;
 
 /* Loại thông báo → màu chấm. */
-const KIND_DOT = { pending: 'var(--amber,#f59e0b)', approved: 'var(--green,#10b981)', refused: 'var(--red-600,#dc2626)' };
+const KIND_DOT = {
+  pending: 'var(--amber,#f59e0b)', approved: 'var(--green,#10b981)', refused: 'var(--red-600,#dc2626)',
+  sub_request: 'var(--amber,#f59e0b)', sub_accepted: 'var(--green,#10b981)', sub_declined: 'var(--red-600,#dc2626)',
+  sub_cancelled: 'var(--red-600,#dc2626)', sub_returned: 'var(--amber,#f59e0b)',
+};
 
 function timeAgo(s) {
   if (!s) return '';
@@ -47,7 +51,10 @@ export default function NotificationBell({ onOpenRequest }) {
   const onItem = (n) => {
     setOpen(false);
     if (!n.isRead) markNotificationRead(n.id).then(setData).catch(() => {});
-    if (onOpenRequest && n.requestId) onOpenRequest(n.requestId);
+    // kind đi kèm để màn Nghỉ phép mở đúng nơi (sub_request → tab "Yêu cầu dạy thay").
+    if (onOpenRequest && (n.requestId || n.kind === 'sub_request')) {
+      onOpenRequest(n.requestId, n.kind);
+    }
   };
 
   const onReadAll = () => { markAllNotificationsRead().then(setData).catch(() => {}); };

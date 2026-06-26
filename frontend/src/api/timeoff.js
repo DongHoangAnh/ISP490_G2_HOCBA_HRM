@@ -8,18 +8,44 @@ export const fetchOverview = () => hbGet('/hocba-hrm/api/timeoff/overview');
 export const fetchApprovals = () => hbGet('/hocba-hrm/api/timeoff/approvals');
 
 /* Tạo đơn nghỉ cho chính mình. payload:
-   { leaveTypeId, dateFrom, dateTo, period?, reason, attachment? }
+   { leaveTypeId, dateFrom, dateTo, period?, reason, attachment?, resolutions? }
    period = 'am'|'pm' cho nghỉ NỬA NGÀY (chỉ loại requestUnit='half_day'); bỏ trống = cả ngày.
-   attachment = { filename, mimetype, data(base64) } — chỉ cho loại cần chứng từ. */
+   attachment = { filename, mimetype, data(base64) } — chỉ cho loại cần chứng từ.
+   resolutions = [{ sessionId, type:'class_off'|'substitute', substituteId? }] — GV nghỉ
+   trùng buổi dạy phải xử lý từng buổi (xem fetchTeachingConflicts). */
 export const createRequest = (payload) =>
   hbPost('/hocba-hrm/api/timeoff/request', payload);
+
+/* Dò buổi dạy trùng khoảng nghỉ (chỉ giáo viên). dateFrom/dateTo 'YYYY-MM-DD'.
+   → { conflicts: [{sessionId, className, date, startTime, endTime}],
+       substitutes: [{id, name}] } (DS giáo viên để chọn dạy thay). */
+export const fetchTeachingConflicts = (dateFrom, dateTo) =>
+  hbPost('/hocba-hrm/api/timeoff/teaching-conflicts', { dateFrom, dateTo });
+
+/* Buổi dạy sắp tới của chính GV (cho form nghỉ-theo-buổi, chế độ A).
+   → { sessions: [{sessionId, className, date, startTime, endTime}], substitutes: [{id,name}] }. */
+export const fetchMyTeachingSessions = () =>
+  hbGet('/hocba-hrm/api/timeoff/my-teaching-sessions');
+
+/* Yêu cầu dạy thay gửi tới chính mình (giáo viên thay). → { items: [...] }. */
+export const fetchSubstitutions = () =>
+  hbGet('/hocba-hrm/api/timeoff/substitutions');
+
+/* GV thay đồng ý/từ chối 1 yêu cầu dạy thay. accept=bool; reason chỉ khi từ chối.
+   → { items: [...] } (danh sách yêu cầu mới). */
+export const decideSubstitution = (id, accept, reason) =>
+  hbPost(`/hocba-hrm/api/timeoff/substitutions/${id}/decide`, { accept, reason });
+
+/* GV thay trả lại buổi đã nhận (về lại GV liền trước). → { items: [...] }. */
+export const returnSubstitution = (id) =>
+  hbPost(`/hocba-hrm/api/timeoff/substitutions/${id}/return`, {});
 
 /* Chủ đơn hủy đơn còn chờ duyệt → trả payload overview mới. */
 export const cancelRequest = (id) =>
   hbPost(`/hocba-hrm/api/timeoff/request/${id}/cancel`, {});
 
 /* Duyệt / từ chối đơn (officer). payload:
-   { action: 'approve'|'refuse', replacementNote?, medicalOverride?, medicalOverrideReason? }
+   { action: 'approve'|'refuse', medicalOverride?, medicalOverrideReason? }
    → trả payload approvals mới. */
 export const decideRequest = (id, payload) =>
   hbPost(`/hocba-hrm/api/timeoff/request/${id}/decision`, payload);

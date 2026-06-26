@@ -21,9 +21,9 @@ export default function App() {
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
   const [focus, setFocus] = useState(null);
 
-  const openRequest = (requestId) => {
+  const openRequest = (requestId, kind) => {
     setView('timeoff');
-    setFocus({ requestId, nonce: Date.now() });
+    setFocus({ requestId, kind, nonce: Date.now() });
   };
 
   const loadRoles = () => {
@@ -51,7 +51,7 @@ export default function App() {
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
-        {view === 'attendance' && <Attendance search={search} />}
+        {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
         {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}

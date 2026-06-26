@@ -14,7 +14,7 @@ import AttendanceHistory from './AttendanceHistory';
 import TeachingSchedule from './TeachingSchedule';
 import TeachingCalendar from './TeachingCalendar';
 
-export default function Attendance({ search }) {
+export default function Attendance({ search, onNavigate }) {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
@@ -105,7 +105,8 @@ export default function Attendance({ search }) {
       {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
       {activeTab === 'teaching' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <TeachingSchedule me={me} onChanged={load} />
+          <TeachingSchedule me={me} onChanged={load}
+            onGoTimeOff={onNavigate ? () => onNavigate('timeoff') : undefined} />
         </div>
       )}
       {activeTab === 'cal' && <TeachingCalendar />}
