@@ -1761,10 +1761,19 @@ class HocBaHRM(http.Controller):
                 } for dp in e.x_dependent_ids],
             })
         if is_mgr:
+            # Tên ngân hàng: tra từ list payroll (hb.bank.format) theo mã đã lưu;
+            # guard nếu payroll chưa cài, fallback hiển thị mã.
+            bank_name = e.x_bank_code or ''
+            if e.x_bank_code and 'hb.bank.format' in e.env:
+                bank = e.env['hb.bank.format'].sudo().search(
+                    [('code', '=', e.x_bank_code)], limit=1)
+                if bank:
+                    bank_name = bank.name
             data.update({
                 'pit': e.x_pit_code or '',
                 'si': e.x_social_insurance_no or '',
                 'bankCode': e.x_bank_code or '',
+                'bankName': bank_name,
                 'bankAccountNo': e.x_bank_account_no or '',
             })
 

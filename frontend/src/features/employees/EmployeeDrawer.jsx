@@ -116,7 +116,12 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
     ['Số thẻ BHYT', det.hi || '—'], ['Nơi KCB ban đầu', det.hiPlace || '—'],
     ['Địa chỉ thường trú', det.permanentAddr || '—'], ['Địa chỉ tạm trú', det.currentAddr || '—'],
   );
-  if (isMgr) rows.push(['MST TNCN', det.pit || '—'], ['Số sổ BHXH', det.si || '—']);
+  if (isMgr) rows.push(
+    ['Lương cơ bản', det.wage ? `${hbVND(det.wage)} ₫` : '—'],
+    ['MST TNCN', det.pit || '—'], ['Số sổ BHXH', det.si || '—'],
+    ['Ngân hàng nhận lương', det.bankName || det.bankCode || '—'],
+    ['Số tài khoản nhận lương', det.bankAccountNo || '—'],
+  );
   return (
     <div>
       <div className="grid-2" style={{ rowGap: 20 }}>
