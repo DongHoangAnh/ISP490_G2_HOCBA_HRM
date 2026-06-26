@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert, fetchAccounts } from '../../api/employees';
+import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
@@ -12,6 +12,8 @@ import AssetForm from './AssetForm';
 import PromotionForm from './PromotionForm';
 import CertForm from './CertForm';
 import AccountForm from './AccountForm';
+import EvaluationForm from './EvaluationForm';
+import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
@@ -487,29 +489,86 @@ export function AssetsTab({ det, editable, onUpdated }) {
 
 export function PromoTab({ det, isMgr, editable, onUpdated }) {
   const [adding, setAdding] = useState(false);
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalData, setEvalData] = useState(null);
   const canAct = editable && onUpdated;
-  const path = det.promotions;
+
+  useEffect(() => {
+    if (canAct) fetchEvaluations(det.id).then(setEvalData).catch(() => setEvalData(null));
+  }, [det.id, canAct]);
+
+  const latest = evalData?.evaluations?.[evalData.evaluations.length - 1];
+  const am = evalData?.autoMetrics;
+
   return (
     <div>
-      {canAct && (
-        <div className="between" style={{ marginBottom: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>Lịch sử thăng tiến ({path.length})</div>
-          <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
-            <Icon name="arrowUp" size={13} />Thêm mốc</button>
+      {am && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <MetricCard label="Thâm niên (tháng)" value={am.tenureMonths} />
+          <MetricCard label="Từ thăng tiến" value={am.monthsSincePromo ?? '—'} />
+          <MetricCard label="Chấm công 3T" value={am.attendance ? `${am.attendance.days} ngày` : 'Chưa có'} />
+          <MetricCard label="Kết luận gần nhất" value={latest ? `${latest.totalScore}%` : '—'} />
         </div>
       )}
-      {!path.length ? (
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px' }}>
+          <SectionTitle>Lộ trình chức vụ & lương</SectionTitle>
+          <SalaryJourneyChart promotions={det.promotions} />
+        </div>
+        <div style={{ flex: '1 1 260px' }}>
+          <SectionTitle>Radar tiêu chí (đợt gần nhất)</SectionTitle>
+          <CriteriaRadar lines={latest?.lines} />
+        </div>
+      </div>
+
+      {canAct && (
+        <div className="between" style={{ margin: '16px 0' }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>
+            Lịch sử ({det.promotions.length} mốc · {evalData?.evaluations?.length || 0} đợt đánh giá)
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-soft btn-sm" disabled={!evalData}
+              onClick={() => setEvaluating(true)}>
+              <Icon name="checkCircle" size={13} />Đánh giá mới</button>
+            {isMgr && (
+              <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
+                <Icon name="arrowUp" size={13} />Tạo thăng tiến</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!det.promotions.length ? (
         <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>
       ) : (
-        <PromoTimeline path={path} isMgr={isMgr} />
+        <PromoTimeline path={det.promotions} isMgr={isMgr} />
       )}
+
       {adding && (
         <PromotionForm det={det}
           onClose={() => setAdding(false)}
           onSaved={(d) => { setAdding(false); onUpdated(d); }} />
       )}
+      {evaluating && evalData && (
+        <EvaluationForm empId={det.id} criteria={evalData.criteria}
+          onClose={() => setEvaluating(false)}
+          onSaved={(d) => { setEvaluating(false); setEvalData(d); }} />
+      )}
     </div>
   );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <div style={{ flex: '1 1 110px', background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--red-700)' }}>{value}</div>
+      <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>{label}</div>
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return <div style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 }}>{children}</div>;
 }
 
 function PromoTimeline({ path, isMgr }) {
