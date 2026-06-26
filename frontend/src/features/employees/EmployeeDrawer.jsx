@@ -300,7 +300,7 @@ function TrialAction({ empId, onUpdated }) {
     }
     setBusy(true);
     try { onUpdated(await postTrial(empId, { ...f, result })); }
-    catch (e) { setErr(e.status === 403 ? 'Không có quyền chấm thử giảng.' : e.message); }
+    catch (e) { setErr(e.code === 'forbidden' ? 'Không có quyền chấm thử giảng.' : (e.message || 'Thao tác bị từ chối.')); }
     finally { setBusy(false); }
   };
   return (
@@ -450,7 +450,7 @@ export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
               <div className="kv"><div className="k">Điểm chuyên môn</div><div className="v mono">{det.trial.scoreContent || '—'} / 10</div></div>
             </div>
             {det.trial.note && <div style={{ marginTop: 12, fontSize: 12.5 }} className="muted">{det.trial.note}</div>}
-            {isHr && onUpdated && det.trial.result === 'draft' && (
+            {det.trial.canEval && onUpdated && det.trial.result === 'draft' && (
               <TrialAction empId={det.id} onUpdated={onUpdated} />
             )}
           </div>

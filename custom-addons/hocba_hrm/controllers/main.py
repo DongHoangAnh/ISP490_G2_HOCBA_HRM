@@ -1648,6 +1648,18 @@ class HocBaHRM(http.Controller):
                     and e.department_id.id
                     in self._managed_department_ids(user.employee_id))
 
+    def _can_eval_trial(self, e):
+        """Ai được chấm thử giảng (F-008): HR (mọi NV) hoặc Giáo vụ với giáo
+        viên trong phạm vi của họ (giáo vụ là người quản lý giáo viên)."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return True
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            return self._emp_in_scope(e)  # phạm vi giáo vụ = giáo viên
+        return False
+
     def _labels(self):
         env = request.env
         Emp = env['hr.employee']
@@ -1815,6 +1827,7 @@ class HocBaHRM(http.Controller):
                 'scoreContent': e.x_trial_score_content or 0,
                 'result': e.x_trial_lesson_result or 'draft',
                 'note': e.x_trial_lesson_note or '',
+                'canEval': self._can_eval_trial(e),
             }
 
         # --- Tài sản (F-006) ---
@@ -1935,14 +1948,17 @@ class HocBaHRM(http.Controller):
                 type='http', methods=['POST'], csrf=False)
     def api_employee_trial(self, emp_id, **kw):
         """Đánh giá thử giảng (F-008) cho giảng viên Nhóm A từ SPA: ghi ngày,
-        lớp, 2 điểm, kết quả, nhận xét. KHÔNG sudo — model áp ràng buộc (điểm
-        1–10, ngày ≤ hôm nay, fail cần nhận xét) + activity nhắc HR."""
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        e = request.env['hr.employee'].browse(emp_id)
+        lớp, 2 điểm, kết quả, nhận xét. Quyền: HR (mọi NV) hoặc Giáo vụ (giáo
+        viên trong phạm vi). Kiểm phạm vi RỒI sudo ghi; model vẫn áp ràng buộc
+        (điểm 1–10, ngày ≤ hôm nay, fail cần nhận xét) qua @api.constrains."""
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_trial(e):
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Bạn không có quyền chấm thử giảng nhân viên này.'},
+                status=403)
 
         payload = request.get_json_data()
         result = payload.get('result')
@@ -1961,11 +1977,11 @@ class HocBaHRM(http.Controller):
             'x_trial_lesson_result': result,
         }
         try:
-            e.write(vals)
+            e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=400)
+                {'error': 'rejected', 'message': str(ex)}, status=422)
         return self._detail_response(e)
 
     # ------------------------------------------------------------------
