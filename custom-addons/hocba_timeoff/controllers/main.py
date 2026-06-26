@@ -958,6 +958,7 @@ class HocBaTimeoff(http.Controller):
             'isManager': scope['canApprove'],     # dashboard chế độ quản lý
             'isHrManager': scope['isHrManager'],  # override chứng từ y tế (BR-011)
             'isEmployee': scope['isEmployee'],    # chỉ NV thường mới tạo được đơn
+            'seeAll': scope['seeAll'],            # HR/Admin: lọc được mọi phòng ban
         }
 
     def _dept_domain(self, scope):
@@ -1081,6 +1082,7 @@ class HocBaTimeoff(http.Controller):
             'id': leave.id,
             'employeeId': leave.employee_id.id,
             'employee': leave.employee_id.name,
+            'departmentId': leave.department_id.id or leave.employee_id.department_id.id or False,
             'department': leave.department_id.name or leave.employee_id.department_id.name or '—',
             'leaveType': leave.holiday_status_id.name,
             'from': _d(leave.request_date_from),
@@ -1189,6 +1191,10 @@ class HocBaTimeoff(http.Controller):
             domain, order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
+            # HR/Admin lọc theo phòng ban ngay trong thanh sắp xếp; Trưởng phòng
+            # chỉ thấy phòng mình nên không cần (FE gate bằng seeAll).
+            'allDepartments': [{'id': d.id, 'name': d.name}
+                               for d in self._scoped_departments(scope)],
             'requests': [self._approval_request(l) for l in leaves],
         })
 

@@ -34,6 +34,7 @@ export default function ApprovalPanel({ isHrManager }) {
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
   const [withdrawDecision, setWithdrawDecision] = useState(null); // yêu cầu rút đang xử lý
   const [sort, setSort] = useState({ key: 'from', dir: 'asc' });
+  const [dept, setDept] = useState(''); // lọc phòng ban (chỉ role HR, khi sắp xếp theo phòng ban)
 
   const load = () => {
     setErr(null); setData(null);
@@ -44,14 +45,25 @@ export default function ApprovalPanel({ isHrManager }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải đơn chờ duyệt…" />;
 
-  const rows = sortRows(data.requests, SORT_FIELDS, sort);
+  // Lọc phòng ban chỉ áp dụng khi role HR đang sắp xếp theo phòng ban + đã chọn 1 phòng.
+  const deptFilterOn = data.seeAll && sort.key === 'department' && dept;
+  const filtered = deptFilterOn
+    ? data.requests.filter((r) => String(r.departmentId) === String(dept))
+    : data.requests;
+  const rows = sortRows(filtered, SORT_FIELDS, sort);
 
   return (
     <div className="card">
       <div className="card-head">
         <h3>Đơn chờ duyệt</h3>
         <span className="sub">{rows.length} đơn</span>
-        <div className="actions"><SortBar fields={SORT_FIELDS} sort={sort} onChange={setSort} /></div>
+        <div className="actions">
+          <SortBar
+            fields={SORT_FIELDS} sort={sort} onChange={setSort}
+            departments={data.seeAll ? data.allDepartments : null}
+            dept={dept} onDeptChange={setDept}
+          />
+        </div>
       </div>
       <div className="tbl-wrap">
         <table className="tbl">
