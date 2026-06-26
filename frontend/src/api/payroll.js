@@ -24,6 +24,8 @@ export const fetchPayslips = (params) =>
   g('/hocba-hrm/api/payroll/payslip?' + new URLSearchParams(params));
 export const fetchEmployeePayroll = (params) =>
   g('/hocba-hrm/api/payroll/employee-payroll?' + new URLSearchParams(params));
+export const fetchSalaryHistory = (params) =>
+  g('/hocba-hrm/api/payroll/salary-history?' + new URLSearchParams(params));
 export const fetchPayslip = (id) =>
   g(`/hocba-hrm/api/payroll/payslip/${id}`);
 export const computePayslip = (id) =>
@@ -40,6 +42,8 @@ export const fetchBankFiles = (params) =>
   g('/hocba-hrm/api/payroll/bank-file?' + new URLSearchParams(params));
 export const generateBankFile = (payload) =>
   p('/hocba-hrm/api/payroll/bank-file/generate', payload);
+export const createTransferFile = (month, year, bankCodes) =>
+  p('/hocba-hrm/api/payroll/transfer-file', { month, year, bank_codes: bankCodes });
 export const markBankFileUploaded = (id) =>
   p(`/hocba-hrm/api/payroll/bank-file/${id}/upload`, {});
 export const markBankFileConfirmed = (id) =>
@@ -89,6 +93,14 @@ export const sendPayslipMail = (payslipIds) =>
 // ── Mark payslips as sent (after EmailJS) ────────────────
 export const markPayslipsSent = (payslipIds) =>
   p('/hocba-hrm/api/payroll/payslip/mark-sent', { payslip_ids: payslipIds });
+
+// ── Employee self-confirm (authenticated) ────────────────
+export const employeeConfirmPayslip = (slipId, action, feedback) =>
+  p(`/hocba-hrm/api/payroll/payslip/${slipId}/employee-confirm`, { action, feedback });
+
+// ── HR reset confirmation ────────────────────────────────
+export const resetPayslipConfirm = (slipId) =>
+  p(`/hocba-hrm/api/payroll/payslip/${slipId}/reset-confirm`, {});
 
 // ── Mail template config ────────────────────────────────
 export const fetchMailTemplate = () =>

@@ -27,9 +27,14 @@ class BankFile(models.Model):
     bank_format_id = fields.Many2one(
         'hb.bank.format',
         string='Ngân hàng',
-        required=True,
+        required=False,
         ondelete='restrict',
         readonly=True,
+    )
+    bank_codes = fields.Char(
+        string='Mã ngân hàng',
+        readonly=True,
+        help='Comma-separated bank format codes, e.g. "MB,VCB" or "ALL".',
     )
     attachment_id = fields.Many2one(
         'ir.attachment',
@@ -92,9 +97,10 @@ class BankFile(models.Model):
             'batch_name': self.batch_id.name,
             'batch_month': ds.month if ds else None,
             'batch_year': ds.year if ds else None,
-            'bank_code': self.bank_format_id.code,
-            'bank_name': self.bank_format_id.name,
-            'format_name': self.bank_format_id.name,
+            'bank_code': self.bank_format_id.code if self.bank_format_id else None,
+            'bank_name': self.bank_format_id.name if self.bank_format_id else None,
+            'bank_codes': self.bank_codes or '',
+            'format_name': self.bank_format_id.name if self.bank_format_id else None,
             'payment_date': str(self.payment_date),
             'total_amount': self.total_amount,
             'record_count': self.record_count,
