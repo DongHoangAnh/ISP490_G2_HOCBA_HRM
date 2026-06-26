@@ -1,6 +1,6 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig, resetPayslipConfirm } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
@@ -126,11 +126,36 @@ const MS = {
 };
 
 /* ── Salary Detail — receipt-style, flex to screen ── */
-function SalaryDetail({ emp, columns, onClose }) {
+const CONFIRM_STYLE = {
+  pending:   { label: 'Chờ xác nhận', bg: '#fef3c7', color: '#92400e', icon: 'clock' },
+  confirmed: { label: 'Đã xác nhận',  bg: '#d1fae5', color: '#065f46', icon: 'checkCircle' },
+  rejected:  { label: 'Từ chối',      bg: '#fee2e2', color: '#991b1b', icon: 'xCircle' },
+};
+
+function SalaryDetail({ emp, columns, onClose, onChanged }) {
   const lastCode = columns.length > 0 ? columns[columns.length - 1].code : null;
   const NET_CODES = new Set(['thuc_lanh']);
   const netRow = columns.find((c) => NET_CODES.has(c.code));
   const netVal = netRow ? emp.amounts[netRow.code] : null;
+
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [localStatus, setLocalStatus] = useState(emp.employee_confirm || 'pending');
+
+  const cs = CONFIRM_STYLE[localStatus] || CONFIRM_STYLE.pending;
+  const canReset = emp.payslip_id && localStatus !== 'pending';
+
+  const handleReset = async () => {
+    if (!confirm('Bỏ xác nhận để tính lại lương cho nhân viên này?')) return;
+    setBusy(true); setErr(null);
+    try {
+      await resetPayslipConfirm(emp.payslip_id);
+      setLocalStatus('pending');
+      if (onChanged) onChanged();
+    } catch (e) {
+      setErr(e.message || 'Reset thất bại');
+    } finally { setBusy(false); }
+  };
 
   return (
     <Modal onClose={onClose}>
@@ -142,7 +167,20 @@ function SalaryDetail({ emp, columns, onClose }) {
         {/* ─ header ─ */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{emp.name}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{emp.name}</h2>
+              {emp.payslip_id && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 20,
+                  fontSize: 11.5, fontWeight: 600,
+                  background: cs.bg, color: cs.color,
+                }}>
+                  <Icon name={cs.icon} size={13} />
+                  {cs.label}
+                </span>
+              )}
+            </div>
             <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
               {[emp.code, emp.job_title, emp.department].filter(Boolean).join(' · ')}
             </div>
@@ -192,11 +230,59 @@ function SalaryDetail({ emp, columns, onClose }) {
             background: 'linear-gradient(135deg, #065f46, #047857)',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
-            <span style={{ color: '#d1fae5', fontSize: 13, fontWeight: 600 }}>Thuc linh</span>
+            <span style={{ color: '#d1fae5', fontSize: 13, fontWeight: 600 }}>Thực lĩnh</span>
             <span style={{ color: '#fff', fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
               {hbVND(netVal)}
             </span>
           </div>
+        )}
+
+        {/* ─ rejected feedback ─ */}
+        {localStatus === 'rejected' && emp.employee_feedback && (
+          <div style={{
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+            background: '#fef2f2', border: '1px solid #fecaca',
+            fontSize: 12.5, color: '#991b1b',
+          }}>
+            <span style={{ fontWeight: 600 }}>Lý do từ chối:</span> {emp.employee_feedback}
+          </div>
+        )}
+
+        {/* ─ status + HR reset action ─ */}
+        {err && (
+          <div style={{ color: '#dc2626', fontSize: 12.5, marginTop: 10, padding: '6px 10px', background: '#fef2f2', borderRadius: 6 }}>
+            {err}
+          </div>
+        )}
+
+        {localStatus === 'confirmed' && (
+          <div style={{
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+            background: '#f0fdf4', border: '1px solid #bbf7d0',
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 13, color: '#065f46', fontWeight: 600,
+          }}>
+            <Icon name="checkCircle" size={16} />
+            Nhân viên đã xác nhận phiếu lương
+          </div>
+        )}
+
+        {canReset && (
+          <button
+            onClick={handleReset}
+            disabled={busy}
+            style={{
+              marginTop: 10, padding: '10px 0', borderRadius: 8, flexShrink: 0,
+              border: '1px solid #d1d5db', background: '#fff',
+              fontSize: 13, fontWeight: 600, color: '#374151',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              opacity: busy ? 0.5 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            <Icon name="refresh" size={15} />
+            {busy ? 'Đang xử lý...' : 'Bỏ xác nhận — tính lại lương'}
+          </button>
         )}
       </div>
     </Modal>
@@ -753,7 +839,7 @@ export default function BatchList({ search }) {
       {cfgOpen && allCols.length > 0 && (
         <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
-      {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} />}
+      {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} onChanged={load} />}
     </div>
   );
 }
