@@ -1940,20 +1940,27 @@ class HocBaTimeoff(http.Controller):
             year = int(kw.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
-        # view='all' chỉ cho người duyệt; mặc định xem lịch của chính mình.
-        view = kw.get('scope') if kw.get('scope') in ('me', 'all') else 'me'
-        if view == 'all' and not scope['canApprove']:
-            view = 'me'
-
+        # Phạm vi lịch theo VAI TRÒ (đã bỏ toggle Của tôi/Cả đội):
+        #  - NV/GV thường: chỉ lịch cá nhân.
+        #  - Trưởng phòng: cả phòng mình quản lý (gồm phòng con).
+        #  - HR/Admin: mọi phòng ban, lọc 1 phòng nếu chọn (?dept=<id>).
         start, end = self._year_bounds(year)
         overlap = [('date_from', '<=', end), ('date_to', '>=', start)]
         Leave = request.env['hr.leave'].sudo()
-        if view == 'all':
-            # HR/Admin xem tất cả, Trưởng phòng chỉ phòng ban được giao.
-            domain = overlap + self._dept_domain(scope)
-        else:
+        dept_filter = False
+        if not scope['canApprove']:
             emp = request.env.user.employee_id
             domain = ([('employee_id', '=', emp.id)] + overlap) if emp else [('id', '=', 0)]
+        else:
+            dept_dom = self._dept_domain(scope)
+            if scope['seeAll']:
+                try:
+                    dept_filter = int(kw.get('dept') or 0) or False
+                except (TypeError, ValueError):
+                    dept_filter = False
+                if dept_filter:
+                    dept_dom = [('department_id', '=', dept_filter)]
+            domain = overlap + dept_dom
 
         leaves = Leave.search(domain, order='date_from')
         rows, types = [], {}
@@ -1990,7 +1997,11 @@ class HocBaTimeoff(http.Controller):
         return request.make_json_response({
             **self._scope_flags(scope),
             'year': year,
-            'scope': view,
+            'dept': dept_filter,
+            # Danh sách phòng ban cho HR chọn lọc (vai trò khác không cần).
+            'allDepartments': ([{'id': d.id, 'name': d.name}
+                                for d in self._scoped_departments(scope)]
+                               if scope['seeAll'] else []),
             'leaveTypes': sorted(types.values(), key=lambda t: t['name']),
             'leaves': rows,
             'mandatoryDays': mdays,

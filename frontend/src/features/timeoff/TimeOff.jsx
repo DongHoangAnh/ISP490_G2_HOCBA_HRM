@@ -138,7 +138,7 @@ export default function TimeOff({ search, focus }) {
           onCancel={onCancel} onUpdated={setData} />
       )}
       {activeTab === 'calendar' && (
-        <CalendarPanel isOfficer={data.isOfficer}
+        <CalendarPanel isOfficer={data.isOfficer} seeAll={data.seeAll}
           isTeacher={!!(data.employee && data.employee.isTeacher)} />
       )}
       {activeTab === 'approvals' && data.isOfficer && (

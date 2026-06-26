@@ -149,28 +149,28 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacher
   );
 }
 
-export default function CalendarPanel({ isOfficer, isTeacher }) {
+export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [year, setYear] = useState(NOW.getFullYear());
   const [month, setMonth] = useState(NOW.getMonth());
   const [mode, setMode] = useState('year');   // 'year' | 'month'
-  const [scope, setScope] = useState('me');     // 'me' | 'all'
+  const [dept, setDept] = useState('');         // HR lọc 1 phòng ban ('' = tất cả)
   const [active, setActive] = useState(null);   // Set id loại đang bật (null = tất cả)
   const [teaching, setTeaching] = useState(new Map()); // ngày dạy → số buổi (GV)
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setErr(null); setData(null);
-    fetchCalendar(year, scope).then((d) => {
+    fetchCalendar(year, seeAll ? (dept || undefined) : undefined).then((d) => {
       setData(d);
       setActive(new Set(d.leaveTypes.map((t) => t.id))); // bật tất cả loại
     }).catch((e) => setErr(e.message));
-  }, [year, scope, tick]);
+  }, [year, dept, seeAll, tick]);
 
-  // GV (xem "Của tôi"): lấy ngày có lịch dạy cả năm để đánh dấu. Lỗi gọi API
-  // lịch dạy KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu.
-  const teacherView = isTeacher && scope === 'me';
+  // GV xem lịch cá nhân: đánh dấu ngày có lịch dạy cả năm. Lỗi gọi API lịch dạy
+  // KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu. (Officer xem lịch đội → tắt.)
+  const teacherView = isTeacher && !isOfficer;
   useEffect(() => {
     if (!teacherView) { setTeaching(new Map()); return; }
     let cancelled = false;
@@ -229,15 +229,18 @@ export default function CalendarPanel({ isOfficer, isTeacher }) {
         )}
       </div>
 
-      {/* Cột phải: phạm vi + lọc + legend + ngày bắt buộc */}
+      {/* Cột phải: chọn phòng ban (HR) + lọc loại + legend + ngày bắt buộc */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {isOfficer && (
+        {seeAll && (
           <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phạm vi</div>
-            <div className="seg" style={{ width: '100%' }}>
-              <button className={scope === 'me' ? 'active' : ''} onClick={() => setScope('me')}>Của tôi</button>
-              <button className={scope === 'all' ? 'active' : ''} onClick={() => setScope('all')}>Cả đội</button>
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phòng ban</div>
+            <select className="sel" style={{ width: '100%' }}
+              value={dept} onChange={(e) => setDept(e.target.value)}>
+              <option value="">Tất cả phòng ban</option>
+              {(data.allDepartments || []).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
           </div>
         )}
 
@@ -269,7 +272,7 @@ export default function CalendarPanel({ isOfficer, isTeacher }) {
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Lịch dạy</div>
             <div className="muted" style={{ fontSize: 12.5 }}>
-              Ngày có lịch dạy lấy từ hệ thống CMS.
+              Ngày có lịch dạy lấy từ lịch giảng dạy của bạn.
             </div>
             <div style={{ fontSize: 12.5, marginTop: 8 }}>
               <b>{teaching.size}</b> ngày dạy · <b>{teachTotal}</b> buổi trong năm {year}

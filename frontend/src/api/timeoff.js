@@ -71,11 +71,12 @@ export const fetchDashboard = (year, dept) => {
   return hbGet('/hocba-hrm/api/timeoff/dashboard' + (q ? '?' + q : ''));
 };
 
-/* Lịch nghỉ. scope: 'me' (của tôi) | 'all' (cả đội — chỉ officer). */
-export const fetchCalendar = (year, scope) => {
+/* Lịch nghỉ. Phạm vi theo vai trò (NV/GV: cá nhân · trưởng phòng: cả phòng ·
+   HR: mọi phòng). dept = id phòng ban để HR lọc 1 phòng (vai trò khác bỏ qua). */
+export const fetchCalendar = (year, dept) => {
   const p = new URLSearchParams();
   if (year) p.set('year', year);
-  if (scope) p.set('scope', scope);
+  if (dept) p.set('dept', dept);
   const q = p.toString();
   return hbGet('/hocba-hrm/api/timeoff/calendar' + (q ? '?' + q : ''));
 };
