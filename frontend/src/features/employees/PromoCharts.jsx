@@ -6,7 +6,7 @@ import {
 
 export function SalaryJourneyChart({ promotions }) {
   const data = (promotions || []).map((p) => ({
-    date: p.date, wage: p.toWage || 0, label: p.toJob }));
+    date: p.date, wage: p.toWage || 0 }));
   if (!data.length) return <div className="muted" style={{ fontSize: 12 }}>Chưa có dữ liệu lộ trình.</div>;
   return (
     <ResponsiveContainer width="100%" height={180}>

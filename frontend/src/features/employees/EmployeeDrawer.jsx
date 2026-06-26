@@ -494,6 +494,7 @@ export function PromoTab({ det, isMgr, editable, onUpdated }) {
   const canAct = editable && onUpdated;
 
   useEffect(() => {
+    setEvalData(null); // tránh nháy dữ liệu NV cũ khi đổi hồ sơ
     if (canAct) fetchEvaluations(det.id).then(setEvalData).catch(() => setEvalData(null));
   }, [det.id, canAct]);
 
