@@ -11,10 +11,11 @@ export default defineConfig({
   base: '/hocba_hrm/static/spa/',
   server: {
     proxy: {
-      '/hocba-hrm/api': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/hocba_employees/static': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/web': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/odoo': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/hocba-hrm/api': { target: 'http://localhost:8069', changeOrigin: true },
+      '/hocba-hrm': { target: 'http://localhost:8069', changeOrigin: true },
+      '/hocba_employees/static': { target: 'http://localhost:8069', changeOrigin: true },
+      '/web': { target: 'http://localhost:8069', changeOrigin: true },
+      '/odoo': { target: 'http://localhost:8069', changeOrigin: true },
     },
   },
   build: {
