@@ -144,5 +144,21 @@
             <field name="color">3</field>
         </record>
 
+        <!-- ====================================================
+             8. NGHỈ BUỔI DẠY (Teaching Session Off) — riêng cho giáo viên
+             - GV xin nghỉ theo TỪNG buổi dạy (session-first), không theo ngày.
+             - KHÔNG cần allocation → KHÔNG trừ quỹ phép (chỉ là đổi lịch dạy).
+             - Có lương; HR Officer duyệt; không cần chứng từ.
+        ==================================================== -->
+        <record id="hb_leave_type_teaching_off" model="hr.leave.type">
+            <field name="name">Nghỉ Buổi Dạy</field>
+            <field name="time_type">leave</field>
+            <field name="requires_allocation">False</field>
+            <field name="leave_validation_type">hr</field>
+            <field name="unpaid">False</field>
+            <field name="request_unit">day</field>
+            <field name="color">7</field>
+        </record>
+
     </data>
 </odoo>
