@@ -35,7 +35,7 @@ export const resetPayslip = (id, reason) =>
 export const computeAllPayslips = (month, year) =>
   p('/hocba-hrm/api/payroll/compute-all', { month, year });
 
-// ── Bank File ───────────────────────────────────────────
+// ── Bank File / Transfer ─────────────────────────────────
 export const fetchBankFiles = (params) =>
   g('/hocba-hrm/api/payroll/bank-file?' + new URLSearchParams(params));
 export const generateBankFile = (payload) =>
@@ -44,12 +44,18 @@ export const markBankFileUploaded = (id) =>
   p(`/hocba-hrm/api/payroll/bank-file/${id}/upload`, {});
 export const markBankFileConfirmed = (id) =>
   p(`/hocba-hrm/api/payroll/bank-file/${id}/confirm`, {});
+export const fetchTransferList = (params) =>
+  g('/hocba-hrm/api/payroll/transfer-list?' + new URLSearchParams(params));
 
 // ── Salary Rule ──────────────────────────────────────────
+export const fetchRuleCategories = () =>
+  g('/hocba-hrm/api/payroll/salary-rule-category');
 export const createRuleCategory = (payload) =>
   p('/hocba-hrm/api/payroll/salary-rule-category', payload);
 export const updateRuleCategory = (id, payload) =>
   p(`/hocba-hrm/api/payroll/salary-rule-category/${id}`, payload);
+export const fetchSalaryStructures = () =>
+  g('/hocba-hrm/api/payroll/salary-structure');
 export const fetchSalaryRules = (params) =>
   g('/hocba-hrm/api/payroll/salary-rule?' + new URLSearchParams(params));
 export const createSalaryRule = (payload) =>

@@ -743,6 +743,124 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
+    # TRANSFER LIST (danh sách chuyển khoản)
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/transfer-list', type='http', auth='user',
+                methods=['GET'], csrf=False)
+    def transfer_list(self, **kw):
+        """Danh sách chuyển khoản lương — dùng để xuất file eMB_BulkPayment."""
+        try:
+            today = fields.Date.today()
+            month = int(kw.get('month') or today.month)
+            year = int(kw.get('year') or today.year)
+            nm = month + 1 if month < 12 else 1
+            ny = year if month < 12 else year + 1
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{ny}-{nm:02d}-01'
+            env = request.env
+
+            # Build bank entry lookup: short_code → full name
+            bank_entries = env['hb.bank.format'].sudo().search(
+                [('active', '=', True)])
+            bank_lookup = {}
+            for entry in bank_entries:
+                parts = entry.name.split(' - ', 1)
+                if len(parts) == 2:
+                    code = parts[0].strip().upper()
+                    if code not in bank_lookup:
+                        bank_lookup[code] = entry.name
+
+            # Helper: resolve employee bank → MB bank name
+            def _resolve_bank(bank_acc):
+                if not bank_acc:
+                    return ''
+                bank = bank_acc.bank_id
+                if not bank:
+                    return ''
+                bname = bank.name or ''
+                bic = (bank.bic or '').upper()
+                for code, full in bank_lookup.items():
+                    if bic and code in bic:
+                        return full
+                    if code.lower() in bname.lower():
+                        return full
+                    if bname.lower() in full.lower():
+                        return full
+                return bname
+
+            # Helper: get employee bank account
+            def _get_bank(emp):
+                if hasattr(emp, 'bank_account_id') and emp.bank_account_id:
+                    return emp.bank_account_id
+                partner = (
+                    getattr(emp, 'address_home_id', None)
+                    or getattr(emp, 'work_contact_id', None)
+                )
+                if partner and partner.bank_ids:
+                    return partner.bank_ids[0]
+                return None
+
+            # Payslips in period
+            slips = env['hb.payslip'].sudo().search(
+                [('date_from', '>=', date_start),
+                 ('date_from', '<', date_end),
+                 ('state', 'in', ('done', 'close'))],
+                order='date_from desc, id desc',
+            )
+            slip_map = {}
+            for s in slips:
+                if s.employee_id.id not in slip_map:
+                    slip_map[s.employee_id.id] = s
+
+            # Active employees
+            employees = env['hr.employee'].sudo().search(
+                [('active', '=', True)],
+                order='x_employee_code, id',
+            )
+
+            rows = []
+            for emp in employees:
+                slip = slip_map.get(emp.id)
+                if not slip:
+                    continue  # No payslip this month → skip
+                net_line = slip.line_ids.filtered(
+                    lambda l: l.code == 'thuc_lanh')
+                net = net_line[0].amount if net_line else 0.0
+
+                bank_acc = _get_bank(emp)
+                acc_number = (bank_acc.acc_number or '').strip() if bank_acc else ''
+                bank_name = _resolve_bank(bank_acc)
+
+                rows.append({
+                    'employee_id': emp.id,
+                    'employee_code': emp.x_employee_code or '',
+                    'name': emp.name or '',
+                    'bank_account': acc_number,
+                    'bank_name': bank_name,
+                    'net_amount': int(net),
+                    'payslip_state': slip.state,
+                    'employee_confirm': slip.x_employee_confirm
+                        if hasattr(slip, 'x_employee_confirm') else None,
+                })
+
+            # Bank formats for dropdown
+            formats = env['hb.bank.format'].sudo().search(
+                [('active', '=', True)], order='sequence, name')
+            fmt_list = [{
+                'id': f.id, 'name': f.name, 'code': f.code,
+                'description_template': f.description_template or '',
+            } for f in formats]
+
+            return _success_response({
+                'month': month, 'year': year,
+                'employees': rows,
+                'bank_formats': fmt_list,
+            })
+        except Exception as e:
+            _logger.exception('transfer_list error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
     # BANK FILE
     # ═════════════════════════════════════════════════════════
     @http.route('/hocba-hrm/api/payroll/bank-file/generate', type='http', auth='user',
@@ -754,13 +872,15 @@ class PayrollAPI(http.Controller):
                 if f not in body:
                     return _error_response(f'Missing required field: {f}')
             payment_date = body.get('payment_date') or str(fields.Date.today())
-            wiz = request.env['hb.bank.file.wizard'].sudo().create({
+            wiz_vals = {
                 'payslip_batch_id': int(body['batch_id']),
                 'bank_format_id': int(body['bank_format_id']),
-                'company_bank_id': int(body.get('company_bank_id', 0)) or False,
                 'payment_date': payment_date,
                 'description': body.get('description', 'Luong T{month}/{year}'),
-            })
+            }
+            if body.get('company_bank_id'):
+                wiz_vals['company_bank_id'] = int(body['company_bank_id'])
+            wiz = request.env['hb.bank.file.wizard'].sudo().create(wiz_vals)
             wiz.action_generate()
             bank_file = request.env['hb.bank.file'].sudo().search([
                 ('batch_id', '=', int(body['batch_id'])),
@@ -830,14 +950,10 @@ class PayrollAPI(http.Controller):
                 [('active', '=', True)], order='sequence, name',
             )
             return _success_response([{
-                'id': f.id, 'name': f.name, 'code': f.code,
+                'id': f.id, 'name': f.name, 'code': f.code or '',
                 'sequence': f.sequence,
-                'formatter_class': f.formatter_class,
-                'encoding': f.encoding,
-                'file_extension': f.file_extension,
-                'account_format_regex': f.account_format_regex or '',
-                'max_records_per_file': f.max_records_per_file,
-                'description_template': f.description_template or '',
+                'transfer_type': f.transfer_type or 'normal',
+                'formatter_class': f.formatter_class or '',
             } for f in formats])
         except Exception as e:
             return _error_response(str(e), status=500)
@@ -847,19 +963,13 @@ class PayrollAPI(http.Controller):
     def create_bank_format(self, **kw):
         try:
             body = _get_json_body()
-            for f in ('name', 'code', 'formatter_class'):
-                if not body.get(f):
-                    return _error_response(f'Missing required field: {f}')
+            if not body.get('name'):
+                return _error_response('Missing required field: name')
             vals = {
                 'name': body['name'],
-                'code': body['code'],
-                'formatter_class': body['formatter_class'],
+                'code': body.get('code', ''),
+                'transfer_type': body.get('transfer_type', 'normal'),
                 'sequence': int(body.get('sequence', 10)),
-                'encoding': body.get('encoding', 'utf-8'),
-                'file_extension': body.get('file_extension', 'xlsx'),
-                'account_format_regex': body.get('account_format_regex', ''),
-                'max_records_per_file': int(body.get('max_records_per_file', 0)),
-                'description_template': body.get('description_template', 'Luong T{month}/{year}'),
             }
             rec = request.env['hb.bank.format'].sudo().create(vals)
             return _success_response({
@@ -880,13 +990,11 @@ class PayrollAPI(http.Controller):
             if not rec.exists():
                 return _error_response('Bank format not found.', status=404)
             vals = {}
-            for f in ('name', 'code', 'formatter_class', 'encoding',
-                       'file_extension', 'account_format_regex', 'description_template'):
+            for f in ('name', 'code', 'transfer_type'):
                 if f in body:
                     vals[f] = body[f]
-            for f in ('sequence', 'max_records_per_file'):
-                if f in body:
-                    vals[f] = int(body[f])
+            if 'sequence' in body:
+                vals['sequence'] = int(body['sequence'])
             if vals:
                 rec.write(vals)
             return _success_response({
@@ -1048,15 +1156,31 @@ class PayrollAPI(http.Controller):
     def create_salary_rule(self, **kw):
         try:
             body = _get_json_body()
-            for f in ('name', 'code', 'structure_id', 'category_id'):
+            for f in ('name', 'code'):
                 if not body.get(f):
                     return _error_response(f'Missing required field: {f}')
+            # Auto-assign structure_id if not provided → first active structure
+            structure_id = int(body['structure_id']) if body.get('structure_id') else None
+            if not structure_id:
+                first_struct = request.env['hb.salary.structure'].sudo().search(
+                    [('active', '=', True)], limit=1, order='id')
+                if not first_struct:
+                    return _error_response('Chưa có cấu trúc lương. Tạo trước khi thêm rule.')
+                structure_id = first_struct.id
+            # Auto-assign category_id if not provided → first category
+            category_id = int(body['category_id']) if body.get('category_id') else None
+            if not category_id:
+                first_cat = request.env['hb.salary.rule.category'].sudo().search(
+                    [], limit=1, order='sequence, id')
+                if not first_cat:
+                    return _error_response('Chưa có danh mục rule. Tạo trước khi thêm rule.')
+                category_id = first_cat.id
             vals = {
                 'name': body['name'],
                 'code': body['code'],
                 'sequence': int(body.get('sequence', 10)),
-                'structure_id': int(body['structure_id']),
-                'category_id': int(body['category_id']),
+                'structure_id': structure_id,
+                'category_id': category_id,
                 'amount_type': body.get('amount_type', 'fixed'),
                 'appears_on_payslip': body.get('appears_on_payslip', True),
                 'note': body.get('note', ''),
@@ -1342,7 +1466,12 @@ class PayrollAPI(http.Controller):
             slips = request.env['hb.payslip'].sudo().browse(ids)
             now = fields.Datetime.now()
             for slip in slips.filtered(lambda s: s.exists()):
-                slip.write({'x_email_sent': True, 'x_email_sent_date': now})
+                vals = {'x_email_sent': True, 'x_email_sent_date': now}
+                # Reset rejected → pending so employee can re-confirm
+                if slip.x_employee_confirm == 'rejected':
+                    vals['x_employee_confirm'] = 'pending'
+                    vals['x_employee_feedback'] = False
+                slip.write(vals)
                 month = slip.date_from.strftime('%m') if slip.date_from else ''
                 year = slip.date_from.strftime('%Y') if slip.date_from else ''
                 email_to = slip.employee_id.work_email or ''

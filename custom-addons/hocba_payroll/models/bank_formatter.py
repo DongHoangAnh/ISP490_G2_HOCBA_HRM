@@ -154,7 +154,11 @@ class BaseBankFormatter:
         """Get employee bank account — compatible with Community (no bank_account_id)."""
         if hasattr(employee, 'bank_account_id') and employee.bank_account_id:
             return employee.bank_account_id
-        partner = employee.address_home_id or employee.work_contact_id
+        # Community fallback: partner bank accounts
+        partner = (
+            getattr(employee, 'address_home_id', None)
+            or getattr(employee, 'work_contact_id', None)
+        )
         if partner and partner.bank_ids:
             return partner.bank_ids[0]
         return None
@@ -204,6 +208,188 @@ class TCBFormatter(BaseBankFormatter):
 
 
 # ═════════════════════════════════════════════════════════════
+# Concrete: MB Bank (eMB_BulkPayment format)
+# ═════════════════════════════════════════════════════════════
+class MBBankFormatter(BaseBankFormatter):
+    """MB Bank bulk payment format (eMB_BulkPayment).
+
+    Columns:
+        A — STT (Ord. No.)
+        B — Số tài khoản (Account No.)
+        C — Tên đơn vị thụ hưởng (Beneficiary Organization)
+        D — Ngân hàng thụ hưởng/Chi nhánh (Beneficiary Bank)
+        E — Số tiền (Amount)
+        F — Chi tiết thanh toán (Payment Detail)
+    """
+
+    code = 'MB'
+    name = 'MB Bank'
+    headers = [
+        '\ufeffSTT\n(Ord. No.)\n(1)',
+        'Số tài khoản\n(Account No.)\n(2)',
+        'Tên đơn vị thụ hưởng\n(Beneficiary Organization)\n(3)',
+        'Ngân hàng thụ hưởng/Chi nhánh\n(Beneficiary Bank)\n(4)',
+        'Số tiền\n(Amount)\n(5)',
+        'Chi tiết thanh toán\n(Payment Detail)\n(6)',
+    ]
+
+    def _build_bank_lookup(self, env):
+        """Build a lookup dict: short_code → full MB bank name."""
+        entries = env['hb.bank.format'].sudo().search([('active', '=', True)])
+        lookup = {}
+        for entry in entries:
+            # Extract short code from "CODE - Full name"
+            parts = entry.name.split(' - ', 1)
+            if len(parts) == 2:
+                code = parts[0].strip().upper()
+                if code not in lookup:
+                    lookup[code] = entry.name
+        return lookup
+
+    def _resolve_bank_name(self, bank_account, lookup):
+        """Resolve employee bank account to MB-format bank name."""
+        if not bank_account:
+            return ''
+        bank = bank_account.bank_id
+        if not bank:
+            return ''
+
+        bank_name = bank.name or ''
+        bank_bic = (bank.bic or '').upper()
+
+        # Try matching by BIC prefix (e.g., BFTV → BIDV)
+        # Try matching by bank name against lookup codes
+        for code, full_name in lookup.items():
+            # Check if short code appears in BIC
+            if bank_bic and code in bank_bic:
+                return full_name
+            # Check if short code matches bank name (case-insensitive)
+            if code.lower() in bank_name.lower():
+                return full_name
+            # Check if bank name appears in the full MB entry name
+            if bank_name.lower() in full_name.lower():
+                return full_name
+
+        # Fallback: return raw bank name
+        return bank_name
+
+    def build_row(self, stt, acc_number, emp_name, amount, description, **kw):
+        bank_name = kw.get('bank_name', '')
+        return {
+            'stt': stt,
+            'acc_number': acc_number,
+            'emp_name': _remove_diacritics(emp_name),
+            'bank_name': bank_name,
+            'amount': amount,
+            'description': _remove_diacritics(description),
+        }
+
+    def _column_keys(self):
+        return ['stt', 'acc_number', 'emp_name', 'bank_name', 'amount', 'description']
+
+    def build_rows(self, payslips, description_tpl, account_regex=None):
+        """Override to include bank name lookup for column D."""
+        rows = []
+        warnings = []
+        stt = 1
+
+        # Build bank lookup from DB (via payslip env)
+        lookup = {}
+        if payslips:
+            lookup = self._build_bank_lookup(payslips[0].env)
+
+        for slip in payslips:
+            net = self._get_net_amount(slip)
+            if net <= 0:
+                warnings.append(
+                    _('Payslip %(ref)s có Net = 0 hoặc âm — đã bỏ qua.',
+                      ref=slip.number or slip.name)
+                )
+                continue
+
+            bank_account = self._get_employee_bank(slip.employee_id)
+            if not bank_account or not bank_account.acc_number:
+                continue
+
+            acc_number = bank_account.acc_number.strip()
+            emp_name = slip.employee_id.name or ''
+            emp_code = getattr(slip.employee_id, 'x_employee_code', '') or ''
+            month = slip.date_to.strftime('%m') if slip.date_to else ''
+            year = slip.date_to.strftime('%Y') if slip.date_to else ''
+
+            desc = (description_tpl or 'Luong T{month}/{year}').format(
+                month=month, year=year, employee_code=emp_code,
+            )
+
+            bank_name = self._resolve_bank_name(bank_account, lookup)
+
+            row = self.build_row(
+                stt=stt,
+                acc_number=acc_number,
+                emp_name=emp_name,
+                amount=int(net),
+                description=desc,
+                bank_name=bank_name,
+                employee_code=emp_code,
+            )
+            rows.append(row)
+            stt += 1
+
+        return rows, warnings
+
+    def export_xlsx(self, rows):
+        """Generate eMB_BulkPayment format XLSX."""
+        if openpyxl is None:
+            raise ValidationError(_('Thư viện openpyxl chưa được cài đặt.'))
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'eMB_BulkPayment'
+
+        # Row 1: Title in B1
+        ws.merge_cells('B1:F1')
+        title_cell = ws['B1']
+        title_cell.value = 'DANH SÁCH GIAO DỊCH\n(LIST OF TRANSACTIONS)'
+        title_cell.font = Font(bold=True, size=12)
+        title_cell.alignment = Alignment(
+            horizontal='center', vertical='center', wrap_text=True,
+        )
+        ws.row_dimensions[1].height = 40
+
+        # Row 2: Column headers
+        header_font = Font(bold=True, size=10)
+        header_align = Alignment(
+            horizontal='center', vertical='center', wrap_text=True,
+        )
+        for col_idx, header in enumerate(self.headers, start=1):
+            cell = ws.cell(row=2, column=col_idx, value=header)
+            cell.font = header_font
+            cell.alignment = header_align
+        ws.row_dimensions[2].height = 50
+
+        # Data rows starting from row 3
+        for row_idx, row_data in enumerate(rows, start=3):
+            for col_idx, key in enumerate(self._column_keys(), start=1):
+                val = row_data.get(key, '')
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                if isinstance(val, (int, float)):
+                    cell.number_format = '#,##0'
+                    cell.alignment = Alignment(horizontal='right')
+
+        # Column widths matching eMB template
+        ws.column_dimensions['A'].width = 8    # STT
+        ws.column_dimensions['B'].width = 22   # Số tài khoản
+        ws.column_dimensions['C'].width = 30   # Tên thụ hưởng
+        ws.column_dimensions['D'].width = 55   # Ngân hàng thụ hưởng
+        ws.column_dimensions['E'].width = 18   # Số tiền
+        ws.column_dimensions['F'].width = 40   # Chi tiết thanh toán
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+
+# ═════════════════════════════════════════════════════════════
 # Registry (simple factory)
 # ═════════════════════════════════════════════════════════════
 class BankFormatterRegistry:
@@ -212,6 +398,7 @@ class BankFormatterRegistry:
     _formatters = {
         'VCB': VCBFormatter,
         'TCB': TCBFormatter,
+        'MB': MBBankFormatter,
     }
 
     @classmethod

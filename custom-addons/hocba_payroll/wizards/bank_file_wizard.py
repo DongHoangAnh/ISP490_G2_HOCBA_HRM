@@ -29,7 +29,7 @@ class BankFileWizard(models.TransientModel):
     )
     company_bank_id = fields.Many2one(
         'res.partner.bank', string='Tài khoản công ty',
-        required=True,
+        required=False,
         help='TK ngân hàng của công ty để chuyển khoản.',
     )
     payment_date = fields.Date(
@@ -72,7 +72,10 @@ class BankFileWizard(models.TransientModel):
         if hasattr(employee, 'bank_account_id') and employee.bank_account_id:
             return employee.bank_account_id
         # Community fallback: partner bank accounts
-        partner = employee.address_home_id or employee.work_contact_id
+        partner = (
+            getattr(employee, 'address_home_id', None)
+            or getattr(employee, 'work_contact_id', None)
+        )
         if partner and partner.bank_ids:
             return partner.bank_ids[0]
         return None
