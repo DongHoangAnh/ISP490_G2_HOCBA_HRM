@@ -25,7 +25,7 @@ function Field({ label, full, children }) {
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
-export default function PromotionForm({ det, onClose, onSaved }) {
+export default function PromotionForm({ det, evaluationId, onClose, onSaved }) {
   const [meta, setMeta] = useState(null);
   const [f, setF] = useState({
     dateEffective: TODAY, toDepartmentId: det?.dep || '', toJobId: '',
@@ -44,7 +44,7 @@ export default function PromotionForm({ det, onClose, onSaved }) {
     if (!f.toWage || Number(f.toWage) <= 0) { setErr('Vui lòng nhập mức lương mới (> 0).'); return; }
     setBusy(true);
     try {
-      onSaved(await createPromotion(det.id, f));
+      onSaved(await createPromotion(det.id, evaluationId ? { ...f, evaluationId } : f));
     } catch (e) {
       setErr(e.message || 'Lưu thất bại.');
     } finally { setBusy(false); }

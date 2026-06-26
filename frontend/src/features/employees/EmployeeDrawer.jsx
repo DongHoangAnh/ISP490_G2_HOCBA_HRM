@@ -546,7 +546,7 @@ export function PromoTab({ det, isMgr, editable, onUpdated }) {
       )}
 
       {adding && (
-        <PromotionForm det={det}
+        <PromotionForm det={det} evaluationId={latest?.id}
           onClose={() => setAdding(false)}
           onSaved={(d) => { setAdding(false); onUpdated(d); }} />
       )}
