@@ -251,6 +251,42 @@ def _teaching_week_rows(env, emp, monday, policy):
     return rows
 
 
+def _teaching_days_payload(env, from_str, to_str):
+    """Payload cho /api/teaching/days. Trả (dict, http_status).
+
+    Nguồn dữ liệu: model `hocba.teaching.session` trong Neon (KHÔNG đọc CMS).
+    - Không phải GV (không có x_cms_user_id) → ({isTeacher:False, days:[]}, 200)
+    - from/to thiếu hoặc sai định dạng → ({error:'invalid_date'}, 400)
+    - to < from hoặc khoảng > 366 ngày → ({error:'invalid_range'}, 400)
+    - Hợp lệ → ({isTeacher:True, days:[{date,count}]}, 200)
+      Đếm số buổi/ngày mà GV đang phụ trách (bỏ buổi đã hủy cả lớp).
+    """
+    emp = env.user.employee_id
+    if not emp or not emp.x_cms_user_id:
+        return {'isTeacher': False, 'days': []}, 200
+    try:
+        d_from = datetime.strptime(from_str or '', '%Y-%m-%d').date()
+        d_to = datetime.strptime(to_str or '', '%Y-%m-%d').date()
+    except ValueError:
+        return {'error': 'invalid_date'}, 400
+    if d_to < d_from or (d_to - d_from).days > 366:
+        return {'error': 'invalid_range'}, 400
+    # User thường không có ACL trên hocba.teaching.session → sudo SAU khi đã ghim
+    # employee_id của chính mình (self-service an toàn).
+    sessions = env['hocba.teaching.session'].sudo().search_read(
+        [('employee_id', '=', emp.id),
+         ('state', '!=', 'cancelled'),
+         ('session_date', '>=', d_from),
+         ('session_date', '<=', d_to)],
+        ['session_date'])
+    counts = {}
+    for s in sessions:
+        key = str(s['session_date'])
+        counts[key] = counts.get(key, 0) + 1
+    days = [{'date': d, 'count': c} for d, c in sorted(counts.items())]
+    return {'isTeacher': True, 'days': days}, 200
+
+
 def _att_me_info(env):
     """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -3077,6 +3113,17 @@ class HocBaHRM(http.Controller):
             rows.append(_teaching_session_row(sd, att, policy, now_utc))
 
         return request.make_json_response({'date': str(target), 'rows': rows})
+
+    @http.route('/hocba-hrm/api/teaching/days', auth='user',
+                type='http', methods=['GET'])
+    def api_teaching_days(self, **kw):
+        """Các ngày có lịch dạy của GV đang đăng nhập trong khoảng [from, to].
+        Dùng để đánh dấu ngày dạy trên lịch năm/tháng (tab "Lịch").
+        → { 'isTeacher': bool, 'days': [ { 'date': 'YYYY-MM-DD', 'count': N } ] }
+        """
+        payload, status = _teaching_days_payload(
+            request.env, kw.get('from'), kw.get('to'))
+        return request.make_json_response(payload, status=status)
 
     @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-in',
                 auth='user', type='http', methods=['POST'], csrf=False)

@@ -11,3 +11,4 @@ from . import test_employee_search
 from . import test_request_preview
 from . import test_account
 from . import test_department
+from . import test_teaching_days

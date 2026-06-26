@@ -137,7 +137,10 @@ export default function TimeOff({ search, focus }) {
         <MyTimeOff data={data} search={search} busy={busy}
           onCancel={onCancel} onUpdated={setData} />
       )}
-      {activeTab === 'calendar' && <CalendarPanel isOfficer={data.isOfficer} />}
+      {activeTab === 'calendar' && (
+        <CalendarPanel isOfficer={data.isOfficer}
+          isTeacher={!!(data.employee && data.employee.isTeacher)} />
+      )}
       {activeTab === 'approvals' && data.isOfficer && (
         <ApprovalPanel isHrManager={data.isHrManager} />
       )}
