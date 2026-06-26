@@ -678,6 +678,285 @@ class HbPayslip(models.Model):
     def action_compute_teaching_salary(self):
         return self.action_compute_sheet()
 
+    # ═════════════════════════════════════════════════════════════════════════
+    # BATCH-OPTIMIZED SALARY ENGINE
+    #
+    # Reduces DB round-trips from O(N×R) to O(1) for N employees, R rules.
+    # ┌──────────────────────────┬────────────┬────────────┐
+    # │ Operation                │ Before     │ After      │
+    # ├──────────────────────────┼────────────┼────────────┤
+    # │ Contract resolution      │ N queries  │ 1 query    │
+    # │ Delete old lines         │ N queries  │ 1 query    │
+    # │ Lookup data fetch        │ N×L queries│ S queries  │
+    # │ Create new lines         │ N queries  │ 1 query    │
+    # │ Update slips             │ N queries  │ 2 queries  │
+    # │ AST formula parsing      │ N×F parses │ F parses   │
+    # │ Savepoints               │ N          │ 0          │
+    # └──────────────────────────┴────────────┴────────────┘
+    # N=employees, L=lookup rules, S=source models, F=formula rules
+    # ═════════════════════════════════════════════════════════════════════════
+
+    def action_compute_batch(self, prefetched_rules):
+        """Batch-optimized: compute all payslips with minimum DB round-trips.
+
+        Called on a multi-record recordset (all slips to compute).
+        prefetched_rules: already-loaded hb.salary.rule recordset.
+        Returns dict: {'computed': int, 'errors': list[str]}
+        """
+        slips = self
+        if not slips:
+            return {'computed': 0, 'errors': []}
+
+        env = self.env
+
+        # ── 1. Topo-sort rules ONCE ──────────────────────────────────────
+        try:
+            sorted_rules = _topo_sort_rules(prefetched_rules)
+        except UserError:
+            _logger.warning(
+                'Cycle detected in salary rules — using sequence order')
+            sorted_rules = list(prefetched_rules)
+
+        # ── 2. Prime ORM cache via batch loading ─────────────────────────
+        # Accessing mapped() triggers Odoo's prefetch for the whole recordset,
+        # so per-slip field access in the loop hits cache (not N+1 queries).
+        slips.mapped('employee_id')
+        slips.mapped('worked_days_ids')
+        slips.mapped('input_ids')
+
+        # ── 3. Prefetch contracts in bulk (1 query vs N) ─────────────────
+        emp_ids = list(set(slips.mapped('employee_id.id')))
+        ref_slip = slips[0]
+        all_contracts = env['hb.contract'].sudo().search([
+            ('state', '=', 'open'),
+            ('employee_id', 'in', emp_ids),
+            ('date_start', '<=', ref_slip.date_to),
+            '|', ('date_end', '=', False),
+                 ('date_end', '>=', ref_slip.date_from),
+        ])
+        contract_map = {}
+        for c in all_contracts:
+            contract_map.setdefault(c.employee_id.id, c)
+
+        # ── 4. Prefetch lookup data in bulk (S queries vs N×L) ───────────
+        lookup_cache = self._prefetch_lookups_bulk(
+            emp_ids, sorted_rules, ref_slip.date_from, ref_slip.date_to,
+        )
+
+        # ── 5. Pre-parse AST trees for formula/percentage rules ──────────
+        ast_cache = {}
+        for rule in sorted_rules:
+            src = None
+            if rule.amount_type == 'formula' and rule.amount_formula:
+                src = rule.amount_formula.strip()
+            elif rule.amount_type == 'percentage' \
+                    and rule.amount_percentage_base:
+                src = (rule.amount_percentage_base or '0').strip()
+            if src:
+                try:
+                    ast_cache[rule.id] = _ast.parse(src, mode='eval')
+                except SyntaxError:
+                    pass  # will fall back to per-slip parse
+
+        # ── 6. Pure Python computation loop (NO DB queries) ─────────────
+        # NOTE: old lines are NOT deleted upfront — only for successful
+        # slips after the loop.  This prevents data loss if a specific
+        # employee's computation fails.
+        all_lines = []
+        computed = 0
+        errors = []
+        slip_results = {}
+
+        for slip in slips:
+            try:
+                if slip.state not in ('draft', 'verify'):
+                    continue
+
+                # Resolve contract from prefetched map
+                contract = slip.contract_id
+                cid_update = None
+                if not contract:
+                    contract = contract_map.get(
+                        slip.employee_id.id, env['hb.contract'])
+                    if contract:
+                        cid_update = contract.id
+
+                # Build evaluation namespace (uses ORM cache, no queries)
+                localdict = slip._build_localdict(contract)
+                _rules_order = localdict['_rules_order']
+                _rules_pos = localdict['_rules_pos']
+                warnings = []
+
+                for rule in sorted_rules:
+                    try:
+                        if not HbPayslip._evaluate_rule_condition(
+                                rule, localdict):
+                            continue
+
+                        # ── Optimized rule evaluation ──
+                        if rule.amount_type == 'lookup':
+                            # Use bulk-prefetched cache (0 DB queries)
+                            amount = lookup_cache.get(
+                                (slip.employee_id.id,
+                                 rule.lookup_source,
+                                 rule.lookup_field), 0.0)
+                            qty, rate = 1.0, 0.0
+                        elif rule.id in ast_cache:
+                            # Use pre-parsed AST tree (skip re-parsing)
+                            val = _eval_ast_node(
+                                ast_cache[rule.id].body, localdict)
+                            if rule.amount_type == 'percentage':
+                                amount = int(round(
+                                    float(val)
+                                    * rule.amount_percentage / 100.0))
+                            else:
+                                amount = float(val)
+                            qty, rate = 1.0, 0.0
+                        else:
+                            # Fallback for code/fixed types
+                            amount, qty, rate = \
+                                slip._evaluate_rule_amount(rule, localdict)
+                    except Exception as e:
+                        _logger.warning(
+                            'Batch compute %s rule %s: %s',
+                            slip.number, rule.code, e,
+                        )
+                        warnings.append(_(
+                            'Rule %(code)s lỗi: %(err)s',
+                            code=rule.code, err=str(e),
+                        ))
+                        amount, qty, rate = 0.0, 1.0, 0.0
+
+                    # Accumulate for subsequent rule references
+                    localdict['rules'][rule.code] = amount
+                    _rules_pos[rule.code] = len(_rules_order)
+                    _rules_order.append(rule.code)
+                    localdict['categories'].accumulate(
+                        rule.category_id.code, amount)
+
+                    # Collect line for bulk INSERT
+                    if rule.appears_on_payslip:
+                        all_lines.append({
+                            'payslip_id': slip.id,
+                            'rule_id': rule.id,
+                            'category_id': rule.category_id.id,
+                            'code': rule.code,
+                            'name': rule.name,
+                            'sequence': rule.sequence,
+                            'quantity': qty,
+                            'rate': rate,
+                            'amount': int(round(amount)),
+                        })
+
+                slip_results[slip.id] = {
+                    'warnings': '\n'.join(warnings) if warnings else False,
+                    'contract_id': cid_update,
+                }
+                computed += 1
+            except Exception as e:
+                _logger.warning('Batch compute slip error: %s', e)
+                errors.append(f'{slip.employee_id.name}: {e}')
+
+        # ── 7. Bulk delete old lines ONLY for successful slips ──────────
+        successful_ids = list(slip_results.keys())
+        if successful_ids:
+            old_lines = env['hb.payslip.line'].sudo().search([
+                ('payslip_id', 'in', successful_ids),
+            ])
+            if old_lines:
+                old_lines.unlink()
+
+        # ── 8. Bulk create all lines (1 DB trip for ALL slips) ────────────
+        if all_lines:
+            env['hb.payslip.line'].sudo().create(all_lines)
+
+        # ── 9. Batch update slips (2-3 queries vs N) ─────────────────────
+        # Majority: slips without warnings
+        no_warn_ids = [
+            sid for sid, r in slip_results.items() if not r['warnings']
+        ]
+        if no_warn_ids:
+            env['hb.payslip'].browse(no_warn_ids).write({
+                'x_teaching_computed': True,
+                'x_compute_warnings': False,
+            })
+        # Rare: slips with warnings
+        for sid, r in slip_results.items():
+            if r['warnings']:
+                env['hb.payslip'].browse(sid).write({
+                    'x_teaching_computed': True,
+                    'x_compute_warnings': r['warnings'],
+                })
+        # Update contracts for slips that didn't have one set
+        contract_updates = {
+            sid: r['contract_id']
+            for sid, r in slip_results.items() if r.get('contract_id')
+        }
+        if contract_updates:
+            for sid, cid in contract_updates.items():
+                env['hb.payslip'].browse(sid).write({'contract_id': cid})
+
+        return {'computed': computed, 'errors': errors}
+
+    @api.model
+    def _prefetch_lookups_bulk(self, emp_ids, rules, date_from, date_to):
+        """Prefetch all lookup data for ALL employees in one pass.
+
+        Instead of N search() calls per employee per lookup rule,
+        this does 1 search() per source model for all employees.
+
+        Returns: {(employee_id, source_key, field_name): aggregated_value}
+        """
+        cache = {}
+        lookup_rules = [
+            r for r in rules
+            if r.amount_type == 'lookup' and r.lookup_source and r.lookup_field
+        ]
+        if not lookup_rules:
+            return cache
+
+        # Group by source model
+        by_source = {}
+        for rule in lookup_rules:
+            by_source.setdefault(rule.lookup_source, set()).add(
+                rule.lookup_field)
+
+        for source_key, field_names in by_source.items():
+            src_def = LOOKUP_SOURCES.get(source_key)
+            if not src_def:
+                continue
+
+            # ONE query for ALL employees
+            Model = self.env[src_def['model']].sudo()
+            records = Model.search([
+                (src_def['employee_field'], 'in', emp_ids),
+                (src_def['date_field'], '>=', date_from),
+                (src_def['date_field'], '<=', date_to),
+            ])
+            if not records:
+                continue
+
+            for field_name in field_names:
+                agg = src_def['fields'].get(
+                    field_name, {}).get('agg', 'sum')
+                # Group by employee
+                emp_vals = {}
+                for rec in records:
+                    eid = rec[src_def['employee_field']].id
+                    emp_vals.setdefault(eid, []).append(rec[field_name])
+
+                for eid, vals in emp_vals.items():
+                    if agg == 'sum':     v = sum(vals)
+                    elif agg == 'avg':   v = sum(vals) / len(vals) \
+                        if vals else 0.0
+                    elif agg == 'count': v = float(len(vals))
+                    elif agg == 'max':   v = max(vals)
+                    elif agg == 'min':   v = min(vals)
+                    else:                v = sum(vals)
+                    cache[(eid, source_key, field_name)] = v
+
+        return cache
+
     # ── Resolve helpers ──────────────────────────────────────────────────────
     def _ensure_draft_state(self):
         self.ensure_one()
