@@ -79,7 +79,6 @@ export default function ApprovalPanel({ isHrManager }) {
                     )}
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
-                    {r.scheduleConflict && <Badge kind="amber">Xung đột lịch</Badge>}
                     {r.overlapCount >= OVERLAP_WARN && (
                       <Badge kind="amber">Trùng lịch: {r.overlapCount}</Badge>
                     )}
@@ -199,15 +198,13 @@ function WithdrawDecisionModal({ req, onClose, onDone }) {
   );
 }
 
-/* Modal xử lý 1 đơn: duyệt (kèm ghi chú thay thế / override chứng từ) hoặc từ chối. */
+/* Modal xử lý 1 đơn: duyệt (kèm override chứng từ) hoặc từ chối. */
 function DecisionModal({ req, isHrManager, onClose, onDone }) {
-  const [note, setNote] = useState(req.replacementNote || '');
   const [override, setOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  const needNote = req.scheduleConflict && !req.isEmergency;       // BR-031
   const missingDoc = req.supportDocument && !req.hasMedicalDoc;    // BR-011
 
   const decide = (action) => {
@@ -215,7 +212,6 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
     setBusy(true);
     decideRequest(req.id, {
       action,
-      replacementNote: note.trim(),
       medicalOverride: override,
       medicalOverrideReason: overrideReason.trim(),
     })
@@ -256,24 +252,6 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
               {req.overlapCount >= OVERLAP_WARN
                 ? ' — cân nhắc trước khi duyệt, phòng có thể thiếu người.' : '.'}</span>
           </div>
-        )}
-
-        {req.scheduleConflict && (
-          <div style={{ padding: '10px 13px', background: 'var(--amber-bg,#fff7ed)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5 }}>
-            <b>Xung đột lịch dạy:</b>
-            <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{req.conflictInfo || '—'}</pre>
-          </div>
-        )}
-
-        {needNote && (
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
-              Ghi chú bố trí thay thế *</span>
-            <textarea style={{ ...inp, resize: 'vertical' }} rows={2} value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="VD: Cô B dạy thay buổi 18/06…" />
-            <span className="muted" style={{ fontSize: 12 }}>Bắt buộc trước khi duyệt khi có xung đột lịch dạy (BR-031).</span>
-          </label>
         )}
 
         {missingDoc && (

@@ -1,6 +1,6 @@
 {
     'name': 'Học Bá — Nghỉ phép (Time Off)',
-    'version': '19.0.12.0.0',
+    'version': '19.0.13.0.0',
     'category': 'Human Resources/Time Off',
     'summary': (
         'Module nghỉ phép hợp nhất cho Trung tâm Học Bá: cấu hình loại nghỉ, '
@@ -12,7 +12,6 @@
     'depends': ['hr_holidays', 'hocba_attendance'],
     'data': [
         # ---- Security (groups -> access -> record rules) ----
-        'security/res_groups.xml',
         'security/ir.model.access.csv',
         'security/hb_timeoff_analytics_rules.xml',
 
@@ -25,7 +24,6 @@
         'data/hb_emergency_leave_type_flag.xml',
         'data/hb_timeoff_policy_rule_data.xml',
         'data/ir_cron_reminder_data.xml',
-        'data/ir_cron_schedule_conflict_data.xml',
 
         # ---- Report ----
         'report/hb_timeoff_analytics_pdf.xml',
@@ -38,7 +36,6 @@
         'views/hr_employee_views.xml',
         'views/hr_leave_emergency_views.xml',
         'views/hr_leave_medical_views.xml',
-        'views/hr_leave_schedule_conflict_views.xml',
         'views/hb_leave_analysis_views.xml',
         'views/hr_holidays_dashboard_views.xml',
         'views/menu_policy.xml',
