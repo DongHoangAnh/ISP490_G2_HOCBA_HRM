@@ -716,6 +716,15 @@ def _return_substitution(env, res_id, employee):
     session._pop_handover(r)
     r.write({'state': 'returned', 'decided_at': fields.Datetime.now()})
     _notify_substitute_returned(env, r)
+    # Trả buổi → chủ liền trước phải dạy lại. Nếu đơn của họ không còn buổi nào
+    # đang hiệu lực (mọi resolution đã 'returned'/'declined') thì từ chối luôn đơn
+    # đó: hiển thị "Từ chối" và giải phóng buổi để xin nghỉ lại. Đơn còn buổi khác
+    # đang hiệu lực (class_off / nhờ dạy thay) thì giữ nguyên — chỉ buổi vừa trả
+    # được giải phóng (resolution 'returned' không còn chặn ở guard tạo đơn).
+    leave = r.leave_id
+    if leave.state == 'validate' and not leave.teaching_resolution_ids.filtered(
+            lambda x: x.state in ('pending', 'accepted')):
+        leave.action_refuse()
     return r
 
 
@@ -1304,10 +1313,13 @@ class HocBaTimeoff(http.Controller):
                      'message': 'Buổi dạy không hợp lệ hoặc đã được xử lý.'},
                     status=400)
 
-        # Chặn đặt 1 buổi vào 2 đơn còn hiệu lực.
+        # Chặn đặt 1 buổi vào 2 đơn còn hiệu lực. Chỉ resolution đang hiệu lực
+        # (pending/accepted) mới chặn — resolution đã 'returned'/'declined' coi
+        # như buổi đã được giải phóng, GV xin nghỉ lại được.
         dup = request.env['hocba.leave.session.resolution'].sudo().search([
             ('session_id', 'in', sessions.ids),
             ('leave_id.state', 'in', ['confirm', 'validate1', 'validate']),
+            ('state', 'in', ['pending', 'accepted']),
         ], limit=1)
         if dup:
             return request.make_json_response(
