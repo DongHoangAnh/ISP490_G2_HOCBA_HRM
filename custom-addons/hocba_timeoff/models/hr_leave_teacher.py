@@ -38,9 +38,11 @@ class HrLeave(models.Model):
         return res
 
     def action_refuse(self):
+        # Chụp trước tập đơn ĐÃ ÁP lịch (state validate) — super() sẽ đổi state.
+        applied = self.filtered(lambda l: l.state == 'validate')
         res = super().action_refuse()
         for leave in self:
-            leave._revert_teaching_changes()
+            leave._revert_teaching_changes(was_applied=leave in applied)
         return res
 
     def _apply_teaching_changes(self):
@@ -56,17 +58,39 @@ class HrLeave(models.Model):
                     'employee_id': r.substitute_id.id,
                     'state': 'substituted', 'source_leave_id': self.id})
 
-    def _revert_teaching_changes(self):
-        """Trả lịch dạy về GV gốc / 'planned' khi đơn đã duyệt bị hủy/từ chối."""
+    def _revert_teaching_changes(self, was_applied=True):
+        """Đơn đã duyệt bị từ chối/rút → trả lịch dạy về chủ liền trước.
+        Đơn chờ duyệt (chưa áp lịch) → bỏ qua. Chặn nếu buổi đã được giao tiếp
+        xuống dưới (phải gỡ chuỗi sau trước)."""
         self.ensure_one()
+        if not was_applied:
+            return
         for r in self.teaching_resolution_ids:
             session = r.session_id
-            if session.source_leave_id.id != self.id:
-                continue  # buổi không bị đơn này đổi → bỏ qua
-            session.sudo().write({
-                'employee_id': (session.original_employee_id.id
-                                or session.employee_id.id),
-                'state': 'planned', 'source_leave_id': False})
+            if session.source_leave_id and session.source_leave_id.id != self.id:
+                raise ValidationError(_(
+                    'Không thể hủy/từ chối: buổi %s đã được giao tiếp cho giáo '
+                    'viên khác. Cần gỡ các thay đổi phía sau trước.',
+                    session.display_name))
+            if session.source_leave_id.id == self.id:
+                session.sudo()._pop_handover(r)
+                if r.resolution == 'substitute' and r.state == 'accepted':
+                    self._notify_sub_cancelled(r)
+
+    def _notify_sub_cancelled(self, resolution):
+        """Báo GV thay khi đơn (đã/đang nhờ dạy thay) bị hủy/rút."""
+        sub_user = resolution.substitute_id.sudo().user_id
+        if not sub_user:
+            return
+        self.env['hb.leave.notification'].sudo().create({
+            'recipient_id': sub_user.id,
+            'leave_id': self.id,
+            'kind': 'sub_cancelled',
+            'title': 'Yêu cầu dạy thay đã hủy',
+            'body': '%s đã hủy/rút đơn — bạn không cần dạy thay buổi %s nữa.' % (
+                self.employee_id.sudo().name,
+                resolution.session_id.display_name),
+        })
 
 
 class HbLeaveNotification(models.Model):
@@ -78,10 +102,14 @@ class HbLeaveNotification(models.Model):
             ('sub_request', 'Yêu cầu dạy thay'),
             ('sub_accepted', 'GV thay đồng ý'),
             ('sub_declined', 'GV thay từ chối'),
+            ('sub_cancelled', 'Yêu cầu dạy thay đã hủy'),
+            ('sub_returned', 'GV thay đã trả lại buổi'),
         ],
         ondelete={
             'sub_request': 'cascade',
             'sub_accepted': 'cascade',
             'sub_declined': 'cascade',
+            'sub_cancelled': 'cascade',
+            'sub_returned': 'cascade',
         },
     )

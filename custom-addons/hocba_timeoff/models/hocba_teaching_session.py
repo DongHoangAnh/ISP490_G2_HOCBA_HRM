@@ -71,6 +71,34 @@ class HocbaTeachingSession(models.Model):
                 vals['original_employee_id'] = vals['employee_id']
         return super().create(vals_list)
 
+    def _pop_handover(self, resolution):
+        """Gỡ 1 lần bàn giao: đưa buổi về chủ liền trước (= leave.employee_id của
+        `resolution`), tính lại đỉnh stack từ lần bàn giao kế dưới (substitute đã
+        accepted, đơn đang validate, substitute_id = chủ liền trước). Hết → về
+        original_employee_id / 'planned'. KHÔNG tự đổi resolution.state — caller
+        quyết ('returned' khi trả; để nguyên khi đơn bị refuse vì leave.state đã
+        khác 'validate' nên tự loại khỏi tập bàn giao hiệu lực)."""
+        self.ensure_one()
+        prev_owner = resolution.leave_id.employee_id
+        below = self.env['hocba.leave.session.resolution'].sudo().search([
+            ('session_id', '=', self.id),
+            ('resolution', '=', 'substitute'),
+            ('state', '=', 'accepted'),
+            ('substitute_id', '=', prev_owner.id),
+            ('leave_id.state', '=', 'validate'),
+            ('id', '!=', resolution.id),
+        ], order='id desc', limit=1)
+        vals = {'employee_id': (prev_owner.id
+                                or self.original_employee_id.id
+                                or self.employee_id.id)}
+        if below:
+            vals['state'] = 'substituted'
+            vals['source_leave_id'] = below.leave_id.id
+        else:
+            vals['state'] = 'planned'
+            vals['source_leave_id'] = False
+        self.write(vals)
+
     # ------------------------------------------------------------------
     # Import dữ liệu mẫu từ CMS (read-only) — CHẠY MỘT LẦN.
     # ------------------------------------------------------------------
