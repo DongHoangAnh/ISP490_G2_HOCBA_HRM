@@ -1778,9 +1778,13 @@ class HocBaHRM(http.Controller):
             })
 
         # --- Thử việc 2 cổng (F-004/005) — Nhóm B ---
+        # Giáo viên (loại nhân sự = teacher) luôn đi luồng thử giảng (Nhóm A),
+        # kể cả offline → loại khỏi Nhóm B để không hiện cổng thử việc nhầm.
+        is_teacher = e.x_employee_type_id.code == 'teacher'
         data['probation'] = {
             'isGroupB': (e.x_position_type in ('staff', 'manager')
-                         and e.x_work_form == 'offline'),
+                         and e.x_work_form == 'offline'
+                         and not is_teacher),
             'canEval': self._can_eval_emp(e),
             'start': _d(e.x_probation_start),
             'd2wDue': _d(e.x_eval_2w_due),
@@ -1802,7 +1806,8 @@ class HocBaHRM(http.Controller):
 
         # --- Thử giảng (F-008) — Nhóm A ---
         if (e.x_work_form == 'online'
-                or e.x_employment_status in ('parttime', 'ctv', 'advisor')):
+                or e.x_employment_status in ('parttime', 'ctv', 'advisor')
+                or is_teacher):
             data['trial'] = {
                 'date': _d(e.x_trial_lesson_date),
                 'class': e.x_trial_lesson_class or '',
@@ -1916,8 +1921,10 @@ class HocBaHRM(http.Controller):
             e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
+            # Từ chối nghiệp vụ (sai trình tự / thiếu ngày thử việc / BR-010…):
+            # trả 422 + lý do thật để FE hiển thị; 403 chỉ dành cho thiếu quyền.
             return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=403)
+                {'error': 'rejected', 'message': str(ex)}, status=422)
 
         # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
         is_hr, is_mgr = self._hr_flags()
