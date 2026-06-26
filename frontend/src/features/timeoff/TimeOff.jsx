@@ -197,6 +197,7 @@ const MY_SORT_FIELDS = [
 function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
   const [withdrawing, setWithdrawing] = useState(null); // đơn đang mở modal rút
+  const [detail, setDetail] = useState(null); // đơn đang xem chi tiết (modal)
   if (!data.employee) {
     return <EmptyState>Tài khoản chưa gắn với hồ sơ nhân viên — chưa có dữ liệu nghỉ phép.</EmptyState>;
   }
@@ -239,11 +240,11 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
           <table className="tbl">
             <thead><tr>
               <th>Loại nghỉ</th><th>Ngày tạo</th><th>Từ ngày</th><th>Đến ngày</th><th className="tbl-num">Số ngày</th>
-              <th>Lý do</th><th>GV dạy thay</th><th>Trạng thái</th><th></th>
+              <th>GV dạy thay</th><th>Trạng thái</th><th></th>
             </tr></thead>
             <tbody>
               {requests.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} onClick={() => setDetail(r)} style={{ cursor: 'pointer' }}>
                   <td>
                     <span style={{ fontWeight: 600 }}>{r.leaveType}</span>
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
@@ -257,20 +258,18 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
                   <td className="mono muted">{fmtDate(r.to)}</td>
                   <td className="tbl-num mono" style={{ fontWeight: 600 }}>
                     {r.isTeachingOff ? `${r.sessionCount} buổi` : r.days}</td>
-                  <td className="muted">{r.reason || '—'}</td>
-                  <td className="muted" title={(r.sessionResolutions || []).map((s) =>
-                    `${fmtDate(s.date)} ${s.className}: ${s.kind === 'class_off' ? 'Cả lớp nghỉ' : (s.substituteName || '—')}`).join('\n')}>
+                  <td className="muted">
                     {r.isTeachingOff ? (r.substituteNames || '—') : '—'}</td>
                   <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                   <td>
                     {r.canCancel && (
                       <button className="btn btn-ghost btn-sm" disabled={busy === r.id}
-                        onClick={() => onCancel(r.id)}>
+                        onClick={(e) => { e.stopPropagation(); onCancel(r.id); }}>
                         {busy === r.id ? 'Đang hủy…' : 'Hủy'}</button>
                     )}
                     {r.canWithdraw && (
                       <button className="btn btn-ghost btn-sm"
-                        onClick={() => setWithdrawing(r)}>Rút đơn</button>
+                        onClick={(e) => { e.stopPropagation(); setWithdrawing(r); }}>Rút đơn</button>
                     )}
                   </td>
                 </tr>
@@ -281,12 +280,104 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
         {requests.length === 0 && <EmptyState>Chưa có đơn nghỉ nào.</EmptyState>}
       </div>
 
+      {detail && (
+        <LeaveDetailModal req={detail} onClose={() => setDetail(null)} />
+      )}
+
       {withdrawing && (
         <WithdrawModal req={withdrawing}
           onClose={() => setWithdrawing(null)}
           onDone={(payload) => { setWithdrawing(null); onUpdated && onUpdated(payload); }} />
       )}
     </div>
+  );
+}
+
+/* Modal chi tiết 1 đơn nghỉ (mở khi bấm vào dòng ở tab "Của tôi").
+   GV xem được đơn xin nghỉ những buổi dạy nào + cách xử lý từng buổi. */
+const RES_STATE_LABEL = {
+  pending: 'Chờ GV thay đồng ý', accepted: 'Đã chốt',
+  declined: 'GV thay từ chối', returned: 'GV thay đã trả lại',
+};
+
+function DetailField({ label, value }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>{label}</span>
+      <span style={{ fontSize: 13.5, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{value}</span>
+    </div>
+  );
+}
+
+function LeaveDetailModal({ req, onClose }) {
+  const sessions = req.sessionResolutions || [];
+  return (
+    <Modal onClose={onClose}>
+      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="calendar" size={20} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {req.leaveType}
+            {req.halfDay && <Badge kind="blue">{req.halfDay}</Badge>}
+            {req.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
+          </h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Chi tiết đơn nghỉ</div>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+      </div>
+
+      <div style={{ padding: '18px 24px', display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>Trạng thái</span>
+          <Badge kind={req.stateKind} dot>{req.stateLabel}</Badge>
+          {req.withdrawState === 'pending' && <Badge kind="amber">Chờ duyệt rút</Badge>}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+          <DetailField label="Ngày tạo" value={fmtDate(req.createdAt)} />
+          <DetailField label={req.isTeachingOff ? 'Số buổi' : 'Số ngày'}
+            value={req.isTeachingOff ? `${req.sessionCount} buổi` : `${req.days} ngày`} />
+          <DetailField label="Từ ngày" value={fmtDate(req.from)} />
+          <DetailField label="Đến ngày" value={fmtDate(req.to)} />
+        </div>
+
+        <DetailField label="Lý do" value={req.reason || '—'} />
+
+        {req.isTeachingOff && sessions.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: 8 }}>
+              Các buổi xin nghỉ ({sessions.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {sessions.map((s, i) => (
+                <div key={i} className="card" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className="mono" style={{ fontWeight: 700, fontSize: 12.5 }}>{fmtDate(s.date)}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{s.className || '—'}</span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {s.kind === 'class_off'
+                      ? <Badge kind="gray">Cả lớp nghỉ</Badge>
+                      : <Badge kind="blue">Dạy thay: {s.substituteName || '—'}</Badge>}
+                    {s.kind === 'substitute' && s.state && (
+                      <span className="muted" style={{ fontSize: 11.5 }}>{RES_STATE_LABEL[s.state] || s.state}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {req.withdrawState === 'pending' && req.withdrawReason && (
+          <DetailField label="Lý do rút đơn" value={req.withdrawReason} />
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+        <button className="btn btn-ghost" onClick={onClose}>Đóng</button>
+      </div>
+    </Modal>
   );
 }
 
