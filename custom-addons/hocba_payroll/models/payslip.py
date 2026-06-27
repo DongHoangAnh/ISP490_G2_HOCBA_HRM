@@ -790,7 +790,10 @@ class HbPayslip(models.Model):
             localdict['result']      = 0.0
             localdict['result_qty']  = 1.0
             localdict['result_rate'] = 0.0
-            safe_eval(rule.amount_python_compute, localdict, mode='exec', nocopy=True)
+            # Odoo 19: safe_eval(expr, context, *, mode=...) — `nocopy` removed.
+            # The new API mutates `context` in place (context.update in finally),
+            # so result/result_qty/result_rate written by the snippet are read back below.
+            safe_eval(rule.amount_python_compute, localdict, mode='exec')
             amount = float(localdict.get('result', 0.0))
             qty    = float(localdict.get('result_qty', 1.0))
             rate   = float(localdict.get('result_rate', 0.0))
