@@ -1,0 +1,239 @@
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+/* ── Left panel ── */
+.login-left {
+  flex: 1 1 50%;
+  background: linear-gradient(145deg, #f9c5cb 0%, #f5a0ac 40%, #e87e8e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 48px 40px;
+}
+
+.login-left-decor {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(600px 400px at 80% 110%, rgba(255,255,255,.18), transparent 60%),
+    radial-gradient(300px 200px at -10% 20%, rgba(255,255,255,.12), transparent 60%);
+  pointer-events: none;
+}
+
+.login-left-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  max-width: 380px;
+}
+
+.login-left-logo {
+  width: 220px;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 50%;
+  margin-bottom: 32px;
+  border: 4px solid rgba(255,255,255,.6);
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
+}
+
+.login-left-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: #1c1917;
+  margin: 0 0 14px;
+  line-height: 1.3;
+}
+
+.login-left-title span {
+  color: var(--red-600);
+}
+
+.login-left-sub {
+  font-size: 16px;
+  color: #44403c;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Right panel ── */
+.login-right {
+  flex: 1 1 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+}
+
+.login-card-logo {
+  width: 80px;
+  display: block;
+  margin: 0 auto 24px;
+}
+
+.login-card-heading {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.login-card-welcome {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--red-600);
+  margin: 0 0 4px;
+}
+
+.login-card-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ── Form ── */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.login-req {
+  color: var(--red-600);
+}
+
+.login-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.login-input-wrap input {
+  width: 100%;
+  padding: 10px 40px 10px 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.login-input-wrap input:focus {
+  border-color: var(--red-500);
+  box-shadow: 0 0 0 3px rgba(220,41,66,.10);
+}
+
+.login-input-wrap.is-error input {
+  border-color: var(--red-500);
+  background: var(--red-50);
+}
+
+.login-input-icon,
+.login-toggle-pwd {
+  position: absolute;
+  right: 12px;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.login-toggle-pwd:hover {
+  color: var(--muted);
+}
+
+.login-error-msg {
+  font-size: 12px;
+  color: var(--red-600);
+  margin: 0;
+}
+
+.login-auth-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--red-50);
+  border: 1px solid var(--red-100);
+  border-radius: var(--radius-sm);
+  color: var(--red-700);
+  font-size: 13px;
+  padding: 10px 14px;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--red-600);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.login-btn:hover:not(:disabled) {
+  background: var(--red-700);
+}
+
+.login-btn:active:not(:disabled) {
+  transform: scale(.98);
+}
+
+.login-btn:disabled {
+  opacity: .7;
+  cursor: not-allowed;
+}
+
+.login-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .65s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .login-left { display: none; }
+  .login-right { width: 100%; padding: 32px 20px; }
+}

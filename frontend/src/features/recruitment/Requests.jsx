@@ -59,7 +59,7 @@ export default function Requests({ search }) {
       </div>
 
       <div className="card">
-        <div className="tbl-wrap">
+        <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
             <thead><tr>
               <th>Mã phiếu</th><th>Vị trí</th><th>Phòng ban</th>

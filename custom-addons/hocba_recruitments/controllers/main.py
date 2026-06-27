@@ -942,6 +942,23 @@ class HocBaTuyenDung(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(self._tmpl_row(t, detail=True))
 
+    @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/delete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_mail_template_delete(self, tmpl_id, **kw):
+        """Xoá mail mẫu — chỉ HR toàn quyền (cấu hình email toàn hệ thống)."""
+        if not self._is_hr():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        t = request.env['mail.template'].sudo().browse(tmpl_id)
+        if not t.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            t.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True})
+
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/send',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_mail_template_send(self, tmpl_id, **kw):
@@ -1061,6 +1078,41 @@ class HocBaTuyenDung(http.Controller):
                 'failure': fail,
             })
         return request.make_json_response({'isRecruiter': self._is_hr(), 'rows': rows})
+
+    # ------------------------------------------------------------------
+    # Gửi mail qua Gmail (chuyển hướng tab) — bỏ phụ thuộc SMTP server.
+    # FE mở Gmail compose điền sẵn nội dung (render từ mail mẫu của app), người dùng
+    # gửi bằng Gmail của mình, rồi gọi /mail/log-sent để ghi lịch sử (tab Mail logs).
+    # ------------------------------------------------------------------
+
+    @http.route('/hocba-hrm/api/recruitment/mail/log-sent', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_recruitment_mail_log_sent(self, **kw):
+        """Ghi lịch sử mail đã gửi (qua Gmail) — chỉ nhóm tuyển dụng.
+        body: {logs: [{applicantId, subject}]}. Tạo mail.message (message_type='email')
+        để tab Mail logs hiển thị như mail gửi qua server."""
+        if not self._is_recruiter():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        logs = (request.get_json_data() or {}).get('logs') or []
+        Applicant = request.env['hr.applicant'].sudo()
+        logged = 0
+        for item in logs:
+            aid = item.get('applicantId')
+            if not aid:
+                continue
+            a = Applicant.browse(int(aid))
+            if not a.exists():
+                continue
+            subject = (item.get('subject') or 'Email tuyển dụng').strip() or 'Email tuyển dụng'
+            a.message_post(
+                subject=subject,
+                body=Markup('<p>Đã gửi email <b>%s</b> tới %s (qua Gmail).</p>')
+                     % (subject, a.email_from or '—'),
+                message_type='email',
+                subtype_xmlid='mail.mt_note',
+            )
+            logged += 1
+        return request.make_json_response({'logged': logged})
 
     # ------------------------------------------------------------------
     # Lịch rảnh phỏng vấn (hb.interview.slot) — tab "Danh sách PV".

@@ -107,7 +107,7 @@ export function Sidebar({ view, setView, me }) {
             <div className="s">{me ? me.roleLabel : '360 Giải Phóng'}</div>
           </div>
           <button className="icon-btn" title="Đăng xuất"
-            onClick={() => { window.location.href = '/web/session/logout'; }}>
+            onClick={() => { window.location.href = '/web/session/logout?redirect=/hocba-hrm'; }}>
             <Icon name="logout" size={18} />
           </button>
         </div>

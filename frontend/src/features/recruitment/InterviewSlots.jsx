@@ -261,7 +261,7 @@ function InterviewApplicants({ cv, setCv, templates }) {
         const jobs = cv.jobs || [];
         return (
           <div className="card">
-            <div className="tbl-wrap">
+            <div className="tbl-wrap tbl-scroll">
               <table className="tbl">
                 <thead><tr>
                   <th>Họ tên ứng viên</th><th>Vị trí ứng tuyển</th><th>Ngày PV</th><th>Giờ</th>

@@ -1594,7 +1594,7 @@ _CHECK_ERR_STATUS = {
 
 class HocBaHRM(http.Controller):
 
-    @http.route('/hocba-hrm', auth='user', type='http', csrf=False)
+    @http.route('/hocba-hrm', auth='public', type='http', csrf=False)
     def hrm_dashboard(self, **kw):
         if not SPA_ENABLED:
             return request.redirect('/odoo')

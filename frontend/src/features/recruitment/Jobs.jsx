@@ -122,7 +122,7 @@ export default function Jobs({ search }) {
         </div>
       ) : (
         <div className="card">
-          <div className="tbl-wrap">
+          <div className="tbl-wrap tbl-scroll">
             <table className="tbl">
               <thead><tr>
                 <th>Vị trí</th><th>Phòng ban</th><th>Trạng thái</th>
@@ -206,7 +206,7 @@ function DepartmentView({ groups, isRecruiter, onOpenJob, onTogglePublish }) {
             </div>
 
             {isOpen && (
-              <div className="tbl-wrap" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="tbl-wrap tbl-scroll" style={{ borderTop: '1px solid var(--border)' }}>
                 <table className="tbl">
                   <thead><tr>
                     <th>Vị trí</th><th>Phiếu YC</th>
