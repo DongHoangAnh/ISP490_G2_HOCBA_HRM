@@ -91,8 +91,13 @@ export default function Employees({ search }) {
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr>
-                <th>Nhân viên</th><th>Phòng ban</th><th>Chức danh</th><th>Hình thức</th>
-                <th>Trạng thái</th><th>Ngày vào</th>
+                {/* minWidth cho "Nhân viên" + width:1%/nowrap cho các cột phải:
+                    các cột Hình thức/Trạng thái/Ngày vào co sát nội dung, nhường
+                    khoảng trống cho cột "Nhân viên" rộng ra. */}
+                <th style={{ minWidth: 280 }}>Nhân viên</th><th>Phòng ban</th><th>Chức danh</th>
+                <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Hình thức</th>
+                <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+                <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày vào</th>
                 {data.isHrManager && <th className="tbl-num">Lương CB</th>}
                 <th></th>
               </tr></thead>
@@ -112,9 +117,9 @@ export default function Employees({ search }) {
                       <span style={{ width: 8, height: 8, borderRadius: 3, background: (deps.find((d) => d.id === e.dep) || {}).color || 'var(--border-strong)' }}></span>
                       {e.depName}</span></td>
                     <td>{e.jobTitle}{e.posType && <span className="badge badge-gray" style={{ marginLeft: 6 }}>{e.posType}</span>}</td>
-                    <td><Badge kind={hbTypeKind(e.type)}>{e.type}</Badge></td>
-                    <td><Badge kind={hbStatusKind(e.statusKey)} dot>{e.status}</Badge></td>
-                    <td className="muted mono">{fmtDate(e.start)}</td>
+                    <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={hbTypeKind(e.type)}>{e.type}</Badge></td>
+                    <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={hbStatusKind(e.statusKey)} dot>{e.status}</Badge></td>
+                    <td className="muted mono" style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{fmtDate(e.start)}</td>
                     {data.isHrManager && <td className="tbl-num mono" style={{ fontWeight: 600 }}>{e.wage ? hbVND(e.wage) : '—'}</td>}
                     <td><button className="icon-btn" onClick={(ev) => { ev.stopPropagation(); setSel(e); }}><Icon name="chevR" size={18} className="faint" /></button></td>
                   </tr>

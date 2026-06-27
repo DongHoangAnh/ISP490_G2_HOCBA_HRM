@@ -13,7 +13,6 @@ const SORT_FIELDS = [
   { key: 'employee', label: 'Nhân viên', type: 'text' },
   { key: 'department', label: 'Phòng ban', type: 'text' },
   { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
-  { key: 'createdAt', label: 'Ngày tạo', type: 'date' },
   { key: 'from', label: 'Từ ngày', type: 'date' },
   { key: 'to', label: 'Đến ngày', type: 'date' },
   { key: 'days', label: 'Số ngày', type: 'num' },
@@ -68,7 +67,7 @@ export default function ApprovalPanel({ isHrManager }) {
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Nhân viên</th><th>Phòng ban</th><th>Loại nghỉ</th><th>Ngày tạo</th><th>Từ ngày</th><th>Đến ngày</th>
+            <th>Nhân viên</th><th>Phòng ban</th><th>Loại nghỉ</th><th>Từ ngày</th><th>Đến ngày</th>
             <th className="tbl-num">Số ngày</th><th>Cảnh báo</th><th>Trạng thái</th><th></th>
           </tr></thead>
           <tbody>
@@ -77,7 +76,6 @@ export default function ApprovalPanel({ isHrManager }) {
                 <td style={{ fontWeight: 600 }}>{r.employee}</td>
                 <td className="muted">{r.department}</td>
                 <td>{r.leaveType}</td>
-                <td className="mono muted">{fmtDate(r.createdAt)}</td>
                 <td className="mono muted">{fmtDate(r.from)}</td>
                 <td className="mono muted">{fmtDate(r.to)}</td>
                 <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
@@ -101,7 +99,9 @@ export default function ApprovalPanel({ isHrManager }) {
                   </div>
                 </td>
                 <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
-                <td>
+                {/* width:1% + nowrap + overflow visible: ô tự co theo nội dung,
+                    không bị quy tắc .tbl td (max-width:0; overflow:hidden) cắt mất nút. */}
+                <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                   {r.withdrawState === 'pending' ? (
                     <button className="btn btn-primary btn-sm"
                       onClick={() => setWithdrawDecision(r)}>Xử lý rút</button>
@@ -247,6 +247,8 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
       </div>
 
       <div style={{ padding: '22px 24px', maxHeight: '58vh', overflowY: 'auto', display: 'grid', gap: 14 }}>
+        <div className="muted" style={{ fontSize: 13 }}><b>Ngày tạo đơn:</b> {fmtDate(req.createdAt)}</div>
+
         {req.reason && (
           <div className="muted" style={{ fontSize: 13 }}><b>Lý do:</b> {req.reason}</div>
         )}
