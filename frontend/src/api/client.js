@@ -24,9 +24,6 @@ async function errBody(res) {
 export async function hbGet(url) {
   const res = await fetch(url, { credentials: 'same-origin' });
   if (res.redirected && res.url.includes('/web/login')) {
-    // session hết hạn → sang trang đăng nhập Odoo rồi quay lại đúng trang
-    // hiện tại (dev: /hocba_hrm/static/spa/ trên Vite; prod: /hocba-hrm)
-    window.location.href = '/web/login?redirect=' + encodeURIComponent(window.location.pathname);
     throw new ApiError(401, 'login_required');
   }
   if (!res.ok) {

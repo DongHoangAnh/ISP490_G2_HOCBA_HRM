@@ -12,10 +12,12 @@ import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
 import Payroll from '../features/payroll/Payroll';
 import { LoadingState, ErrorState } from '../components/states';
+import Login from '../features/auth/Login';
 
 export default function App() {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
+  const [unauthenticated, setUnauthenticated] = useState(false);
   const [view, setView] = useState(() => localStorage.getItem('hocba_view') || 'dashboard');
   const [search, setSearch] = useState('');
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
@@ -28,7 +30,16 @@ export default function App() {
 
   const loadRoles = () => {
     setErr(null);
-    fetchRoles().then(setMe).catch((e) => setErr(e.message));
+    setUnauthenticated(false);
+    fetchRoles()
+      .then(setMe)
+      .catch((e) => {
+        if (e.status === 401 || e.code === 'login_required') {
+          setUnauthenticated(true);
+        } else {
+          setErr(e.message);
+        }
+      });
   };
   useEffect(loadRoles, []);
 
@@ -39,6 +50,7 @@ export default function App() {
     if (me && !allowedViews(me).has(view)) setView(defaultView(me));
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (unauthenticated) return <Login onSuccess={loadRoles} />;
   if (err) return <ErrorState message={err} onRetry={loadRoles} />;
   if (!me) return <LoadingState label="Đang tải tài khoản…" />;
 

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import timedelta
 
@@ -6,6 +7,8 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError, UserError, ValidationError
+
+_logger = logging.getLogger(__name__)
 
 # Kết quả cổng đánh giá — khách họp #2 yêu cầu thêm "Gia hạn"
 GATE_RESULT_SEL = [
@@ -96,6 +99,12 @@ class HrEmployee(models.Model):
     x_social_insurance_no = fields.Char(
         string='Số sổ BHXH', groups='hr.group_hr_manager',
         help='Số sổ Bảo hiểm xã hội (10 chữ số).')
+    x_bank_account_no = fields.Char(
+        string='Số tài khoản nhận lương', groups='hr.group_hr_manager',
+        help='Số tài khoản nhân viên nhận lương.')
+    x_bank_code = fields.Char(
+        string='Ngân hàng nhận lương', groups='hr.group_hr_manager',
+        help='Mã ngân hàng chuẩn hoá (vd VCB), đồng bộ với danh sách cấu hình payroll (hb.bank.format).')
     x_health_insurance_no = fields.Char(string='Số thẻ BHYT')
     x_health_care_place = fields.Char(string='Nơi KCB ban đầu')
 
@@ -209,6 +218,8 @@ class HrEmployee(models.Model):
         'hr.promotion.history', 'employee_id', string='Lịch sử thăng tiến')
     x_promotion_count = fields.Integer(
         string='Số lần thăng tiến', compute='_compute_promotion_count')
+    x_evaluation_ids = fields.One2many(
+        'hr.promotion.evaluation', 'employee_id', string='Đợt đánh giá thăng tiến')
 
     # --- F-001: Hồ sơ tổng quan — mini-timeline & cảnh báo chứng chỉ ---
     x_probation_timeline_html = fields.Html(
@@ -234,6 +245,47 @@ class HrEmployee(models.Model):
     def _compute_promotion_count(self):
         for emp in self:
             emp.x_promotion_count = len(emp.x_promotion_ids)
+
+    def _promo_auto_metrics(self):
+        """Chỉ số tự động cho dashboard đánh giá thăng tiến (read-only).
+        Chấm công lấy best-effort: thiếu model/khoá → trả None, không vỡ."""
+        self.ensure_one()
+        today = fields.Date.context_today(self)
+
+        def _months(d):
+            if not d:
+                return 0.0
+            return round((today - d).days / 30.44, 1)
+
+        last_promo = self.env['hr.promotion.history'].search(
+            [('employee_id', '=', self.id)], order='date_effective desc', limit=1)
+        metrics = {
+            'tenureMonths': (_months(self.x_probation_start) if self.x_probation_start
+                             else _months(self.create_date and self.create_date.date())),
+            'officialMonths': round(self.x_official_months or 0, 1),
+            'monthsSincePromo': _months(last_promo.date_effective)
+            if last_promo else None,
+            'currentJob': self.job_id.name or '',
+            'attendance': self._promo_attendance_summary(),
+        }
+        return metrics
+
+    def _promo_attendance_summary(self):
+        """Tổng hợp chấm công ~3 tháng. Best-effort: module owner khác."""
+        self.ensure_one()
+        if 'hr.attendance' not in self.env:
+            return None
+        try:
+            since = fields.Datetime.now() - timedelta(days=90)
+            recs = self.env['hr.attendance'].sudo().search([
+                ('employee_id', '=', self.id),
+                ('check_in', '>=', since),
+            ])
+            return {'days': len(recs)}
+        except Exception:
+            _logger.exception(
+                'Tổng hợp chấm công thất bại cho NV %s', self.id)
+            return None
 
     def action_view_hocba_assets(self):
         self.ensure_one()
