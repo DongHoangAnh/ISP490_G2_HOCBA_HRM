@@ -224,11 +224,18 @@ class PayrollAPI(http.Controller):
             date_end = f'{ny}-{nm:02d}-01'
 
             env = request.env
-            slips = env['hb.payslip'].sudo().search([
+
+            # Only process payslips from draft/verify batches (not already closed)
+            closed_batch_ids = env['hb.payslip.run'].sudo().search(
+                [('state', '=', 'close')]).ids
+            slip_domain = [
                 ('date_from', '>=', date_start),
                 ('date_from', '<', date_end),
                 ('state', '!=', 'cancel'),
-            ])
+            ]
+            if closed_batch_ids:
+                slip_domain.append(('payslip_run_id', 'not in', closed_batch_ids))
+            slips = env['hb.payslip'].sudo().search(slip_domain)
 
             if not slips:
                 return _error_response('Không có phiếu lương trong kỳ này.')
@@ -245,7 +252,7 @@ class PayrollAPI(http.Controller):
                     msg += f' và {remain} người khác'
                 return _error_response(msg)
 
-            # Close all related batches
+            # Close all related batches → payslips move to 'done', batch to 'close'
             batch_ids = slips.mapped('payslip_run_id')
             closed = []
             for batch in batch_ids:
@@ -349,19 +356,15 @@ class PayrollAPI(http.Controller):
             ])
 
             # Pre-fetch rules 1 lần duy nhất — tất cả NV dùng chung bộ rule
-            # → bỏ qua O(E) lần resolve structure/rules per slip
             global_rules = env['hb.salary.rule'].sudo().search(
                 [('active', '=', True)], order='sequence, id',
             )
 
-            computed = 0
-            errors = []
-            for slip in to_compute:
-                try:
-                    slip.action_compute_sheet(prefetched_rules=global_rules)
-                    computed += 1
-                except Exception as e:
-                    errors.append(f'{slip.employee_id.name}: {e}')
+            # ── Batch-optimized compute: O(1) DB queries vs O(N×R) ──
+            # See HbPayslip.action_compute_batch() for details.
+            result = to_compute.action_compute_batch(global_rules)
+            computed = result['computed']
+            errors = result['errors']
 
             return _success_response({
                 'batch_id': batch.id,
@@ -436,12 +439,19 @@ class PayrollAPI(http.Controller):
                 'name': r.name, 'sequence': r.sequence,
             } for r in rules]
 
-            # 2) Payslips trong kỳ (mới nhất mỗi NV)
+            # 2) Payslips trong kỳ — chỉ lấy từ batch draft/verify (chưa lưu lịch sử)
+            #    Payslips từ batch close đã lưu lịch sử → hiển thị ở tab Lịch sử
+            closed_batch_ids = env['hb.payslip.run'].sudo().search(
+                [('state', '=', 'close')]).ids
+            slip_domain = [
+                ('date_from', '>=', date_start),
+                ('date_from', '<', date_end),
+                ('state', '!=', 'cancel'),
+            ]
+            if closed_batch_ids:
+                slip_domain.append(('payslip_run_id', 'not in', closed_batch_ids))
             slips = env['hb.payslip'].sudo().search(
-                [('date_from', '>=', date_start),
-                 ('date_from', '<', date_end),
-                 ('state', '!=', 'cancel')],
-                order='date_from desc, id desc',
+                slip_domain, order='date_from desc, id desc',
             )
             slip_map = {}  # employee_id → payslip (first = latest)
             for s in slips:
@@ -485,6 +495,87 @@ class PayrollAPI(http.Controller):
             })
         except Exception as e:
             _logger.exception('employee_payroll_summary error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
+    # SALARY HISTORY (lịch sử lương — chỉ lấy từ batch đã close)
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/salary-history', type='http', auth='user',
+                methods=['GET'], csrf=False)
+    def salary_history(self, **kw):
+        """Lịch sử lương — trả danh sách NV kèm bảng lương từ batch đã close."""
+        try:
+            today = fields.Date.today()
+            month = int(kw.get('month') or today.month)
+            year = int(kw.get('year') or today.year)
+            nm = month + 1 if month < 12 else 1
+            ny = year if month < 12 else year + 1
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{ny}-{nm:02d}-01'
+
+            env = request.env
+
+            # 1) Salary rules → dynamic columns
+            rules = env['hb.salary.rule'].sudo().search(
+                [('active', '=', True), ('appears_on_payslip', '=', True)],
+                order='sequence, id',
+            )
+            columns = [{
+                'id': r.id, 'code': r.code,
+                'name': r.name, 'sequence': r.sequence,
+            } for r in rules]
+
+            # 2) Payslips từ batch đã close (đã lưu lịch sử)
+            closed_batch_ids = env['hb.payslip.run'].sudo().search(
+                [('state', '=', 'close')]).ids
+            if not closed_batch_ids:
+                return _success_response({
+                    'month': month, 'year': year,
+                    'columns': columns, 'employees': [],
+                })
+
+            slips = env['hb.payslip'].sudo().search(
+                [('date_from', '>=', date_start),
+                 ('date_from', '<', date_end),
+                 ('payslip_run_id', 'in', closed_batch_ids),
+                 ('state', '!=', 'cancel')],
+                order='employee_id, id desc',
+            )
+            slip_map = {}
+            for s in slips:
+                if s.employee_id.id not in slip_map:
+                    slip_map[s.employee_id.id] = s
+
+            rows = []
+            for emp_id, slip in slip_map.items():
+                emp = slip.employee_id
+                amounts = {}
+                for ln in slip.line_ids:
+                    amounts[ln.code] = ln.amount
+                rows.append({
+                    'id': emp.id,
+                    'code': emp.x_employee_code or '',
+                    'name': emp.name or '',
+                    'job_title': emp.job_id.name if emp.job_id else '',
+                    'department': emp.department_id.name if emp.department_id else '',
+                    'payslip_id': slip.id,
+                    'payslip_state': slip.state,
+                    'employee_confirm': slip.x_employee_confirm
+                        if hasattr(slip, 'x_employee_confirm') else None,
+                    'gross_amount': slip.gross_amount,
+                    'net_amount': slip.net_amount,
+                    'amounts': amounts,
+                })
+
+            # Sort by employee code
+            rows.sort(key=lambda r: r.get('code', ''))
+
+            return _success_response({
+                'month': month, 'year': year,
+                'columns': columns, 'employees': rows,
+            })
+        except Exception as e:
+            _logger.exception('salary_history error')
             return _error_response(str(e), status=500)
 
     @http.route('/hocba-hrm/api/payroll/payslip/<int:slip_id>', type='http', auth='user',
@@ -743,6 +834,234 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
+    # TRANSFER LIST (danh sách chuyển khoản)
+    # ═════════════════════════════════════════════════════════
+    # ── Transfer list helpers ─────────────────────────────────────
+    @staticmethod
+    def _get_emp_bank(emp):
+        """Get employee bank account — compatible with Community."""
+        if hasattr(emp, 'bank_account_id') and emp.bank_account_id:
+            return emp.bank_account_id
+        partner = (
+            getattr(emp, 'address_home_id', None)
+            or getattr(emp, 'work_contact_id', None)
+        )
+        if partner and partner.bank_ids:
+            return partner.bank_ids[0]
+        return None
+
+    @staticmethod
+    def _build_bank_lookup(env):
+        """Map bank format code → full name from hb.bank.format."""
+        entries = env['hb.bank.format'].sudo().search([('active', '=', True)])
+        lookup = {}
+        for e in entries:
+            if e.code:
+                lookup[e.code.upper()] = e.name
+        return lookup
+
+    @staticmethod
+    def _resolve_bank_name(bank_acc, bank_lookup):
+        """Resolve employee bank account → format full name."""
+        if not bank_acc:
+            return '', ''
+        bank = bank_acc.bank_id
+        if not bank:
+            return '', ''
+        bname = bank.name or ''
+        bic = (bank.bic or '').upper()
+        for code, full in bank_lookup.items():
+            if bic and code in bic:
+                return code, full
+            if code.lower() in bname.lower():
+                return code, full
+        return '', bname
+
+    def _build_transfer_rows(self, month, year, bank_codes_filter=None):
+        """Build transfer rows from CLOSED batches only.
+
+        bank_codes_filter: list of bank codes to include, or None/empty for all.
+        Returns (rows, bank_formats_list).
+        """
+        import calendar
+        env = request.env
+        last_day = calendar.monthrange(year, month)[1]
+        date_start = f'{year}-{month:02d}-01'
+        date_end = f'{year}-{month:02d}-{last_day}'
+
+        bank_lookup = self._build_bank_lookup(env)
+
+        # Find CLOSED batches for this period
+        batches = env['hb.payslip.run'].sudo().search([
+            ('state', '=', 'close'),
+            ('date_start', '>=', date_start),
+            ('date_start', '<=', date_end),
+        ])
+        if not batches:
+            return [], []
+
+        # Payslips from closed batches
+        slips = env['hb.payslip'].sudo().search([
+            ('payslip_run_id', 'in', batches.ids),
+            ('state', '=', 'done'),
+        ])
+        slip_map = {}
+        for s in slips:
+            if s.employee_id.id not in slip_map:
+                slip_map[s.employee_id.id] = s
+
+        # Active employees
+        employees = env['hr.employee'].sudo().search(
+            [('active', '=', True)], order='x_employee_code, id',
+        )
+
+        codes_upper = (
+            {c.upper() for c in bank_codes_filter}
+            if bank_codes_filter else None
+        )
+
+        rows = []
+        for emp in employees:
+            slip = slip_map.get(emp.id)
+            if not slip:
+                continue
+            net_line = slip.line_ids.filtered(lambda l: l.code == 'thuc_lanh')
+            net = net_line[0].amount if net_line else 0.0
+
+            bank_acc = self._get_emp_bank(emp)
+            acc_number = (bank_acc.acc_number or '').strip() if bank_acc else ''
+            code, bank_name = self._resolve_bank_name(bank_acc, bank_lookup)
+
+            # Filter by bank codes
+            if codes_upper and code.upper() not in codes_upper:
+                continue
+
+            rows.append({
+                'employee_id': emp.id,
+                'employee_code': getattr(emp, 'x_employee_code', '') or '',
+                'name': emp.name or '',
+                'bank_account': acc_number,
+                'bank_code': code,
+                'bank_name': bank_name,
+                'net_amount': int(net),
+                'payslip_state': slip.state,
+                'employee_confirm': getattr(slip, 'x_employee_confirm', None),
+            })
+
+        # Bank formats for dropdown
+        formats = env['hb.bank.format'].sudo().search(
+            [('active', '=', True)], order='sequence, name')
+        fmt_list = [{
+            'id': f.id, 'name': f.name, 'code': f.code or '',
+            'description_template': f.description_template or '',
+        } for f in formats]
+
+        return rows, fmt_list
+
+    @http.route('/hocba-hrm/api/payroll/transfer-list', type='http', auth='user',
+                methods=['GET'], csrf=False)
+    def transfer_list(self, **kw):
+        """Danh sách chuyển khoản lương — CHỈ từ lịch sử (closed batches)."""
+        try:
+            today = fields.Date.today()
+            month = int(kw.get('month') or today.month)
+            year = int(kw.get('year') or today.year)
+
+            # Optional bank_codes filter (comma-separated)
+            bank_codes_raw = kw.get('bank_codes', '')
+            bank_codes = [
+                c.strip() for c in bank_codes_raw.split(',') if c.strip()
+            ] if bank_codes_raw else None
+
+            # If file_id is given, load from that bank file record
+            if kw.get('file_id'):
+                bf = request.env['hb.bank.file'].sudo().browse(
+                    int(kw['file_id']))
+                if bf.exists():
+                    ds = bf.batch_id.date_start
+                    if ds:
+                        month, year = ds.month, ds.year
+                    if bf.bank_codes and bf.bank_codes != 'ALL':
+                        bank_codes = [
+                            c.strip()
+                            for c in bf.bank_codes.split(',') if c.strip()
+                        ]
+
+            rows, fmt_list = self._build_transfer_rows(
+                month, year, bank_codes)
+
+            return _success_response({
+                'month': month, 'year': year,
+                'employees': rows,
+                'bank_formats': fmt_list,
+            })
+        except Exception as e:
+            _logger.exception('transfer_list error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/transfer-file', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def create_transfer_file(self, **kw):
+        """Tạo file chuyển khoản từ lịch sử bảng lương (closed batches)."""
+        try:
+            body = _get_json_body()
+            month = int(body.get('month', 0))
+            year = int(body.get('year', 0))
+            if not month or not year:
+                return _error_response('month and year are required.')
+
+            bank_codes = body.get('bank_codes', [])  # list of codes
+            if isinstance(bank_codes, str):
+                bank_codes = [c.strip() for c in bank_codes.split(',') if c.strip()]
+
+            import calendar
+            env = request.env
+            last_day = calendar.monthrange(year, month)[1]
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{year}-{month:02d}-{last_day}'
+
+            # Must have a closed batch
+            batch = env['hb.payslip.run'].sudo().search([
+                ('state', '=', 'close'),
+                ('date_start', '>=', date_start),
+                ('date_start', '<=', date_end),
+            ], limit=1)
+            if not batch:
+                return _error_response(
+                    f'Không tìm thấy lịch sử lương cho tháng {month}/{year}. '
+                    'Hãy lưu lịch sử bảng lương trước.'
+                )
+
+            rows, _ = self._build_transfer_rows(
+                month, year, bank_codes or None)
+
+            codes_str = ','.join(bank_codes) if bank_codes else 'ALL'
+            bank_label = codes_str if codes_str != 'ALL' else 'Tất cả NH'
+            filename = f'CK_T{month:02d}_{year}_{codes_str}'
+
+            bf = env['hb.bank.file'].sudo().create({
+                'name': filename,
+                'batch_id': batch.id,
+                'bank_codes': codes_str,
+                'payment_date': fields.Date.today(),
+                'total_amount': sum(r['net_amount'] for r in rows),
+                'record_count': len(rows),
+                'generated_by': env.uid,
+                'generated_at': fields.Datetime.now(),
+            })
+
+            return _success_response(
+                bf._to_api_dict(),
+                message=f'Đã tạo file chuyển khoản: {len(rows)} nhân viên, '
+                        f'ngân hàng: {bank_label}.',
+            )
+        except (ValidationError, UserError) as e:
+            return _error_response(str(e))
+        except Exception as e:
+            _logger.exception('create_transfer_file error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
     # BANK FILE
     # ═════════════════════════════════════════════════════════
     @http.route('/hocba-hrm/api/payroll/bank-file/generate', type='http', auth='user',
@@ -754,13 +1073,15 @@ class PayrollAPI(http.Controller):
                 if f not in body:
                     return _error_response(f'Missing required field: {f}')
             payment_date = body.get('payment_date') or str(fields.Date.today())
-            wiz = request.env['hb.bank.file.wizard'].sudo().create({
+            wiz_vals = {
                 'payslip_batch_id': int(body['batch_id']),
                 'bank_format_id': int(body['bank_format_id']),
-                'company_bank_id': int(body.get('company_bank_id', 0)) or False,
                 'payment_date': payment_date,
                 'description': body.get('description', 'Luong T{month}/{year}'),
-            })
+            }
+            if body.get('company_bank_id'):
+                wiz_vals['company_bank_id'] = int(body['company_bank_id'])
+            wiz = request.env['hb.bank.file.wizard'].sudo().create(wiz_vals)
             wiz.action_generate()
             bank_file = request.env['hb.bank.file'].sudo().search([
                 ('batch_id', '=', int(body['batch_id'])),
@@ -830,14 +1151,10 @@ class PayrollAPI(http.Controller):
                 [('active', '=', True)], order='sequence, name',
             )
             return _success_response([{
-                'id': f.id, 'name': f.name, 'code': f.code,
+                'id': f.id, 'name': f.name, 'code': f.code or '',
                 'sequence': f.sequence,
-                'formatter_class': f.formatter_class,
-                'encoding': f.encoding,
-                'file_extension': f.file_extension,
-                'account_format_regex': f.account_format_regex or '',
-                'max_records_per_file': f.max_records_per_file,
-                'description_template': f.description_template or '',
+                'transfer_type': f.transfer_type or 'normal',
+                'formatter_class': f.formatter_class or '',
             } for f in formats])
         except Exception as e:
             return _error_response(str(e), status=500)
@@ -847,19 +1164,13 @@ class PayrollAPI(http.Controller):
     def create_bank_format(self, **kw):
         try:
             body = _get_json_body()
-            for f in ('name', 'code', 'formatter_class'):
-                if not body.get(f):
-                    return _error_response(f'Missing required field: {f}')
+            if not body.get('name'):
+                return _error_response('Missing required field: name')
             vals = {
                 'name': body['name'],
-                'code': body['code'],
-                'formatter_class': body['formatter_class'],
+                'code': body.get('code', ''),
+                'transfer_type': body.get('transfer_type', 'normal'),
                 'sequence': int(body.get('sequence', 10)),
-                'encoding': body.get('encoding', 'utf-8'),
-                'file_extension': body.get('file_extension', 'xlsx'),
-                'account_format_regex': body.get('account_format_regex', ''),
-                'max_records_per_file': int(body.get('max_records_per_file', 0)),
-                'description_template': body.get('description_template', 'Luong T{month}/{year}'),
             }
             rec = request.env['hb.bank.format'].sudo().create(vals)
             return _success_response({
@@ -880,13 +1191,11 @@ class PayrollAPI(http.Controller):
             if not rec.exists():
                 return _error_response('Bank format not found.', status=404)
             vals = {}
-            for f in ('name', 'code', 'formatter_class', 'encoding',
-                       'file_extension', 'account_format_regex', 'description_template'):
+            for f in ('name', 'code', 'transfer_type'):
                 if f in body:
                     vals[f] = body[f]
-            for f in ('sequence', 'max_records_per_file'):
-                if f in body:
-                    vals[f] = int(body[f])
+            if 'sequence' in body:
+                vals['sequence'] = int(body['sequence'])
             if vals:
                 rec.write(vals)
             return _success_response({
@@ -1048,15 +1357,31 @@ class PayrollAPI(http.Controller):
     def create_salary_rule(self, **kw):
         try:
             body = _get_json_body()
-            for f in ('name', 'code', 'structure_id', 'category_id'):
+            for f in ('name', 'code'):
                 if not body.get(f):
                     return _error_response(f'Missing required field: {f}')
+            # Auto-assign structure_id if not provided → first active structure
+            structure_id = int(body['structure_id']) if body.get('structure_id') else None
+            if not structure_id:
+                first_struct = request.env['hb.salary.structure'].sudo().search(
+                    [('active', '=', True)], limit=1, order='id')
+                if not first_struct:
+                    return _error_response('Chưa có cấu trúc lương. Tạo trước khi thêm rule.')
+                structure_id = first_struct.id
+            # Auto-assign category_id if not provided → first category
+            category_id = int(body['category_id']) if body.get('category_id') else None
+            if not category_id:
+                first_cat = request.env['hb.salary.rule.category'].sudo().search(
+                    [], limit=1, order='sequence, id')
+                if not first_cat:
+                    return _error_response('Chưa có danh mục rule. Tạo trước khi thêm rule.')
+                category_id = first_cat.id
             vals = {
                 'name': body['name'],
                 'code': body['code'],
                 'sequence': int(body.get('sequence', 10)),
-                'structure_id': int(body['structure_id']),
-                'category_id': int(body['category_id']),
+                'structure_id': structure_id,
+                'category_id': category_id,
                 'amount_type': body.get('amount_type', 'fixed'),
                 'appears_on_payslip': body.get('appears_on_payslip', True),
                 'note': body.get('note', ''),
@@ -1342,7 +1667,12 @@ class PayrollAPI(http.Controller):
             slips = request.env['hb.payslip'].sudo().browse(ids)
             now = fields.Datetime.now()
             for slip in slips.filtered(lambda s: s.exists()):
-                slip.write({'x_email_sent': True, 'x_email_sent_date': now})
+                vals = {'x_email_sent': True, 'x_email_sent_date': now}
+                # Reset rejected → pending so employee can re-confirm
+                if slip.x_employee_confirm == 'rejected':
+                    vals['x_employee_confirm'] = 'pending'
+                    vals['x_employee_feedback'] = False
+                slip.write(vals)
                 month = slip.date_from.strftime('%m') if slip.date_from else ''
                 year = slip.date_from.strftime('%Y') if slip.date_from else ''
                 email_to = slip.employee_id.work_email or ''
@@ -1357,4 +1687,115 @@ class PayrollAPI(http.Controller):
             return _success_response({'marked': len(slips)})
         except Exception as e:
             _logger.exception('mark_payslips_sent error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
+    # EMPLOYEE SELF-CONFIRM (authenticated — requires login)
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/payslip/<int:slip_id>/employee-confirm',
+                type='http', auth='user', methods=['POST'], csrf=False)
+    def employee_confirm_payslip(self, slip_id, **kw):
+        """Employee confirms/rejects their own payslip (must be logged in)."""
+        try:
+            body = _get_json_body()
+            action = body.get('action')
+            if action not in ('confirm', 'reject'):
+                return _error_response('Invalid action.')
+
+            # Current user → employee
+            user = request.env.user
+            employee = request.env['hr.employee'].sudo().search(
+                [('user_id', '=', user.id)], limit=1)
+            if not employee:
+                return _error_response(
+                    'Không tìm thấy hồ sơ nhân viên của bạn.', status=403)
+
+            slip = request.env['hb.payslip'].sudo().browse(slip_id)
+            if not slip.exists():
+                return _error_response('Payslip not found.', status=404)
+
+            # Verify ownership
+            if slip.employee_id.id != employee.id:
+                return _error_response(
+                    'Bạn không có quyền xác nhận phiếu lương này.', status=403)
+
+            if slip.x_employee_confirm == 'confirmed':
+                return _error_response('Phiếu lương đã được xác nhận rồi.')
+
+            if action == 'confirm':
+                slip.write({
+                    'x_employee_confirm': 'confirmed',
+                    'x_confirmed_date': fields.Datetime.now(),
+                })
+                slip.message_post(
+                    body=_(
+                        'Nhân viên <b>%(name)s</b> đã <b>xác nhận</b> phiếu lương.',
+                        name=employee.name,
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            else:
+                feedback = (body.get('feedback') or '').strip()
+                if not feedback:
+                    return _error_response('Vui lòng nhập lý do từ chối.')
+                slip.write({
+                    'x_employee_confirm': 'rejected',
+                    'x_employee_feedback': feedback,
+                    'x_confirmed_date': fields.Datetime.now(),
+                })
+                slip.message_post(
+                    body=_(
+                        'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. '
+                        'Lý do: %(fb)s',
+                        name=employee.name, fb=feedback,
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+
+            return _success_response({
+                'status': slip.x_employee_confirm,
+            })
+        except Exception as e:
+            _logger.exception('employee_confirm_payslip error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/payslip/<int:slip_id>/reset-confirm',
+                type='http', auth='user', methods=['POST'], csrf=False)
+    def reset_payslip_confirm(self, slip_id, **kw):
+        """HR resets employee confirmation back to pending.
+
+        Allows HR to undo confirm/reject so salary can be recalculated
+        and mail resent. Only works while batch is not yet closed.
+        """
+        try:
+            slip = request.env['hb.payslip'].sudo().browse(slip_id)
+            if not slip.exists():
+                return _error_response('Payslip not found.', status=404)
+            # Block if batch is already closed (history saved)
+            if slip.payslip_run_id and slip.payslip_run_id.state == 'close':
+                return _error_response(
+                    'Batch đã lưu lịch sử, không thể reset xác nhận.')
+            old_status = slip.x_employee_confirm
+            slip.write({
+                'x_employee_confirm': 'pending',
+                'x_employee_feedback': False,
+            })
+            slip.message_post(
+                body=_(
+                    'HR đã reset xác nhận của %(name)s '
+                    '(%(old)s → chờ xác nhận). Bởi: %(user)s',
+                    name=slip.employee_id.name,
+                    old=old_status,
+                    user=request.env.user.name,
+                ),
+                message_type='comment',
+                subtype_xmlid='mail.mt_note',
+            )
+            return _success_response({
+                'status': 'pending',
+            }, message='Đã reset xác nhận.')
+        except Exception as e:
+            _logger.exception('reset_payslip_confirm error')
             return _error_response(str(e), status=500)

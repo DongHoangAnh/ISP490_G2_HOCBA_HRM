@@ -1,13 +1,12 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig, resetPayslipConfirm } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { currentMonth, currentYear } from './util';
-import PayslipDrawer from './PayslipDrawer';
 
 /* ── localStorage v2 ── */
 const LS_KEY = 'hb_payroll_col_v2';
@@ -127,11 +126,36 @@ const MS = {
 };
 
 /* ── Salary Detail — receipt-style, flex to screen ── */
-function SalaryDetail({ emp, columns, onClose }) {
+const CONFIRM_STYLE = {
+  pending:   { label: 'Chờ xác nhận', bg: '#fef3c7', color: '#92400e', icon: 'clock' },
+  confirmed: { label: 'Đã xác nhận',  bg: '#d1fae5', color: '#065f46', icon: 'checkCircle' },
+  rejected:  { label: 'Từ chối',      bg: '#fee2e2', color: '#991b1b', icon: 'xCircle' },
+};
+
+function SalaryDetail({ emp, columns, onClose, onChanged }) {
   const lastCode = columns.length > 0 ? columns[columns.length - 1].code : null;
   const NET_CODES = new Set(['thuc_lanh']);
   const netRow = columns.find((c) => NET_CODES.has(c.code));
   const netVal = netRow ? emp.amounts[netRow.code] : null;
+
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [localStatus, setLocalStatus] = useState(emp.employee_confirm || 'pending');
+
+  const cs = CONFIRM_STYLE[localStatus] || CONFIRM_STYLE.pending;
+  const canReset = emp.payslip_id && localStatus !== 'pending';
+
+  const handleReset = async () => {
+    if (!confirm('Bỏ xác nhận để tính lại lương cho nhân viên này?')) return;
+    setBusy(true); setErr(null);
+    try {
+      await resetPayslipConfirm(emp.payslip_id);
+      setLocalStatus('pending');
+      if (onChanged) onChanged();
+    } catch (e) {
+      setErr(e.message || 'Reset thất bại');
+    } finally { setBusy(false); }
+  };
 
   return (
     <Modal onClose={onClose}>
@@ -143,7 +167,20 @@ function SalaryDetail({ emp, columns, onClose }) {
         {/* ─ header ─ */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{emp.name}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{emp.name}</h2>
+              {emp.payslip_id && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 20,
+                  fontSize: 11.5, fontWeight: 600,
+                  background: cs.bg, color: cs.color,
+                }}>
+                  <Icon name={cs.icon} size={13} />
+                  {cs.label}
+                </span>
+              )}
+            </div>
             <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
               {[emp.code, emp.job_title, emp.department].filter(Boolean).join(' · ')}
             </div>
@@ -193,11 +230,59 @@ function SalaryDetail({ emp, columns, onClose }) {
             background: 'linear-gradient(135deg, #065f46, #047857)',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
-            <span style={{ color: '#d1fae5', fontSize: 13, fontWeight: 600 }}>Thuc linh</span>
+            <span style={{ color: '#d1fae5', fontSize: 13, fontWeight: 600 }}>Thực lĩnh</span>
             <span style={{ color: '#fff', fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
               {hbVND(netVal)}
             </span>
           </div>
+        )}
+
+        {/* ─ rejected feedback ─ */}
+        {localStatus === 'rejected' && emp.employee_feedback && (
+          <div style={{
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+            background: '#fef2f2', border: '1px solid #fecaca',
+            fontSize: 12.5, color: '#991b1b',
+          }}>
+            <span style={{ fontWeight: 600 }}>Lý do từ chối:</span> {emp.employee_feedback}
+          </div>
+        )}
+
+        {/* ─ status + HR reset action ─ */}
+        {err && (
+          <div style={{ color: '#dc2626', fontSize: 12.5, marginTop: 10, padding: '6px 10px', background: '#fef2f2', borderRadius: 6 }}>
+            {err}
+          </div>
+        )}
+
+        {localStatus === 'confirmed' && (
+          <div style={{
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+            background: '#f0fdf4', border: '1px solid #bbf7d0',
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 13, color: '#065f46', fontWeight: 600,
+          }}>
+            <Icon name="checkCircle" size={16} />
+            Nhân viên đã xác nhận phiếu lương
+          </div>
+        )}
+
+        {canReset && (
+          <button
+            onClick={handleReset}
+            disabled={busy}
+            style={{
+              marginTop: 10, padding: '10px 0', borderRadius: 8, flexShrink: 0,
+              border: '1px solid #d1d5db', background: '#fff',
+              fontSize: 13, fontWeight: 600, color: '#374151',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              opacity: busy ? 0.5 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            <Icon name="refresh" size={15} />
+            {busy ? 'Đang xử lý...' : 'Bỏ xác nhận — tính lại lương'}
+          </button>
         )}
       </div>
     </Modal>
@@ -220,7 +305,6 @@ export default function BatchList({ search }) {
   const year  = currentYear();
   const [data, setData]   = useState(null);
   const [err, setErr]     = useState(null);
-  const [sel, setSel]     = useState(null);
   const [detailEmp, setDetailEmp] = useState(null);
   const [cfgOpen, setCfgOpen] = useState(false);
   const [cfg, setCfg] = useState(() => loadCfg() || {});
@@ -230,6 +314,7 @@ export default function BatchList({ search }) {
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
+  const [confirmFilter, setConfirmFilter] = useState('');
   const resizeRef = useRef(null);
 
   const load = () => { setErr(null); setData(null); setChecked({}); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
@@ -266,16 +351,11 @@ export default function BatchList({ search }) {
 
   const getW = useCallback((key, def) => colWidths[key] || def, [colWidths]);
 
-  /* ── checkbox helpers ── */
-  const empsWithSlip = (data ? data.employees : []).filter((e) => e.payslip_id);
+  /* ── checkbox helpers (uses filtered emps list via ref) ── */
+  const allEmpsWithSlip = (data ? data.employees : []).filter((e) => e.payslip_id);
   const checkedIds = Object.keys(checked).filter((k) => checked[k]).map(Number);
   const checkedCount = checkedIds.length;
-  const allChecked = empsWithSlip.length > 0 && empsWithSlip.every((e) => checked[e.payslip_id]);
   const toggleOne = (pid) => setChecked((p) => ({ ...p, [pid]: !p[pid] }));
-  const toggleAll = () => {
-    if (allChecked) setChecked({});
-    else setChecked(Object.fromEntries(empsWithSlip.map((e) => [e.payslip_id, true])));
-  };
 
   /* ── compute all ── */
   const handleComputeAll = async () => {
@@ -365,8 +445,8 @@ export default function BatchList({ search }) {
   };
 
   /* ── save to history ── */
-  const allConfirmed = empsWithSlip.length > 0 &&
-    empsWithSlip.every((e) => e.employee_confirm === 'confirmed');
+  const allConfirmed = allEmpsWithSlip.length > 0 &&
+    allEmpsWithSlip.every((e) => e.employee_confirm === 'confirmed');
 
   const handleSaveHistory = async () => {
     if (!allConfirmed || saving) return;
@@ -387,12 +467,21 @@ export default function BatchList({ search }) {
 
   const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
+    if (confirmFilter && (e.employee_confirm || 'pending') !== confirmFilter) return false;
     if (!q) return true;
     return (e.name || '').toLowerCase().includes(q)
       || (e.code || '').toLowerCase().includes(q)
       || (e.department || '').toLowerCase().includes(q)
       || (e.job_title || '').toLowerCase().includes(q);
   }) : [];
+
+  /* toggleAll / allChecked work on the FILTERED list */
+  const visibleWithSlip = emps.filter((e) => e.payslip_id);
+  const allChecked = visibleWithSlip.length > 0 && visibleWithSlip.every((e) => checked[e.payslip_id]);
+  const toggleAll = () => {
+    if (allChecked) setChecked({});
+    else setChecked(Object.fromEntries(visibleWithSlip.map((e) => [e.payslip_id, true])));
+  };
 
   const allCols = data ? data.columns : [];
   const sorted = (() => {
@@ -424,9 +513,6 @@ export default function BatchList({ search }) {
 
   const total = emps.length;
   const withSlip = emps.filter((e) => e.payslip_id).length;
-  const netCol = allCols.find((c) => c.code === 'thuc_lanh');
-  const totalNet = netCol ? emps.reduce((s, e) => s + (e.amounts[netCol.code] || 0), 0) : 0;
-  const avgNet = withSlip > 0 ? Math.round(totalNet / withSlip) : 0;
 
   const P = { padding: '10px 14px', fontSize: 13.5, whiteSpace: 'nowrap', lineHeight: '20px', overflow: 'hidden', textOverflow: 'ellipsis' };
   const dataDefW = 110;
@@ -434,7 +520,7 @@ export default function BatchList({ search }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0 }}>
 
         {/* Odoo-style search bar */}
         <div style={{
@@ -474,12 +560,28 @@ export default function BatchList({ search }) {
           )}
         </div>
 
+        {/* Status filter */}
+        <select
+          value={confirmFilter}
+          onChange={(e) => { setConfirmFilter(e.target.value); setChecked({}); }}
+          style={{
+            padding: '5px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: 600,
+            border: '1px solid #d1d5db', background: confirmFilter === 'rejected' ? '#fee2e2' : '#fff',
+            color: confirmFilter === 'rejected' ? '#991b1b' : '#374151',
+            cursor: 'pointer',
+          }}
+        >
+          <option value="">Tất cả trạng thái</option>
+          <option value="pending">Chờ xác nhận</option>
+          <option value="confirmed">Đã xác nhận</option>
+          <option value="rejected">Từ chối</option>
+        </select>
+
         {/* metrics inline */}
         {data && <>
           <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 2px' }} />
           {[
             ['NV:', total], ['Phiếu:', withSlip],
-            ['Thực lĩnh:', hbVND(totalNet)], ['TB:', hbVND(avgNet)],
           ].map(([l, v]) => (
             <span key={l} style={{ fontSize: 11.5, color: '#6b7280' }}>
               {l} <b style={{ color: '#111827' }}>{v}</b>
@@ -491,53 +593,54 @@ export default function BatchList({ search }) {
 
         <button onClick={handleComputeAll} disabled={computing}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', borderRadius: 7,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
             border: 'none', background: '#f59e0b', color: '#fff',
-            fontSize: 12.5, fontWeight: 600,
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
             cursor: computing ? 'not-allowed' : 'pointer',
             opacity: computing ? .5 : 1,
           }}>
-          <Icon name="zap" size={14} />
+          <Icon name="zap" size={13} />
           {computing ? 'Đang tính...' : 'Tính lương'}
         </button>
 
         <button onClick={handleSendMail} disabled={sending || checkedCount === 0}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', borderRadius: 7,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
             border: 'none', background: '#2563eb', color: '#fff',
-            fontSize: 12.5, fontWeight: 600,
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
             cursor: (sending || checkedCount === 0) ? 'not-allowed' : 'pointer',
             opacity: (sending || checkedCount === 0) ? .5 : 1,
           }}>
-          <Icon name="mail" size={14} />
+          <Icon name="mail" size={13} />
           {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
         </button>
 
         <button onClick={handleSaveHistory} disabled={saving || !allConfirmed}
           title={allConfirmed ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận trước khi lưu'}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', borderRadius: 7,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
             border: 'none', background: allConfirmed ? '#16a34a' : '#9ca3af', color: '#fff',
-            fontSize: 12.5, fontWeight: 600,
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
             cursor: (saving || !allConfirmed) ? 'not-allowed' : 'pointer',
             opacity: (saving || !allConfirmed) ? .6 : 1,
           }}>
-          <Icon name="check" size={14} />
+          <Icon name="check" size={13} />
           {saving ? 'Đang lưu...' : 'Lưu lịch sử'}
         </button>
 
         <button onClick={() => setCfgOpen(true)}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '5px 12px', borderRadius: 7,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
             border: '1px solid var(--border,#d1d5db)', background: '#fff',
-            fontSize: 12.5, color: '#374151', cursor: 'pointer',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            color: '#374151', cursor: 'pointer',
           }}>
-          <Icon name="settings" size={14} />
-          Cot&nbsp;<b>{visCols.length}/{allCols.length}</b>
+          <Icon name="settings" size={13} />
+          Cột&nbsp;<b>{visCols.length}/{allCols.length}</b>
         </button>
       </div>
 
@@ -617,9 +720,7 @@ export default function BatchList({ search }) {
                     : emp.employee_confirm === 'rejected' ? '#fee2e2' : '#f8fafc';
                   return (
                   <tr key={emp.id}
-                    onClick={() => emp.payslip_id && setSel(emp)}
                     style={{
-                      cursor: emp.payslip_id ? 'pointer' : 'default',
                       background: rowBg,
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = rowHover; }}
@@ -738,8 +839,7 @@ export default function BatchList({ search }) {
       {cfgOpen && allCols.length > 0 && (
         <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
-      {sel && <PayslipDrawer slip={{ id: sel.payslip_id }} onClose={() => setSel(null)} onChanged={load} />}
-      {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} />}
+      {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} onChanged={load} />}
     </div>
   );
 }

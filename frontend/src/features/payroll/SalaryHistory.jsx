@@ -1,23 +1,167 @@
-/* Lịch sử lương — xem lương tất cả nhân viên theo tháng/năm. Owner: Hùng. */
-import { useState, useEffect, useRef } from 'react';
-import { fetchPayslips } from '../../api/payroll';
+/* Lịch sử lương — xem lương đã khoá theo tháng/năm (read-only). Owner: Hùng. */
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { fetchSalaryHistory } from '../../api/payroll';
 import Icon from '../../components/Icon';
-import Badge from '../../components/Badge';
+import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
-import { slipState, monthOptions, yearOptions, currentMonth, currentYear } from './util';
-import PayslipDrawer from './PayslipDrawer';
-import TblWrap from '../../components/TblWrap';
+import { monthOptions, yearOptions, currentMonth, currentYear } from './util';
 
+/* ── localStorage ── */
+const LS_KEY = 'hb_history_col';
+const LS_WIDTHS = 'hb_history_widths';
+const loadCfg = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || null; } catch { return null; } };
+const saveCfg = (c) => localStorage.setItem(LS_KEY, JSON.stringify(c));
+const loadWidths = () => { try { return JSON.parse(localStorage.getItem(LS_WIDTHS)) || {}; } catch { return {}; } };
+const saveWidths = (w) => localStorage.setItem(LS_WIDTHS, JSON.stringify(w));
+
+const BASE = [
+  { key: 'stt',        label: 'STT',        w: 40  },
+  { key: 'code',       label: 'Mã NV',      w: 76  },
+  { key: 'name',       label: 'Họ và tên',  w: 150 },
+  { key: 'job_title',  label: 'Chức vụ',    w: 110 },
+  { key: 'department', label: 'Phòng ban',   w: 115 },
+];
+
+/* ── Receipt-style detail modal (read-only) ── */
+function HistoryDetail({ emp, columns, onClose }) {
+  const lastCode = columns.length > 0 ? columns[columns.length - 1].code : null;
+  const NET_CODES = new Set(['thuc_lanh']);
+  const netRow = columns.find((c) => NET_CODES.has(c.code));
+  const netVal = netRow ? emp.amounts[netRow.code] : null;
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{
+        display: 'flex', flexDirection: 'column',
+        height: 'calc(100vh - 100px)', maxHeight: 720,
+        padding: '16px 24px 16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{emp.name}</h2>
+            <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
+              {[emp.code, emp.job_title, emp.department].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          <button className="icon-btn" onClick={onClose} style={{ marginTop: -4 }}><Icon name="x" size={18} /></button>
+        </div>
+
+        <div style={{
+          flex: 1, minHeight: 0,
+          border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {columns.map((col, i) => {
+            const val = emp.amounts[col.code];
+            const isNet = NET_CODES.has(col.code) || col.code === lastCode;
+            return (
+              <div key={col.code} style={{
+                flex: 1, minHeight: 0,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0 16px',
+                borderBottom: i < columns.length - 1 ? '1px solid #f3f4f6' : 'none',
+                background: isNet ? '#f0fdf4' : '#fff',
+                fontSize: 13,
+              }}>
+                <span style={{
+                  color: isNet ? '#15803d' : '#374151',
+                  fontWeight: isNet ? 700 : 400,
+                }}>{col.name}</span>
+                <span style={{
+                  fontVariantNumeric: 'tabular-nums',
+                  fontWeight: isNet ? 800 : 500,
+                  color: isNet ? '#15803d' : val < 0 ? '#dc2626' : '#111827',
+                  fontSize: isNet ? 14.5 : 13,
+                }}>
+                  {val != null ? hbVND(val) : '—'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {netVal != null && (
+          <div style={{
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+            background: 'linear-gradient(135deg, #065f46, #047857)',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span style={{ color: '#d1fae5', fontSize: 13, fontWeight: 600 }}>Thực lĩnh</span>
+            <span style={{ color: '#fff', fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {hbVND(netVal)}
+            </span>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Column config modal ── */
+function CfgModal({ dataCols, cfg, onApply, onClose }) {
+  const [vis, setVis] = useState(() => {
+    const s = cfg.visible || {};
+    return Object.fromEntries(dataCols.map((c) => [c.code, s[c.code] !== false]));
+  });
+  const [ord, setOrd] = useState(() => {
+    const saved = cfg.order || [];
+    const all = dataCols.map((c) => c.code);
+    const merged = saved.filter((c) => all.includes(c));
+    all.forEach((c) => { if (!merged.includes(c)) merged.push(c); });
+    return merged;
+  });
+  const allOn = dataCols.length > 0 && dataCols.every((c) => vis[c.code]);
+  const flipAll = () => { const on = !allOn; setVis(Object.fromEntries(dataCols.map((c) => [c.code, on]))); };
+  const drag = useRef(null);
+  const nameOf = {};
+  dataCols.forEach((c) => { nameOf[c.code] = c.name; });
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border,#e5e7eb)' }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Tuỳ chỉnh cột hiển thị</h2>
+      </div>
+      <div style={{ maxHeight: '58vh', overflowY: 'auto' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 24px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: 'var(--gray-50,#f9fafb)', fontSize: 13.5 }}>
+          <input type="checkbox" checked={allOn} onChange={flipAll} style={{ width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer' }} />
+          <span style={{ fontWeight: 600 }}>Tất cả cột</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{dataCols.filter((c) => vis[c.code]).length}/{dataCols.length}</span>
+        </label>
+        {ord.map((code, i) => (
+          <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 24px', borderBottom: '1px solid #f3f4f6', fontSize: 13 }}
+            draggable onDragStart={() => { drag.current = i; }} onDragOver={(e) => e.preventDefault()}
+            onDrop={() => { if (drag.current == null || drag.current === i) return; setOrd((p) => { const n = [...p]; const [it] = n.splice(drag.current, 1); n.splice(i, 0, it); return n; }); drag.current = null; }}>
+            <input type="checkbox" checked={vis[code] !== false} onChange={() => setVis((v) => ({ ...v, [code]: !v[code] }))} style={{ width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer' }} />
+            <span style={{ flex: 1 }}>{nameOf[code] || code}</span>
+            <span style={{ cursor: 'grab', color: '#bbb', fontSize: 15, userSelect: 'none' }}>&#9776;</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 24px', borderTop: '1px solid var(--border)' }}>
+        <button className="btn btn-ghost" onClick={onClose}>Huỷ</button>
+        <button className="btn btn-primary" onClick={() => { onApply({ visible: vis, order: ord }); onClose(); }}>Áp dụng</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Main ── */
 export default function SalaryHistory() {
   const [month, setMonth] = useState(currentMonth());
   const [year, setYear] = useState(currentYear());
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
-  const [sel, setSel] = useState(null);
+  const [detailEmp, setDetailEmp] = useState(null);
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [cfg, setCfg] = useState(() => loadCfg() || {});
+  const [colWidths, setColWidths] = useState(() => loadWidths());
   const [localSearch, setLocalSearch] = useState('');
   const [periodOpen, setPeriodOpen] = useState(false);
   const periodRef = useRef(null);
+  const resizeRef = useRef(null);
+
+  const applyCfg = useCallback((c) => { setCfg(c); saveCfg(c); }, []);
 
   /* close period dropdown on outside click */
   useEffect(() => {
@@ -29,35 +173,88 @@ export default function SalaryHistory() {
 
   const load = () => {
     setErr(null); setData(null);
-    const params = { limit: 500 };
-    if (year) params.year = year;
-    if (month) params.month = month;
-    fetchPayslips(params)
-      .then(setData)
-      .catch((e) => setErr(e.message));
+    fetchSalaryHistory({ month, year }).then(setData).catch((e) => setErr(e.message));
   };
   useEffect(load, [month, year]);
 
-  /* filter by local search */
-  const q = localSearch.toLowerCase();
-  const filtered = data ? data.filter((p) => {
-    if (!q) return true;
-    return (p.employee_name || '').toLowerCase().includes(q)
-      || (p.number || '').toLowerCase().includes(q)
-      || (p.structure_code || '').toLowerCase().includes(q);
-  }) : [];
+  /* ── column resize ── */
+  const startResize = useCallback((colKey, initW, e) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.classList.add('rh-active');
+    const startX = e.clientX;
+    resizeRef.current = { colKey, initW, startX };
+    const onMove = (ev) => {
+      if (!resizeRef.current) return;
+      const delta = ev.clientX - resizeRef.current.startX;
+      const newW = Math.max(40, resizeRef.current.initW + delta);
+      setColWidths((prev) => ({ ...prev, [colKey]: newW }));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('rh-active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setColWidths((prev) => { saveWidths(prev); return prev; });
+      resizeRef.current = null;
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
 
-  const totalGross = filtered.reduce((s, p) => s + (p.gross_amount || 0), 0);
-  const totalNet = filtered.reduce((s, p) => s + (p.net_amount || 0), 0);
+  const getW = useCallback((key, def) => colWidths[key] || def, [colWidths]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
 
-  return (
-    <>
-      {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+  const q = localSearch.toLowerCase();
+  const emps = data ? data.employees.filter((e) => {
+    if (!e.payslip_id) return false; // history only shows employees with payslips
+    if (!q) return true;
+    return (e.name || '').toLowerCase().includes(q)
+      || (e.code || '').toLowerCase().includes(q)
+      || (e.department || '').toLowerCase().includes(q)
+      || (e.job_title || '').toLowerCase().includes(q);
+  }) : [];
 
-        {/* Odoo-style search bar */}
+  const total = emps.length;
+
+  const allCols = data ? data.columns : [];
+  const sorted = (() => {
+    const codes = allCols.map((c) => c.code);
+    const o = (cfg.order || []).filter((c) => codes.includes(c));
+    codes.forEach((c) => { if (!o.includes(c)) o.push(c); });
+    return o.map((c) => allCols.find((x) => x.code === c)).filter(Boolean);
+  })();
+  const visCols = sorted.filter((c) => (cfg.visible || {})[c.code] !== false);
+
+  const fw = BASE.map((b) => getW(b.key, b.w));
+  const cumL = fw.map((_, i) => fw.slice(0, i).reduce((a, b) => a + b, 0));
+
+  const sH = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 5, background: '#fafbfd', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
+  const sD = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 2, background: 'inherit', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
+  const sF = (i) => ({ position: 'sticky', left: cumL[i], zIndex: 5, background: '#f8f9fb', width: fw[i], minWidth: fw[i], maxWidth: fw[i] });
+
+  const cellVal = (e, key, idx) => {
+    if (key === 'stt') return idx + 1;
+    if (key === 'code') return e.code || '—';
+    if (key === 'name') return e.name;
+    if (key === 'job_title') return e.job_title || '—';
+    if (key === 'department') return e.department || '—';
+    return '—';
+  };
+
+  const P = { padding: '10px 14px', fontSize: 13.5, whiteSpace: 'nowrap', lineHeight: '20px', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const dataDefW = 110;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      {/* toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0 }}>
+
+        {/* search bar with period chip */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
           background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
@@ -65,14 +262,14 @@ export default function SalaryHistory() {
         }}>
           <Icon name="search" size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
 
-          {/* Period chip */}
+          {/* Period chip — clickable dropdown */}
           <div ref={periodRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setPeriodOpen(!periodOpen)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 600,
-                border: 'none', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer',
+                border: 'none', background: '#f3e8ff', color: '#7c3aed', cursor: 'pointer',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -86,7 +283,7 @@ export default function SalaryHistory() {
                 boxShadow: '0 4px 16px rgba(0,0,0,.12)', padding: 12, minWidth: 200,
               }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 8 }}>Chọn kỳ lương</div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
                   <select className="sel" value={month} onChange={(e) => { setMonth(e.target.value); setPeriodOpen(false); }} style={{ flex: 1 }}>
                     {monthOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -98,22 +295,15 @@ export default function SalaryHistory() {
             )}
           </div>
 
-          {/* Search input */}
           <input
             type="text"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder="Tìm tên, mã NV, cấu trúc..."
-            style={{
-              flex: 1, border: 'none', outline: 'none', fontSize: 13,
-              background: 'transparent', minWidth: 100,
-            }}
+            placeholder="Tìm tên, mã NV, phòng ban..."
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13, background: 'transparent', minWidth: 100 }}
           />
           {localSearch && (
-            <button onClick={() => setLocalSearch('')} style={{
-              border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af',
-              display: 'flex', alignItems: 'center',
-            }}>
+            <button onClick={() => setLocalSearch('')} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af', display: 'flex', alignItems: 'center' }}>
               <Icon name="x" size={14} />
             </button>
           )}
@@ -123,70 +313,149 @@ export default function SalaryHistory() {
         {data && <>
           <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 2px' }} />
           <span style={{ fontSize: 11.5, color: '#6b7280' }}>
-            Phiếu: <b style={{ color: '#111827' }}>{filtered.length}</b>
+            NV: <b style={{ color: '#111827' }}>{total}</b>
           </span>
         </>}
 
         <div style={{ flex: 1 }} />
+
+        <button onClick={() => setCfgOpen(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
+            border: '1px solid var(--border,#d1d5db)', background: '#fff',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            color: '#374151', cursor: 'pointer',
+          }}>
+          <Icon name="settings" size={13} />
+          Cột&nbsp;<b>{visCols.length}/{allCols.length}</b>
+        </button>
       </div>
 
-      <div className="card">
+      {/* table */}
+      <div style={{
+        flex: '0 1 auto', minHeight: 0,
+        border: '1px solid var(--border,#e5e7eb)', borderRadius: 10,
+        background: '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      }}>
         {!data ? (
-          <div style={{ padding: 36 }}>
-            <LoadingState label="Đang tải lịch sử lương..." />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 36, textAlign: 'center' }}>
-            <EmptyState>Không có phiếu lương{month && year ? ` tháng ${month}/${year}` : year ? ` năm ${year}` : ''}.</EmptyState>
-          </div>
+          <div style={{ padding: 40 }}><LoadingState label="Đang tải lịch sử lương..." /></div>
+        ) : emps.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center' }}><EmptyState>Không có dữ liệu lương tháng {month}/{year}.</EmptyState></div>
         ) : (
-          <TblWrap id="salary-history">
-            <table className="tbl">
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <table style={{
+              width: '100%', borderCollapse: 'separate', borderSpacing: 0,
+              tableLayout: 'fixed',
+              minWidth: fw.reduce((a, b) => a + b, 0) + visCols.reduce((s, c) => s + getW(c.code, dataDefW), 0) + 40,
+            }}>
               <thead>
                 <tr>
-                  <th>Mã NV</th>
-                  <th>Nhân viên</th>
-                  <th>Cấu trúc</th>
-                  <th style={{ textAlign: 'right' }}>Gross</th>
-                  <th style={{ textAlign: 'right' }}>Net</th>
-                  <th>Trạng thái</th>
+                  {BASE.map((b, i) => (
+                    <th key={b.key} style={{
+                      ...sH(i), ...P, position: 'sticky', top: 0,
+                      fontSize: 12, fontWeight: 600, color: '#6b7280',
+                      textAlign: 'left',
+                      borderBottom: '1px solid #e5e7eb', overflow: 'visible',
+                      ...(i === BASE.length - 1 ? { boxShadow: '1px 0 0 #e5e7eb' } : {}),
+                    }}>
+                      {b.label}
+                      <div data-rh="1" onMouseDown={(e) => startResize(b.key, fw[i], e)} />
+                    </th>
+                  ))}
+                  {visCols.map((c) => {
+                    const w = getW(c.code, dataDefW);
+                    return (
+                      <th key={c.code} style={{
+                        ...P, position: 'sticky', top: 0, zIndex: 3,
+                        fontSize: 12, fontWeight: 600, color: '#6b7280',
+                        textAlign: 'left', background: '#fafbfd',
+                        borderBottom: '1px solid #e5e7eb', width: w, minWidth: w, maxWidth: w,
+                        overflow: 'visible',
+                      }}>
+                        {c.name}
+                        <div data-rh="1" onMouseDown={(e) => startResize(c.code, w, e)} />
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => {
-                  const [sl, sk] = slipState(p.state);
-                  return (
-                    <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setSel(p)}>
-                      <td><code style={{ fontSize: 12.5 }}>{p.number || '—'}</code></td>
-                      <td style={{ fontWeight: 600, color: 'var(--red-600)' }}>{p.employee_name}</td>
-                      <td>{p.structure_code || '—'}</td>
-                      <td style={{ textAlign: 'right' }}>{hbVND(p.gross_amount)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--green-700)' }}>{hbVND(p.net_amount)}</td>
-                      <td><Badge kind={sk}>{sl}</Badge></td>
-                    </tr>
-                  );
-                })}
+                {emps.map((emp, idx) => (
+                  <tr key={emp.id}
+                    style={{ background: '#fff' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
+                    {BASE.map((b, i) => (
+                      <td key={b.key} style={{
+                        ...sD(i), ...P, background: 'inherit', textAlign: 'left',
+                        fontWeight: b.key === 'name' ? 600 : 400,
+                        borderBottom: '1px solid #e5e7eb',
+                        ...(i === BASE.length - 1 ? { borderRight: '1px solid #e5e7eb' } : {}),
+                      }}>
+                        {b.key === 'name' ? (
+                          <span
+                            onClick={() => setDetailEmp(emp)}
+                            style={{ color: '#2563eb', cursor: 'pointer' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+                          >{emp.name}</span>
+                        ) : cellVal(emp, b.key, idx)}
+                      </td>
+                    ))}
+                    {visCols.map((c) => {
+                      const w = getW(c.code, dataDefW);
+                      return (
+                        <td key={c.code} style={{
+                          ...P, textAlign: 'right', borderBottom: '1px solid #e5e7eb',
+                          fontVariantNumeric: 'tabular-nums',
+                          width: w, minWidth: w, maxWidth: w,
+                        }}>
+                          {emp.amounts[c.code] != null ? hbVND(emp.amounts[c.code]) : ''}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
-                <tr style={{ background: 'var(--gray-50)', fontWeight: 700 }}>
-                  <td colSpan={3} style={{ textAlign: 'right', fontSize: 14 }}>Tổng cộng</td>
-                  <td style={{ textAlign: 'right', fontSize: 14 }}>{hbVND(totalGross)}</td>
-                  <td style={{ textAlign: 'right', fontSize: 14, color: 'var(--green-700)' }}>{hbVND(totalNet)}</td>
-                  <td />
+                <tr>
+                  {BASE.map((b, i) => (
+                    <td key={b.key} style={{
+                      ...sF(i), ...P, position: 'sticky', bottom: 0,
+                      fontWeight: 700, borderTop: '1px solid #e5e7eb',
+                      textAlign: b.key === 'name' ? 'right' : 'left',
+                      ...(i === BASE.length - 1 ? { borderRight: '1px solid #e5e7eb' } : {}),
+                    }}>
+                      {b.key === 'name' ? 'Tổng' : ''}
+                    </td>
+                  ))}
+                  {visCols.map((c) => {
+                    const sum = emps.reduce((s, e) => s + (e.amounts[c.code] || 0), 0);
+                    const w = getW(c.code, dataDefW);
+                    return (
+                      <td key={c.code} style={{
+                        ...P, position: 'sticky', bottom: 0, zIndex: 3,
+                        textAlign: 'right', fontWeight: 700,
+                        background: '#f8f9fb', borderTop: '1px solid #e5e7eb',
+                        fontVariantNumeric: 'tabular-nums',
+                        width: w, minWidth: w, maxWidth: w,
+                      }}>
+                        {sum ? hbVND(sum) : ''}
+                      </td>
+                    );
+                  })}
                 </tr>
               </tfoot>
             </table>
-          </TblWrap>
+          </div>
         )}
       </div>
 
-      {sel && (
-        <PayslipDrawer
-          slip={sel}
-          onClose={() => setSel(null)}
-          onChanged={load}
-        />
+      {cfgOpen && allCols.length > 0 && (
+        <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
-    </>
+      {detailEmp && <HistoryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} />}
+    </div>
   );
 }

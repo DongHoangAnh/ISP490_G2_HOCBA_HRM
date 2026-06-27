@@ -2,15 +2,13 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   fetchSalaryRules, deleteSalaryRule, reorderSalaryRules,
-  fetchBankFormats, deleteBankFormat,
-  fetchMailTemplate, saveMailTemplate,
+  fetchBankFormats, createBankFormat, updateBankFormat, deleteBankFormat,
   fetchEmailjsConfig, saveEmailjsConfig,
 } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import SalaryRuleForm from './SalaryRuleForm';
-import BankFormatForm from './BankFormatForm';
 import TblWrap from '../../components/TblWrap';
 
 const TYPE_LABEL = { fixed: 'Số cố định', formula: 'Công thức', lookup: 'Tra cứu' };
@@ -36,18 +34,12 @@ export default function ConfigView() {
   const [ruleBusy, setRuleBusy] = useState(null);
   const [err, setErr] = useState(null);
 
-  /* bank format state */
+  /* unified bank list state */
   const [banks, setBanks] = useState(null);
-  const [bankForm, setBankForm] = useState(null);
+  const [bankSearch, setBankSearch] = useState('');
+  const [bankEditing, setBankEditing] = useState(null);   // id or 'new'
+  const [bankEditForm, setBankEditForm] = useState({ code: '', name: '', transfer_type: 'normal' });
   const [bankBusy, setBankBusy] = useState(null);
-
-  /* mail template state */
-  const [mailSubject, setMailSubject] = useState('');
-  const [mailBody, setMailBody] = useState('');
-  const [mailLoaded, setMailLoaded] = useState(false);
-  const [mailSaving, setMailSaving] = useState(false);
-  const [mailMsg, setMailMsg] = useState('');
-  const [mailPreview, setMailPreview] = useState(false);
 
   /* emailjs config state */
   const [ejsServiceId, setEjsServiceId] = useState('');
@@ -66,13 +58,6 @@ export default function ConfigView() {
   const loadBanks = () => {
     fetchBankFormats().then(setBanks).catch((e) => setErr(e.message));
   };
-  const loadMailTpl = () => {
-    fetchMailTemplate().then((d) => {
-      setMailSubject(d.subject || '');
-      setMailBody(d.body || '');
-      setMailLoaded(true);
-    }).catch(() => setMailLoaded(true));
-  };
   const loadEjsCfg = () => {
     fetchEmailjsConfig().then((d) => {
       setEjsServiceId(d.service_id || '');
@@ -80,7 +65,7 @@ export default function ConfigView() {
       setEjsPublicKey(d.public_key || '');
     }).catch(() => {});
   };
-  useEffect(() => { loadRules(); loadBanks(); loadMailTpl(); loadEjsCfg(); }, []);
+  useEffect(() => { loadRules(); loadBanks(); loadEjsCfg(); }, []);
 
   const delRule = async (r) => {
     if (!confirm(`Xoá rule "${r.name}" (${r.code})?`)) return;
@@ -90,10 +75,34 @@ export default function ConfigView() {
     finally { setRuleBusy(null); }
   };
 
-  const delBank = async (b) => {
-    if (!confirm(`Xoá ngân hàng "${b.name}" (${b.code})?`)) return;
-    setBankBusy(b.id);
-    try { await deleteBankFormat(b.id); loadBanks(); }
+  /* ── Bank handlers (unified) ── */
+  const startBankEdit = (entry) => {
+    setBankEditing(entry.id);
+    setBankEditForm({ code: entry.code || '', name: entry.name, transfer_type: entry.transfer_type || 'normal' });
+  };
+  const startBankAdd = () => {
+    setBankEditing('new');
+    setBankEditForm({ code: '', name: '', transfer_type: 'normal' });
+  };
+  const cancelBankEdit = () => { setBankEditing(null); };
+  const saveBankEntry = async () => {
+    if (!bankEditForm.name.trim()) return;
+    setBankBusy(bankEditing);
+    try {
+      if (bankEditing === 'new') {
+        await createBankFormat(bankEditForm);
+      } else {
+        await updateBankFormat(bankEditing, bankEditForm);
+      }
+      setBankEditing(null);
+      loadBanks();
+    } catch (e) { alert('Lưu thất bại: ' + e.message); }
+    finally { setBankBusy(null); }
+  };
+  const delBank = async (entry) => {
+    if (!confirm(`Xoá "${entry.name}"?`)) return;
+    setBankBusy(entry.id);
+    try { await deleteBankFormat(entry.id); loadBanks(); }
     catch (e) { alert('Xoá thất bại: ' + e.message); }
     finally { setBankBusy(null); }
   };
@@ -134,6 +143,13 @@ export default function ConfigView() {
 
   if (err) return <ErrorState message={err} onRetry={() => { setErr(null); loadRules(); loadBanks(); }} />;
   if (!rules || !banks) return <LoadingState label="Đang tải cấu hình..." />;
+
+  /* filtered bank list */
+  const filteredBanks = banks.filter((b) =>
+    !bankSearch
+    || (b.name || '').toLowerCase().includes(bankSearch.toLowerCase())
+    || (b.code || '').toLowerCase().includes(bankSearch.toLowerCase())
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -261,7 +277,7 @@ export default function ConfigView() {
       )}
 
       {/* ════════════════════════════════════════════════════════
-          TAB: NGÂN HÀNG
+          TAB: NGÂN HÀNG (unified)
           ════════════════════════════════════════════════════════ */}
       {tab === 'banks' && (
         <div style={{
@@ -271,52 +287,148 @@ export default function ConfigView() {
         }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Ngân hàng (Bank Formats)</h3>
-              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>Danh sách ngân hàng để chọn khi tạo lương</div>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Danh sách ngân hàng</h3>
+              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>
+                Ngân hàng dùng cho chuyển khoản lương
+                <span style={{ marginLeft: 6, fontWeight: 600 }}>({banks.length} ngân hàng)</span>
+              </div>
             </div>
-            <button className="btn btn-primary btn-sm" onClick={() => setBankForm('new')}>
-              <Icon name="plus" size={14} />Thêm ngân hàng
+            <input
+              type="text"
+              className="inp"
+              placeholder="Tìm ngân hàng..."
+              value={bankSearch}
+              onChange={(e) => setBankSearch(e.target.value)}
+              style={{ width: 220, padding: '6px 10px', fontSize: 13 }}
+            />
+            <button className="btn btn-primary btn-sm" onClick={startBankAdd}>
+              <Icon name="plus" size={14} />Thêm
             </button>
           </div>
-          {banks.length === 0 ? (
-            <div style={{ padding: 28, textAlign: 'center' }}><EmptyState>Chưa có ngân hàng nào.</EmptyState></div>
-          ) : (
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             <TblWrap id="cfg-banks">
-                <table className="tbl">
-                  <thead>
-                    <tr>
-                      <th>Mã</th>
-                      <th>Tên ngân hàng</th>
-                      <th style={{ width: 100 }}>Thao tác</th>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 120 }}>Mã</th>
+                    <th>Tên ngân hàng</th>
+                    <th style={{ width: 280 }}>Hình thức chuyển</th>
+                    <th style={{ width: 100 }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Inline add row */}
+                  {bankEditing === 'new' && (
+                    <tr style={{ background: '#f0fdf4' }}>
+                      <td>
+                        <input type="text" className="inp" value={bankEditForm.code}
+                          onChange={(e) => setBankEditForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))}
+                          placeholder="VD: ACB"
+                          style={{ width: '100%', padding: '5px 8px', fontSize: 13 }}
+                          autoFocus
+                        />
+                      </td>
+                      <td>
+                        <input type="text" className="inp" value={bankEditForm.name}
+                          onChange={(e) => setBankEditForm((f) => ({ ...f, name: e.target.value }))}
+                          placeholder="VD: ACB - Ngan hang TMCP A Chau"
+                          style={{ width: '100%', padding: '5px 8px', fontSize: 13 }}
+                        />
+                      </td>
+                      <td>
+                        <select className="sel" value={bankEditForm.transfer_type}
+                          onChange={(e) => setBankEditForm((f) => ({ ...f, transfer_type: e.target.value }))}
+                          style={{ width: '100%', padding: '5px 8px', fontSize: 13 }}
+                        >
+                          <option value="normal">CK THƯỜNG</option>
+                          <option value="fast_247">CK NHANH 24/7</option>
+                        </select>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="icon-btn" title="Lưu" onClick={saveBankEntry} disabled={bankBusy === 'new'}>
+                            <Icon name="check" size={15} style={{ color: 'var(--green-600)' }} />
+                          </button>
+                          <button className="icon-btn" title="Huỷ" onClick={cancelBankEdit}>
+                            <Icon name="x" size={15} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {banks.map((b) => (
-                      <tr key={b.id}
+                  )}
+                  {filteredBanks.map((entry) => (
+                    bankEditing === entry.id ? (
+                      /* Inline edit row */
+                      <tr key={entry.id} style={{ background: '#eff6ff' }}>
+                        <td>
+                          <input type="text" className="inp" value={bankEditForm.code}
+                            onChange={(e) => setBankEditForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))}
+                            style={{ width: '100%', padding: '5px 8px', fontSize: 13 }}
+                            autoFocus
+                          />
+                        </td>
+                        <td>
+                          <input type="text" className="inp" value={bankEditForm.name}
+                            onChange={(e) => setBankEditForm((f) => ({ ...f, name: e.target.value }))}
+                            style={{ width: '100%', padding: '5px 8px', fontSize: 13 }}
+                          />
+                        </td>
+                        <td>
+                          <select className="sel" value={bankEditForm.transfer_type}
+                            onChange={(e) => setBankEditForm((f) => ({ ...f, transfer_type: e.target.value }))}
+                            style={{ width: '100%', padding: '5px 8px', fontSize: 13 }}
+                          >
+                            <option value="normal">CK THƯỜNG</option>
+                            <option value="fast_247">CK NHANH 24/7</option>
+                          </select>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="icon-btn" title="Lưu" onClick={saveBankEntry} disabled={bankBusy === entry.id}>
+                              <Icon name="check" size={15} style={{ color: 'var(--green-600)' }} />
+                            </button>
+                            <button className="icon-btn" title="Huỷ" onClick={cancelBankEdit}>
+                              <Icon name="x" size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      /* Display row */
+                      <tr key={entry.id}
                         style={{ background: '#fff' }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
                       >
-                        <td style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{b.code}</td>
-                        <td style={{ fontWeight: 600 }}>{b.name}</td>
+                        <td style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{entry.code || ''}</td>
+                        <td style={{ fontSize: 13 }}>{entry.name}</td>
+                        <td>
+                          <span style={{
+                            display: 'inline-block', padding: '2px 8px', borderRadius: 4,
+                            fontSize: 12, fontWeight: 600,
+                            background: entry.transfer_type === 'fast_247' ? '#dbeafe' : '#f3f4f6',
+                            color: entry.transfer_type === 'fast_247' ? '#1d4ed8' : '#374151',
+                          }}>
+                            {entry.transfer_type === 'fast_247' ? 'CK NHANH 24/7' : 'CK THƯỜNG'}
+                          </span>
+                        </td>
                         <td>
                           <div style={{ display: 'flex', gap: 4 }}>
-                            <button className="icon-btn" title="Sửa" onClick={() => setBankForm(b)}>
+                            <button className="icon-btn" title="Sửa" onClick={() => startBankEdit(entry)}>
                               <Icon name="edit" size={15} />
                             </button>
-                            <button className="icon-btn" title="Xoá" onClick={() => delBank(b)} disabled={bankBusy === b.id}>
+                            <button className="icon-btn" title="Xoá" onClick={() => delBank(entry)} disabled={bankBusy === entry.id}>
                               <Icon name="trash" size={15} />
                             </button>
                           </div>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TblWrap>
-            </div>
-          )}
+                    )
+                  ))}
+                </tbody>
+              </table>
+            </TblWrap>
+          </div>
         </div>
       )}
 
@@ -325,233 +437,95 @@ export default function ConfigView() {
           ════════════════════════════════════════════════════════ */}
       {tab === 'mail' && (
         <div style={{
-          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          display: 'flex', flexDirection: 'column',
           border: '1px solid #e5e7eb', borderRadius: 10,
           background: '#fff', overflow: 'hidden',
         }}>
-          {/* Header with buttons */}
+          {/* Header */}
           <div style={{
             padding: '14px 20px', borderBottom: '1px solid #e5e7eb', flexShrink: 0,
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Mẫu email gửi phiếu lương</h3>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Cấu hình EmailJS (dịch vụ gửi mail)</h3>
               <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>
-                Tuỳ chỉnh nội dung email gửi cho nhân viên khi xác nhận bảng lương
+                Thay thế SMTP — gửi qua tài khoản Gmail/Outlook của bạn
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => setMailPreview(true)}>
-                <Icon name="eye" size={14} />Xem trước
-              </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
                 className="btn btn-primary btn-sm"
-                disabled={mailSaving}
+                disabled={ejsSaving}
                 onClick={async () => {
-                  setMailSaving(true);
-                  setMailMsg('');
+                  setEjsSaving(true); setEjsMsg('');
                   try {
-                    await saveMailTemplate({ subject: mailSubject, body: mailBody });
-                    setMailMsg('Đã lưu thành công!');
+                    await saveEmailjsConfig({
+                      service_id: ejsServiceId,
+                      template_id: ejsTemplateId,
+                      public_key: ejsPublicKey,
+                    });
+                    setEjsMsg('Đã lưu!');
                   } catch (e) {
-                    setMailMsg('Lỗi: ' + e.message);
-                  } finally {
-                    setMailSaving(false);
-                  }
+                    setEjsMsg('Lỗi: ' + e.message);
+                  } finally { setEjsSaving(false); }
                 }}
               >
-                <Icon name="check" size={14} />
-                {mailSaving ? 'Đang lưu...' : 'Lưu mẫu email'}
+                {ejsSaving ? 'Đang lưu...' : 'Lưu EmailJS'}
               </button>
-              {mailMsg && (
-                <span style={{
-                  fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap',
-                  color: mailMsg.startsWith('Lỗi') ? '#dc2626' : '#16a34a',
-                }}>{mailMsg}</span>
+              {ejsMsg && (
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: ejsMsg.startsWith('Lỗi') ? '#dc2626' : '#16a34a' }}>
+                  {ejsMsg}
+                </span>
               )}
             </div>
           </div>
 
-          {!mailLoaded ? (
-            <LoadingState label="Đang tải mẫu email..." />
-          ) : (
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
-              {/* Placeholders guide */}
-              <div style={{
-                padding: '10px 14px', marginBottom: 16, borderRadius: 8,
-                background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12.5, color: '#1e40af',
-              }}>
-                <strong>Biến có thể dùng:</strong>{' '}
-                <code>{'{employee_name}'}</code> — Tên nhân viên, {' '}
-                <code>{'{month}'}</code> — Tháng, {' '}
-                <code>{'{year}'}</code> — Năm, {' '}
-                <code>{'{gross}'}</code> — Tổng thu nhập, {' '}
-                <code>{'{net}'}</code> — Thực lĩnh, {' '}
-                <code>{'{view_url}'}</code> — Link xem phiếu lương
-              </div>
+          <div style={{ padding: '16px 20px' }}>
+            {/* EmailJS guide */}
+            <div style={{
+              padding: '10px 14px', marginBottom: 14, borderRadius: 8,
+              background: '#fefce8', border: '1px solid #fde68a', fontSize: 12.5, color: '#92400e',
+            }}>
+              <strong>Cách lấy thông tin:</strong> Đăng nhập{' '}
+              <strong>emailjs.com</strong> → Email Services (lấy Service ID) →
+              Email Templates (tạo template, lấy Template ID) →
+              Account → API Keys (lấy Public Key).
+              <br />
+              <strong>Biến trong template EmailJS:</strong>{' '}
+              <code>{'{{to_email}}'}</code>, <code>{'{{employee_name}}'}</code>,{' '}
+              <code>{'{{month}}'}</code>, <code>{'{{year}}'}</code>,{' '}
+              <code>{'{{gross}}'}</code>, <code>{'{{net}}'}</code>,{' '}
+              <code>{'{{view_url}}'}</code>
+            </div>
 
-              {/* Subject */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>
-                  Tiêu đề email (Subject)
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', width: 100, flexShrink: 0 }}>
+                  Service ID
                 </label>
-                <input
-                  type="text"
-                  className="inp"
-                  value={mailSubject}
-                  onChange={(e) => { setMailSubject(e.target.value); setMailMsg(''); }}
-                  placeholder="Bảng lương tháng {month}/{year} — {employee_name}"
-                  style={{ width: '100%' }}
-                />
+                <input className="inp" value={ejsServiceId}
+                  onChange={(e) => { setEjsServiceId(e.target.value); setEjsMsg(''); }}
+                  placeholder="service_xxxxxxx" style={{ flex: 1 }} />
               </div>
-
-              {/* Body */}
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#374151' }}>
-                  Nội dung email (HTML)
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', width: 100, flexShrink: 0 }}>
+                  Template ID
                 </label>
-                <textarea
-                  className="inp"
-                  value={mailBody}
-                  onChange={(e) => { setMailBody(e.target.value); setMailMsg(''); }}
-                  rows={14}
-                  style={{
-                    width: '100%', fontFamily: 'monospace', fontSize: 12.5,
-                    lineHeight: 1.5, resize: 'vertical',
-                  }}
-                  placeholder="<div>Nội dung email HTML...</div>"
-                />
+                <input className="inp" value={ejsTemplateId}
+                  onChange={(e) => { setEjsTemplateId(e.target.value); setEjsMsg(''); }}
+                  placeholder="template_xxxxxxx" style={{ flex: 1 }} />
               </div>
-
-              {/* ── EmailJS Config ── */}
-              <div style={{
-                borderTop: '2px solid #e5e7eb', paddingTop: 20, marginTop: 4,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
-                      Cấu hình EmailJS (dịch vụ gửi mail)
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      Thay thế SMTP — gửi qua tài khoản Gmail/Outlook của bạn
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={ejsSaving}
-                      onClick={async () => {
-                        setEjsSaving(true); setEjsMsg('');
-                        try {
-                          await saveEmailjsConfig({
-                            service_id: ejsServiceId,
-                            template_id: ejsTemplateId,
-                            public_key: ejsPublicKey,
-                          });
-                          setEjsMsg('Đã lưu!');
-                        } catch (e) {
-                          setEjsMsg('Lỗi: ' + e.message);
-                        } finally { setEjsSaving(false); }
-                      }}
-                    >
-                      {ejsSaving ? 'Đang lưu...' : 'Lưu EmailJS'}
-                    </button>
-                    {ejsMsg && (
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: ejsMsg.startsWith('Lỗi') ? '#dc2626' : '#16a34a' }}>
-                        {ejsMsg}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* EmailJS guide */}
-                <div style={{
-                  padding: '10px 14px', marginBottom: 14, borderRadius: 8,
-                  background: '#fefce8', border: '1px solid #fde68a', fontSize: 12.5, color: '#92400e',
-                }}>
-                  <strong>Cách lấy thông tin:</strong> Đăng nhập{' '}
-                  <strong>emailjs.com</strong> → Email Services (lấy Service ID) →
-                  Email Templates (tạo template, lấy Template ID) →
-                  Account → API Keys (lấy Public Key).
-                  <br />
-                  <strong>Biến trong template EmailJS:</strong>{' '}
-                  <code>{'{{to_email}}'}</code>, <code>{'{{employee_name}}'}</code>,{' '}
-                  <code>{'{{month}}'}</code>, <code>{'{{year}}'}</code>,{' '}
-                  <code>{'{{gross}}'}</code>, <code>{'{{net}}'}</code>,{' '}
-                  <code>{'{{view_url}}'}</code>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#374151' }}>
-                      Service ID
-                    </label>
-                    <input className="inp" value={ejsServiceId}
-                      onChange={(e) => { setEjsServiceId(e.target.value); setEjsMsg(''); }}
-                      placeholder="service_xxxxxxx" style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#374151' }}>
-                      Template ID
-                    </label>
-                    <input className="inp" value={ejsTemplateId}
-                      onChange={(e) => { setEjsTemplateId(e.target.value); setEjsMsg(''); }}
-                      placeholder="template_xxxxxxx" style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#374151' }}>
-                      Public Key
-                    </label>
-                    <input className="inp" value={ejsPublicKey}
-                      onChange={(e) => { setEjsPublicKey(e.target.value); setEjsMsg(''); }}
-                      placeholder="xxxxxxxxxxxxxxxxxxxx" style={{ width: '100%' }} />
-                  </div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', width: 100, flexShrink: 0 }}>
+                  Public Key
+                </label>
+                <input className="inp" value={ejsPublicKey}
+                  onChange={(e) => { setEjsPublicKey(e.target.value); setEjsMsg(''); }}
+                  placeholder="xxxxxxxxxxxxxxxxxxxx" style={{ flex: 1 }} />
               </div>
             </div>
-          )}
+          </div>
         </div>
-      )}
-
-      {/* ── Preview modal ── */}
-      {mailPreview && (
-        <Modal onClose={() => setMailPreview(false)} lg>
-          <div className="modal-head">
-            <h3>Xem trước email</h3>
-            <button className="modal-x" onClick={() => setMailPreview(false)}>✕</button>
-          </div>
-          <div style={{ padding: 20 }}>
-            <div style={{
-              fontSize: 13, color: '#6b7280', marginBottom: 12,
-              padding: '8px 12px', background: '#f9fafb', borderRadius: 6,
-            }}>
-              <strong>Subject:</strong>{' '}
-              {mailSubject
-                .replace(/\{employee_name\}/g, 'Nguyễn Văn A')
-                .replace(/\{month\}/g, '06')
-                .replace(/\{year\}/g, '2026')
-                .replace(/\{gross\}/g, '15,000,000')
-                .replace(/\{net\}/g, '12,500,000')
-                .replace(/\{view_url\}/g, '#')}
-            </div>
-            <div style={{
-              border: '1px solid #e5e7eb', borderRadius: 8, padding: 16,
-              background: '#fff', minHeight: 120, fontSize: 13,
-            }}>
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: mailBody
-                    .replace(/\{employee_name\}/g, 'Nguyễn Văn A')
-                    .replace(/\{month\}/g, '06')
-                    .replace(/\{year\}/g, '2026')
-                    .replace(/\{gross\}/g, '15,000,000')
-                    .replace(/\{net\}/g, '12,500,000')
-                    .replace(/\{view_url\}/g, '#'),
-                }}
-              />
-            </div>
-          </div>
-        </Modal>
       )}
 
       {/* ── Modals ── */}
@@ -562,13 +536,6 @@ export default function ConfigView() {
           nextSequence={rules ? Math.max(...rules.map((r) => r.sequence || 0), 0) + 10 : 10}
           onClose={() => setRuleForm(null)}
           onSaved={() => { setRuleForm(null); loadRules(); }}
-        />
-      )}
-      {bankForm && (
-        <BankFormatForm
-          item={bankForm === 'new' ? null : bankForm}
-          onClose={() => setBankForm(null)}
-          onSaved={() => { setBankForm(null); loadBanks(); }}
         />
       )}
     </div>
