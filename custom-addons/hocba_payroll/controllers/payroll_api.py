@@ -1799,3 +1799,244 @@ class PayrollAPI(http.Controller):
         except Exception as e:
             _logger.exception('reset_payslip_confirm error')
             return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
+    # DEV / SEED — Tạo dữ liệu lương demo (XÓA KHI LÊN PRODUCTION)
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/seed-history', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def seed_salary_history(self, **kw):
+        """[DEV] Seed lịch sử lương cho tháng bất kỳ.
+
+        Body: { "month": 5, "year": 2026 }
+        Lấy TẤT CẢ employee active trong DB + contract → tính lương →
+        tạo batch + payslips → close batch ngay.
+        Xóa batch cũ + bank file mồ côi nếu có.
+        """
+        try:
+            body = _get_json_body()
+            month = int(body.get('month', 5))
+            year = int(body.get('year', 2026))
+
+            import calendar
+            import random
+            random.seed(month * 100 + year)  # deterministic per month
+
+            last_day = calendar.monthrange(year, month)[1]
+            date_from = f'{year}-{month:02d}-01'
+            date_end = f'{year}-{month:02d}-{last_day:02d}'
+
+            env = request.env
+            Batch = env['hb.payslip.run'].sudo()
+            Slip = env['hb.payslip'].sudo()
+            Employee = env['hr.employee'].sudo()
+            Contract = env['hb.contract'].sudo()
+            Structure = env['hb.salary.structure'].sudo()
+            Rule = env['hb.salary.rule'].sudo()
+            BankFile = env['hb.bank.file'].sudo()
+
+            # ── Delete existing batch + orphan bank files for this period ──
+            existing = Batch.search([
+                ('date_start', '>=', date_from),
+                ('date_start', '<=', date_end),
+            ])
+            for b in existing:
+                # Delete bank files referencing this batch
+                orphan_bf = BankFile.search([('batch_id', '=', b.id)])
+                if orphan_bf:
+                    orphan_bf.unlink()
+                b.slip_ids.write({'state': 'draft'})
+                b.write({'state': 'draft'})
+                b.slip_ids.unlink()
+                b.unlink()
+
+            # Also clean up bank files with no valid batch
+            all_bf = BankFile.search([])
+            for bf in all_bf:
+                if not bf.batch_id or not bf.batch_id.exists():
+                    bf.unlink()
+
+            # ── Create batch ──
+            batch = Batch.create({
+                'name': f'Lương Tháng {month:02d}/{year}',
+                'date_start': date_from,
+                'date_end': date_end,
+                'state': 'draft',
+            })
+
+            # ── Find structure ──
+            struct = Structure.search([('code', '=', 'STRUCT_OFFLINE')], limit=1)
+            if not struct:
+                return _error_response('STRUCT_OFFLINE not found.')
+
+            # ── Build rule lookup ──
+            rules = Rule.search([('structure_id', '=', struct.id)])
+            rule_map = {}
+            for r in rules:
+                rule_map[r.code] = {
+                    'rule_id': r.id,
+                    'category_id': r.category_id.id if r.category_id else False,
+                    'name': r.name,
+                    'sequence': r.sequence,
+                }
+
+            # ── PIT calculator ──
+            def calc_pit(w):
+                if w <= 0:
+                    return 0
+                if w <= 10_000_000:
+                    return round(w * 0.05)
+                elif w <= 30_000_000:
+                    return round(500_000 + (w - 10_000_000) * 0.10)
+                elif w <= 60_000_000:
+                    return round(2_500_000 + (w - 30_000_000) * 0.20)
+                elif w <= 100_000_000:
+                    return round(8_500_000 + (w - 60_000_000) * 0.30)
+                else:
+                    return round(20_500_000 + (w - 100_000_000) * 0.35)
+
+            # ── Get ALL active employees ──
+            employees = Employee.search(
+                [('active', '=', True)], order='x_employee_code, id',
+            )
+            if not employees:
+                return _error_response('Không có nhân viên active nào trong DB.')
+
+            # ── Build contract map ──
+            contracts = Contract.search([
+                ('state', '=', 'open'),
+                ('employee_id', 'in', employees.ids),
+            ])
+            contract_map = {}
+            for c in contracts:
+                if c.employee_id.id not in contract_map:
+                    contract_map[c.employee_id.id] = c
+
+            STANDARD_DAYS = 25
+            created = 0
+            no_contract = []
+            slip_vals_list = []
+            emp_details = []
+
+            for emp in employees:
+                contract = contract_map.get(emp.id)
+                if not contract:
+                    # Try any contract
+                    contract = Contract.search([
+                        ('employee_id', '=', emp.id),
+                    ], order='id desc', limit=1)
+
+                # Base salary from contract, fallback to 5,700,000
+                base = (contract.wage if contract else 0) or 5_700_000
+
+                # Randomize work days slightly for realism
+                nctt_options = [STANDARD_DAYS, STANDARD_DAYS,
+                                STANDARD_DAYS, STANDARD_DAYS - 1,
+                                STANDARD_DAYS - 2, STANDARD_DAYS + 1]
+                nctt = random.choice(nctt_options)
+                nctt = max(18, min(nctt, 28))
+
+                # Allowances from contract or defaults
+                xangxe = (getattr(contract, 'x_pc_fuel', 0) or 0) if contract else 0
+                dienthoai = (getattr(contract, 'x_sp_phone', 0) or 0) if contract else 0
+                npt = (getattr(contract, 'x_dependent_count', 0) or 0) if contract else 0
+
+                # Default allowances if contract has none
+                if not xangxe:
+                    xangxe = random.choice([500000, 800000, 1000000])
+                if not dienthoai:
+                    dienthoai = random.choice([400000, 500000, 800000, 1000000])
+
+                # ── Compute salary ──
+                F = base
+                an_ca = round(50000 * nctt)
+                tong_thu_nhap = round((an_ca + xangxe + dienthoai + F) / 25.0 * nctt) if nctt > 0 else 0
+                tn_mien_thue = 730000
+                tn_truoc_thue = tong_thu_nhap - tn_mien_thue
+                giam_tru = 15500000 + int(npt) * 6200000
+                bhxh_nv = round(F * 0.08)
+                bhyt_nv = round(F * 0.015)
+                bhtn_nv = round(F * 0.01)
+                tn_tinh_thue = max(0, tn_truoc_thue - giam_tru - bhxh_nv - bhyt_nv - bhtn_nv)
+                thue_tncn = calc_pit(tn_tinh_thue)
+                thuc_lanh = round(tong_thu_nhap - bhxh_nv - bhyt_nv - bhtn_nv - thue_tncn)
+                bhxh_ct = round(F * 0.175)
+                bhyt_ct = round(F * 0.03)
+                bhtn_ct = round(F * 0.01)
+
+                amounts = {
+                    'an_ca': an_ca, 'xang_xe': xangxe, 'dien_thoai': dienthoai,
+                    'thuong_khac': 0, 'ho_tro_nuoi_con': 0,
+                    'tong_thu_nhap': tong_thu_nhap, 'tn_mien_thue': tn_mien_thue,
+                    'tn_truoc_thue': tn_truoc_thue, 'npt': npt, 'giam_tru': giam_tru,
+                    'bhxh_8_nv': bhxh_nv, 'bhyt_1_5_nv': bhyt_nv, 'bhtn_1_nv': bhtn_nv,
+                    'tn_tinh_thue': tn_tinh_thue, 'thue_tncn': thue_tncn,
+                    'thuc_lanh': thuc_lanh,
+                    'bhxh_17_5_ct': bhxh_ct, 'bhyt_3_ct': bhyt_ct, 'bhtn_1_ct': bhtn_ct,
+                }
+
+                # ── Build payslip lines ──
+                line_vals = []
+                for code, amt in amounts.items():
+                    rm = rule_map.get(code)
+                    if rm:
+                        line_vals.append((0, 0, {
+                            'rule_id': rm['rule_id'],
+                            'category_id': rm['category_id'],
+                            'code': code, 'name': rm['name'],
+                            'sequence': rm['sequence'],
+                            'quantity': 1.0, 'rate': amt, 'amount': amt,
+                        }))
+
+                # ── Worked days ──
+                wd_vals = [
+                    (0, 0, {'name': 'Ngày công chuẩn', 'code': 'STANDARD',
+                            'sequence': 1, 'number_of_days': STANDARD_DAYS,
+                            'number_of_hours': STANDARD_DAYS * 8}),
+                    (0, 0, {'name': 'Ngày công thực tế', 'code': 'WORK100',
+                            'sequence': 2, 'number_of_days': nctt,
+                            'number_of_hours': nctt * 8}),
+                ]
+
+                slip_vals_list.append({
+                    'employee_id': emp.id,
+                    'contract_id': contract.id if contract else False,
+                    'structure_id': struct.id,
+                    'payslip_run_id': batch.id,
+                    'date_from': date_from,
+                    'date_to': date_end,
+                    'state': 'done',
+                    'x_employee_confirm': 'confirmed',
+                    'line_ids': line_vals,
+                    'worked_days_ids': wd_vals,
+                })
+                created += 1
+                emp_details.append({
+                    'code': emp.x_employee_code or '',
+                    'name': emp.name or '',
+                    'base': F,
+                    'nctt': nctt,
+                    'net': thuc_lanh,
+                    'has_contract': bool(contract),
+                })
+
+            # Bulk create
+            if slip_vals_list:
+                Slip.create(slip_vals_list)
+
+            # Close batch
+            batch.write({'state': 'close'})
+
+            return _success_response({
+                'batch_id': batch.id,
+                'batch_name': batch.name,
+                'created': created,
+                'no_contract': no_contract,
+                'employees': emp_details,
+                'month': month,
+                'year': year,
+            }, message=f'Đã seed {created} payslips cho tháng {month:02d}/{year}. '
+                       f'Batch đã close → hiện trong lịch sử lương & chuyển khoản.')
+        except Exception as e:
+            _logger.exception('seed_salary_history error')
+            return _error_response(str(e), status=500)
