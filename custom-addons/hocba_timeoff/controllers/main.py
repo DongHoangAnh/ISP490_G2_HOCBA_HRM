@@ -498,20 +498,9 @@ def _public_holiday_dates_env(env, start, end):
 
 def _count_working_days_env(env, start, end):
     """Số ngày làm việc (T2–T6 + workday HR đánh dấu, trừ ngày lễ) trong
-    [start, end]. Helper module-level — tách logic khỏi controller để
-    _request_age_working_days dùng được dưới request VÀ test gọi trực tiếp."""
-    if not start or not end or end < start:
-        return 0
-    work_extra = set(env['hb.work.day'].sudo().search([
-        ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
-    holidays = _public_holiday_dates_env(env, start, end)
-    n, cur = 0, start
-    while cur <= end:
-        is_workday = cur.weekday() < 5 or cur in work_extra
-        if is_workday and cur not in holidays:
-            n += 1
-        cur += timedelta(days=1)
-    return n
+    [start, end]. Delegate về _working_dates_env để một chỗ duy nhất định
+    nghĩa 'ngày làm việc' (tránh drift). Dùng dưới request VÀ test gọi trực tiếp."""
+    return len(_working_dates_env(env, start, end))
 
 
 def _request_age_working_days(env, leave):
@@ -608,8 +597,69 @@ def _lapsed_info(env, leave):
     }
 
 
+def _lapsed_summary_label(info):
+    """Chuỗi tóm tắt đối chiếu (dùng cả trong chatter và bảng giám sát FE)."""
+    if info['exempt']:
+        return 'nghỉ buổi dạy — không đối chiếu chấm công'
+    if not info['checkedCount']:
+        return 'chưa có ngày nghỉ nào qua để đối chiếu'
+    return 'đi làm %d/%d ngày nghỉ đã qua' % (
+        info['workedCount'], info['checkedCount'])
+
+
 def _lapsed_table(env, scope, dept_id=False):
-    raise NotImplementedError
+    """Dữ liệu màn 'Giám sát duyệt đơn' (BR-L06): KPI + bảng đơn lỡ hạn
+    + đếm theo phòng. sudo + lọc phòng ban tường minh theo scope."""
+    today = fields.Date.context_today(env.user)
+    domain = [('state', 'in', list(PENDING_STATES)),
+              ('request_date_from', '<', today)] + _dept_domain(scope)
+    if dept_id:
+        domain.append(('department_id', '=', dept_id))
+    leaves = env['hr.leave'].sudo().search(domain, order='request_date_from, id')
+
+    items, by_dept = [], {}
+    n_approve = n_refuse = n_review = oldest = 0
+    for leave in leaves:
+        info = _lapsed_info(env, leave)
+        if not info:
+            continue
+        if info['suggestion'] == 'approve':
+            n_approve += 1
+        elif info['suggestion'] == 'refuse':
+            n_refuse += 1
+        else:
+            n_review += 1
+        oldest = max(oldest, info['lapsedDays'])
+        dept = leave.department_id or leave.employee_id.department_id
+        row = by_dept.setdefault(dept.id or 0, {
+            'id': dept.id or False, 'name': dept.name or '—', 'count': 0})
+        row['count'] += 1
+        items.append({
+            'requestId': leave.id,
+            'employee': leave.employee_id.name,
+            'department': dept.name or '—',
+            'leaveType': leave.holiday_status_id.name,
+            'from': _d(leave.request_date_from),
+            'to': _d(leave.request_date_to),
+            'days': round(leave.number_of_days, 2),
+            'state': leave.state,
+            'stateLabel': STATE_LABEL.get(leave.state, leave.state),
+            'lapsedDays': info['lapsedDays'],
+            'summary': _lapsed_summary_label(info),
+            'suggestion': info['suggestion'],
+            'workedCount': info['workedCount'],
+            'checkedCount': info['checkedCount'],
+            'exempt': info['exempt'],
+        })
+    items.sort(key=lambda r: r['lapsedDays'], reverse=True)
+    return {
+        'kpi': {'total': len(items), 'suggestApprove': n_approve,
+                'suggestRefuse': n_refuse, 'needsReview': n_review,
+                'oldestLapsedDays': oldest},
+        'items': items,
+        'byDepartment': sorted(by_dept.values(),
+                               key=lambda r: r['count'], reverse=True),
+    }
 
 
 def _post_lapsed_decision_note(env, leave, action, info):

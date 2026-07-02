@@ -234,3 +234,36 @@ class TestTimeoffLapsed(TransactionCase):
         self.assertTrue(info['isLapsed'])
         for c in info['dayChecks']:
             self.assertLess(c['date'], self._today().isoformat())
+
+    # ----- Task 3: _lapsed_table -----
+    def test_lapsed_table_hr_sees_all_manager_sees_own_dept(self):
+        """BR-L06: HR thấy mọi phòng; trưởng phòng chỉ thấy phòng mình."""
+        days = self._past_working_days(2)
+        self._mk_leave(self.emp_a, days[0], days[1])          # Khối A
+        self._mk_att(self.emp_b, days[0], full=True)
+        self._mk_att(self.emp_b, days[1], full=True)
+        self._mk_leave(self.emp_b, days[0], days[1])          # Khối B
+
+        env_hr = self.env(user=self.hr_user)
+        table_hr = _lapsed_table(env_hr, _scope_for(env_hr))
+        self.assertEqual(table_hr['kpi']['total'], 2)
+        self.assertEqual(table_hr['kpi']['suggestApprove'], 1)
+        self.assertEqual(table_hr['kpi']['suggestRefuse'], 1)
+        self.assertEqual(
+            sorted(r['count'] for r in table_hr['byDepartment']), [1, 1])
+
+        env_mgr = self.env(user=self.mgr_a_user)
+        table_mgr = _lapsed_table(env_mgr, _scope_for(env_mgr))
+        self.assertEqual(table_mgr['kpi']['total'], 1)
+        self.assertEqual(table_mgr['items'][0]['employee'], self.emp_a.name)
+
+    def test_lapsed_table_items_have_summary_and_suggestion(self):
+        days = self._past_working_days(1)
+        self._mk_leave(self.emp_a, days[0], days[0])
+        env_hr = self.env(user=self.hr_user)
+        table = _lapsed_table(env_hr, _scope_for(env_hr))
+        row = table['items'][0]
+        self.assertEqual(row['suggestion'], 'approve')
+        self.assertIn('0/1', row['summary'])
+        self.assertEqual(row['state'], 'confirm')
+        self.assertGreaterEqual(row['lapsedDays'], 1)
