@@ -663,7 +663,16 @@ def _lapsed_table(env, scope, dept_id=False):
 
 
 def _post_lapsed_decision_note(env, leave, action, info):
-    raise NotImplementedError
+    """BR-L04: ghi vết 'duyệt trễ / từ chối đơn lỡ hạn' vào chatter.
+    `info` phải lấy TRƯỚC khi duyệt (sau khi duyệt state đổi → hết lỡ hạn)."""
+    if not info or not info.get('isLapsed'):
+        return
+    head = 'Duyệt trễ' if action == 'approve' else 'Từ chối đơn lỡ hạn'
+    leave.sudo().message_post(
+        body='%s — đơn lỡ hạn %d ngày làm việc. Đối chiếu chấm công: %s.' % (
+            head, info['lapsedDays'], _lapsed_summary_label(info)),
+        subtype_xmlid='mail.mt_note',
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1690,6 +1699,9 @@ class HocBaTimeoff(http.Controller):
         if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
 
+        # Phase 12: chụp trạng thái lỡ hạn TRƯỚC khi duyệt (duyệt xong state
+        # đổi → _lapsed_info trả None) để ghi vết "duyệt trễ" chính xác.
+        lapsed_before = _lapsed_info(request.env, leave)
         try:
             if action == 'refuse':
                 leave.action_refuse()
@@ -1710,6 +1722,7 @@ class HocBaTimeoff(http.Controller):
                 leave.write({'first_approver_id': approver.id})
             # Phase 5: báo chủ đơn kết quả + ghi chú audit (chatter).
             _notify_decision(request.env, leave, action)
+            _post_lapsed_decision_note(request.env, leave, action, lapsed_before)
         except (AccessError, ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)

@@ -267,3 +267,27 @@ class TestTimeoffLapsed(TransactionCase):
         self.assertIn('0/1', row['summary'])
         self.assertEqual(row['state'], 'confirm')
         self.assertGreaterEqual(row['lapsedDays'], 1)
+
+    # ----- Task 4: chatter note duyệt trễ / từ chối -----
+    def test_lapsed_decision_note_posted(self):
+        days = self._past_working_days(2)
+        leave = self._mk_leave(self.emp_a, days[0], days[1])
+        info = _lapsed_info(self.env, leave)
+        n_before = len(leave.sudo().message_ids)
+        _post_lapsed_decision_note(self.env, leave, 'approve', info)
+        msgs = leave.sudo().message_ids
+        self.assertEqual(len(msgs), n_before + 1)
+        self.assertIn('Duyệt trễ', msgs[0].body)
+        self.assertIn('0/2', msgs[0].body)
+
+        _post_lapsed_decision_note(self.env, leave, 'refuse', info)
+        self.assertIn('Từ chối', leave.sudo().message_ids[0].body)
+
+    def test_no_note_when_not_lapsed(self):
+        """Đơn thường (không lỡ hạn) → không ghi note."""
+        future = date.today() + timedelta(days=7)
+        leave = self._mk_leave(self.emp_a, future, future)
+        n_before = len(leave.sudo().message_ids)
+        _post_lapsed_decision_note(
+            self.env, leave, 'approve', _lapsed_info(self.env, leave))
+        self.assertEqual(len(leave.sudo().message_ids), n_before)
