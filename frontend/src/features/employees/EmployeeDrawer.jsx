@@ -17,7 +17,7 @@ import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
-export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab = 'info' }) {
+export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr, initialTab = 'info' }) {
   const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
@@ -25,6 +25,9 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
   useEffect(() => {
     fetchEmployee(emp.id).then(setDet).catch((e) => setDerr(e.message));
   }, [emp.id]);
+  // Cập nhật det do một thao tác SỬA (khác lần fetch đầu) → đánh dấu để
+  // danh sách ngoài refresh ngầm khi đóng drawer.
+  const update = (d) => { setDet(d); onChanged && onChanged(); };
 
   const tabs = [
     ['info', 'Thông tin'],
@@ -66,20 +69,20 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         </div>
       </div>
 
-      <div style={{ padding: '22px 24px', maxHeight: '52vh', overflowY: 'auto' }}>
+      <div style={{ padding: '22px 24px', maxHeight: 'min(72vh, calc(100vh - 210px))', overflowY: 'auto' }}>
         {derr && <EmptyState>Không tải được hồ sơ ({derr}).</EmptyState>}
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
-        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={setDet} />}
-        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={setDet} />}
-        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={setDet} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={setDet} />}
-        {det && tab === 'account' && isHr && <AccountTab det={det} emp={emp} onUpdated={setDet} />}
+        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={update} />}
+        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={update} />}
+        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={update} />}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update} />}
+        {det && tab === 'account' && isHr && <AccountTab det={det} emp={emp} onUpdated={update} />}
       </div>
 
       {editing && det && (
         <EmployeeForm emp={det} isMgr={isMgr}
           onClose={() => setEditing(false)}
-          onSaved={(newDet) => { setDet(newDet); setEditing(false); }} />
+          onSaved={(newDet) => { update(newDet); setEditing(false); }} />
       )}
     </Modal>
   );
