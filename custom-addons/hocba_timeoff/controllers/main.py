@@ -531,8 +531,81 @@ def _request_age_working_days(env, leave):
 # Phase 12 — Đơn lỡ hạn duyệt. Spec:
 # docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
 # ---------------------------------------------------------------------------
+def _working_dates_env(env, start, end):
+    """Danh sách NGÀY LÀM VIỆC (T2–T6 + workday HR, trừ lễ) trong [start, end]."""
+    if not start or not end or end < start:
+        return []
+    work_extra = set(env['hb.work.day'].sudo().search([
+        ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
+    holidays = _public_holiday_dates_env(env, start, end)
+    days, cur = [], start
+    while cur <= end:
+        if (cur.weekday() < 5 or cur in work_extra) and cur not in holidays:
+            days.append(cur)
+        cur += timedelta(days=1)
+    return days
+
+
 def _lapsed_info(env, leave):
-    raise NotImplementedError
+    """Thông tin 'lỡ hạn duyệt' của 1 đơn (BR-L01→L03) — None nếu chưa lỡ hạn.
+
+    Lỡ hạn = còn chờ duyệt mà ngày BẮT ĐẦU nghỉ đã qua. Đối chiếu
+    hocba.attendance từng ngày nghỉ ĐÃ QUA (đến hết hôm qua): tổng work_credit
+    trong ngày >= 0.5 là 'vẫn đi làm'; đơn NỬA NGÀY cần >= 1.0 mới tính (nửa
+    làm + nửa nghỉ là khớp đơn). Loại 'Nghỉ Buổi Dạy' miễn đối chiếu — GV có
+    thể vẫn chấm công ở trung tâm dù nghỉ 1 buổi dạy. Attendance đọc qua sudo:
+    người duyệt không có ACL hocba.attendance; quyền phạm vi kiểm ở tầng gọi."""
+    if leave.state not in PENDING_STATES:
+        return None
+    d0, d1 = _leave_day_bounds(leave)
+    today = fields.Date.context_today(env.user)
+    if not d0 or d0 >= today:
+        return None
+
+    yesterday = today - timedelta(days=1)
+    lapsed_days = _count_working_days_env(env, d0, yesterday)
+    exempt = leave.holiday_status_id.id == _teaching_off_type_id(env)
+
+    day_checks, worked = [], 0
+    if not exempt:
+        dates = _working_dates_env(env, d0, min(d1 or yesterday, yesterday))
+        if dates:
+            atts = env['hocba.attendance'].sudo().search([
+                ('employee_id', '=', leave.employee_id.id),
+                ('date', 'in', dates)])
+            credit_by_day = {}
+            for a in atts:
+                credit_by_day[a.date] = credit_by_day.get(a.date, 0.0) + a.work_credit
+            # 'Nửa ngày thật sự' theo convention module (_half_day_label):
+            # request_unit_half CHỈ báo đơn vị loại nghỉ là nửa ngày (Phép Năm
+            # seed half_day → luôn True), KHÔNG có nghĩa đơn này là nửa ngày.
+            # Đơn nửa ngày cần đủ công (1.0) mới là mâu thuẫn; đơn nguyên ngày
+            # chỉ cần >= 0.5.
+            is_half = bool(_half_day_label(leave))
+            threshold = 1.0 if is_half else 0.5
+            for d in dates:
+                credit = credit_by_day.get(d, 0.0)
+                is_worked = credit >= threshold
+                worked += 1 if is_worked else 0
+                day_checks.append({'date': _d(d), 'worked': is_worked,
+                                   'workCredit': round(credit, 1)})
+
+    checked = len(day_checks)
+    suggestion = None
+    if checked:
+        if worked == 0:
+            suggestion = 'approve'
+        elif worked == checked:
+            suggestion = 'refuse'
+    return {
+        'isLapsed': True,
+        'lapsedDays': lapsed_days,
+        'dayChecks': day_checks,
+        'workedCount': worked,
+        'checkedCount': checked,
+        'suggestion': suggestion,
+        'exempt': exempt,
+    }
 
 
 def _lapsed_table(env, scope, dept_id=False):
