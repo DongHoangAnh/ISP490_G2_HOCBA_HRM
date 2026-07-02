@@ -528,6 +528,22 @@ def _request_age_working_days(env, leave):
 
 
 # ---------------------------------------------------------------------------
+# Phase 12 — Đơn lỡ hạn duyệt. Spec:
+# docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
+# ---------------------------------------------------------------------------
+def _lapsed_info(env, leave):
+    raise NotImplementedError
+
+
+def _lapsed_table(env, scope, dept_id=False):
+    raise NotImplementedError
+
+
+def _post_lapsed_decision_note(env, leave, action, info):
+    raise NotImplementedError
+
+
+# ---------------------------------------------------------------------------
 # Nghỉ phép giáo viên — dò xung đột lịch dạy + áp dụng cách xử lý từng buổi.
 # Lịch dạy là nguồn chính trong Neon (hocba.teaching.session). Helper cấp module
 # để controller dùng dưới request VÀ test gọi trực tiếp.
