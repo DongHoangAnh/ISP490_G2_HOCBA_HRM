@@ -59,3 +59,39 @@ class TestOffboardingModel(TransactionCase):
         rec.action_submit()
         rec.with_user(mgr_user).action_mgr_approve()
         self.assertEqual(rec.state, 'mgr_approved')
+
+    def _advance_to_hr_approved(self, rec):
+        rec.action_submit()
+        rec.sudo().action_mgr_approve()
+        rec.sudo().action_hr_approve()
+
+    def test_done_closes_profile_and_locks_user(self):
+        user = self.env['res.users'].create({
+            'name': 'Leaver', 'login': 'off_leaver_user',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        self.emp.user_id = user
+        rec = self._make()
+        self._advance_to_hr_approved(rec)
+        rec.sudo().action_done()
+        self.assertEqual(rec.state, 'done')
+        self.assertEqual(self.emp.x_employment_status, 'resigned')
+        self.assertFalse(self.emp.active)
+        self.assertFalse(user.active)
+        self.assertEqual(rec.actual_leave_date, fields.Date.today())
+
+    def test_done_blocked_when_asset_assigned(self):
+        from odoo.exceptions import ValidationError
+        atype = self.env['hocba.asset.type'].create({
+            'name': 'Laptop Off', 'code': 'LAPOFF'})
+        self.env['hr.employee.asset'].create({
+            'employee_id': self.emp.id,
+            'asset_type_id': atype.id,
+            'asset_code': 'LAPOFF-1',
+            'grant_date': fields.Date.today(),
+            'condition_in': 'new',
+        })
+        rec = self._make()
+        self._advance_to_hr_approved(rec)
+        with self.assertRaises(ValidationError):
+            rec.sudo().action_done()
+        self.assertEqual(rec.state, 'hr_approved')

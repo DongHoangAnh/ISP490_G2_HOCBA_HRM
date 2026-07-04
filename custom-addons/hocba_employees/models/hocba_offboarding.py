@@ -125,3 +125,24 @@ class HocbaOffboarding(models.Model):
             rec.state = 'hr_approved'
             rec.message_post(body=_(
                 '✅ HR đã duyệt — chờ thu hồi tài sản & hoàn tất.'))
+
+    def action_done(self):
+        for rec in self:
+            if rec.state != 'hr_approved':
+                raise ValidationError(_('Đơn chưa sẵn sàng hoàn tất.'))
+            if not rec._is_hr_manager():
+                raise AccessError(_('Chỉ HR Manager được hoàn tất đơn nghỉ.'))
+            emp = rec.employee_id
+            pending = emp.x_asset_ids.filtered(lambda a: a.state == 'assigned')
+            if pending:
+                raise ValidationError(_(
+                    'Còn %(n)d tài sản chưa thu hồi: %(codes)s') % {
+                        'n': len(pending),
+                        'codes': ', '.join(pending.mapped('asset_code'))})
+            rec.actual_leave_date = fields.Date.context_today(rec)
+            emp.sudo().with_context(hocba_gate_automation=True).write({
+                'x_employment_status': 'resigned', 'active': False})
+            if emp.user_id:
+                emp.user_id.sudo().write({'active': False})
+            rec.state = 'done'
+            rec.message_post(body=_('🏁 Hoàn tất nghỉ việc từ %s.') % rec.actual_leave_date)
