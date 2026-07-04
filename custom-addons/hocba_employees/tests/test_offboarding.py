@@ -197,3 +197,36 @@ class TestOffboardingAccess(TransactionCase):
         rec = self._submit_for(self.staffA, self.staffA_user)
         with self.assertRaises(AccessError):
             rec.with_user(self.staffA_user).action_refuse()
+
+    def test_read_scope_isolated_by_record_rule(self):
+        """Chứng minh record rule lọc READ (không chỉ guard trong action)."""
+        Off = self.env['hocba.offboarding'].sudo()
+        staffB = self.env['hr.employee'].create({
+            'name': 'StaffB Scope', 'identification_id': '011111111105'})
+        rec_a = Off.create({'employee_id': self.staffA.id,
+                            'reason_type': 'voluntary',
+                            'expected_leave_date': fields.Date.today()})
+        rec_t = Off.create({'employee_id': self.teacher.id,
+                            'reason_type': 'voluntary',
+                            'expected_leave_date': fields.Date.today()})
+        rec_b = Off.create({'employee_id': staffB.id,
+                            'reason_type': 'voluntary',
+                            'expected_leave_date': fields.Date.today()})
+        # NV thường chỉ thấy đơn của mình
+        staff_seen = self.env['hocba.offboarding'].with_user(
+            self.staffA_user).search([]).ids
+        self.assertIn(rec_a.id, staff_seen)
+        self.assertNotIn(rec_t.id, staff_seen)
+        self.assertNotIn(rec_b.id, staff_seen)
+        # Trưởng phòng thấy đơn NV phòng mình, không thấy giáo viên/NV phòng khác
+        mgr_seen = self.env['hocba.offboarding'].with_user(
+            self.mgrA_user).search([]).ids
+        self.assertIn(rec_a.id, mgr_seen)
+        self.assertNotIn(rec_t.id, mgr_seen)
+        self.assertNotIn(rec_b.id, mgr_seen)
+        # Giáo vụ chỉ thấy đơn của giáo viên
+        gv_seen = self.env['hocba.offboarding'].with_user(
+            self.gv_user).search([]).ids
+        self.assertIn(rec_t.id, gv_seen)
+        self.assertNotIn(rec_a.id, gv_seen)
+        self.assertNotIn(rec_b.id, gv_seen)
