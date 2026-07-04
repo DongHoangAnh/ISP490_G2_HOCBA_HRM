@@ -27,3 +27,22 @@ class TestOffboardingModel(TransactionCase):
         self.assertTrue(rec.name.startswith('OFF/'))
         self.assertEqual(rec.state, 'draft')
         self.assertEqual(rec.source, 'self')
+
+    def test_happy_path_states(self):
+        rec = self._make()
+        rec.action_submit()
+        self.assertEqual(rec.state, 'submitted')
+        rec.sudo().action_mgr_approve()
+        self.assertEqual(rec.state, 'mgr_approved')
+        self.assertEqual(self.emp.x_employment_status, 'exiting')
+        self.assertTrue(rec.mgr_approved_by)
+        rec.sudo().action_hr_approve()
+        self.assertEqual(rec.state, 'hr_approved')
+        self.assertTrue(rec.hr_approved_by)
+
+    def test_submit_only_from_draft(self):
+        from odoo.exceptions import ValidationError
+        rec = self._make()
+        rec.action_submit()
+        with self.assertRaises(ValidationError):
+            rec.action_submit()

@@ -70,3 +70,56 @@ class HocbaOffboarding(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code(
                     'hocba.offboarding') or '/'
         return super().create(vals_list)
+
+    def _ensure_manages(self):
+        """Raise nếu user hiện tại không quản lý phạm vi của NV (và không HR/su)."""
+        self.ensure_one()
+        user = self.env.user
+        if self.env.su or user.has_group('hr.group_hr_manager'):
+            return
+        emp = self.employee_id
+        if emp._hocba_user_manages_dept(user):
+            return
+        if user.has_group('hocba_employees.group_hocba_giaovu') \
+                and emp.x_employee_type_id.code == 'teacher':
+            return
+        raise AccessError(_(
+            'Bạn không có quyền duyệt đơn nghỉ của nhân viên này.'))
+
+    def _is_hr_manager(self):
+        return self.env.su or self.env.user.has_group('hr.group_hr_manager')
+
+    def action_submit(self):
+        for rec in self:
+            if rec.state != 'draft':
+                raise ValidationError(_('Chỉ đơn nháp mới được nộp.'))
+            user = rec.env.user
+            if not rec._is_hr_manager() and rec.employee_id != user.employee_id:
+                raise AccessError(_('Chỉ được nộp đơn nghỉ của chính mình.'))
+            rec.state = 'submitted'
+            rec.message_post(body=_('📤 Đã nộp đơn nghỉ việc.'))
+
+    def action_mgr_approve(self):
+        for rec in self:
+            if rec.state != 'submitted':
+                raise ValidationError(_('Đơn không ở trạng thái chờ quản lý duyệt.'))
+            rec._ensure_manages()
+            rec.mgr_approved_by = rec.env.user
+            rec.mgr_approved_date = fields.Datetime.now()
+            rec.prev_employment_status = rec.employee_id.x_employment_status
+            rec.employee_id.sudo().with_context(
+                hocba_gate_automation=True).write({'x_employment_status': 'exiting'})
+            rec.state = 'mgr_approved'
+            rec.message_post(body=_('✅ Quản lý đã duyệt đơn nghỉ.'))
+
+    def action_hr_approve(self):
+        for rec in self:
+            if rec.state != 'mgr_approved':
+                raise ValidationError(_('Đơn chưa được quản lý duyệt.'))
+            if not rec._is_hr_manager():
+                raise AccessError(_('Chỉ HR Manager được duyệt bước này.'))
+            rec.hr_approved_by = rec.env.user
+            rec.hr_approved_date = fields.Datetime.now()
+            rec.state = 'hr_approved'
+            rec.message_post(body=_(
+                '✅ HR đã duyệt — chờ thu hồi tài sản & hoàn tất.'))
