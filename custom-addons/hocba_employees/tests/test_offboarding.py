@@ -230,3 +230,22 @@ class TestOffboardingAccess(TransactionCase):
         self.assertIn(rec_t.id, gv_seen)
         self.assertNotIn(rec_a.id, gv_seen)
         self.assertNotIn(rec_b.id, gv_seen)
+
+
+@tagged('post_install', '-at_install')
+class TestOffboardingProbation(TransactionCase):
+    def setUp(self):
+        super().setUp()
+        self.emp = self.env['hr.employee'].create({
+            'name': 'Probation Fail', 'identification_id': '013333333301',
+            'x_employment_status': 'probation'})
+
+    def test_gate_fail_creates_offboarding(self):
+        self.emp._hocba_start_offboarding('tuần-2')
+        rec = self.env['hocba.offboarding'].search(
+            [('employee_id', '=', self.emp.id)])
+        self.assertEqual(len(rec), 1)
+        self.assertEqual(rec.source, 'probation')
+        self.assertEqual(rec.reason_type, 'performance')
+        self.assertEqual(rec.state, 'hr_approved')
+        self.assertEqual(self.emp.x_employment_status, 'exiting')
