@@ -77,8 +77,10 @@ class HocbaOffboarding(models.Model):
         user = self.env.user
         if self.env.su or user.has_group('hr.group_hr_manager'):
             return
-        emp = self.employee_id
+        emp = self.employee_id.sudo()
         if emp._hocba_user_manages_dept(user):
+            return
+        if emp.parent_id and emp.parent_id.user_id == user:
             return
         if user.has_group('hocba_employees.group_hocba_giaovu') \
                 and emp.x_employee_type_id.code == 'teacher':

@@ -46,3 +46,16 @@ class TestOffboardingModel(TransactionCase):
         rec.action_submit()
         with self.assertRaises(ValidationError):
             rec.action_submit()
+
+    def test_direct_manager_can_approve(self):
+        mgr_user = self.env['res.users'].create({
+            'name': 'DirectMgr', 'login': 'off_direct_mgr',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        mgr_emp = self.env['hr.employee'].create({
+            'name': 'DirectMgr Emp', 'identification_id': '015555555501',
+            'user_id': mgr_user.id})
+        self.emp.parent_id = mgr_emp
+        rec = self._make()
+        rec.action_submit()
+        rec.with_user(mgr_user).action_mgr_approve()
+        self.assertEqual(rec.state, 'mgr_approved')
