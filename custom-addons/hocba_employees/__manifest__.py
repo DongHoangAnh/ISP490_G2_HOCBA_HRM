@@ -29,6 +29,7 @@ Payroll, Recruitment.
         'views/hr_employee_views.xml',
         'views/hr_employee_asset_views.xml',
         'views/hr_promotion_history_views.xml',
+        'views/hocba_offboarding_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
