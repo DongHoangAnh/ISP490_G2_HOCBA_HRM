@@ -146,3 +146,29 @@ class HocbaOffboarding(models.Model):
                 emp.user_id.sudo().write({'active': False})
             rec.state = 'done'
             rec.message_post(body=_('🏁 Hoàn tất nghỉ việc từ %s.') % rec.actual_leave_date)
+
+    def action_refuse(self):
+        for rec in self:
+            if rec.state not in ('submitted', 'mgr_approved'):
+                raise ValidationError(_('Chỉ từ chối đơn đang chờ duyệt.'))
+            if rec.state == 'mgr_approved':
+                if not rec._is_hr_manager():
+                    raise AccessError(_('Chỉ HR Manager từ chối bước này.'))
+            else:
+                rec._ensure_manages()
+            if rec.prev_employment_status:
+                rec.employee_id.sudo().with_context(
+                    hocba_gate_automation=True).write(
+                    {'x_employment_status': rec.prev_employment_status})
+            rec.state = 'refused'
+            rec.message_post(body=_('❌ Đơn nghỉ bị từ chối.'))
+
+    def action_cancel(self):
+        for rec in self:
+            if rec.state not in ('draft', 'submitted'):
+                raise ValidationError(_('Chỉ huỷ đơn nháp hoặc đang chờ duyệt.'))
+            user = rec.env.user
+            if not rec._is_hr_manager() and rec.employee_id != user.employee_id:
+                raise AccessError(_('Chỉ được huỷ đơn nghỉ của chính mình.'))
+            rec.state = 'cancelled'
+            rec.message_post(body=_('🚫 Đã huỷ đơn nghỉ.'))

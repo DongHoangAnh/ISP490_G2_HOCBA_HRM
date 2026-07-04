@@ -95,3 +95,20 @@ class TestOffboardingModel(TransactionCase):
         with self.assertRaises(ValidationError):
             rec.sudo().action_done()
         self.assertEqual(rec.state, 'hr_approved')
+
+    def test_refuse_after_mgr_restores_status(self):
+        rec = self._make()
+        rec.action_submit()
+        rec.sudo().action_mgr_approve()
+        self.assertEqual(self.emp.x_employment_status, 'exiting')
+        rec.sudo().action_refuse()
+        self.assertEqual(rec.state, 'refused')
+        self.assertEqual(self.emp.x_employment_status, 'probation')
+
+    def test_cancel_only_before_approval(self):
+        from odoo.exceptions import ValidationError
+        rec = self._make()
+        rec.action_submit()
+        rec.sudo().action_mgr_approve()
+        with self.assertRaises(ValidationError):
+            rec.sudo().action_cancel()
