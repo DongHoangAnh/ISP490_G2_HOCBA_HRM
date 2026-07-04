@@ -17,6 +17,7 @@ Payroll, Recruitment.
     'data': [
         'security/hocba_security.xml',
         'security/ir.model.access.csv',
+        'security/hocba_offboarding_rules.xml',
         'data/hr_promotion_criteria_data.xml',
         'data/hr_employee_sequence.xml',
         'data/hocba_offboarding_data.xml',

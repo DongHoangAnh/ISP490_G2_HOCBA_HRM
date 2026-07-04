@@ -112,3 +112,88 @@ class TestOffboardingModel(TransactionCase):
         rec.sudo().action_mgr_approve()
         with self.assertRaises(ValidationError):
             rec.sudo().action_cancel()
+
+    def test_cancel_before_submit(self):
+        rec = self._make()
+        rec.action_cancel()
+        self.assertEqual(rec.state, 'cancelled')
+
+
+@tagged('post_install', '-at_install')
+class TestOffboardingAccess(TransactionCase):
+    def setUp(self):
+        super().setUp()
+        # Phòng A có trưởng phòng là mgrA
+        self.mgrA_user = self.env['res.users'].create({
+            'name': 'MgrA', 'login': 'off_mgra',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        self.mgrA = self.env['hr.employee'].create({
+            'name': 'MgrA Emp', 'identification_id': '011111111101',
+            'user_id': self.mgrA_user.id})
+        self.deptA = self.env['hr.department'].create({
+            'name': 'Dept A Off', 'manager_id': self.mgrA.id})
+        # NV phòng A
+        self.staffA_user = self.env['res.users'].create({
+            'name': 'StaffA', 'login': 'off_staffa',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        self.staffA = self.env['hr.employee'].create({
+            'name': 'StaffA Emp', 'identification_id': '011111111102',
+            'department_id': self.deptA.id, 'user_id': self.staffA_user.id})
+        # Giáo vụ + 1 giáo viên
+        teacher_type = self.env['hocba.employee.type'].search(
+            [('code', '=', 'teacher')], limit=1)
+        self.gv_user = self.env['res.users'].create({
+            'name': 'GiaoVu', 'login': 'off_gv',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('hocba_employees.group_hocba_giaovu').id])]})
+        self.teacher = self.env['hr.employee'].create({
+            'name': 'Teacher Off', 'identification_id': '011111111103',
+            'x_employee_type_id': teacher_type.id if teacher_type else False})
+
+    def _submit_for(self, emp, submitter_user):
+        rec = self.env['hocba.offboarding'].with_user(submitter_user).create({
+            'employee_id': emp.id, 'reason_type': 'voluntary',
+            'expected_leave_date': fields.Date.today()})
+        rec.action_submit()
+        return rec
+
+    def test_manager_approves_own_dept(self):
+        rec = self._submit_for(self.staffA, self.staffA_user)
+        rec.with_user(self.mgrA_user).action_mgr_approve()
+        self.assertEqual(rec.state, 'mgr_approved')
+
+    def test_manager_cannot_approve_other_dept(self):
+        from odoo.exceptions import AccessError
+        staffB = self.env['hr.employee'].create({
+            'name': 'StaffB', 'identification_id': '011111111104'})
+        rec = self.env['hocba.offboarding'].sudo().create({
+            'employee_id': staffB.id, 'reason_type': 'voluntary',
+            'expected_leave_date': fields.Date.today()})
+        rec.sudo().action_submit()
+        with self.assertRaises(AccessError):
+            rec.with_user(self.mgrA_user).action_mgr_approve()
+
+    def test_giaovu_approves_teacher_not_office(self):
+        from odoo.exceptions import AccessError
+        rec_t = self.env['hocba.offboarding'].sudo().create({
+            'employee_id': self.teacher.id, 'reason_type': 'voluntary',
+            'expected_leave_date': fields.Date.today()})
+        rec_t.sudo().action_submit()
+        rec_t.with_user(self.gv_user).action_mgr_approve()
+        self.assertEqual(rec_t.state, 'mgr_approved')
+        rec_o = self._submit_for(self.staffA, self.staffA_user)
+        with self.assertRaises(AccessError):
+            rec_o.with_user(self.gv_user).action_mgr_approve()
+
+    def test_employee_cannot_self_approve(self):
+        from odoo.exceptions import AccessError
+        rec = self._submit_for(self.staffA, self.staffA_user)
+        with self.assertRaises(AccessError):
+            rec.with_user(self.staffA_user).action_mgr_approve()
+
+    def test_employee_cannot_refuse_own_submitted(self):
+        from odoo.exceptions import AccessError
+        rec = self._submit_for(self.staffA, self.staffA_user)
+        with self.assertRaises(AccessError):
+            rec.with_user(self.staffA_user).action_refuse()
