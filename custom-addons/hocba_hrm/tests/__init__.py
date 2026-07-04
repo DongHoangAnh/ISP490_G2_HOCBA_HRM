@@ -13,3 +13,5 @@ from . import test_employee_bank
 from . import test_account
 from . import test_department
 from . import test_teaching_days
+
+from . import test_offboarding_api

@@ -2180,6 +2180,88 @@ class HocBaHRM(http.Controller):
         return self._detail_response(e)
 
     # ------------------------------------------------------------------
+    # Offboarding — đơn thôi việc (self-service + duyệt 2 cấp)
+    # ------------------------------------------------------------------
+    def _offb_json(self, rec):
+        return {
+            'id': rec.id, 'name': rec.name,
+            'employeeId': rec.employee_id.id,
+            'employeeName': rec.employee_id.name,
+            'source': rec.source, 'reasonType': rec.reason_type,
+            'reason': rec.reason or '',
+            'requestDate': rec.request_date and str(rec.request_date) or '',
+            'expectedLeaveDate': rec.expected_leave_date
+                and str(rec.expected_leave_date) or '',
+            'state': rec.state,
+            'assetPending': rec.asset_pending_count,
+        }
+
+    @http.route('/hocba-hrm/api/offboarding/submit', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_offboarding_submit(self, **kw):
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response(
+                {'error': 'no_employee'}, status=400)
+        payload = request.get_json_data() or {}
+        try:
+            rec = request.env['hocba.offboarding'].create({
+                'employee_id': emp.id,
+                'source': 'self',
+                'reason_type': payload.get('reasonType') or 'voluntary',
+                'reason': (payload.get('reason') or '').strip(),
+                'expected_leave_date': payload.get('expectedLeaveDate')
+                    or fields.Date.context_today(request.env.user),
+            })
+            rec.action_submit()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True, 'item': self._offb_json(rec)})
+
+    @http.route('/hocba-hrm/api/offboarding/list', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_offboarding_list(self, **kw):
+        env = request.env
+        can_manage = _user_can_manage(env)
+        if can_manage:
+            # _emp_scope_domain: [] cho HR (mọi NV), domain phòng/giáo viên cho quản lý
+            scope_emp_ids = env['hr.employee'].sudo().search(
+                _emp_scope_domain(env)).ids
+            recs = env['hocba.offboarding'].sudo().search(
+                [('employee_id', 'in', scope_emp_ids)])
+        else:
+            emp = env.user.employee_id
+            recs = env['hocba.offboarding'].sudo().search(
+                [('employee_id', '=', emp.id if emp else -1)])
+        return request.make_json_response({
+            'canManage': can_manage,
+            'items': [self._offb_json(r) for r in recs],
+        })
+
+    @http.route('/hocba-hrm/api/offboarding/action', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_offboarding_action(self, **kw):
+        payload = request.get_json_data() or {}
+        rec_id = self._conv_id(payload.get('id'))
+        action = payload.get('action')
+        allowed = {'submit', 'mgr_approve', 'hr_approve',
+                   'refuse', 'cancel', 'done'}
+        if not rec_id or action not in allowed:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        rec = request.env['hocba.offboarding'].browse(rec_id)
+        if not rec.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            getattr(rec, 'action_%s' % action)()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True, 'item': self._offb_json(rec)})
+
+    # ------------------------------------------------------------------
     # Thăng tiến (F-007) — thêm mốc thăng tiến inline (HR Manager). Tạo
     # bản ghi sẽ tự cập nhật chức vụ/phòng ban NV (model). KHÔNG xoá.
     # ------------------------------------------------------------------
