@@ -248,4 +248,13 @@ class TestOffboardingProbation(TransactionCase):
         self.assertEqual(rec.source, 'probation')
         self.assertEqual(rec.reason_type, 'performance')
         self.assertEqual(rec.state, 'hr_approved')
+        self.assertEqual(rec.prev_employment_status, 'probation')
         self.assertEqual(self.emp.x_employment_status, 'exiting')
+
+    def test_gate_fail_idempotent_no_duplicate(self):
+        """Cổng rớt lại (re-fire) không tạo đơn offboarding trùng."""
+        self.emp._hocba_start_offboarding('tuần-2')
+        self.emp._hocba_start_offboarding('tháng-1')
+        recs = self.env['hocba.offboarding'].search(
+            [('employee_id', '=', self.emp.id)])
+        self.assertEqual(len(recs), 1)

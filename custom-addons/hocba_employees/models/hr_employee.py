@@ -686,10 +686,19 @@ class HrEmployee(models.Model):
         )
 
     def _hocba_start_offboarding(self, gate_label):
-        """Không đạt cổng → khởi động nghỉ thử việc (tạo đơn offboarding)."""
+        """Không đạt cổng → khởi động nghỉ thử việc (tạo đơn offboarding).
+
+        Idempotent: nếu đã có đơn offboarding đang mở cho NV thì bỏ qua,
+        tránh tạo trùng khi cổng bị đánh giá lại (re-fire 'fail')."""
         self.ensure_one()
+        Offboarding = self.env['hocba.offboarding'].sudo()
+        if Offboarding.search_count([
+                ('employee_id', '=', self.id),
+                ('state', 'in',
+                 ('draft', 'submitted', 'mgr_approved', 'hr_approved'))]):
+            return
         today = fields.Date.context_today(self)
-        self.env['hocba.offboarding'].sudo().create({
+        Offboarding.create({
             'employee_id': self.id,
             'source': 'probation',
             'reason_type': 'performance',
