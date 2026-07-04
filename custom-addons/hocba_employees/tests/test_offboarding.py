@@ -198,6 +198,15 @@ class TestOffboardingAccess(TransactionCase):
         with self.assertRaises(AccessError):
             rec.with_user(self.staffA_user).action_refuse()
 
+    def test_refuse_at_mgr_approved_requires_hr(self):
+        """Từ chối ở bước mgr_approved chỉ HR Manager (không phải TBP)."""
+        from odoo.exceptions import AccessError
+        rec = self._submit_for(self.staffA, self.staffA_user)
+        rec.with_user(self.mgrA_user).action_mgr_approve()
+        self.assertEqual(rec.state, 'mgr_approved')
+        with self.assertRaises(AccessError):
+            rec.with_user(self.mgrA_user).action_refuse()
+
     def test_read_scope_isolated_by_record_rule(self):
         """Chứng minh record rule lọc READ (không chỉ guard trong action)."""
         Off = self.env['hocba.offboarding'].sudo()
@@ -258,3 +267,13 @@ class TestOffboardingProbation(TransactionCase):
         recs = self.env['hocba.offboarding'].search(
             [('employee_id', '=', self.emp.id)])
         self.assertEqual(len(recs), 1)
+
+    def test_probation_completes_via_action_done(self):
+        """MVP: luồng rớt thử việc đóng hồ sơ qua CÙNG action_done."""
+        self.emp._hocba_start_offboarding('tuần-2')
+        rec = self.env['hocba.offboarding'].search(
+            [('employee_id', '=', self.emp.id)])
+        rec.sudo().action_done()
+        self.assertEqual(rec.state, 'done')
+        self.assertEqual(self.emp.x_employment_status, 'resigned')
+        self.assertFalse(self.emp.active)
