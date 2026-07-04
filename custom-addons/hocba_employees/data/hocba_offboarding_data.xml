@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_hocba_offboarding" model="ir.sequence">
+            <field name="name">HOCBA Offboarding Code</field>
+            <field name="code">hocba.offboarding</field>
+            <field name="prefix">OFF/%(year)s/</field>
+            <field name="padding">4</field>
+            <field name="number_next">1</field>
+            <field name="number_increment">1</field>
+            <field name="implementation">standard</field>
+        </record>
+    </data>
+</odoo>

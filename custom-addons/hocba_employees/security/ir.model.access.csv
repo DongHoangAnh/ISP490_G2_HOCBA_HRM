@@ -20,3 +20,7 @@ access_hr_promotion_evaluation_giaovu,access.hr.promotion.evaluation.giaovu,mode
 access_hr_promotion_evaluation_line_user,access.hr.promotion.evaluation.line.user,model_hr_promotion_evaluation_line,hr.group_hr_user,1,1,1,1
 access_hr_promotion_evaluation_line_manager,access.hr.promotion.evaluation.line.manager,model_hr_promotion_evaluation_line,hr.group_hr_manager,1,1,1,1
 access_hr_promotion_evaluation_line_giaovu,access.hr.promotion.evaluation.line.giaovu,model_hr_promotion_evaluation_line,hocba_employees.group_hocba_giaovu,1,1,1,1
+access_hocba_offboarding_user,access.hocba.offboarding.user,model_hocba_offboarding,base.group_user,1,1,1,0
+access_hocba_offboarding_hr,access.hocba.offboarding.hr,model_hocba_offboarding,hr.group_hr_user,1,1,1,0
+access_hocba_offboarding_manager,access.hocba.offboarding.manager,model_hocba_offboarding,hr.group_hr_manager,1,1,1,1
+access_hocba_offboarding_giaovu,access.hocba.offboarding.giaovu,model_hocba_offboarding,hocba_employees.group_hocba_giaovu,1,1,1,0
