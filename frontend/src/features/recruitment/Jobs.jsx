@@ -7,6 +7,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchJobs, updateJob } from '../../api/recruitment';
 import JobDrawer from './JobDrawer';
 import JobForm from './JobForm';
+import CopyLinkBtn from './CopyLinkBtn';
 
 export default function Jobs({ search }) {
   const [data, setData] = useState(null);
@@ -137,7 +138,12 @@ export default function Jobs({ search }) {
                     <td><Badge kind={r.status === 'recruiting' ? 'green' : 'gray'} dot>{statusLabels[r.status]}</Badge></td>
                     <td className="tbl-num mono">{r.expected}</td>
                     <td className="tbl-num mono">{r.applications}</td>
-                    <td>{r.published ? <Badge kind="teal">PUBLISHED</Badge> : <span className="muted">—</span>}</td>
+                    <td>{r.published
+                      ? <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Badge kind="teal">PUBLISHED</Badge>
+                          <CopyLinkBtn url={r.websiteUrl} label="Chép link" />
+                        </div>
+                      : <span className="muted">—</span>}</td>
                     <td><button className="icon-btn" onClick={(e) => { e.stopPropagation(); setSel(r); }}><Icon name="chevR" size={18} className="faint" /></button></td>
                   </tr>
                 ))}
@@ -237,13 +243,19 @@ function DepartmentView({ groups, isRecruiter, onOpenJob, onTogglePublish }) {
                             ) : isRecruiter ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 {q.published && <Badge kind="teal">PUBLISHED</Badge>}
+                                {q.published && <CopyLinkBtn url={q.websiteUrl} label="Chép link" />}
                                 <button className="btn btn-ghost btn-sm" disabled={busyJob === q.jobId}
                                   onClick={() => doToggle(q.jobId, !q.published)}>
                                   <Icon name={q.published ? 'x' : 'check'} size={14} />
                                   {q.published ? 'Ngừng đăng' : 'Đăng tuyển'}</button>
                               </div>
+                            ) : q.published ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Badge kind="teal">PUBLISHED</Badge>
+                                <CopyLinkBtn url={q.websiteUrl} label="Chép link" />
+                              </div>
                             ) : (
-                              q.published ? <Badge kind="teal">PUBLISHED</Badge> : <span className="muted">—</span>
+                              <span className="muted">—</span>
                             )}
                           </td>
                         </tr>

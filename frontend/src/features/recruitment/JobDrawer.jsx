@@ -7,6 +7,8 @@ import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/states';
 import { fetchJob, updateJob } from '../../api/recruitment';
 import JobForm from './JobForm';
+import CopyLinkBtn from './CopyLinkBtn';
+import { publicJobUrl } from './util';
 
 export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }) {
   const [det, setDet] = useState(null);
@@ -78,8 +80,11 @@ export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }
             {d.published && d.websiteUrl && (
               <div style={{ marginTop: 18 }}>
                 <div className="k" style={{ marginBottom: 4 }}>Trang tuyển dụng công khai</div>
-                <a href={d.websiteUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--teal)', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Icon name="briefcase" size={14} />Xem trên website</a>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <a href={publicJobUrl(d.websiteUrl)} target="_blank" rel="noreferrer" style={{ color: 'var(--teal)', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6, wordBreak: 'break-all' }}>
+                    <Icon name="briefcase" size={14} />{publicJobUrl(d.websiteUrl)}</a>
+                  <CopyLinkBtn url={d.websiteUrl} />
+                </div>
               </div>
             )}
             {d.jdLink && (

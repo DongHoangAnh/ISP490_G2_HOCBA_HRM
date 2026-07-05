@@ -16,6 +16,8 @@ export default defineConfig({
       '/hocba_employees/static': { target: 'http://localhost:8069', changeOrigin: true },
       '/web': { target: 'http://localhost:8069', changeOrigin: true },
       '/odoo': { target: 'http://localhost:8069', changeOrigin: true },
+      '/jobs': { target: 'http://localhost:8069', changeOrigin: true },
+      '/website': { target: 'http://localhost:8069', changeOrigin: true },
     },
   },
   build: {
