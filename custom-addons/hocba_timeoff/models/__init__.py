@@ -3,7 +3,6 @@
 from . import hb_timeoff_policy_rule
 from . import hb_leave_policy_log
 from . import hb_leave_adjustment
-from . import hb_leave_notification
 from . import hb_work_day
 from . import hocba_teaching_session
 from . import hocba_leave_resolution

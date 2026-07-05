@@ -7,8 +7,11 @@ from odoo.tests import tagged
 
 from odoo.addons.hocba_timeoff.controllers.main import (
     _scope_for, _notify_request_created, _notify_decision,
-    _list_notifications, _mark_notification_read, _mark_all_notifications_read,
     _request_history,
+)
+# Chuông đã hợp nhất → helper list/read/read-all sống ở module hocba_notify.
+from odoo.addons.hocba_notify.controllers.main import (
+    _list_notifications, _mark_read, _mark_all,
 )
 
 
@@ -79,7 +82,7 @@ class TestTimeoffNotifications(TransactionCase):
         domain = [('recipient_id', '=', user.id)]
         if only_unread:
             domain.append(('is_read', '=', False))
-        return self.env['hb.leave.notification'].sudo().search(domain)
+        return self.env['hb.notification'].sudo().search(domain)
 
     # ----- Tests -----
     def test_create_notifies_scoped_approver_only(self):
@@ -90,7 +93,7 @@ class TestTimeoffNotifications(TransactionCase):
         mgr_notifs = self._notifs_of(self.mgr_user)
         self.assertEqual(len(mgr_notifs), 1)
         self.assertEqual(mgr_notifs.kind, 'pending')
-        self.assertEqual(mgr_notifs.leave_id.id, leave.id)
+        self.assertEqual(mgr_notifs.target_ref, leave.id)
         # HR Manager cũng được báo
         self.assertTrue(self._notifs_of(self.hr_user))
         # Trưởng phòng Khối B KHÔNG liên quan → không nhận
@@ -109,7 +112,7 @@ class TestTimeoffNotifications(TransactionCase):
         leave2 = self._mk_leave(self.emp_a, '2026-08-04', '2026-08-05')
         _notify_decision(self.env, leave2, 'refuse')
         refused = self._notifs_of(self.owner_user).filtered(
-            lambda n: n.leave_id.id == leave2.id)
+            lambda n: n.target_ref == leave2.id)
         self.assertEqual(refused.kind, 'refused')
 
     def test_list_unread_and_mark_read(self):
@@ -123,10 +126,10 @@ class TestTimeoffNotifications(TransactionCase):
         self.assertEqual(len(data['items']), 2)
 
         first_id = data['items'][0]['id']
-        self.assertTrue(_mark_notification_read(env_mgr, first_id))
+        self.assertTrue(_mark_read(env_mgr, first_id))
         self.assertEqual(_list_notifications(env_mgr)['unread'], 1)
 
-        self.assertEqual(_mark_all_notifications_read(env_mgr), 1)
+        self.assertEqual(_mark_all(env_mgr), 1)
         self.assertEqual(_list_notifications(env_mgr)['unread'], 0)
 
     def test_only_unread_filter(self):
@@ -135,9 +138,11 @@ class TestTimeoffNotifications(TransactionCase):
         all_notif = self._notifs_of(self.mgr_user)
         all_notif.write({'is_read': True})
         _notify_request_created(self.env, self._mk_leave(self.emp_a, '2026-10-01', '2026-10-02'))
-        only = _list_notifications(env_mgr, only_unread=True)
-        self.assertEqual(only['unread'], 1)
-        self.assertEqual(len(only['items']), 1)
+        # API hợp nhất bỏ tham số only_unread → kiểm cùng ý nghĩa: badge đếm
+        # đúng 1 chưa đọc, và lọc chưa đọc trên model trả đúng 1 thông báo mới.
+        self.assertEqual(_list_notifications(env_mgr)['unread'], 1)
+        only = self._notifs_of(self.mgr_user, only_unread=True)
+        self.assertEqual(len(only), 1)
 
     def test_cannot_read_other_users_notification(self):
         """Đánh dấu đã đọc thông báo của người khác → từ chối, không đổi gì."""
@@ -146,7 +151,7 @@ class TestTimeoffNotifications(TransactionCase):
         self.assertTrue(owner_notif)
 
         env_mgr = self.env(user=self.mgr_user)
-        self.assertFalse(_mark_notification_read(env_mgr, owner_notif.id))
+        self.assertFalse(_mark_read(env_mgr, owner_notif.id))
         self.assertFalse(owner_notif.is_read)  # vẫn chưa đọc
 
     def test_history_sequence_and_scope(self):

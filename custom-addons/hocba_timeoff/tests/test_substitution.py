@@ -35,7 +35,7 @@ class TestSubstitution(TransactionCase):
             'name': 'Nghỉ', 'holiday_status_id': self.unpaid.id,
             'employee_id': self.teacher.id,
             'request_date_from': '2026-07-06', 'request_date_to': '2026-07-06'})
-        self.Notif = self.env['hb.leave.notification']
+        self.Notif = self.env['hb.notification']
 
     def _make_sub_resolution(self):
         rows = _apply_resolutions(self.env, self.leave, self.session, [
@@ -49,7 +49,7 @@ class TestSubstitution(TransactionCase):
         n = self.Notif.search([
             ('recipient_id', '=', self.sub_user.id), ('kind', '=', 'sub_request')])
         self.assertEqual(len(n), 1)
-        self.assertEqual(n.leave_id, self.leave)
+        self.assertEqual(n.target_ref, self.leave.id)
 
     # ---------- Liệt kê yêu cầu dạy thay gửi tới mình ----------
     def test_substitution_rows_lists_pending(self):
