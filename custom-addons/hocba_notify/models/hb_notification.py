@@ -48,7 +48,10 @@ class HbNotification(models.Model):
             users = self.env['res.users'].browse([i for i in ids if i])
         created = self.browse()
         for user in users:
-            if not user or not user.exists() or not user.active:
+            # browse() never filters deleted/inactive ids regardless of context,
+            # nên phải kiểm .exists() + .active tường minh. .exists() short-circuit
+            # nên .active an toàn với record đã xoá.
+            if not user.exists() or not user.active:
                 continue
             if dedup_key and self.sudo().search_count([
                     ('recipient_id', '=', user.id),

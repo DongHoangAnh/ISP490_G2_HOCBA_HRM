@@ -46,6 +46,20 @@ class TestNotifyHelper(TransactionCase):
             level='info', title='X')
         self.assertEqual(len(recs), 0)
 
+    def test_notify_accepts_single_int_id(self):
+        recs = self.Notif._notify(
+            self.u1.id, category='timeoff', kind='pending',
+            level='info', title='X')
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs.recipient_id, self.u1)
+
+    def test_notify_accepts_list_of_ids(self):
+        recs = self.Notif._notify(
+            [self.u1.id, self.u2.id], category='timeoff', kind='pending',
+            level='info', title='X')
+        self.assertEqual(len(recs), 2)
+        self.assertEqual(recs.recipient_id, self.u1 | self.u2)
+
     def test_notify_dedup_when_unread(self):
         kw = dict(category='hr_reminder', kind='cert_expiry', level='warning',
                   title='Chứng chỉ', dedup_key='cert:1:2026-08')
