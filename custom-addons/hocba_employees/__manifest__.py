@@ -13,7 +13,7 @@ Pha 1 (nền/MVP): mở rộng hr.employee với 4 trục phân loại Học Bá
 (HB.xx) và seed 6 phòng ban chuẩn. Là lớp nền cho Attendance, Users,
 Payroll, Recruitment.
     """,
-    'depends': ['hr', 'hr_skills'],
+    'depends': ['hr', 'hr_skills', 'hocba_notify'],
     'data': [
         'security/hocba_security.xml',
         'security/ir.model.access.csv',

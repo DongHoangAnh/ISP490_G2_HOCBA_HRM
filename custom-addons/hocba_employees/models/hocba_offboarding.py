@@ -95,6 +95,34 @@ class HocbaOffboarding(models.Model):
     def _is_hr_manager(self):
         return self.env.su or self.env.user.has_group('hr.group_hr_manager')
 
+    # ---- Chuông thông báo (hb.notification) ------------------------------
+    def _notify_users(self, users, kind, level, title, body=None):
+        """Phát chuông tới users (sudo — NV/QL không có quyền ghi notification)."""
+        self.env['hb.notification'].sudo()._notify(
+            users, category='offboarding', kind=kind, level=level,
+            title=title, body=body, target_view='offboarding',
+            target_ref=self.id)
+
+    def _offb_manager_users(self):
+        """QL trực tiếp + trưởng phòng của NV (loại chính chủ đơn)."""
+        emp = self.employee_id.sudo()
+        users = self.env['res.users']
+        if emp.parent_id.user_id:
+            users |= emp.parent_id.user_id
+        if emp.department_id.manager_id.user_id:
+            users |= emp.department_id.manager_id.user_id
+        if emp.user_id:
+            users -= emp.user_id
+        return users
+
+    def _offb_hr_users(self):
+        """Toàn bộ HR Manager đang active."""
+        grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if not grp:
+            return self.env['res.users']
+        return self.env['res.users'].sudo().search(
+            [('all_group_ids', 'in', grp.id), ('active', '=', True)])
+
     def action_submit(self):
         for rec in self:
             if rec.state != 'draft':
@@ -104,6 +132,10 @@ class HocbaOffboarding(models.Model):
                 raise AccessError(_('Chỉ được nộp đơn nghỉ của chính mình.'))
             rec.state = 'submitted'
             rec.message_post(body=_('📤 Đã nộp đơn nghỉ việc.'))
+            rec._notify_users(
+                rec._offb_manager_users(), 'pending', 'warning',
+                'Đơn nghỉ việc mới chờ duyệt',
+                '%s — %s' % (rec.employee_id.name, rec.name))
 
     def action_mgr_approve(self):
         for rec in self:
@@ -117,6 +149,10 @@ class HocbaOffboarding(models.Model):
                 hocba_gate_automation=True).write({'x_employment_status': 'exiting'})
             rec.state = 'mgr_approved'
             rec.message_post(body=_('✅ Quản lý đã duyệt đơn nghỉ.'))
+            rec._notify_users(
+                rec._offb_hr_users(), 'pending', 'warning',
+                'Đơn nghỉ việc chờ HR duyệt',
+                '%s — %s (QL đã duyệt)' % (rec.employee_id.name, rec.name))
 
     def action_hr_approve(self):
         for rec in self:
@@ -129,6 +165,10 @@ class HocbaOffboarding(models.Model):
             rec.state = 'hr_approved'
             rec.message_post(body=_(
                 '✅ HR đã duyệt — chờ thu hồi tài sản & hoàn tất.'))
+            rec._notify_users(
+                rec.employee_id.user_id, 'approved', 'info',
+                'Đơn nghỉ việc đã được HR duyệt',
+                '%s — chờ thu hồi tài sản & hoàn tất.' % rec.name)
 
     def action_done(self):
         for rec in self:
@@ -150,6 +190,10 @@ class HocbaOffboarding(models.Model):
                 emp.user_id.sudo().write({'active': False})
             rec.state = 'done'
             rec.message_post(body=_('🏁 Hoàn tất nghỉ việc từ %s.') % rec.actual_leave_date)
+            rec._notify_users(
+                rec._offb_manager_users(), 'done', 'success',
+                'Nhân viên đã hoàn tất nghỉ việc',
+                '%s — nghỉ từ %s' % (rec.employee_id.name, rec.actual_leave_date))
 
     def action_refuse(self):
         for rec in self:
@@ -166,6 +210,9 @@ class HocbaOffboarding(models.Model):
                     {'x_employment_status': rec.prev_employment_status})
             rec.state = 'refused'
             rec.message_post(body=_('❌ Đơn nghỉ bị từ chối.'))
+            rec._notify_users(
+                rec.employee_id.user_id, 'refused', 'danger',
+                'Đơn nghỉ việc bị từ chối', rec.name)
 
     def action_cancel(self):
         for rec in self:
