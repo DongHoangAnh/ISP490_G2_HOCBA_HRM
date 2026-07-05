@@ -13,6 +13,7 @@ import SortBar, { sortRows } from './SortBar';
 import LeaveForm from './LeaveForm';
 import SubstitutionsPanel from './SubstitutionsPanel';
 import ApprovalPanel from './ApprovalPanel';
+import LapsedPanel from './LapsedPanel';
 import ApprovedPanel from './ApprovedPanel';
 import BalancesPanel from './BalancesPanel';
 import DashboardPanel from './DashboardPanel';
@@ -83,7 +84,8 @@ export default function TimeOff({ search, focus }) {
   const tabs = [];
   if (data.isOfficer) {
     tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
-              ['approvals', 'Chờ duyệt'], ['approved', 'Đơn đã duyệt'],
+              ['approvals', 'Chờ duyệt'], ['lapsed', 'Giám sát duyệt'],
+              ['approved', 'Đơn đã duyệt'],
               ['balances', 'Quỹ phép']);
   } else {
     tabs.push(['summary', 'Tổng hợp'], ['me', 'Của tôi'], ['calendar', 'Lịch']);
@@ -144,6 +146,7 @@ export default function TimeOff({ search, focus }) {
       {activeTab === 'approvals' && data.isOfficer && (
         <ApprovalPanel isHrManager={data.isHrManager} />
       )}
+      {activeTab === 'lapsed' && data.isOfficer && <LapsedPanel />}
       {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
       {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
       {activeTab === 'substitutions' && data.employee && data.employee.isTeacher && (
