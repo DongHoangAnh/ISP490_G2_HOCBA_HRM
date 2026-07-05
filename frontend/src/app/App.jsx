@@ -25,9 +25,12 @@ export default function App() {
   const [focus, setFocus] = useState(null);
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
-     đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay). */
+     đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
+     Chỉ điều hướng khi vai trò được thấy view đích (vd NV thường nhận nhắc hạn
+     trỏ 'employees' → bỏ qua, tránh content trống + breadcrumb sai). */
   const openNotification = (n) => {
     const view = n.targetView || 'timeoff';
+    if (!allowedViews(me).has(view)) return;
     setView(view);
     if (view === 'timeoff') {
       setFocus({ requestId: n.targetRef, kind: n.kind, nonce: Date.now() });
