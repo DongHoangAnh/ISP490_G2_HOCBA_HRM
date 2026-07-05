@@ -1257,6 +1257,8 @@ class HocBaTimeoff(http.Controller):
             'slaDays': SLA_DAYS,
             'overdue': age > SLA_DAYS and leave.state in PENDING_STATES,
             'submittedAt': _d(leave.create_date.date() if leave.create_date else None),
+            # Phase 12 — đơn lỡ hạn duyệt + đối chiếu chấm công (None nếu chưa).
+            'lapsed': _lapsed_info(request.env, leave),
         }
 
     def _approver_name(self, leave):
@@ -1901,6 +1903,31 @@ class HocBaTimeoff(http.Controller):
         else:
             data = self._dashboard_employee(year)
         data.update({**self._scope_flags(scope), 'year': year})
+        return request.make_json_response(data)
+
+    # ------------------------------------------------------------------
+    # 3.6b. GET /lapsed-dashboard — màn "Giám sát duyệt đơn" (Phase 12).
+    # Chỉ officer; HR/Admin mọi phòng, Trưởng phòng phòng mình (BR-L06).
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/lapsed-dashboard', auth='user',
+                type='http', methods=['GET'])
+    def api_lapsed_dashboard(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            dept_id = int(kw.get('dept')) if kw.get('dept') else False
+        except (TypeError, ValueError):
+            dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        data = _lapsed_table(request.env, scope, dept_id)
+        data.update({
+            **self._scope_flags(scope),
+            'allDepartments': [{'id': d.id, 'name': d.name}
+                               for d in self._scoped_departments(scope)],
+        })
         return request.make_json_response(data)
 
     def _dashboard_manager(self, year, dept_raw, scope):
