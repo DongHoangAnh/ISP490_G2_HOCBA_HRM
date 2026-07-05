@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- CRON-TO-002 (Phase 12): quét đơn lỡ hạn duyệt, báo chuông người duyệt
+         1 lần/đơn. Chạy hàng ngày 00:30 UTC (07:30 Asia/Ho_Chi_Minh) — sau
+         CRON-TO-001. Odoo 19: ir.cron không còn numbercall. -->
+    <record id="ir_cron_lapsed_approval_notify" model="ir.cron">
+        <field name="name">HB: Báo đơn nghỉ lỡ hạn duyệt (CRON-TO-002)</field>
+        <field name="model_id" ref="model_hb_timeoff_cron"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_notify_lapsed_approvals()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="nextcall">2026-07-04 00:30:00</field>
+    </record>
+</odoo>

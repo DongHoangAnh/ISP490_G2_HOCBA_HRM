@@ -291,3 +291,32 @@ class TestTimeoffLapsed(TransactionCase):
         _post_lapsed_decision_note(
             self.env, leave, 'approve', _lapsed_info(self.env, leave))
         self.assertEqual(len(leave.sudo().message_ids), n_before)
+
+    # ----- Task 5: cron báo chuông 1 lần -----
+    def _notifs_of(self, user, kind=None):
+        domain = [('recipient_id', '=', user.id)]
+        if kind:
+            domain.append(('kind', '=', kind))
+        return self.env['hb.leave.notification'].sudo().search(domain)
+
+    def test_cron_notifies_approvers_once(self):
+        """BR-L05: đơn lỡ hạn → chuông cho trưởng phòng + HR đúng 1 LẦN."""
+        days = self._past_working_days(1)
+        leave = self._mk_leave(self.emp_a, days[0], days[0])
+        future = date.today() + timedelta(days=7)
+        leave_ok = self._mk_leave(self.emp_b, future, future)
+
+        Cron = self.env['hb.timeoff.cron']
+        Cron._cron_notify_lapsed_approvals()
+
+        mgr_notifs = self._notifs_of(self.mgr_a_user, kind='lapsed')
+        self.assertEqual(len(mgr_notifs), 1)
+        self.assertEqual(mgr_notifs.leave_id.id, leave.id)
+        self.assertTrue(self._notifs_of(self.hr_user, kind='lapsed'))
+        self.assertTrue(leave.x_lapsed_notified)
+        # Đơn chưa lỡ hạn: không báo, không set cờ.
+        self.assertFalse(leave_ok.x_lapsed_notified)
+
+        # Chạy lần 2 → không báo thêm.
+        Cron._cron_notify_lapsed_approvals()
+        self.assertEqual(len(self._notifs_of(self.mgr_a_user, kind='lapsed')), 1)

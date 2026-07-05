@@ -24,6 +24,7 @@
         'data/hb_emergency_leave_type_flag.xml',
         'data/hb_timeoff_policy_rule_data.xml',
         'data/ir_cron_reminder_data.xml',
+        'data/ir_cron_lapsed_data.xml',
 
         # ---- Report ----
         'report/hb_timeoff_analytics_pdf.xml',
