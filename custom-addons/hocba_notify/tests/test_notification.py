@@ -124,3 +124,13 @@ class TestNotifyApiHelpers(TransactionCase):
         n = self._mark_all(env1)
         self.assertEqual(n, 2)
         self.assertEqual(self._list(env1)['unread'], 0)
+
+    def test_list_bad_limit_falls_back(self):
+        env1 = self.env(user=self.u1)
+        res = self._list(env1, limit='abc')  # malformed → không lỗi, dùng mặc định
+        self.assertEqual(res['unread'], 2)
+        self.assertEqual(len(res['items']), 2)
+
+    def test_mark_read_bad_id_returns_false(self):
+        env1 = self.env(user=self.u1)
+        self.assertFalse(self._mark(env1, 'abc'))

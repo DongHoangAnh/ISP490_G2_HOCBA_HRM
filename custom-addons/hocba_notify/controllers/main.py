@@ -24,16 +24,26 @@ def _notif_row(rec):
 
 def _list_notifications(env, limit=20):
     """Thông báo của chính user (mới nhất trước) + số chưa đọc cho badge."""
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 20
+    if limit <= 0:
+        limit = 20
     N = env['hb.notification'].sudo()
     base = [('recipient_id', '=', env.uid)]
-    recs = N.search(base, limit=limit or 20)
+    recs = N.search(base, limit=limit)
     unread = N.search_count(base + [('is_read', '=', False)])
     return {'items': [_notif_row(r) for r in recs], 'unread': unread}
 
 
 def _mark_read(env, notif_id):
     """Đánh dấu 1 thông báo đã đọc — chỉ khi thuộc về chính user. True/False."""
-    rec = env['hb.notification'].sudo().browse(int(notif_id))
+    try:
+        nid = int(notif_id)
+    except (TypeError, ValueError):
+        return False
+    rec = env['hb.notification'].sudo().browse(nid)
     if not rec.exists() or rec.recipient_id.id != env.uid:
         return False
     if not rec.is_read:
@@ -54,9 +64,8 @@ class HocbaNotify(http.Controller):
     @http.route('/hocba-hrm/api/notifications', auth='user',
                 type='http', methods=['GET'], csrf=False)
     def api_list(self, **kw):
-        limit = int(kw.get('limit') or 20)
         return request.make_json_response(
-            _list_notifications(request.env, limit))
+            _list_notifications(request.env, kw.get('limit')))
 
     @http.route('/hocba-hrm/api/notifications/<int:notif_id>/read',
                 auth='user', type='http', methods=['POST'], csrf=False)
