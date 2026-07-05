@@ -117,29 +117,33 @@ function ManagedRow({ r, busy, act }) {
         {r.assetPending > 0
           ? <Badge kind="amber">{r.assetPending} chưa thu</Badge> : '0'}
       </td>
-      <td style={{ whiteSpace: 'nowrap' }}>
+      <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
         <Badge kind={r.stateKind} dot>{r.stateLabel}</Badge>
       </td>
-      <td style={{ whiteSpace: 'nowrap' }}>
-        {r.canMgrApprove && (
-          <button className="btn btn-primary btn-sm" disabled={b}
-            onClick={() => act(r, 'mgr_approve')}>Quản lý duyệt</button>
-        )}
-        {r.canHrApprove && (
-          <button className="btn btn-primary btn-sm" disabled={b}
-            onClick={() => act(r, 'hr_approve')}>HR duyệt</button>
-        )}
-        {r.canDone && (
-          <button className="btn btn-primary btn-sm" disabled={b || doneBlocked}
-            title={doneBlocked ? `Còn ${r.assetPending} tài sản chưa thu hồi` : undefined}
-            onClick={() => act(r, 'done',
-              'Hoàn tất nghỉ việc? Hồ sơ sẽ lưu trữ và khoá tài khoản đăng nhập.')}>
-            Hoàn tất</button>
-        )}
-        {r.canRefuse && (
-          <button className="btn btn-ghost btn-sm" disabled={b}
-            onClick={() => act(r, 'refuse', 'Từ chối đơn nghỉ việc này?')}>Từ chối</button>
-        )}
+      {/* overflow visible + maxWidth none: ô tự co theo nội dung, không bị quy tắc
+          .tbl td (max-width:0; overflow:hidden) cắt mất nút thao tác. */}
+      <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          {r.canMgrApprove && (
+            <button className="btn btn-primary btn-sm" disabled={b}
+              onClick={() => act(r, 'mgr_approve')}>Quản lý duyệt</button>
+          )}
+          {r.canHrApprove && (
+            <button className="btn btn-primary btn-sm" disabled={b}
+              onClick={() => act(r, 'hr_approve')}>HR duyệt</button>
+          )}
+          {r.canDone && (
+            <button className="btn btn-primary btn-sm" disabled={b || doneBlocked}
+              title={doneBlocked ? `Còn ${r.assetPending} tài sản chưa thu hồi` : undefined}
+              onClick={() => act(r, 'done',
+                'Hoàn tất nghỉ việc? Hồ sơ sẽ lưu trữ và khoá tài khoản đăng nhập.')}>
+              Hoàn tất</button>
+          )}
+          {r.canRefuse && (
+            <button className="btn btn-ghost btn-sm" disabled={b}
+              onClick={() => act(r, 'refuse', 'Từ chối đơn nghỉ việc này?')}>Từ chối</button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -166,10 +170,10 @@ function MineTable({ rows, busy, act, onOpen }) {
                 <td>{REASON_LABEL[r.reasonType] || r.reasonType}</td>
                 <td className="mono muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.requestDate)}</td>
                 <td className="mono muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.expectedLeaveDate)}</td>
-                <td style={{ whiteSpace: 'nowrap' }}>
+                <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                   <Badge kind={r.stateKind} dot>{r.stateLabel}</Badge>
                 </td>
-                <td style={{ whiteSpace: 'nowrap' }}>
+                <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                   {r.canCancel && (
                     <button className="btn btn-ghost btn-sm" disabled={busy === r.id}
                       onClick={(e) => {
