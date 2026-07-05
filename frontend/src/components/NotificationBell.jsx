@@ -14,6 +14,7 @@ const KIND_DOT = {
   pending: 'var(--amber,#f59e0b)', approved: 'var(--green,#10b981)', refused: 'var(--red-600,#dc2626)',
   sub_request: 'var(--amber,#f59e0b)', sub_accepted: 'var(--green,#10b981)', sub_declined: 'var(--red-600,#dc2626)',
   sub_cancelled: 'var(--red-600,#dc2626)', sub_returned: 'var(--amber,#f59e0b)',
+  lapsed: 'var(--red-600,#dc2626)',
 };
 
 function timeAgo(s) {

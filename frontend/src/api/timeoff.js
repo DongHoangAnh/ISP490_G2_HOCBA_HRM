@@ -180,3 +180,12 @@ export const markAllNotificationsRead = () =>
 /* Nhật ký thao tác (audit) của 1 đơn nghỉ. → { history: [{date, author, body, type}] } */
 export const fetchRequestHistory = (id) =>
   hbGet(`/hocba-hrm/api/timeoff/request/${id}/history`);
+
+/* Phase 12 — màn "Giám sát duyệt đơn": đơn lỡ hạn (qua ngày bắt đầu nghỉ mà
+   vẫn chờ duyệt) + đối chiếu chấm công + KPI. Chỉ officer; dept: lọc 1 phòng. */
+export const fetchLapsedDashboard = (dept) => {
+  const p = new URLSearchParams();
+  if (dept) p.set('dept', dept);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/lapsed-dashboard' + (q ? '?' + q : ''));
+};
