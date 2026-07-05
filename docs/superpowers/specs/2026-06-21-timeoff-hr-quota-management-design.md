@@ -159,20 +159,67 @@ Người duyệt thấy mức độ trùng trước khi bấm Duyệt; lịch n�
 
 ## PHASE 5 — Thông báo & nhật ký thao tác đơn (audit)
 
-**Vấn đề:** Đơn "nằm chết" không ai biết; khi tranh chấp không có vết.
+**Vấn đề:** Đơn "nằm chết" không ai biết; khi tranh chấp không có vết. SPA **chưa có**
+chuông thông báo riêng → nhân viên/người duyệt không biết có việc cần xử lý.
+
+> **Quyết định (chốt câu hỏi #5):** SPA `hocba_hrm` **chưa** có hệ thống chuông chung →
+> Phase 5 **tự dựng chuông thông báo riêng cho TimeOff** ở **góc phải header** (kiểu Odoo).
+> **Không** dùng `mail.message` needaction làm nguồn chuông: trong Odoo 19
+> `res.users.notification_type` là field computed/stored, **mặc định `'email'`** (chỉ user
+> thuộc group `mail.group_mail_notification_type_inbox` mới là `'inbox'`), nên đa số tài
+> khoản SPA sẽ có inbox needaction rỗng → chuông trống. Thay vào đó dùng **model riêng**
+> `hb.leave.notification` (giống pattern `hb.leave.adjustment`) để chủ động, robust, test
+> tất định. Audit/lịch sử thao tác đơn **vẫn** dùng `message_post` (chatter) của `hr.leave`.
 
 ### Backend
-- **Thông báo in-app:** khi tạo đơn → báo người duyệt (trưởng phòng/HR); khi duyệt/từ chối → báo chủ đơn. Tái dùng `mail.thread`/`message_post` của `hr.leave` (đã là mail thread) hoặc model thông báo của `hocba_hrm` nếu SPA đã có chuông thông báo (**kiểm tra trước trong plan**).
-- **Audit:** ghi `message_post` mốc tạo/duyệt/từ chối kèm người + ghi chú; expose `GET /request/<id>/history`.
+- **Model thông báo mới:** `hb.leave.notification` — `recipient_id` (M2O `res.users`,
+  index, cascade), `leave_id` (M2O `hr.leave`, index, cascade), `kind`
+  (`pending`/`approved`/`refused`), `title` (Char), `body` (Char), `is_read` (Bool).
+  ACL: `base.group_user` read, `hr.group_hr_manager` CRUD (mọi thao tác qua controller
+  chạy `sudo()` sau khi pin `recipient_id = uid`).
+- **Sinh thông báo (helper cấp module, controller gọi):**
+  - Tạo đơn → `_notify_request_created`: báo người duyệt phạm vi (`_approver_users` =
+    trưởng phòng theo chuỗi phòng ban của NV gồm phòng cha + toàn bộ HR Manager, trừ
+    chính chủ đơn), `kind='pending'`; + `message_post` ghi chú audit.
+  - Duyệt/từ chối → `_notify_decision`: báo **chủ đơn** (`leave.employee_id.user_id`),
+    `kind='approved'`/`'refused'`; + `message_post` ghi chú audit kèm người duyệt.
+- **Endpoint cho chuông** (lọc `recipient_id = uid`, `sudo()` sau khi pin):
+  - `GET /hocba-hrm/api/timeoff/notifications?limit=&onlyUnread=` → `{items:[{id,
+    requestId, title, body, kind, isRead, createdAt}], unread: N}` (badge = `unread`).
+  - `POST /hocba-hrm/api/timeoff/notifications/<id>/read` — đánh dấu 1 tin đã đọc; chỉ
+    tin của chính mình (khác → `403`).
+  - `POST /hocba-hrm/api/timeoff/notifications/read-all` — đánh dấu tất cả đã đọc.
+- **Audit:** `GET /hocba-hrm/api/timeoff/request/<id>/history` trả dòng thời gian các
+  `message_post` (tạo/duyệt/từ chối, kèm người + ghi chú) theo thứ tự tăng dần; xem được
+  nếu là chủ đơn hoặc người duyệt trong phạm vi (`404` nếu không tồn tại, `403` nếu ngoài
+  phạm vi).
 
-### Test (BE)
-- Tạo đơn sinh thông báo cho đúng người duyệt phạm vi; quyết định sinh thông báo cho chủ đơn; history trả đúng trình tự.
+### Test (BE) — ✅ đã xanh (6 test, `tests/test_notifications.py`)
+- Tạo đơn → sinh thông báo cho **đúng** trưởng phòng của NV + HR (không lọt sang trưởng
+  phòng phòng khác, không tự báo cho chủ đơn); duyệt/từ chối → thông báo cho chủ đơn với
+  `kind` tương ứng.
+- `_list_notifications` chỉ trả tin của user gọi, `unread` đếm đúng (+ filter `onlyUnread`);
+  `/read` set 1 tin về đã đọc (unread giảm 1); `/read-all` đưa unread về 0; đánh dấu tin
+  người khác → `False` (403), không đổi.
+- `_request_history` trả đúng trình tự create → approve; chủ đơn xem được; ngoài phạm vi
+  (trưởng phòng khác / NV thường) → `False` (403); đơn không tồn tại → `None` (404).
 
 ### Frontend
-- Badge số đơn chờ trên tab "Chờ duyệt"; mục "Lịch sử xử lý" trong modal chi tiết (`ApprovedPanel`/`ApprovalPanel`).
+- **Chuông thông báo ở góc phải header SPA** (component mới `NotificationBell.jsx`,
+  đặt trong layout chung của `/hocba-hrm` cạnh tên user): icon chuông + **badge số chưa
+  đọc**; click mở dropdown danh sách (mới nhất trước), mỗi dòng: tiêu đề, mô tả ngắn,
+  thời gian (`fmtDate`), trạng thái đọc; click 1 dòng → gọi `/read` + điều hướng tới
+  đơn liên quan (mở tab/đơn `requestId`); nút **"Đánh dấu tất cả đã đọc"**.
+  - Poll `GET /notifications?onlyUnread` định kỳ (vd 60s) hoặc refetch khi đổi tab để
+    cập nhật badge — **chốt cơ chế trong plan** (không cần realtime/websocket).
+  - Tái dùng `Badge`, `Modal`/dropdown sẵn có, `fmtDate`; không format tay.
+- Badge số đơn chờ trên tab "Chờ duyệt"; mục **"Lịch sử xử lý"** (timeline) trong modal
+  chi tiết đơn (`ApprovedPanel`/`ApprovalPanel`) đọc từ `/request/<id>/history`.
 
 ### Acceptance
-Người duyệt biết có đơn mới; nhân viên biết kết quả; mỗi đơn có dòng thời gian thao tác.
+Người duyệt thấy **chuông sáng** khi có đơn mới; nhân viên thấy chuông khi đơn được
+duyệt/từ chối; click vào thông báo mở đúng đơn và tự đánh dấu đã đọc; mỗi đơn có dòng
+thời gian thao tác đầy đủ.
 
 ---
 
@@ -180,18 +227,100 @@ Người duyệt biết có đơn mới; nhân viên biết kết quả; mỗi �
 
 **Vấn đề:** Chỉ nghỉ nguyên ngày; nghỉ qua dịp lễ vẫn bị trừ phép.
 
+### Backend ✅ đã làm
+- **Nửa ngày:** bật `request_unit='half_day'` cho 4 loại HB phù hợp (Phép năm, Ốm, Việc riêng, Nghỉ bù) trong `hr_leave_type_data.xml`; vì record gốc `noupdate=1` nên thêm migration `migrations/19.0.8.0.0/post-migrate.py` ép cập nhật DB đã cài. `POST /request` nhận `period` ∈ {`am`,`pm`}; helper `_period_request_vals` co đơn về 1 ngày + đặt `request_date_from/to_period` → Odoo tính `number_of_days=0.5`. Helper `_half_day_label` trả `Sáng`/`Chiều`/`''` cho FE.
+- **Loại trừ lễ/cuối tuần:** `number_of_days` của Odoo đã trừ cuối tuần theo `resource.calendar`. Ngày lễ: seed thêm `resource.calendar.leaves` toàn cục (`resource_calendar_leaves_data.xml`, 2025–2026) — đây mới là model Odoo trừ khỏi thời lượng đơn (khác `hr.leave.mandatory.day` vốn chỉ hiển thị "ngày bắt buộc có mặt", không trừ ngày).
+
+### Test (BE) — ✅ đã xanh (7 test, `tests/test_day_calc.py`)
+- Cấu hình 4 loại nghỉ = `half_day`, Không lương giữ `day`.
+- `_period_request_vals` chỉ áp cho loại half_day + period hợp lệ.
+- Nửa ngày sáng/chiều → `number_of_days = 0.5`; cả ngày trên loại half_day → 1.0.
+- Đơn T6→T2 = 2 ngày (bỏ T7/CN); đơn vắt Quốc Khánh = 1 ngày (bỏ lễ).
+
+### Frontend ✅ đã làm
+- `LeaveForm`: hiện chọn "Cả ngày / Sáng / Chiều" khi `requestUnit==='half_day'`; chọn nửa ngày → ẩn "Đến ngày" (đơn 1 ngày), gửi `period`. Badge "Sáng/Chiều" ở bảng "Của tôi" và màn duyệt.
+
+### Acceptance ✅
+Nhân viên xin nửa ngày; số ngày trừ đúng (0,5), bỏ qua cuối tuần/lễ.
+
+---
+
+## PHASE 7 — Rút / hủy đơn đã duyệt (có phê duyệt lại)
+
+**Vấn đề:** Hiện chỉ hủy được đơn khi đang **chờ duyệt**. Đơn đã duyệt
+(`state='validate'`) mà nhân viên muốn rút (đổi kế hoạch, ốm bất ngờ không nghỉ
+nữa…) thì phải nhờ HR sửa thẳng DB → quỹ phép lệch, không có vết.
+
 ### Backend
-- **Nửa ngày:** dùng `request_unit='half_day'`/`request_date_from_period` của `hr.leave` (Odoo hỗ trợ sẵn theo `hr.leave.type.request_unit`). Mở `request_unit` cho loại HB phù hợp + nhận `period` (morning/afternoon) ở `POST /request`.
-- **Loại trừ lễ/cuối tuần:** đảm bảo `number_of_days` tính theo `resource.calendar` (working days) — kiểm tra lịch làm việc chuẩn + `hr.leave.mandatory.day`/`hb.work.day` đã seed; bổ sung nếu cần.
+- **Luồng:** nhân viên gửi **yêu cầu rút** trên đơn đã duyệt → đơn chuyển trạng thái
+  "chờ duyệt rút" → người duyệt ban đầu (trưởng phòng/HR theo `_scope()`) **duyệt** thì
+  đơn về `cancel`/`refuse` và **hoàn trả số ngày** vào quỹ; **từ chối** thì đơn giữ
+  nguyên `validate`. Không cho rút đơn có ngày nghỉ **đã trôi qua** (chỉ rút phần
+  tương lai — xác nhận cách xử lý đơn vắt ngang hôm nay trong plan).
+- **Cơ chế Odoo:** tái dùng `action_refuse` / cơ chế cancel của `hr.leave` để nhả
+  `number_of_days` về `virtual_remaining_leaves` (kiểm tra Odoo 19 có tự hoàn allocation
+  khi refuse đơn validate không — **xác nhận trong plan**; nếu không, hoàn thủ công như
+  cơ chế Phase 2). Trạng thái trung gian "chờ duyệt rút" lưu bằng field bổ sung trên
+  `hr.leave` (vd `x_withdraw_state`) hoặc field sẵn có phù hợp — **chốt trong plan**.
+- **Endpoints:**
+  - `POST /hocba-hrm/api/timeoff/request/<id>/withdraw` — chủ đơn gửi yêu cầu rút,
+    body `{reason}` (lý do bắt buộc). Validate: là chủ đơn, đơn đang `validate`, còn
+    ngày nghỉ trong tương lai. Sai phạm vi → `403`.
+  - `POST /hocba-hrm/api/timeoff/request/<id>/withdraw/decide` — người duyệt
+    `{approve: bool, note}`. Chỉ `scope.canApprove` đúng phòng. `approve=true` →
+    hủy đơn + hoàn quỹ; `approve=false` → trả đơn về `validate`.
+- **Audit:** `message_post` mốc gửi-rút / duyệt-rút / từ-chối-rút kèm người + lý do
+  (nối tiếp lịch sử Phase 5).
 
 ### Test (BE)
-- Đơn nửa ngày → `number_of_days = 0.5`; đơn vắt qua T7/CN hoặc ngày lễ → không tính ngày nghỉ vào đó.
+- Chủ đơn rút đơn `validate` → trạng thái "chờ duyệt rút"; người ngoài phạm vi → `403`.
+- Duyệt rút → đơn `cancel`, `virtual_remaining_leaves` **tăng lại** đúng `number_of_days`.
+- Từ chối rút → đơn về `validate`, quỹ không đổi.
+- Rút đơn có ngày đã qua hoàn toàn → `400`/`ValidationError`.
 
 ### Frontend
-- `LeaveForm`: chọn "Cả ngày / Sáng / Chiều" khi loại nghỉ cho phép; hiển thị số ngày thực trừ.
+- Nút **"Rút đơn"** trên đơn đã duyệt của chính mình (tab *Của tôi* / `ApprovedPanel`),
+  mở modal nhập lý do.
+- Tab "Chờ duyệt" của người duyệt hiện thêm mục **"Yêu cầu rút"** (badge riêng) với nút
+  Duyệt/Từ chối; tái dùng `Modal`, `states`, `Badge`.
 
 ### Acceptance
-Nhân viên xin nửa ngày; số ngày trừ đúng, bỏ qua cuối tuần/lễ.
+Nhân viên rút được đơn đã duyệt qua một vòng phê duyệt; khi được duyệt rút thì quỹ phép
+hoàn lại đúng và có nhật ký; vai trò/phạm vi sai không thao tác được.
+
+---
+
+## PHASE 8 — SLA duyệt đơn (KPI đơn quá hạn)
+
+**Vấn đề:** Đơn chờ duyệt "nằm chết" nhiều ngày không ai biết; thiếu chỉ số để HR/quản
+lý theo dõi tốc độ xử lý.
+
+### Backend
+- **Khái niệm:** "tuổi đơn" = số ngày làm việc (hoặc ngày lịch — **chốt trong plan**)
+  kể từ khi đơn vào trạng thái chờ duyệt (`confirm`/`validate1`) đến nay. Đơn `overdue`
+  khi tuổi > `SLA_DAYS` (mặc định **3**, hằng số cạnh `LOW_BALANCE_DAYS`).
+- **Mở rộng dashboard:** bổ sung vào endpoint dashboard hiện có (hoặc
+  `GET /hocba-hrm/api/timeoff/sla?dept=`) các KPI **theo phạm vi `_scope()`**:
+  `{pending, overdue, avgAgeDays, oldestAgeDays}` + danh sách đơn quá hạn
+  `[{requestId, employee, department, leaveType, ageDays, submittedAt}]`.
+  HR/Admin = mọi phòng; Trưởng phòng = phòng được giao; NV thường không thấy KPI duyệt.
+- Không tạo cron/thông báo mới ở phase này (nhắc quá hạn có thể gắn vào kênh Phase 5 sau);
+  chỉ tính **on-the-fly** khi gọi API.
+
+### Test (BE)
+- Đơn chờ duyệt tạo cách đây > `SLA_DAYS` → `overdue=true`; ≤ ngưỡng → không.
+- KPI `pending`/`overdue` đếm đúng theo phạm vi; Trưởng phòng chỉ thấy phòng mình; NV
+  thường gọi → `403` (hoặc rỗng theo quy ước dashboard).
+- `avgAgeDays`/`oldestAgeDays` tính đúng trên tập đơn chờ.
+
+### Frontend
+- Dashboard officer: thẻ KPI **"Đơn quá hạn (> N ngày)"** + "Tuổi đơn cũ nhất";
+  bảng "Đơn quá hạn" (tái dùng `SortBar`/`downloadXlsx`), dòng quá hạn tô amber/đỏ.
+- Tab "Chờ duyệt": badge tuổi đơn (vd "4 ngày") cho đơn vượt SLA.
+
+### Acceptance
+HR/quản lý thấy ngay số đơn quá hạn và đơn chờ lâu nhất theo phạm vi; lọc/sắp xếp/xuất
+được; không phát sinh quyền mới.
 
 ---
 
@@ -205,13 +334,18 @@ Nhân viên xin nửa ngày; số ngày trừ đúng, bỏ qua cuối tuần/l�
 | 4 | Coverage trùng lịch | — (độc lập) | Vừa |
 | 5 | Thông báo & audit | — (độc lập) | Vừa–lớn (cần khảo sát kênh thông báo) |
 | 6 | Nửa ngày + lễ | — (độc lập) | Nhỏ–vừa |
+| 7 | Rút/hủy đơn đã duyệt | P5 (dùng chung nhật ký) | Vừa (luồng + hoàn quỹ) |
+| 8 | SLA đơn quá hạn | — (độc lập) | Nhỏ (mở rộng dashboard) |
 
 **Khuyến nghị code theo thứ tự 1 → 2 → 3** (một mạch "quỹ phép", dùng lại nhiều),
-sau đó 4/6 (rẻ, độc lập), để 5 sau cùng (cần thống nhất hạ tầng thông báo với nhóm).
+sau đó 4/6/8 (rẻ, độc lập), rồi 5 và 7 (7 dùng chung nhật ký/thông báo với 5, nên làm
+sau hoặc cùng đợt 5).
 
 ## Câu hỏi cần nhóm/khách chốt trước khi implement
 1. **Quyền chỉnh quỹ (P2):** chỉ HR Manager, hay Trưởng phòng cũng được chỉnh phòng mình?
 2. **Allocation âm (P2):** Odoo 19 cho phép `hr.leave.allocation` số ngày âm không? (quyết định cách "trừ phép" — cần thử nghiệm).
 3. **Ngưỡng cảnh báo (P3/P4):** `AT_RISK_DAYS=5`, `OVERLAP_WARN=3`, `LOW_BALANCE_DAYS=2` — chốt con số.
 4. **Carry-over (P3):** phép năm tồn có chuyển sang năm sau / hết hạn ngày nào? Có chính sách trong `hb.timeoff.policy.rule` chưa?
-5. **Kênh thông báo (P5):** SPA `hocba_hrm` đã có hệ thống chuông/notification chung chưa, hay dùng `mail.thread` của `hr.leave`?
+5. **Kênh thông báo (P5):** ~~SPA có chuông chung chưa?~~ → **ĐÃ CHỐT & implement:** SPA chưa có → tự dựng **chuông riêng góc phải header**; nguồn dữ liệu là **model riêng `hb.leave.notification`** (KHÔNG dùng `mail.message` needaction vì Odoo 19 mặc định `notification_type='email'` → inbox rỗng). Audit/history dùng `message_post` chatter. Badge cập nhật bằng poll ~60s.
+6. **Rút đơn đã trôi qua (P7):** đơn vắt ngang hôm nay (một phần ngày đã nghỉ) thì cho rút phần còn lại hay chặn hẳn? Khi duyệt rút, Odoo 19 có tự hoàn `number_of_days` về quỹ khi `action_refuse` đơn `validate` không (cần thử nghiệm)?
+7. **Đơn vị tuổi đơn (P8):** đếm SLA theo **ngày lịch** hay **ngày làm việc**? `SLA_DAYS=3` — chốt con số.

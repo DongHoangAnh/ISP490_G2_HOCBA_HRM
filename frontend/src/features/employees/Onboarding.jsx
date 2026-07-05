@@ -2,7 +2,7 @@
    Màn Nhập việc (Onboarding) — theo dõi NV thử việc qua 2 cổng
    (F-004/005) + thử giảng (F-008). Owner: Tân.
    ============================================================ */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchOnboarding } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
@@ -55,9 +55,16 @@ export default function Onboarding({ search }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
+  // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi đánh giá cổng/thử
+  // giảng (đổi dữ liệu) mới refresh ngầm.
+  const dirtyRef = useRef(false);
 
   const load = () => {
     setErr(null); setData(null);
+    fetchOnboarding().then(setData).catch((e) => setErr(e.message));
+  };
+  // Làm mới ngầm: không xoá data hiện có → không chớp màn "Đang tải…".
+  const reloadQuiet = () => {
     fetchOnboarding().then(setData).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
@@ -154,7 +161,8 @@ export default function Onboarding({ search }) {
                  jobTitle: sel.jobTitle, hasImg: sel.hasImg, statusKey: 'probation', status: 'Thử việc' }}
           initialTab="probation"
           isHr={data.isHr} isMgr={data.isHrManager}
-          onClose={() => { setSel(null); load(); }} />
+          onChanged={() => { dirtyRef.current = true; }}
+          onClose={() => { setSel(null); if (dirtyRef.current) { dirtyRef.current = false; reloadQuiet(); } }} />
       )}
     </div>
   );

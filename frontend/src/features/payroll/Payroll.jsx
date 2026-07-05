@@ -30,7 +30,7 @@ export default function Payroll({ search }) {
         ))}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: tab === 'batches' ? 'hidden' : 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: (tab === 'batches' || tab === 'history') ? 'hidden' : 'auto' }}>
         {tab === 'batches' && <BatchList search={search} />}
         {tab === 'history' && <SalaryHistory />}
         {tab === 'bank' && <BankFile />}

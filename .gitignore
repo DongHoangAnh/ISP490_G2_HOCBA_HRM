@@ -33,6 +33,9 @@ _demo_seed/
 # Vite dev cache
 frontend/.vite/
 
+# Superpowers brainstorm mockups (không commit)
+.superpowers/
+
 # Ghi chú nháp / tóm tắt (không commit)
 HocBa_6Phase_Technical_Summary.docx
 HocBa_TimeOff_RemainingWork.md

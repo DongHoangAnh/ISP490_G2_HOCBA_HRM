@@ -6,6 +6,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { useFaceApi } from './useFaceApi';
 import { enrollFace, fetchTeachingSchedule, teachingCheckIn, teachingCheckOut } from '../../api/attendance';
+import { fetchSubstitutions } from '../../api/timeoff';
 
 const ERR = {
   session_not_found: 'Không tìm thấy buổi học trong lịch CMS.',
@@ -81,11 +82,18 @@ function SessionCard({ session, busy, onCheck }) {
   );
 }
 
-export default function TeachingSchedule({ me, onChanged }) {
+export default function TeachingSchedule({ me, onChanged, onGoTimeOff }) {
   const { videoRef, ready, camError, capture } = useFaceApi();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [enrolled, setEnrolled] = useState(me.enrolled);
+  // Nhắc yêu cầu dạy thay đang chờ (từ module Nghỉ phép) — link sang panel xử lý.
+  const [subPending, setSubPending] = useState(0);
+  useEffect(() => {
+    fetchSubstitutions()
+      .then((d) => setSubPending((d.items || []).filter((r) => r.state === 'pending').length))
+      .catch(() => {});
+  }, []);
   // sessions lấy từ teachingToday (preloaded trong me) hoặc fetch lại
   const [sessions, setSessions] = useState(me.teachingToday || []);
   const [date, setDate] = useState(() => {
@@ -157,6 +165,18 @@ export default function TeachingSchedule({ me, onChanged }) {
   const isToday = date === todayIso;
 
   return (
+    <>
+    {subPending > 0 && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '11px 14px', background: 'var(--amber-50,#fffbeb)', border: '1px solid var(--amber-100,#fef3c7)', borderRadius: 10, fontSize: 13, color: 'var(--amber-700,#b45309)' }}>
+        <Icon name="bell" size={16} />
+        <span style={{ flex: 1 }}>
+          Bạn có <b>{subPending}</b> yêu cầu dạy thay đang chờ phản hồi.
+        </span>
+        {onGoTimeOff && (
+          <button className="btn btn-ghost btn-sm" onClick={onGoTimeOff}>Xem &amp; phản hồi</button>
+        )}
+      </div>
+    )}
     <div className="grid-2" style={{ gridTemplateColumns: '1.2fr 1fr', alignItems: 'start' }}>
       {/* Camera */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -222,5 +242,6 @@ export default function TeachingSchedule({ me, onChanged }) {
         )}
       </div>
     </div>
+    </>
   );
 }

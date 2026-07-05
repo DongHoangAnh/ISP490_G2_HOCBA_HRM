@@ -177,7 +177,10 @@ export default function BalancesPanel({ search }) {
                     <Badge kind={r.totalRemaining <= 0 ? 'red' : (r.totalRemaining <= 2 ? 'amber' : 'teal')}>
                       {r.totalRemaining}</Badge>
                   </td>
-                  <td>
+                  {/* width:1% + nowrap + overflow visible: ô tự co theo nội dung,
+                      không bị quy tắc .tbl td (max-width:0; overflow:hidden) cắt
+                      mất nút "Điều chỉnh" bên trái. */}
+                  <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                       {data.isHrManager && (
                         <button className="btn btn-primary btn-sm" onClick={() => setAdjust(r)}>

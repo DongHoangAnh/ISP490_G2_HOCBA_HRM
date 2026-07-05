@@ -76,7 +76,6 @@ export default function SalaryRuleForm({ item, structureId, nextSequence = 10, o
     try {
       const payload = {
         ...form,
-        structure_id: structureId,
         sequence: Number(form.sequence),
         amount_fixed: Number(form.amount_fixed || 0),
       };

@@ -8,20 +8,58 @@ export const fetchOverview = () => hbGet('/hocba-hrm/api/timeoff/overview');
 export const fetchApprovals = () => hbGet('/hocba-hrm/api/timeoff/approvals');
 
 /* Tạo đơn nghỉ cho chính mình. payload:
-   { leaveTypeId, dateFrom, dateTo, reason, attachment? }
-   attachment = { filename, mimetype, data(base64) } — chỉ cho loại cần chứng từ. */
+   { leaveTypeId, dateFrom, dateTo, period?, reason, attachment?, resolutions? }
+   period = 'am'|'pm' cho nghỉ NỬA NGÀY (chỉ loại requestUnit='half_day'); bỏ trống = cả ngày.
+   attachment = { filename, mimetype, data(base64) } — chỉ cho loại cần chứng từ.
+   resolutions = [{ sessionId, type:'class_off'|'substitute', substituteId? }] — GV nghỉ
+   trùng buổi dạy phải xử lý từng buổi (xem fetchTeachingConflicts). */
 export const createRequest = (payload) =>
   hbPost('/hocba-hrm/api/timeoff/request', payload);
+
+/* Dò buổi dạy trùng khoảng nghỉ (chỉ giáo viên). dateFrom/dateTo 'YYYY-MM-DD'.
+   → { conflicts: [{sessionId, className, date, startTime, endTime}],
+       substitutes: [{id, name}] } (DS giáo viên để chọn dạy thay). */
+export const fetchTeachingConflicts = (dateFrom, dateTo) =>
+  hbPost('/hocba-hrm/api/timeoff/teaching-conflicts', { dateFrom, dateTo });
+
+/* Buổi dạy sắp tới của chính GV (cho form nghỉ-theo-buổi, chế độ A).
+   → { sessions: [{sessionId, className, date, startTime, endTime}], substitutes: [{id,name}] }. */
+export const fetchMyTeachingSessions = () =>
+  hbGet('/hocba-hrm/api/timeoff/my-teaching-sessions');
+
+/* Yêu cầu dạy thay gửi tới chính mình (giáo viên thay). → { items: [...] }. */
+export const fetchSubstitutions = () =>
+  hbGet('/hocba-hrm/api/timeoff/substitutions');
+
+/* GV thay đồng ý/từ chối 1 yêu cầu dạy thay. accept=bool; reason chỉ khi từ chối.
+   → { items: [...] } (danh sách yêu cầu mới). */
+export const decideSubstitution = (id, accept, reason) =>
+  hbPost(`/hocba-hrm/api/timeoff/substitutions/${id}/decide`, { accept, reason });
+
+/* GV thay trả lại buổi đã nhận (về lại GV liền trước). → { items: [...] }. */
+export const returnSubstitution = (id) =>
+  hbPost(`/hocba-hrm/api/timeoff/substitutions/${id}/return`, {});
 
 /* Chủ đơn hủy đơn còn chờ duyệt → trả payload overview mới. */
 export const cancelRequest = (id) =>
   hbPost(`/hocba-hrm/api/timeoff/request/${id}/cancel`, {});
 
 /* Duyệt / từ chối đơn (officer). payload:
-   { action: 'approve'|'refuse', replacementNote?, medicalOverride?, medicalOverrideReason? }
+   { action: 'approve'|'refuse', medicalOverride?, medicalOverrideReason? }
    → trả payload approvals mới. */
 export const decideRequest = (id, payload) =>
   hbPost(`/hocba-hrm/api/timeoff/request/${id}/decision`, payload);
+
+/* Phase 7 — chủ đơn gửi yêu cầu rút đơn đã duyệt. payload: { reason }
+   → trả payload overview mới (đơn vào state "chờ duyệt rút"). */
+export const withdrawRequest = (id, reason) =>
+  hbPost(`/hocba-hrm/api/timeoff/request/${id}/withdraw`, { reason });
+
+/* Phase 7 — người duyệt phạm vi duyệt/từ chối yêu cầu rút. payload: { approve, note }
+   approve=true → đơn về 'refuse' + hoàn quỹ; false → đơn giữ 'validate'.
+   → trả payload approvals mới. */
+export const decideWithdraw = (id, payload) =>
+  hbPost(`/hocba-hrm/api/timeoff/request/${id}/withdraw/decide`, payload);
 
 /* Tổng quan (dashboard) — tự đổi view Manager/Nhân viên theo quyền.
    year: số năm; dept: id phòng ban (chỉ Manager dùng để lọc). */
@@ -33,11 +71,12 @@ export const fetchDashboard = (year, dept) => {
   return hbGet('/hocba-hrm/api/timeoff/dashboard' + (q ? '?' + q : ''));
 };
 
-/* Lịch nghỉ. scope: 'me' (của tôi) | 'all' (cả đội — chỉ officer). */
-export const fetchCalendar = (year, scope) => {
+/* Lịch nghỉ. Phạm vi theo vai trò (NV/GV: cá nhân · trưởng phòng: cả phòng ·
+   HR: mọi phòng). dept = id phòng ban để HR lọc 1 phòng (vai trò khác bỏ qua). */
+export const fetchCalendar = (year, dept) => {
   const p = new URLSearchParams();
   if (year) p.set('year', year);
-  if (scope) p.set('scope', scope);
+  if (dept) p.set('dept', dept);
   const q = p.toString();
   return hbGet('/hocba-hrm/api/timeoff/calendar' + (q ? '?' + q : ''));
 };
@@ -119,3 +158,25 @@ export const fetchAdjustHistory = (employeeId, leaveTypeId) => {
   const q = p.toString();
   return hbGet('/hocba-hrm/api/timeoff/balances/history' + (q ? '?' + q : ''));
 };
+
+/* Phase 5 — Thông báo in-app (chuông góc phải). Trả { items: [...], unread: N }.
+   onlyUnread=true → chỉ tin chưa đọc. */
+export const fetchNotifications = (limit, onlyUnread) => {
+  const p = new URLSearchParams();
+  if (limit) p.set('limit', limit);
+  if (onlyUnread) p.set('onlyUnread', '1');
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/notifications' + (q ? '?' + q : ''));
+};
+
+/* Đánh dấu 1 thông báo đã đọc → trả { items, unread } mới. */
+export const markNotificationRead = (id) =>
+  hbPost(`/hocba-hrm/api/timeoff/notifications/${id}/read`, {});
+
+/* Đánh dấu tất cả thông báo đã đọc → trả { items, unread } mới. */
+export const markAllNotificationsRead = () =>
+  hbPost('/hocba-hrm/api/timeoff/notifications/read-all', {});
+
+/* Nhật ký thao tác (audit) của 1 đơn nghỉ. → { history: [{date, author, body, type}] } */
+export const fetchRequestHistory = (id) =>
+  hbGet(`/hocba-hrm/api/timeoff/request/${id}/history`);

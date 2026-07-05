@@ -6,7 +6,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchApprovals, decideRequest } from '../../api/timeoff';
+import { fetchApprovals, decideRequest, decideWithdraw } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
 
 const SORT_FIELDS = [
@@ -31,7 +31,9 @@ export default function ApprovalPanel({ isHrManager }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
+  const [withdrawDecision, setWithdrawDecision] = useState(null); // yêu cầu rút đang xử lý
   const [sort, setSort] = useState({ key: 'from', dir: 'asc' });
+  const [dept, setDept] = useState(''); // lọc phòng ban (chỉ role HR, khi sắp xếp theo phòng ban)
 
   const load = () => {
     setErr(null); setData(null);
@@ -42,14 +44,25 @@ export default function ApprovalPanel({ isHrManager }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải đơn chờ duyệt…" />;
 
-  const rows = sortRows(data.requests, SORT_FIELDS, sort);
+  // Lọc phòng ban chỉ áp dụng khi role HR đang sắp xếp theo phòng ban + đã chọn 1 phòng.
+  const deptFilterOn = data.seeAll && sort.key === 'department' && dept;
+  const filtered = deptFilterOn
+    ? data.requests.filter((r) => String(r.departmentId) === String(dept))
+    : data.requests;
+  const rows = sortRows(filtered, SORT_FIELDS, sort);
 
   return (
     <div className="card">
       <div className="card-head">
         <h3>Đơn chờ duyệt</h3>
         <span className="sub">{rows.length} đơn</span>
-        <div className="actions"><SortBar fields={SORT_FIELDS} sort={sort} onChange={setSort} /></div>
+        <div className="actions">
+          <SortBar
+            fields={SORT_FIELDS} sort={sort} onChange={setSort}
+            departments={data.seeAll ? data.allDepartments : null}
+            dept={dept} onDeptChange={setDept}
+          />
+        </div>
       </div>
       <div className="tbl-wrap">
         <table className="tbl">
@@ -68,8 +81,14 @@ export default function ApprovalPanel({ isHrManager }) {
                 <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
                 <td>
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {r.withdrawState === 'pending' && (
+                      <Badge kind="red">Yêu cầu rút</Badge>
+                    )}
+                    {r.overdue && (
+                      <Badge kind="red">Quá hạn {r.ageDays} ngày</Badge>
+                    )}
+                    {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
-                    {r.scheduleConflict && <Badge kind="amber">Xung đột lịch</Badge>}
                     {r.overlapCount >= OVERLAP_WARN && (
                       <Badge kind="amber">Trùng lịch: {r.overlapCount}</Badge>
                     )}
@@ -80,8 +99,16 @@ export default function ApprovalPanel({ isHrManager }) {
                   </div>
                 </td>
                 <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
-                <td>
-                  <button className="btn btn-primary btn-sm" onClick={() => setDecision(r)}>Xử lý</button>
+                {/* width:1% + nowrap + overflow visible: ô tự co theo nội dung,
+                    không bị quy tắc .tbl td (max-width:0; overflow:hidden) cắt mất nút. */}
+                <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
+                  {r.withdrawState === 'pending' ? (
+                    <button className="btn btn-primary btn-sm"
+                      onClick={() => setWithdrawDecision(r)}>Xử lý rút</button>
+                  ) : (
+                    <button className="btn btn-primary btn-sm"
+                      onClick={() => setDecision(r)}>Xử lý</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -95,19 +122,101 @@ export default function ApprovalPanel({ isHrManager }) {
           onClose={() => setDecision(null)}
           onDone={(payload) => { setDecision(null); setData(payload); }} />
       )}
+
+      {withdrawDecision && (
+        <WithdrawDecisionModal req={withdrawDecision}
+          onClose={() => setWithdrawDecision(null)}
+          onDone={(payload) => { setWithdrawDecision(null); setData(payload); }} />
+      )}
     </div>
   );
 }
 
-/* Modal xử lý 1 đơn: duyệt (kèm ghi chú thay thế / override chứng từ) hoặc từ chối. */
+/* Phase 7 — modal duyệt/từ chối yêu cầu rút đơn. Duyệt rút = đơn về 'refuse'
+   và quỹ phép tự hoàn lại; Từ chối rút = đơn giữ 'validate'. */
+function WithdrawDecisionModal({ req, onClose, onDone }) {
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const decide = (approve) => {
+    setErr(null); setBusy(true);
+    decideWithdraw(req.id, { approve, note: note.trim() })
+      .then(onDone)
+      .catch((e) => setErr(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="alertCircle" size={22} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Xử lý yêu cầu rút đơn</h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            {req.employee} · {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)
+          </div>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+      </div>
+
+      <div style={{ padding: '22px 24px', display: 'grid', gap: 14 }}>
+        {req.withdrawReason && (
+          <div style={{ padding: '10px 13px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 13 }}>
+            <b>Lý do nhân viên rút:</b>
+            <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{req.withdrawReason}</pre>
+          </div>
+        )}
+
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          <b>Duyệt rút</b>: đơn chuyển sang <i>Từ chối</i> và quỹ phép được hoàn lại đầy đủ.
+          {' '}<b>Từ chối rút</b>: đơn giữ nguyên <i>Đã duyệt</i>, quỹ phép không đổi.
+        </div>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+            Ghi chú (tùy chọn)
+          </span>
+          <textarea rows={2}
+            style={{
+              width: '100%', padding: '9px 12px', borderRadius: 10,
+              border: '1px solid var(--border-strong)', background: '#fff',
+              fontSize: 13.5, color: 'var(--ink)', outline: 'none',
+              fontFamily: 'inherit', resize: 'vertical',
+            }}
+            value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="Ghi chú cho nhân viên (hiển thị ở lịch sử xử lý)…" />
+        </label>
+
+        {err && (
+          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
+            {err}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+        <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Đóng</button>
+        <button className="btn btn-soft" onClick={() => decide(false)} disabled={busy}>
+          <Icon name="x" size={16} />Từ chối rút
+        </button>
+        <button className="btn btn-primary" onClick={() => decide(true)} disabled={busy}>
+          <Icon name="check" size={16} />{busy ? 'Đang xử lý…' : 'Duyệt rút'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Modal xử lý 1 đơn: duyệt (kèm override chứng từ) hoặc từ chối. */
 function DecisionModal({ req, isHrManager, onClose, onDone }) {
-  const [note, setNote] = useState(req.replacementNote || '');
   const [override, setOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  const needNote = req.scheduleConflict && !req.isEmergency;       // BR-031
   const missingDoc = req.supportDocument && !req.hasMedicalDoc;    // BR-011
 
   const decide = (action) => {
@@ -115,7 +224,6 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
     setBusy(true);
     decideRequest(req.id, {
       action,
-      replacementNote: note.trim(),
       medicalOverride: override,
       medicalOverrideReason: overrideReason.trim(),
     })
@@ -139,6 +247,8 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
       </div>
 
       <div style={{ padding: '22px 24px', maxHeight: '58vh', overflowY: 'auto', display: 'grid', gap: 14 }}>
+        <div className="muted" style={{ fontSize: 13 }}><b>Ngày tạo đơn:</b> {fmtDate(req.createdAt)}</div>
+
         {req.reason && (
           <div className="muted" style={{ fontSize: 13 }}><b>Lý do:</b> {req.reason}</div>
         )}
@@ -156,24 +266,6 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
               {req.overlapCount >= OVERLAP_WARN
                 ? ' — cân nhắc trước khi duyệt, phòng có thể thiếu người.' : '.'}</span>
           </div>
-        )}
-
-        {req.scheduleConflict && (
-          <div style={{ padding: '10px 13px', background: 'var(--amber-bg,#fff7ed)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5 }}>
-            <b>Xung đột lịch dạy:</b>
-            <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{req.conflictInfo || '—'}</pre>
-          </div>
-        )}
-
-        {needNote && (
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
-              Ghi chú bố trí thay thế *</span>
-            <textarea style={{ ...inp, resize: 'vertical' }} rows={2} value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="VD: Cô B dạy thay buổi 18/06…" />
-            <span className="muted" style={{ fontSize: 12 }}>Bắt buộc trước khi duyệt khi có xung đột lịch dạy (BR-031).</span>
-          </label>
         )}
 
         {missingDoc && (

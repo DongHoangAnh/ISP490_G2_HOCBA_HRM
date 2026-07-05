@@ -66,7 +66,12 @@ export default function Departments({ search = '' }) {
           <table className="tbl">
             <thead><tr>
               <th>Phòng ban</th><th>Chức năng</th><th>Trưởng phòng</th>
-              <th>Số NV</th><th>Trạng thái</th><th></th>
+              {/* width:1% + nowrap: các cột phải co sát nội dung, dồn khoảng trống
+                  cho 3 cột text bên trái → nút thao tác kéo về gần cột Trạng thái,
+                  không bị đẩy khỏi khung. */}
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Số NV</th>
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
             </tr></thead>
             <tbody>
               {rows.map((d) => (
@@ -74,9 +79,9 @@ export default function Departments({ search = '' }) {
                   <td><div className="nm">{d.name}</div></td>
                   <td className="muted">{d.functionDesc || '—'}</td>
                   <td>{d.managerName || '—'}</td>
-                  <td className="mono">{d.employeeCount}</td>
-                  <td><Badge kind={d.active ? 'green' : 'gray'} dot>{d.active ? 'Hoạt động' : 'Lưu trữ'}</Badge></td>
-                  <td style={{ display: 'flex', gap: 6 }}>
+                  <td className="mono" style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{d.employeeCount}</td>
+                  <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={d.active ? 'green' : 'gray'} dot>{d.active ? 'Hoạt động' : 'Lưu trữ'}</Badge></td>
+                  <td style={{ display: 'flex', gap: 6, width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => setForm({ dept: d })}>
                       <Icon name="edit" size={14} />Sửa</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => onArchive(d)}>

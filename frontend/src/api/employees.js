@@ -66,3 +66,7 @@ export const createAccount = (empId, payload) =>
 export const resetAccountPassword = (empId, payload) =>
   hbPost(`/hocba-hrm/api/employee/${empId}/account/reset`, payload);
 export const fetchAccounts = () => hbGet('/hocba-hrm/api/accounts');
+
+/* Dashboard đánh giá thăng tiến — lấy danh sách đánh giá của NV + lưu đánh giá mới. */
+export const fetchEvaluations = (empId) => hbGet(`/hocba-hrm/api/promotion/eval/${empId}`);
+export const saveEvaluation = (payload) => hbPost('/hocba-hrm/api/promotion/eval/save', payload);

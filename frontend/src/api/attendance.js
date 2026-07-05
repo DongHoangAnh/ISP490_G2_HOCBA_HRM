@@ -67,6 +67,9 @@ export const fetchTeachingSchedule = (date) =>
   hbGet(`/hocba-hrm/api/teaching/schedule?date=${date}`);
 export const fetchTeachingWeek = (monday) =>
   hbGet(`/hocba-hrm/api/teaching/schedule?monday=${monday}`);
+// Các ngày có lịch dạy trong khoảng [from, to] (đánh dấu trên tab "Lịch").
+export const fetchTeachingDays = (from, to) =>
+  hbGet(`/hocba-hrm/api/teaching/days?from=${from}&to=${to}`);
 export const teachingCheckIn = (sessionId, payload) =>
   hbPost(`/hocba-hrm/api/teaching/sessions/${sessionId}/check-in`, payload);
 export const teachingCheckOut = (sessionId, payload) =>

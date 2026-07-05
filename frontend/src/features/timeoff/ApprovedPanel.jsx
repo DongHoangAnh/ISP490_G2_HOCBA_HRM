@@ -10,6 +10,7 @@ import { fmtDate } from '../../utils/format';
 import { fetchApproved } from '../../api/timeoff';
 import { downloadXlsx } from '../../utils/xlsx';
 import SortBar, { sortRows } from './SortBar';
+import HistoryTimeline from './HistoryTimeline';
 
 const THIS_YEAR = new Date().getFullYear();
 
@@ -18,6 +19,7 @@ const SORT_FIELDS = [
   { key: 'department', label: 'Phòng ban', type: 'text' },
   { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
   { key: 'stateLabel', label: 'Kết quả', type: 'text' },
+  { key: 'createdAt', label: 'Ngày tạo', type: 'date' },
   { key: 'from', label: 'Từ ngày', type: 'date' },
   { key: 'to', label: 'Đến ngày', type: 'date' },
   { key: 'days', label: 'Số ngày', type: 'num' },
@@ -50,11 +52,11 @@ export default function ApprovedPanel({ search }) {
     SORT_FIELDS, sort);
 
   const exportExcel = () => {
-    const headers = ['Nhân viên', 'Phòng ban', 'Loại nghỉ', 'Kết quả', 'Từ ngày',
-      'Đến ngày', 'Số ngày', 'Lương', 'Người duyệt/từ chối', 'Lý do'];
+    const headers = ['Nhân viên', 'Phòng ban', 'Loại nghỉ', 'Kết quả', 'Ngày tạo',
+      'Từ ngày', 'Đến ngày', 'Số ngày', 'Lương', 'Người duyệt/từ chối', 'Lý do'];
     const body = rows.map((r) => [
       r.employee || '', r.department || '', r.leaveType || '', r.stateLabel || '',
-      fmtDate(r.from), fmtDate(r.to), Number(r.days) || 0,
+      fmtDate(r.createdAt), fmtDate(r.from), fmtDate(r.to), Number(r.days) || 0,
       r.unpaid ? 'Không lương' : 'Có lương', r.approver || '', r.reason || '',
     ]);
     const deptName = dept ? (data.allDepartments.find((d) => String(d.id) === String(dept))?.name || '') : '';
@@ -104,7 +106,7 @@ export default function ApprovedPanel({ search }) {
           <table className="tbl">
             <thead><tr>
               <th>Nhân viên</th><th>Phòng ban</th><th>Loại nghỉ</th><th>Kết quả</th>
-              <th>Từ ngày</th><th>Đến ngày</th><th className="tbl-num">Số ngày</th>
+              <th>Ngày tạo</th><th>Từ ngày</th><th>Đến ngày</th><th className="tbl-num">Số ngày</th>
             </tr></thead>
             <tbody>
               {rows.map((r) => (
@@ -118,6 +120,7 @@ export default function ApprovedPanel({ search }) {
                     </span>
                   </td>
                   <td><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
+                  <td className="mono muted">{fmtDate(r.createdAt)}</td>
                   <td className="mono muted">{fmtDate(r.from)}</td>
                   <td className="mono muted">{fmtDate(r.to)}</td>
                   <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
@@ -172,6 +175,11 @@ function DetailModal({ req, onClose }) {
         </Row>
         <Row label="Lý do">
           <span style={{ color: req.reason ? 'var(--ink)' : 'var(--muted)' }}>{req.reason || '— Không có —'}</span>
+        </Row>
+
+        {/* Lịch sử xử lý (Phase 5, audit) */}
+        <Row label="Lịch sử xử lý">
+          <HistoryTimeline requestId={req.id} />
         </Row>
 
         {/* Chứng từ y tế — chỉ với loại nghỉ yêu cầu chứng từ (nghỉ ốm) */}

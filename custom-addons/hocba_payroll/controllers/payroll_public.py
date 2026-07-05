@@ -49,7 +49,7 @@ class PayrollPublicController(http.Controller):
         if not slip:
             return Response('Payslip not found.', status=404)
 
-        if slip.x_employee_confirm != 'pending':
+        if slip.x_employee_confirm == 'confirmed':
             return request.redirect(f'/payslip/view/{token}?msg=already_actioned')
 
         slip.sudo().write({
@@ -70,7 +70,7 @@ class PayrollPublicController(http.Controller):
         if not slip:
             return Response('Payslip not found.', status=404)
 
-        if slip.x_employee_confirm != 'pending':
+        if slip.x_employee_confirm == 'confirmed':
             return request.redirect(f'/payslip/view/{token}?msg=already_actioned')
 
         feedback = kw.get('feedback', '').strip()

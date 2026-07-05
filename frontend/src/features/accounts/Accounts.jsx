@@ -51,7 +51,12 @@ export default function Accounts({ search = '' }) {
           <table className="tbl">
             <thead><tr>
               <th>Nhân viên</th><th>Mã</th><th>Phòng ban</th>
-              <th>Đăng nhập</th><th>Loại</th><th>Trạng thái</th><th></th>
+              {/* width:1% + nowrap: các cột phải co sát nội dung, dồn khoảng trống cho
+                  cột Đăng nhập → nút thao tác kéo về gần cột Trạng thái, không bị đẩy khỏi khung. */}
+              <th>Đăng nhập</th>
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Loại</th>
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
             </tr></thead>
             <tbody>
               {rows.map((r) => (
@@ -60,9 +65,9 @@ export default function Accounts({ search = '' }) {
                   <td className="muted mono">{r.code}</td>
                   <td>{r.depName}</td>
                   <td className="mono">{r.login}</td>
-                  <td>{ROLE_LABEL[r.role] || r.role}</td>
-                  <td><Badge kind={r.active ? 'green' : 'gray'} dot>{r.active ? 'Hoạt động' : 'Khóa'}</Badge></td>
-                  <td>
+                  <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{ROLE_LABEL[r.role] || r.role}</td>
+                  <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={r.active ? 'green' : 'gray'} dot>{r.active ? 'Hoạt động' : 'Khóa'}</Badge></td>
+                  <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => setReset({ id: r.employeeId, name: r.name })}>
                       <Icon name="rotateCcw" size={14} />Cấp lại MK</button>
                   </td>
