@@ -57,6 +57,25 @@ class HrJobHocBaExt(models.Model):
         for rec in self:
             rec.x_published = not rec.x_published
 
+    # ── Đồng bộ publish ↔ trạng thái tuyển (mọi cửa ghi) ─────────────────────
+    # Đổi cờ publish từ BẤT KỲ đâu (SPA, backend, công tắc Publish trên
+    # website) → gương 2 cờ is_published/x_published với nhau và khớp
+    # trạng thái: đăng → Đang tuyển, ngừng đăng → Dừng tuyển.
+    # Trạng thái truyền tường minh trong cùng write vẫn được tôn trọng.
+    def write(self, vals):
+        pub = None
+        if 'is_published' in vals:
+            pub = bool(vals['is_published'])
+        elif 'x_published' in vals:
+            pub = bool(vals['x_published'])
+        if pub is not None:
+            vals = dict(vals, x_published=pub)
+            if 'is_published' in self._fields:
+                vals['is_published'] = pub
+            vals.setdefault('recruitment_status',
+                            'recruiting' if pub else 'stopped')
+        return super().write(vals)
+
     # ── Logic 2: Kiểm tra trùng lặp tên vị trí trong cùng phòng ban ──────────
     @api.constrains('name', 'department_id', 'active')
     def _check_duplicate_position(self):

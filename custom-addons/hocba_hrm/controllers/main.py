@@ -1684,6 +1684,18 @@ class HocBaHRM(http.Controller):
                     and e.department_id.id
                     in self._managed_department_ids(user.employee_id))
 
+    def _can_eval_trial(self, e):
+        """Ai được chấm thử giảng (F-008): HR (mọi NV) hoặc Giáo vụ với giáo
+        viên trong phạm vi của họ (giáo vụ là người quản lý giáo viên)."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return True
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            return self._emp_in_scope(e)  # phạm vi giáo vụ = giáo viên
+        return False
+
     def _labels(self):
         env = request.env
         Emp = env['hr.employee']
@@ -1797,17 +1809,30 @@ class HocBaHRM(http.Controller):
                 } for dp in e.x_dependent_ids],
             })
         if is_mgr:
+            # Tên ngân hàng: tra từ list payroll (hb.bank.format) theo mã đã lưu;
+            # guard nếu payroll chưa cài, fallback hiển thị mã.
+            bank_name = e.x_bank_code or ''
+            if e.x_bank_code and 'hb.bank.format' in e.env:
+                bank = e.env['hb.bank.format'].sudo().search(
+                    [('code', '=', e.x_bank_code)], limit=1)
+                if bank:
+                    bank_name = bank.name
             data.update({
                 'pit': e.x_pit_code or '',
                 'si': e.x_social_insurance_no or '',
                 'bankCode': e.x_bank_code or '',
+                'bankName': bank_name,
                 'bankAccountNo': e.x_bank_account_no or '',
             })
 
         # --- Thử việc 2 cổng (F-004/005) — Nhóm B ---
+        # Giáo viên (loại nhân sự = teacher) luôn đi luồng thử giảng (Nhóm A),
+        # kể cả offline → loại khỏi Nhóm B để không hiện cổng thử việc nhầm.
+        is_teacher = e.x_employee_type_id.code == 'teacher'
         data['probation'] = {
             'isGroupB': (e.x_position_type in ('staff', 'manager')
-                         and e.x_work_form == 'offline'),
+                         and e.x_work_form == 'offline'
+                         and not is_teacher),
             'canEval': self._can_eval_emp(e),
             'start': _d(e.x_probation_start),
             'd2wDue': _d(e.x_eval_2w_due),
@@ -1829,7 +1854,8 @@ class HocBaHRM(http.Controller):
 
         # --- Thử giảng (F-008) — Nhóm A ---
         if (e.x_work_form == 'online'
-                or e.x_employment_status in ('parttime', 'ctv', 'advisor')):
+                or e.x_employment_status in ('parttime', 'ctv', 'advisor')
+                or is_teacher):
             data['trial'] = {
                 'date': _d(e.x_trial_lesson_date),
                 'class': e.x_trial_lesson_class or '',
@@ -1837,6 +1863,7 @@ class HocBaHRM(http.Controller):
                 'scoreContent': e.x_trial_score_content or 0,
                 'result': e.x_trial_lesson_result or 'draft',
                 'note': e.x_trial_lesson_note or '',
+                'canEval': self._can_eval_trial(e),
             }
 
         # --- Tài sản (F-006) ---
@@ -1943,8 +1970,10 @@ class HocBaHRM(http.Controller):
             e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
+            # Từ chối nghiệp vụ (sai trình tự / thiếu ngày thử việc / BR-010…):
+            # trả 422 + lý do thật để FE hiển thị; 403 chỉ dành cho thiếu quyền.
             return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=403)
+                {'error': 'rejected', 'message': str(ex)}, status=422)
 
         # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
         is_hr, is_mgr = self._hr_flags()
@@ -1955,14 +1984,17 @@ class HocBaHRM(http.Controller):
                 type='http', methods=['POST'], csrf=False)
     def api_employee_trial(self, emp_id, **kw):
         """Đánh giá thử giảng (F-008) cho giảng viên Nhóm A từ SPA: ghi ngày,
-        lớp, 2 điểm, kết quả, nhận xét. KHÔNG sudo — model áp ràng buộc (điểm
-        1–10, ngày ≤ hôm nay, fail cần nhận xét) + activity nhắc HR."""
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        e = request.env['hr.employee'].browse(emp_id)
+        lớp, 2 điểm, kết quả, nhận xét. Quyền: HR (mọi NV) hoặc Giáo vụ (giáo
+        viên trong phạm vi). Kiểm phạm vi RỒI sudo ghi; model vẫn áp ràng buộc
+        (điểm 1–10, ngày ≤ hôm nay, fail cần nhận xét) qua @api.constrains."""
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_trial(e):
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Bạn không có quyền chấm thử giảng nhân viên này.'},
+                status=403)
 
         payload = request.get_json_data()
         result = payload.get('result')
@@ -1981,11 +2013,11 @@ class HocBaHRM(http.Controller):
             'x_trial_lesson_result': result,
         }
         try:
-            e.write(vals)
+            e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=400)
+                {'error': 'rejected', 'message': str(ex)}, status=422)
         return self._detail_response(e)
 
     # ------------------------------------------------------------------
@@ -2146,6 +2178,148 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Offboarding — đơn thôi việc (self-service + duyệt 2 cấp)
+    # ------------------------------------------------------------------
+    # Nhãn + màu badge theo trạng thái (SPA render trực tiếp, không hard-code FE)
+    OFFB_STATE_UI = {
+        'draft': ('Nháp', 'gray'),
+        'submitted': ('Chờ quản lý duyệt', 'amber'),
+        'mgr_approved': ('Chờ HR duyệt', 'blue'),
+        'hr_approved': ('Chờ hoàn tất', 'violet'),
+        'done': ('Đã nghỉ', 'gray'),
+        'refused': ('Từ chối', 'red'),
+        'cancelled': ('Đã huỷ', 'gray'),
+    }
+
+    def _offb_json(self, rec):
+        # Quyền tính theo user của env gắn trên record (route browse dưới
+        # request.env nên chính là user hiện tại; test truyền env(user=...)).
+        user = rec.env.user
+        is_hr_mgr = rec.env.su or user.has_group('hr.group_hr_manager')
+        try:
+            rec._ensure_manages()
+            manages = True
+        except AccessError:
+            manages = False
+        own = rec.employee_id == user.employee_id
+        label, kind = self.OFFB_STATE_UI.get(rec.state, (rec.state, 'gray'))
+        return {
+            'id': rec.id, 'name': rec.name,
+            'employeeId': rec.employee_id.id,
+            'employeeName': rec.employee_id.name,
+            'source': rec.source, 'reasonType': rec.reason_type,
+            'reason': rec.reason or '',
+            'requestDate': rec.request_date and str(rec.request_date) or '',
+            'expectedLeaveDate': rec.expected_leave_date
+                and str(rec.expected_leave_date) or '',
+            'state': rec.state, 'stateLabel': label, 'stateKind': kind,
+            'assetPending': rec.asset_pending_count,
+            'mgrApprovedBy': rec.mgr_approved_by.name or '',
+            'hrApprovedBy': rec.hr_approved_by.name or '',
+            'canMgrApprove': rec.state == 'submitted' and manages,
+            'canHrApprove': rec.state == 'mgr_approved' and is_hr_mgr,
+            'canDone': rec.state == 'hr_approved' and is_hr_mgr,
+            'canRefuse': (rec.state == 'submitted' and manages)
+                or (rec.state == 'mgr_approved' and is_hr_mgr),
+            'canCancel': rec.state in ('draft', 'submitted')
+                and (own or is_hr_mgr),
+        }
+
+    def _offb_managed_employee_ids(self, env):
+        """Phạm vi NV mà user hiện tại được xử lý đơn nghỉ việc — KHỚP quyền
+        duyệt của model (_ensure_manages): HR=tất cả; trưởng phòng=phòng mình;
+        quản lý trực tiếp=cấp dưới parent_id; giáo vụ=giáo viên.
+        Không dùng _emp_scope_domain (helper chung, thiếu parent_id)."""
+        user = env.user
+        Emp = env['hr.employee'].sudo()
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return Emp.search([]).ids
+        ids = set()
+        emp = user.employee_id
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            ids.update(Emp.search([('department_id', 'in', dept_ids)]).ids)
+        if emp:
+            ids.update(Emp.search([('parent_id', '=', emp.id)]).ids)
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            ids.update(Emp.search(
+                [('x_employee_type_id.code', '=', 'teacher')]).ids)
+        ids.discard(emp.id if emp else -1)
+        return list(ids)
+
+    @http.route('/hocba-hrm/api/offboarding/submit', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_offboarding_submit(self, **kw):
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response(
+                {'error': 'no_employee'}, status=400)
+        payload = request.get_json_data() or {}
+        try:
+            rec = request.env['hocba.offboarding'].create({
+                'employee_id': emp.id,
+                'source': 'self',
+                'reason_type': payload.get('reasonType') or 'voluntary',
+                'reason': (payload.get('reason') or '').strip(),
+                'expected_leave_date': payload.get('expectedLeaveDate')
+                    or fields.Date.context_today(request.env.user),
+            })
+            rec.action_submit()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True, 'item': self._offb_json(rec)})
+
+    @http.route('/hocba-hrm/api/offboarding/list', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_offboarding_list(self, **kw):
+        env = request.env
+        is_officer = _user_can_manage(env)
+        emp = env.user.employee_id
+        Off = env['hocba.offboarding'].sudo()
+        mine_ids = Off.search(
+            [('employee_id', '=', emp.id if emp else -1)]).ids
+        managed_ids = []
+        if is_officer:
+            managed_ids = Off.search([
+                ('employee_id', 'in',
+                 self._offb_managed_employee_ids(env))]).ids
+        # _offb_json tính quyền từ rec.env.user → browse dưới env user thật.
+        # Scope đã khớp record rule (own/dept/parent/teacher/HR) nên đọc không
+        # vướng ACL; nếu AccessError tức scope lệch rule — phải sửa scope.
+        Offu = env['hocba.offboarding']
+        return request.make_json_response({
+            'isOfficer': is_officer,
+            'isEmployee': bool(emp) and not is_officer,
+            'mine': [self._offb_json(r) for r in Offu.browse(mine_ids)],
+            'managed': [self._offb_json(r) for r in Offu.browse(managed_ids)],
+        })
+
+    @http.route('/hocba-hrm/api/offboarding/action', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_offboarding_action(self, **kw):
+        payload = request.get_json_data() or {}
+        rec_id = self._conv_id(payload.get('id'))
+        action = payload.get('action')
+        allowed = {'submit', 'mgr_approve', 'hr_approve',
+                   'refuse', 'cancel', 'done'}
+        if not rec_id or action not in allowed:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        rec = request.env['hocba.offboarding'].browse(rec_id)
+        if not rec.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            getattr(rec, 'action_%s' % action)()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True, 'item': self._offb_json(rec)})
 
     # ------------------------------------------------------------------
     # Thăng tiến (F-007) — thêm mốc thăng tiến inline (HR Manager). Tạo

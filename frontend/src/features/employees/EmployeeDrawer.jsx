@@ -17,7 +17,7 @@ import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
-export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab = 'info' }) {
+export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr, initialTab = 'info' }) {
   const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
@@ -25,6 +25,9 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
   useEffect(() => {
     fetchEmployee(emp.id).then(setDet).catch((e) => setDerr(e.message));
   }, [emp.id]);
+  // Cập nhật det do một thao tác SỬA (khác lần fetch đầu) → đánh dấu để
+  // danh sách ngoài refresh ngầm khi đóng drawer.
+  const update = (d) => { setDet(d); onChanged && onChanged(); };
 
   const tabs = [
     ['info', 'Thông tin'],
@@ -66,20 +69,20 @@ export default function EmployeeDrawer({ emp, onClose, isHr, isMgr, initialTab =
         </div>
       </div>
 
-      <div style={{ padding: '22px 24px', maxHeight: '52vh', overflowY: 'auto' }}>
+      <div style={{ padding: '22px 24px', maxHeight: 'min(72vh, calc(100vh - 210px))', overflowY: 'auto' }}>
         {derr && <EmptyState>Không tải được hồ sơ ({derr}).</EmptyState>}
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
-        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={setDet} />}
-        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={setDet} />}
-        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={setDet} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={setDet} />}
-        {det && tab === 'account' && isHr && <AccountTab det={det} emp={emp} onUpdated={setDet} />}
+        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={update} />}
+        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={update} />}
+        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={update} />}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update} />}
+        {det && tab === 'account' && isHr && <AccountTab det={det} emp={emp} onUpdated={update} />}
       </div>
 
       {editing && det && (
         <EmployeeForm emp={det} isMgr={isMgr}
           onClose={() => setEditing(false)}
-          onSaved={(newDet) => { setDet(newDet); setEditing(false); }} />
+          onSaved={(newDet) => { update(newDet); setEditing(false); }} />
       )}
     </Modal>
   );
@@ -116,7 +119,12 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
     ['Số thẻ BHYT', det.hi || '—'], ['Nơi KCB ban đầu', det.hiPlace || '—'],
     ['Địa chỉ thường trú', det.permanentAddr || '—'], ['Địa chỉ tạm trú', det.currentAddr || '—'],
   );
-  if (isMgr) rows.push(['MST TNCN', det.pit || '—'], ['Số sổ BHXH', det.si || '—']);
+  if (isMgr) rows.push(
+    ['Lương cơ bản', det.wage ? `${hbVND(det.wage)} ₫` : '—'],
+    ['MST TNCN', det.pit || '—'], ['Số sổ BHXH', det.si || '—'],
+    ['Ngân hàng nhận lương', det.bankName || det.bankCode || '—'],
+    ['Số tài khoản nhận lương', det.bankAccountNo || '—'],
+  );
   return (
     <div>
       <div className="grid-2" style={{ rowGap: 20 }}>
@@ -217,17 +225,26 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
 function GateAction({ empId, gate, onUpdated }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [note, setNote] = useState('');
   const submit = async (result) => {
+    setErr(null);
+    if ((result === 'pass' || result === 'fail') && !note.trim()) {
+      setErr('Cần nhập ghi chú đánh giá khi Đạt hoặc Không đạt.'); return;
+    }
     if (result === 'fail' && !window.confirm(
       'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding. Tiếp tục?')) return;
     if (result === 'extend' && !window.confirm(
       'Gia hạn sẽ kéo dài thử việc và hẹn tái đánh giá. Tiếp tục?')) return;
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
-      const det = await postGate(empId, { gate, result });
+      const det = await postGate(empId, { gate, result, note: note.trim() });
       onUpdated(det);
     } catch (e) {
-      setErr(e.status === 403 ? 'Không có quyền hoặc thao tác bị từ chối (kiểm tra điều kiện cổng).' : e.message);
+      // 'forbidden' = thiếu quyền; còn lại hiện lý do thật từ server (sai
+      // trình tự / thiếu ngày thử việc / BR-010…).
+      setErr(e.code === 'forbidden'
+        ? 'Bạn không có quyền duyệt nhân viên này.'
+        : (e.message || 'Thao tác bị từ chối.'));
     } finally { setBusy(false); }
   };
   return (
@@ -235,6 +252,12 @@ function GateAction({ empId, gate, onUpdated }) {
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 7 }}>
         Đánh giá cổng
       </div>
+      <input
+        value={note} onChange={(e) => setNote(e.target.value)}
+        placeholder="Ghi chú đánh giá (bắt buộc khi Đạt / Không đạt)"
+        style={{ width: '100%', marginBottom: 9, padding: '7px 10px', borderRadius: 9,
+          border: '1px solid var(--border-strong)', background: '#fff', fontSize: 13,
+          color: 'var(--ink)', outline: 'none', fontFamily: 'inherit' }} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button className="btn btn-primary btn-sm" disabled={busy}
           style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
@@ -280,7 +303,7 @@ function TrialAction({ empId, onUpdated }) {
     }
     setBusy(true);
     try { onUpdated(await postTrial(empId, { ...f, result })); }
-    catch (e) { setErr(e.status === 403 ? 'Không có quyền chấm thử giảng.' : e.message); }
+    catch (e) { setErr(e.code === 'forbidden' ? 'Không có quyền chấm thử giảng.' : (e.message || 'Thao tác bị từ chối.')); }
     finally { setBusy(false); }
   };
   return (
@@ -410,7 +433,10 @@ export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
           )}
         </div>
       ) : !det.trial ? (
-        <EmptyState>Nhân sự này không thuộc luồng thử việc 2 cổng (Nhóm B).</EmptyState>
+        <EmptyState>Chưa xác định được luồng đánh giá cho nhân sự này. Hãy đặt
+          {' '}<b>Hình thức làm việc</b> (Online → thử giảng / Offline → thử việc 2 cổng)
+          {' '}và <b>Loại vị trí</b> trong hồ sơ; hoặc gán <b>Loại nhân sự = Giáo viên</b>
+          {' '}để dùng luồng thử giảng.</EmptyState>
       ) : null}
 
       {det.trial && (
@@ -427,7 +453,7 @@ export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
               <div className="kv"><div className="k">Điểm chuyên môn</div><div className="v mono">{det.trial.scoreContent || '—'} / 10</div></div>
             </div>
             {det.trial.note && <div style={{ marginTop: 12, fontSize: 12.5 }} className="muted">{det.trial.note}</div>}
-            {isHr && onUpdated && det.trial.result === 'draft' && (
+            {det.trial.canEval && onUpdated && det.trial.result === 'draft' && (
               <TrialAction empId={det.id} onUpdated={onUpdated} />
             )}
           </div>

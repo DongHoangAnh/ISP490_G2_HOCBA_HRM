@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- NV thường: thấy đơn của mình HOẶC đơn NV mà mình là trưởng phòng/quản lý trực tiếp -->
+    <record id="hocba_rule_offboarding_own" model="ir.rule">
+        <field name="name">Offboarding: của mình / cấp dưới trực tiếp</field>
+        <field name="model_id" ref="model_hocba_offboarding"/>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="domain_force">['|', '|',
+            ('employee_id.user_id', '=', user.id),
+            ('employee_id.department_id.manager_id.user_id', '=', user.id),
+            ('employee_id.parent_id.user_id', '=', user.id)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Giáo vụ: thấy đơn của giáo viên -->
+    <record id="hocba_rule_offboarding_giaovu" model="ir.rule">
+        <field name="name">Offboarding: giáo vụ xem giáo viên</field>
+        <field name="model_id" ref="model_hocba_offboarding"/>
+        <field name="groups" eval="[(4, ref('group_hocba_giaovu'))]"/>
+        <field name="domain_force">[('employee_id.x_employee_type_id.code', '=', 'teacher')]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- HR user/manager: thấy tất cả -->
+    <record id="hocba_rule_offboarding_hr" model="ir.rule">
+        <field name="name">Offboarding: HR xem tất cả</field>
+        <field name="model_id" ref="model_hocba_offboarding"/>
+        <field name="groups" eval="[(4, ref('hr.group_hr_user'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+</odoo>

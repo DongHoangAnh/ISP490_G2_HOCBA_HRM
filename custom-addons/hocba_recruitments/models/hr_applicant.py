@@ -1,4 +1,6 @@
-﻿from odoo import fields, models
+﻿from markupsafe import Markup
+
+from odoo import api, fields, models
 
 
 class HrApplicantHocBaExt(models.Model):
@@ -40,6 +42,59 @@ class HrApplicantHocBaExt(models.Model):
     start_date = fields.Date(string='Ngày nhận việc')
     offer_note = fields.Text(string='Ghi chú offer')
     candidate_confirmed = fields.Char(string='UV xác nhận mail', help='VD: Đã xác nhận, Đã phản hồi')
+
+    # ── Tự động ngừng đăng khi tuyển đủ chỉ tiêu ─────────────────────────────
+    # Ứng viên vào stage "Đã tuyển" (hired_stage) qua bất kỳ đường nào (kéo
+    # kanban SPA, backend Odoo, import) đều đi qua write/create → kiểm chỉ tiêu.
+
+    def write(self, vals):
+        res = super().write(vals)
+        if vals.get('stage_id'):
+            stage = self.env['hr.recruitment.stage'].browse(vals['stage_id'])
+            if stage.hired_stage:
+                self._hb_auto_close_if_filled()
+        return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        recs = super().create(vals_list)
+        hired = recs.filtered(lambda a: a.stage_id.hired_stage)
+        if hired:
+            hired._hb_auto_close_if_filled()
+        return recs
+
+    def _hb_auto_close_if_filled(self):
+        """Job đã tuyển đủ → tự Ngừng đăng + đóng phiếu đang tuyển.
+
+        Core Odoo 19 coi no_of_recruitment là số CÒN THIẾU: tự trừ 1 khi
+        applicant vào stage hired, cộng lại khi kéo ra (hr_recruitment,
+        hr_applicant.write). Vì hook này chạy SAU super().write() nên
+        no_of_recruitment đã được core trừ → đủ chỉ tiêu ⇔ còn thiếu <= 0."""
+        Applicant = self.env['hr.applicant'].sudo().with_context(active_test=False)
+        Request = self.env['hb.recruitment.request'].sudo()
+        for job in self.sudo().mapped('job_id'):
+            if not job or job.no_of_recruitment > 0:
+                continue
+            if job.recruitment_status == 'stopped':
+                continue
+            hired = Applicant.search_count([
+                ('job_id', '=', job.id),
+                ('stage_id.hired_stage', '=', True),
+            ])
+            vals = {'recruitment_status': 'stopped', 'x_published': False}
+            # website_hr_recruitment có thể không cài (vd DB test local)
+            if 'is_published' in job._fields:
+                vals['is_published'] = False
+            job.sudo().write(vals)
+            reqs = Request.search([
+                ('job_id', '=', job.id), ('state', '=', 'recruiting')])
+            if reqs:
+                reqs.write({'state': 'closed'})
+            job.sudo().message_post(body=Markup(
+                '<p>Đã tuyển đủ chỉ tiêu (<b>%s</b> ứng viên nhận việc) — hệ thống '
+                'tự <b>Ngừng đăng tuyển</b>%s.</p>') % (
+                    hired,
+                    (' và đóng %s phiếu yêu cầu' % len(reqs)) if reqs else ''))
 
     # ── Sheet 7.7 — Mail mẫu ─────────────────────────────────────────────────
     def _open_mail_compose_with_template(self, template_xmlid):

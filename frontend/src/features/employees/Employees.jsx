@@ -2,15 +2,18 @@
    Màn Nhân viên — MẪU CHUẨN cho cả team (dữ liệu thật từ
    hocba_employees qua /hocba-hrm/api/*). Owner: Tân.
    ============================================================ */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchEmployees } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
+import Pagination from '../../components/Pagination';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, hbTypeKind } from '../../utils/format';
 import EmployeeDrawer from './EmployeeDrawer';
 import EmployeeForm from './EmployeeForm';
+
+const PAGE_SIZE = 20;
 
 export default function Employees({ search }) {
   const [data, setData] = useState(null);
@@ -21,12 +24,21 @@ export default function Employees({ search }) {
   const [sel, setSel] = useState(null);
   const [vmode, setVmode] = useState('table');
   const [creating, setCreating] = useState(false);
+  const [page, setPage] = useState(1);
+  // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi có sửa mới refresh ngầm.
+  const dirtyRef = useRef(false);
 
   const load = () => {
     setErr(null); setData(null);
     fetchEmployees().then(setData).catch((e) => setErr(e.message));
   };
+  // Làm mới ngầm: không xoá data hiện có → không chớp màn "Đang tải…".
+  const reloadQuiet = () => {
+    fetchEmployees().then(setData).catch((e) => setErr(e.message));
+  };
   useEffect(load, []);
+  // Đổi bộ lọc / từ khoá → quay về trang 1.
+  useEffect(() => { setPage(1); }, [dep, status, type, search]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải dữ liệu nhân sự…" />;
@@ -46,6 +58,11 @@ export default function Employees({ search }) {
     }
     return true;
   });
+
+  const total = filtered.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const curPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
   return (
     <div className="content fade-in">
@@ -102,7 +119,7 @@ export default function Employees({ search }) {
                 <th></th>
               </tr></thead>
               <tbody>
-                {filtered.map((e) => (
+                {pageRows.map((e) => (
                   <tr key={e.id} onClick={() => setSel(e)}>
                     <td>
                       <div className="cell-emp">
@@ -128,10 +145,12 @@ export default function Employees({ search }) {
             </table>
           </div>
           {filtered.length === 0 && <EmptyState>Không tìm thấy nhân viên phù hợp.</EmptyState>}
+          <Pagination page={curPage} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
         </div>
       ) : (
+        <>
         <div className="grid-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))' }}>
-          {filtered.map((e) => (
+          {pageRows.map((e) => (
             <div key={e.id} className="card" style={{ padding: 18, cursor: 'pointer' }} onClick={() => setSel(e)}>
               <div style={{ display: 'flex', gap: 13, alignItems: 'center' }}>
                 <Avatar emp={e} size={48} />
@@ -150,9 +169,14 @@ export default function Employees({ search }) {
           ))}
           {filtered.length === 0 && <EmptyState>Không tìm thấy nhân viên phù hợp.</EmptyState>}
         </div>
+        <Pagination page={curPage} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+        </>
       )}
 
-      {sel && <EmployeeDrawer emp={sel} onClose={() => { setSel(null); load(); }} isHr={data.isHr} isMgr={data.isHrManager} />}
+      {sel && <EmployeeDrawer emp={sel}
+        onClose={() => { setSel(null); if (dirtyRef.current) { dirtyRef.current = false; reloadQuiet(); } }}
+        onChanged={() => { dirtyRef.current = true; }}
+        isHr={data.isHr} isMgr={data.isHrManager} />}
       {creating && (
         <EmployeeForm emp={null} isMgr={data.isHrManager}
           onClose={() => setCreating(false)}

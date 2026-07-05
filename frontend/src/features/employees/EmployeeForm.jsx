@@ -28,7 +28,7 @@ function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 12, paddingBottom: 7, borderBottom: '1px solid var(--border)', color: 'var(--red-700)' }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>{children}</div>
+      <div className="form-grid">{children}</div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import Recruitment from '../features/recruitment/Recruitment';
 import Accounts from '../features/accounts/Accounts';
 import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
+import Offboarding from '../features/offboarding/Offboarding';
 import Payroll from '../features/payroll/Payroll';
 import { LoadingState, ErrorState } from '../components/states';
 import Login from '../features/auth/Login';
@@ -65,6 +66,7 @@ export default function App() {
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
         {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
+        {view === 'offboarding' && <Offboarding search={search} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}

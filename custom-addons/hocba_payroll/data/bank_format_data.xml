@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
+        <!-- Formatter configs -->
+
         <!-- Vietcombank -->
         <record id="bank_format_vcb" model="hb.bank.format">
             <field name="name">Vietcombank</field>
@@ -11,6 +13,7 @@
             <field name="file_extension">xlsx</field>
             <field name="account_format_regex">^\d{10,14}$</field>
             <field name="description_template">Luong T{month}/{year} - {employee_code}</field>
+            <field name="transfer_type">normal</field>
         </record>
 
         <!-- Techcombank -->
@@ -23,6 +26,1060 @@
             <field name="file_extension">xlsx</field>
             <field name="account_format_regex">^\d{14}$</field>
             <field name="description_template">Luong T{month}/{year} - {employee_code}</field>
+            <field name="transfer_type">normal</field>
+        </record>
+
+        <!-- MB Bank (eMB_BulkPayment) -->
+        <record id="bank_format_mb" model="hb.bank.format">
+            <field name="name">MB Bank</field>
+            <field name="code">MB</field>
+            <field name="sequence">5</field>
+            <field name="formatter_class">MBBankFormatter</field>
+            <field name="encoding">utf-8</field>
+            <field name="file_extension">xlsx</field>
+            <field name="account_format_regex">^[A-Za-z0-9]{6,24}$</field>
+            <field name="description_template">Hoc Ba thanh toan luong T{month}-{year}</field>
+            <field name="transfer_type">normal</field>
+        </record>
+
+        <!-- Danh sach ngan hang tham chieu -->
+        <record id="mb_bank_entry_1" model="hb.bank.format">
+            <field name="sequence">110</field>
+            <field name="name">MB - Ngan hang TMCP Quan Doi</field>
+            <field name="code">MB</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_2" model="hb.bank.format">
+            <field name="sequence">120</field>
+            <field name="name">BANGKOK - Ngan hang Bangkok Bank tai Viet Nam CN TP HCM</field>
+            <field name="code">BANGKOK</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_3" model="hb.bank.format">
+            <field name="sequence">130</field>
+            <field name="name">BIDC - Ngan hang Dau Tu va Phat trien Campuchia tai Viet Nam CN TP HCM</field>
+            <field name="code">BIDC</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_4" model="hb.bank.format">
+            <field name="sequence">140</field>
+            <field name="name">BNP PARIBAS - Ngan hang BNP Paribas tai Viet Nam CN TP HCM</field>
+            <field name="code">BNP PARIBAS</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_5" model="hb.bank.format">
+            <field name="sequence">150</field>
+            <field name="name">CCB - Ngan hang China Construction Bank tai Viet Nam CN TP HCM</field>
+            <field name="code">CCB</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_6" model="hb.bank.format">
+            <field name="sequence">160</field>
+            <field name="name">CHINA - Ngan hang Bank Of China tai Viet Nam CN TP HCM</field>
+            <field name="code">CHINA</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_7" model="hb.bank.format">
+            <field name="sequence">170</field>
+            <field name="name">CHINATRUST - Ngan hang Chinatrust Commercial Bank (Dai Loan) tai Viet Nam CN TP HCM</field>
+            <field name="code">CHINATRUST</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_8" model="hb.bank.format">
+            <field name="sequence">180</field>
+            <field name="name">CHINESE - Ngan hang Oversea-Chinese Banking Corp (OCBC) tai Viet Nam CN TP HCM</field>
+            <field name="code">CHINESE</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_9" model="hb.bank.format">
+            <field name="sequence">190</field>
+            <field name="name">CIMB - Ngan hang TNHH MTV CIMB tai Viet Nam CN Ha Noi</field>
+            <field name="code">CIMB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_10" model="hb.bank.format">
+            <field name="sequence">200</field>
+            <field name="name">CIMB - Ngan hang TNHH MTV CIMB tai Viet Nam CN TP HCM</field>
+            <field name="code">CIMB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_11" model="hb.bank.format">
+            <field name="sequence">210</field>
+            <field name="name">CITIBANK - Ngan hang Citibank tai Viet Nam CN Ha Noi</field>
+            <field name="code">CITIBANK</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_12" model="hb.bank.format">
+            <field name="sequence">220</field>
+            <field name="name">CITIBANK - Ngan hang Citibank tai Viet Nam CN TP HCM</field>
+            <field name="code">CITIBANK</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_13" model="hb.bank.format">
+            <field name="sequence">230</field>
+            <field name="name">COMERCIAL - Ngan hang First Commercial Bank CN Ha Noi</field>
+            <field name="code">COMERCIAL</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_14" model="hb.bank.format">
+            <field name="sequence">240</field>
+            <field name="name">COMMUNICATION - Ngan hang Bank Of Communications tai Viet Nam CN TP HCM</field>
+            <field name="code">COMMUNICATION</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_15" model="hb.bank.format">
+            <field name="sequence">250</field>
+            <field name="name">DBS - Ngan hang DBS Bank Limited tai Viet Nam CN TP HCM</field>
+            <field name="code">DBS</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_16" model="hb.bank.format">
+            <field name="sequence">260</field>
+            <field name="name">DEUTSCHE - Ngan hang Deutsche Bank tai Viet Nam CN TP HCM</field>
+            <field name="code">DEUTSCHE</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_17" model="hb.bank.format">
+            <field name="sequence">270</field>
+            <field name="name">ESUN - Ngan hang E.Sun Commercial Bank (Dai Loan) tai Viet Nam CN Dong Nai</field>
+            <field name="code">ESUN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_18" model="hb.bank.format">
+            <field name="sequence">280</field>
+            <field name="name">HLB - Ngan hang Hong Leong Viet Nam CN Binh Duong</field>
+            <field name="code">HLB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_19" model="hb.bank.format">
+            <field name="sequence">290</field>
+            <field name="name">HLB - Ngan hang Hong Leong Viet Nam CN Ha Noi</field>
+            <field name="code">HLB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_20" model="hb.bank.format">
+            <field name="sequence">300</field>
+            <field name="name">HLB - Ngan hang Hong Leong Viet Nam Hoi so chinh</field>
+            <field name="code">HLB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_21" model="hb.bank.format">
+            <field name="sequence">310</field>
+            <field name="name">HLB - Ngan hang Hong Leong Viet Nam So giao dich</field>
+            <field name="code">HLB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_22" model="hb.bank.format">
+            <field name="sequence">320</field>
+            <field name="name">HSBC - Ngan hang TNHH MTV HSBC (Viet Nam)</field>
+            <field name="code">HSBC</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_23" model="hb.bank.format">
+            <field name="sequence">330</field>
+            <field name="name">HUA NAN - Ngan hang Hua Nan Commercial Bank, Ltd (Dai Loan) tai Viet Nam CN TP HCM</field>
+            <field name="code">HUA NAN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_24" model="hb.bank.format">
+            <field name="sequence">340</field>
+            <field name="name">IBK - Ngan hang Industrial Bank Of Korea (Han Quoc) tai Viet Nam CN Ha Noi</field>
+            <field name="code">IBK</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_25" model="hb.bank.format">
+            <field name="sequence">350</field>
+            <field name="name">ICBC - Ngan hang Industrial and Commercial Bank of China Limited tai Viet Nam CN Ha Noi</field>
+            <field name="code">ICBC</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_26" model="hb.bank.format">
+            <field name="sequence">360</field>
+            <field name="name">INDIA - Ngan hang Bank Of India (An Do) tai Viet Nam CN TP HCM</field>
+            <field name="code">INDIA</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_27" model="hb.bank.format">
+            <field name="sequence">370</field>
+            <field name="name">KOOKMIN - Ngan hang Kookmin Bank (Han Quoc) tai Viet Nam CN TP HCM</field>
+            <field name="code">KOOKMIN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_28" model="hb.bank.format">
+            <field name="sequence">380</field>
+            <field name="name">KOREA - Ngan hang KEB HANA (Han Quoc) tai Viet Nam CN Ha Noi</field>
+            <field name="code">KOREA</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_29" model="hb.bank.format">
+            <field name="sequence">390</field>
+            <field name="name">MAYBANK - Ngan hang Maybank tai Viet Nam CN Ha Noi</field>
+            <field name="code">MAYBANK</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_30" model="hb.bank.format">
+            <field name="sequence">400</field>
+            <field name="name">MCB - Ngan hang JP Morgan Chase Bank (My) tai Viet Nam CN TP HCM</field>
+            <field name="code">MCB</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_31" model="hb.bank.format">
+            <field name="sequence">410</field>
+            <field name="name">MIZUHO - Ngan hang Mizuho tai Viet Nam CN Ha Noi</field>
+            <field name="code">MIZUHO</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_32" model="hb.bank.format">
+            <field name="sequence">420</field>
+            <field name="name">MIZUHO - Ngan hang Mizuho tai Viet Nam CN TP HCM</field>
+            <field name="code">MIZUHO</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_33" model="hb.bank.format">
+            <field name="sequence">430</field>
+            <field name="name">NATIXIS - Ngan hang Natixis Banque BPCE (Phap) tai Viet Nam CN TP HCM</field>
+            <field name="code">NATIXIS</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_34" model="hb.bank.format">
+            <field name="sequence">440</field>
+            <field name="name">Nong Hyup - Ngan hang Nonghyup Bank CN Ha Noi</field>
+            <field name="code">Nong Hyup</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_35" model="hb.bank.format">
+            <field name="sequence">450</field>
+            <field name="name">SHANGHAI - Ngan hang The Shanghai Commercial And Savings tai Viet Nam CN Dong Nai</field>
+            <field name="code">SHANGHAI</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_36" model="hb.bank.format">
+            <field name="sequence">460</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN An Dong</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_37" model="hb.bank.format">
+            <field name="sequence">470</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Bac Ninh</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_38" model="hb.bank.format">
+            <field name="sequence">480</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Bien Hoa</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_39" model="hb.bank.format">
+            <field name="sequence">490</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Biinh Duong</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_40" model="hb.bank.format">
+            <field name="sequence">500</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Binh Duong NewCity</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_41" model="hb.bank.format">
+            <field name="sequence">510</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Hai Phong</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_42" model="hb.bank.format">
+            <field name="sequence">520</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Bac Sai Gon</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_43" model="hb.bank.format">
+            <field name="sequence">530</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Da Nang</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_44" model="hb.bank.format">
+            <field name="sequence">540</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Dong Nai</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_45" model="hb.bank.format">
+            <field name="sequence">550</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Dong Sai Gon</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_46" model="hb.bank.format">
+            <field name="sequence">560</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Go Vap</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_47" model="hb.bank.format">
+            <field name="sequence">570</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Ha Nam</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_48" model="hb.bank.format">
+            <field name="sequence">580</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Ha Noi</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_49" model="hb.bank.format">
+            <field name="sequence">590</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Hoan Kiem</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_50" model="hb.bank.format">
+            <field name="sequence">600</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Le Thai To</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_51" model="hb.bank.format">
+            <field name="sequence">610</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Pham Hung</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_52" model="hb.bank.format">
+            <field name="sequence">620</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Phu My Hung</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_53" model="hb.bank.format">
+            <field name="sequence">630</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Sai Gon</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_54" model="hb.bank.format">
+            <field name="sequence">640</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Song Than</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_55" model="hb.bank.format">
+            <field name="sequence">650</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Tan Binh</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_56" model="hb.bank.format">
+            <field name="sequence">660</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Thai Nguyen</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_57" model="hb.bank.format">
+            <field name="sequence">670</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN TP HCM</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_58" model="hb.bank.format">
+            <field name="sequence">680</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Tran Duy Hung</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_59" model="hb.bank.format">
+            <field name="sequence">690</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam CN Vinh Phuc</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_60" model="hb.bank.format">
+            <field name="sequence">700</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam Hoi So Chinh</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_61" model="hb.bank.format">
+            <field name="sequence">710</field>
+            <field name="name">SIAM - Ngan hang Commercial Siam Bank tai Viet Nam CN TP HCM</field>
+            <field name="code">SIAM</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_62" model="hb.bank.format">
+            <field name="sequence">720</field>
+            <field name="name">SMBC - Ngan hang Sumitomo Mitsui Banking Corporation (SMBC) tai Viet Nam CN Ha Noi</field>
+            <field name="code">SMBC</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_63" model="hb.bank.format">
+            <field name="sequence">730</field>
+            <field name="name">SMBC - Ngan hang Sumitomo Mitsui Banking Corporation (SMBC) tai Viet Nam CN TP HCM</field>
+            <field name="code">SMBC</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_64" model="hb.bank.format">
+            <field name="sequence">740</field>
+            <field name="name">STANDARDCHARTERED - Ngan hang Standard Chartered tai Viet Nam CN Le Dai Hanh</field>
+            <field name="code">STANDARDCHARTERED</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_65" model="hb.bank.format">
+            <field name="sequence">750</field>
+            <field name="name">STANDARDCHARTERED - Ngan hang Standard Chartered tai Viet Nam CN Quan 7</field>
+            <field name="code">STANDARDCHARTERED</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_66" model="hb.bank.format">
+            <field name="sequence">760</field>
+            <field name="name">STANDARDCHARTERED - Ngan hang Standard Chartered tai Viet Nam CN TP HCM</field>
+            <field name="code">STANDARDCHARTERED</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_67" model="hb.bank.format">
+            <field name="sequence">770</field>
+            <field name="name">STANDARDCHARTERED - Ngan hang Standard Chartered tai Viet Nam Hoi so chinh</field>
+            <field name="code">STANDARDCHARTERED</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_68" model="hb.bank.format">
+            <field name="sequence">780</field>
+            <field name="name">STANDARDCHARTERED - Ngan hang Standard Chartered tai Viet Nam So giao dich Ha Noi</field>
+            <field name="code">STANDARDCHARTERED</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_69" model="hb.bank.format">
+            <field name="sequence">790</field>
+            <field name="name">SinoPac - Ngan hang Bank Sinopac (Dai Loan) tai Viet Nam CN TP HCM</field>
+            <field name="code">SinoPac</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_70" model="hb.bank.format">
+            <field name="sequence">800</field>
+            <field name="name">TAIPEI - Ngan hang Taipei Fubon Commercial Bank Co Ltd CN TP HCM</field>
+            <field name="code">TAIPEI</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_71" model="hb.bank.format">
+            <field name="sequence">810</field>
+            <field name="name">TokyoMitsubishiHN - Ngan hang MUFG Bank tai Viet Nam CN Ha Noi</field>
+            <field name="code">TokyoMitsubishiHN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_72" model="hb.bank.format">
+            <field name="sequence">820</field>
+            <field name="name">UOB - Ngan hang United Overseas tai Viet Nam Hoi so CN TP HCM</field>
+            <field name="code">UOB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_73" model="hb.bank.format">
+            <field name="sequence">830</field>
+            <field name="name">KOREA - Ngan hang KEB Hana CN TP HCM</field>
+            <field name="code">KOREA</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_74" model="hb.bank.format">
+            <field name="sequence">840</field>
+            <field name="name">MAYBANK - Ngan hang Malayan Banking Berhad CN TP HCM</field>
+            <field name="code">MAYBANK</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_75" model="hb.bank.format">
+            <field name="sequence">850</field>
+            <field name="name">MegaICBC - Ngan hang Mega International Commercial Bank Co., Ltd tai Viet Nam CN TP HCM</field>
+            <field name="code">MegaICBC</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_76" model="hb.bank.format">
+            <field name="sequence">860</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Binh Duong</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_77" model="hb.bank.format">
+            <field name="sequence">870</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Cau Giay</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_78" model="hb.bank.format">
+            <field name="sequence">880</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Cho Lon</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_79" model="hb.bank.format">
+            <field name="sequence">890</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Da Nang</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_80" model="hb.bank.format">
+            <field name="sequence">900</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Dong Nai</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_81" model="hb.bank.format">
+            <field name="sequence">910</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Ha Dong</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_82" model="hb.bank.format">
+            <field name="sequence">920</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Ha Noi</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_83" model="hb.bank.format">
+            <field name="sequence">930</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Hai Phong</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_84" model="hb.bank.format">
+            <field name="sequence">940</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Phu Nhuan</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_85" model="hb.bank.format">
+            <field name="sequence">950</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Tan Binh</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_86" model="hb.bank.format">
+            <field name="sequence">960</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Thanh Khe</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_87" model="hb.bank.format">
+            <field name="sequence">970</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Thanh Xuan</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_88" model="hb.bank.format">
+            <field name="sequence">980</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN TP HCM</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_89" model="hb.bank.format">
+            <field name="sequence">990</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam Hoi so chinh</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_90" model="hb.bank.format">
+            <field name="sequence">1000</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam CN Phu My Hung</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_91" model="hb.bank.format">
+            <field name="sequence">1010</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam Hoi so chinh</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_92" model="hb.bank.format">
+            <field name="sequence">1020</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Bac Ninh</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_93" model="hb.bank.format">
+            <field name="sequence">1030</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Bien Hoa</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_94" model="hb.bank.format">
+            <field name="sequence">1040</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Binh Duong</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_95" model="hb.bank.format">
+            <field name="sequence">1050</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Da Nang</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_96" model="hb.bank.format">
+            <field name="sequence">1060</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Dong Nai</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_97" model="hb.bank.format">
+            <field name="sequence">1070</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Ha Nam</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_98" model="hb.bank.format">
+            <field name="sequence">1080</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Hai Phong</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_99" model="hb.bank.format">
+            <field name="sequence">1090</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Hoan Kiem Ha Noi</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_100" model="hb.bank.format">
+            <field name="sequence">1100</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Thai Nguyen</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_101" model="hb.bank.format">
+            <field name="sequence">1110</field>
+            <field name="name">BIDC - Ngan hang Dau Tu va Phat trien Campuchia tai Viet Nam CN Ha Noi</field>
+            <field name="code">BIDC</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_102" model="hb.bank.format">
+            <field name="sequence">1120</field>
+            <field name="name">Busan - Ngan hang Busan (Han Quoc) tai Viet Nam CN TP HCM</field>
+            <field name="code">Busan</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_103" model="hb.bank.format">
+            <field name="sequence">1130</field>
+            <field name="name">BNP PARIBAS - Ngan hang BNP Paribas tai Viet Nam CN Ha Noi</field>
+            <field name="code">BNP PARIBAS</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_104" model="hb.bank.format">
+            <field name="sequence">1140</field>
+            <field name="name">COMERCIAL - Ngan hang First Commercial Bank CN TP HCM</field>
+            <field name="code">COMERCIAL</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_105" model="hb.bank.format">
+            <field name="sequence">1150</field>
+            <field name="name">HLB - Ngan hang Hong Leong Viet Nam PGD Cho Lon</field>
+            <field name="code">HLB</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_106" model="hb.bank.format">
+            <field name="sequence">1160</field>
+            <field name="name">IBK - Ngan hang Industrial Bank Of Korea (Han Quoc) tai Viet Nam CN TP HCM</field>
+            <field name="code">IBK</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_107" model="hb.bank.format">
+            <field name="sequence">1170</field>
+            <field name="name">KOOKMIN - Ngan hang Kookmin Bank (Han Quoc) tai Viet Nam CN Ha Noi</field>
+            <field name="code">KOOKMIN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_108" model="hb.bank.format">
+            <field name="sequence">1180</field>
+            <field name="name">TokyoMitsubishiHCM - Ngan hang MUFG Bank tai Viet Nam CN TP HCM</field>
+            <field name="code">TokyoMitsubishiHCM</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_109" model="hb.bank.format">
+            <field name="sequence">1190</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam PGD Hoang Mai</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_110" model="hb.bank.format">
+            <field name="sequence">1200</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam PGD Giang Vo</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_111" model="hb.bank.format">
+            <field name="sequence">1210</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam PGD Pham Ngoc Thach</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_112" model="hb.bank.format">
+            <field name="sequence">1220</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam PGD Le Quang Dinh</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_113" model="hb.bank.format">
+            <field name="sequence">1230</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam PGD Hoa Binh</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_114" model="hb.bank.format">
+            <field name="sequence">1240</field>
+            <field name="name">VID - Ngan hang Public Bank Viet Nam PGD Nguyen Thi Thap</field>
+            <field name="code">VID</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_115" model="hb.bank.format">
+            <field name="sequence">1250</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Trang Due</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_116" model="hb.bank.format">
+            <field name="sequence">1260</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD My Dinh</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_117" model="hb.bank.format">
+            <field name="sequence">1270</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Ha Dong</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_118" model="hb.bank.format">
+            <field name="sequence">1280</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Royal City</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_119" model="hb.bank.format">
+            <field name="sequence">1290</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Cau Giay</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_120" model="hb.bank.format">
+            <field name="sequence">1300</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Quan 7</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_121" model="hb.bank.format">
+            <field name="sequence">1310</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Phu Nhuan</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_122" model="hb.bank.format">
+            <field name="sequence">1320</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Central Park</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_123" model="hb.bank.format">
+            <field name="sequence">1330</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Quan 11</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_124" model="hb.bank.format">
+            <field name="sequence">1340</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Quan 10</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_125" model="hb.bank.format">
+            <field name="sequence">1350</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Tan Binh</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_126" model="hb.bank.format">
+            <field name="sequence">1360</field>
+            <field name="name">SHBVN - Ngan hang TNHH MTV SHINHAN Viet Nam PGD Nam Sai Gon</field>
+            <field name="code">SHBVN</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_127" model="hb.bank.format">
+            <field name="sequence">1370</field>
+            <field name="name">TAIPEI - Ngan hang Taipei Fubon Commercial Bank Co Ltd CN Ha Noi</field>
+            <field name="code">TAIPEI</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_128" model="hb.bank.format">
+            <field name="sequence">1380</field>
+            <field name="name">TAIPEI - Ngan hang Taipei Fubon Commercial Bank Co Ltd CN Binh Duong</field>
+            <field name="code">TAIPEI</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_129" model="hb.bank.format">
+            <field name="sequence">1390</field>
+            <field name="name">UOB - Ngan hang United Overseas tai Viet Nam CN Ha Noi</field>
+            <field name="code">UOB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_130" model="hb.bank.format">
+            <field name="sequence">1400</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN TP HCM</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_131" model="hb.bank.format">
+            <field name="sequence">1410</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Sai Gon</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_132" model="hb.bank.format">
+            <field name="sequence">1420</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam CN Vinh Phuc</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_133" model="hb.bank.format">
+            <field name="sequence">1430</field>
+            <field name="name">Woori - Ngan hang Woori Bank tai Viet Nam PGD Phu My Hung</field>
+            <field name="code">Woori</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_134" model="hb.bank.format">
+            <field name="sequence">1440</field>
+            <field name="name">TCB - Ngan hang TMCP Ky Thuong Viet Nam</field>
+            <field name="code">TCB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_135" model="hb.bank.format">
+            <field name="sequence">1450</field>
+            <field name="name">ABBANK - Ngan hang TMCP An Binh</field>
+            <field name="code">ABBANK</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_136" model="hb.bank.format">
+            <field name="sequence">1460</field>
+            <field name="name">VIB - Ngan hang TMCP Quoc Te</field>
+            <field name="code">VIB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_137" model="hb.bank.format">
+            <field name="sequence">1470</field>
+            <field name="name">EIB - Ngan hang TMCP Xuat Nhap Khau Viet Nam</field>
+            <field name="code">EIB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_138" model="hb.bank.format">
+            <field name="sequence">1480</field>
+            <field name="name">MSB - Ngan hang TMCP Hang Hai Viet Nam</field>
+            <field name="code">MSB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_139" model="hb.bank.format">
+            <field name="sequence">1490</field>
+            <field name="name">SHB - Ngan hang TMCP Sai Gon - Ha Noi</field>
+            <field name="code">SHB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_140" model="hb.bank.format">
+            <field name="sequence">1500</field>
+            <field name="name">TPB - Ngan hang TMCP Tien Phong</field>
+            <field name="code">TPB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_141" model="hb.bank.format">
+            <field name="sequence">1510</field>
+            <field name="name">GPB - Ngan hang TM TNHH MTV Dau Khi Toan Cau</field>
+            <field name="code">GPB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_142" model="hb.bank.format">
+            <field name="sequence">1520</field>
+            <field name="name">HDB - Ngan hang TMCP Phat trien TP Ho Chi Minh</field>
+            <field name="code">HDB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_143" model="hb.bank.format">
+            <field name="sequence">1530</field>
+            <field name="name">MBV - Ngan hang TNHH MTV Viet Nam Hien Dai</field>
+            <field name="code">MBV</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_144" model="hb.bank.format">
+            <field name="sequence">1540</field>
+            <field name="name">BVB - Ngan hang TMCP Bao Viet</field>
+            <field name="code">BVB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_145" model="hb.bank.format">
+            <field name="sequence">1550</field>
+            <field name="name">NCB - Ngan hang TMCP Quoc Dan</field>
+            <field name="code">NCB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_146" model="hb.bank.format">
+            <field name="sequence">1560</field>
+            <field name="name">BIDV - Ngan hang TMCP Dau Tu va Phat trien Viet Nam</field>
+            <field name="code">BIDV</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_147" model="hb.bank.format">
+            <field name="sequence">1570</field>
+            <field name="name">VPB - Ngan hang TMCP Viet Nam Thinh Vuong</field>
+            <field name="code">VPB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_148" model="hb.bank.format">
+            <field name="sequence">1580</field>
+            <field name="name">VAB - Ngan hang TMCP Viet A</field>
+            <field name="code">VAB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_149" model="hb.bank.format">
+            <field name="sequence">1590</field>
+            <field name="name">OCB - Ngan hang TMCP Phuong Dong</field>
+            <field name="code">OCB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_150" model="hb.bank.format">
+            <field name="sequence">1600</field>
+            <field name="name">VIETINBANK - Ngan hang TMCP Cong Thuong Viet Nam</field>
+            <field name="code">VIETINBANK</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_151" model="hb.bank.format">
+            <field name="sequence">1610</field>
+            <field name="name">SEAB - Ngan hang TMCP Dong Nam A</field>
+            <field name="code">SEAB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_152" model="hb.bank.format">
+            <field name="sequence">1620</field>
+            <field name="name">SCB - Ngan hang TMCP Sai Gon</field>
+            <field name="code">SCB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_153" model="hb.bank.format">
+            <field name="sequence">1630</field>
+            <field name="name">LPB - Ngan hang TMCP Buu Dien Lien Viet</field>
+            <field name="code">LPB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_154" model="hb.bank.format">
+            <field name="sequence">1640</field>
+            <field name="name">DAB - Ngan hang TMCP Dong A</field>
+            <field name="code">DAB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_155" model="hb.bank.format">
+            <field name="sequence">1650</field>
+            <field name="name">NASB - Ngan hang TMCP Bac A</field>
+            <field name="code">NASB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_156" model="hb.bank.format">
+            <field name="sequence">1660</field>
+            <field name="name">VBA - Ngan hang Nong Nghiep va Phat Trien Nong Thon Viet Nam</field>
+            <field name="code">VBA</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_157" model="hb.bank.format">
+            <field name="sequence">1670</field>
+            <field name="name">SGB - Ngan hang TMCP Sai Gon Cong Thuong</field>
+            <field name="code">SGB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_158" model="hb.bank.format">
+            <field name="sequence">1680</field>
+            <field name="name">VIETBANK - Ngan hang TMCP Viet Nam Thuong Tin</field>
+            <field name="code">VIETBANK</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_159" model="hb.bank.format">
+            <field name="sequence">1690</field>
+            <field name="name">VCCB - Ngan hang TMCP Ban Viet</field>
+            <field name="code">VCCB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_160" model="hb.bank.format">
+            <field name="sequence">1700</field>
+            <field name="name">KLB - Ngan hang TMCP Kien Long</field>
+            <field name="code">KLB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_161" model="hb.bank.format">
+            <field name="sequence">1710</field>
+            <field name="name">PGB - Ngan hang TMCP Xang Dau Petrolimex</field>
+            <field name="code">PGB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_162" model="hb.bank.format">
+            <field name="sequence">1720</field>
+            <field name="name">PVC - Ngan hang TMCP Dai Chung Viet Nam</field>
+            <field name="code">PVC</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_163" model="hb.bank.format">
+            <field name="sequence">1730</field>
+            <field name="name">VRB - Ngan hang Lien Doanh Viet - Nga</field>
+            <field name="code">VRB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_164" model="hb.bank.format">
+            <field name="sequence">1740</field>
+            <field name="name">ACB - Ngan hang TMCP A Chau</field>
+            <field name="code">ACB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_165" model="hb.bank.format">
+            <field name="sequence">1750</field>
+            <field name="name">ANZ - Ngan hang TNHH MTV ANZ (Viet Nam)</field>
+            <field name="code">ANZ</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_166" model="hb.bank.format">
+            <field name="sequence">1760</field>
+            <field name="name">CCF - Ngan hang Hop Tac Xa Viet Nam</field>
+            <field name="code">CCF</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_167" model="hb.bank.format">
+            <field name="sequence">1770</field>
+            <field name="name">CSXH - Ngan hang Chinh sach Xa hoi</field>
+            <field name="code">CSXH</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_168" model="hb.bank.format">
+            <field name="sequence">1780</field>
+            <field name="name">TRUSTBANK - Ngan hang TM TNHH MTV Xay Dung</field>
+            <field name="code">TRUSTBANK</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_169" model="hb.bank.format">
+            <field name="sequence">1790</field>
+            <field name="name">VCB - Ngan hang TMCP Ngoai Thuong Viet Nam</field>
+            <field name="code">VCB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_170" model="hb.bank.format">
+            <field name="sequence">1800</field>
+            <field name="name">VDB - Ngan hang Phat trien Viet Nam</field>
+            <field name="code">VDB</field>
+            <field name="transfer_type">normal</field>
+        </record>
+        <record id="mb_bank_entry_171" model="hb.bank.format">
+            <field name="sequence">1810</field>
+            <field name="name">NAMABANK - Ngan hang TMCP Nam A</field>
+            <field name="code">NAMABANK</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_172" model="hb.bank.format">
+            <field name="sequence">1820</field>
+            <field name="name">IVB - Ngan hang TNHH Indovina</field>
+            <field name="code">IVB</field>
+            <field name="transfer_type">fast_247</field>
+        </record>
+        <record id="mb_bank_entry_173" model="hb.bank.format">
+            <field name="sequence">1830</field>
+            <field name="name">STB - Ngan hang TMCP Sai Gon Thuong Tin</field>
+            <field name="code">STB</field>
+            <field name="transfer_type">fast_247</field>
         </record>
     </data>
 </odoo>
