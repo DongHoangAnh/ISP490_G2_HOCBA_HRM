@@ -145,6 +145,10 @@ class HbRecruitmentRequest(models.Model):
                     (rec.job_id.no_of_recruitment or 0) + rec.qty_expected
                 )
                 rec.headcount_synced = True
+            # Job từng tự Ngừng tuyển (đủ chỉ tiêu) nay có phiếu mới được duyệt
+            # → mở lại trạng thái Đang tuyển; KHÔNG tự publish (HR chủ động đăng).
+            if rec.job_id and rec.job_id.recruitment_status != 'recruiting':
+                rec.job_id.recruitment_status = 'recruiting'
 
     def action_close(self):
         for rec in self:
