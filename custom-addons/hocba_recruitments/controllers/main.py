@@ -184,9 +184,16 @@ class HocBaTuyenDung(http.Controller):
 
     def _cv_row(self, a):
         """Một dòng CV cho SPA (wire format camelCase) — dùng cho cả list & detail."""
-        att = request.env['ir.attachment'].sudo().search(
+        Att = request.env['ir.attachment'].sudo()
+        att = Att.search(
             [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id),
              ('description', '=', 'hb_cv')], order='id desc', limit=1)
+        if not att:
+            # CV nộp từ form công khai /jobs/apply: website form lưu attachment
+            # thường (không nhãn hb_cv) → fallback file mới nhất của ứng viên.
+            att = Att.search(
+                [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id)],
+                order='id desc', limit=1)
         return {
             'id': a.id,
             'dateReceived': _d(a.date_received or (a.create_date and a.create_date.date())),
