@@ -2182,7 +2182,29 @@ class HocBaHRM(http.Controller):
     # ------------------------------------------------------------------
     # Offboarding — đơn thôi việc (self-service + duyệt 2 cấp)
     # ------------------------------------------------------------------
+    # Nhãn + màu badge theo trạng thái (SPA render trực tiếp, không hard-code FE)
+    OFFB_STATE_UI = {
+        'draft': ('Nháp', 'gray'),
+        'submitted': ('Chờ quản lý duyệt', 'amber'),
+        'mgr_approved': ('Chờ HR duyệt', 'blue'),
+        'hr_approved': ('Chờ hoàn tất', 'violet'),
+        'done': ('Đã nghỉ', 'gray'),
+        'refused': ('Từ chối', 'red'),
+        'cancelled': ('Đã huỷ', 'gray'),
+    }
+
     def _offb_json(self, rec):
+        # Quyền tính theo user của env gắn trên record (route browse dưới
+        # request.env nên chính là user hiện tại; test truyền env(user=...)).
+        user = rec.env.user
+        is_hr_mgr = rec.env.su or user.has_group('hr.group_hr_manager')
+        try:
+            rec._ensure_manages()
+            manages = True
+        except AccessError:
+            manages = False
+        own = rec.employee_id == user.employee_id
+        label, kind = self.OFFB_STATE_UI.get(rec.state, (rec.state, 'gray'))
         return {
             'id': rec.id, 'name': rec.name,
             'employeeId': rec.employee_id.id,
@@ -2192,9 +2214,42 @@ class HocBaHRM(http.Controller):
             'requestDate': rec.request_date and str(rec.request_date) or '',
             'expectedLeaveDate': rec.expected_leave_date
                 and str(rec.expected_leave_date) or '',
-            'state': rec.state,
+            'state': rec.state, 'stateLabel': label, 'stateKind': kind,
             'assetPending': rec.asset_pending_count,
+            'mgrApprovedBy': rec.mgr_approved_by.name or '',
+            'hrApprovedBy': rec.hr_approved_by.name or '',
+            'canMgrApprove': rec.state == 'submitted' and manages,
+            'canHrApprove': rec.state == 'mgr_approved' and is_hr_mgr,
+            'canDone': rec.state == 'hr_approved' and is_hr_mgr,
+            'canRefuse': (rec.state == 'submitted' and manages)
+                or (rec.state == 'mgr_approved' and is_hr_mgr),
+            'canCancel': rec.state in ('draft', 'submitted')
+                and (own or is_hr_mgr),
         }
+
+    def _offb_managed_employee_ids(self, env):
+        """Phạm vi NV mà user hiện tại được xử lý đơn nghỉ việc — KHỚP quyền
+        duyệt của model (_ensure_manages): HR=tất cả; trưởng phòng=phòng mình;
+        quản lý trực tiếp=cấp dưới parent_id; giáo vụ=giáo viên.
+        Không dùng _emp_scope_domain (helper chung, thiếu parent_id)."""
+        user = env.user
+        Emp = env['hr.employee'].sudo()
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return Emp.search([]).ids
+        ids = set()
+        emp = user.employee_id
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            ids.update(Emp.search([('department_id', 'in', dept_ids)]).ids)
+        if emp:
+            ids.update(Emp.search([('parent_id', '=', emp.id)]).ids)
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            ids.update(Emp.search(
+                [('x_employee_type_id.code', '=', 'teacher')]).ids)
+        ids.discard(emp.id if emp else -1)
+        return list(ids)
 
     @http.route('/hocba-hrm/api/offboarding/submit', auth='user',
                 type='http', methods=['POST'], csrf=False)
@@ -2224,20 +2279,25 @@ class HocBaHRM(http.Controller):
                 type='http', methods=['GET'], csrf=False)
     def api_offboarding_list(self, **kw):
         env = request.env
-        can_manage = _user_can_manage(env)
-        if can_manage:
-            # _emp_scope_domain: [] cho HR (mọi NV), domain phòng/giáo viên cho quản lý
-            scope_emp_ids = env['hr.employee'].sudo().search(
-                _emp_scope_domain(env)).ids
-            recs = env['hocba.offboarding'].sudo().search(
-                [('employee_id', 'in', scope_emp_ids)])
-        else:
-            emp = env.user.employee_id
-            recs = env['hocba.offboarding'].sudo().search(
-                [('employee_id', '=', emp.id if emp else -1)])
+        is_officer = _user_can_manage(env)
+        emp = env.user.employee_id
+        Off = env['hocba.offboarding'].sudo()
+        mine_ids = Off.search(
+            [('employee_id', '=', emp.id if emp else -1)]).ids
+        managed_ids = []
+        if is_officer:
+            managed_ids = Off.search([
+                ('employee_id', 'in',
+                 self._offb_managed_employee_ids(env))]).ids
+        # _offb_json tính quyền từ rec.env.user → browse dưới env user thật.
+        # Scope đã khớp record rule (own/dept/parent/teacher/HR) nên đọc không
+        # vướng ACL; nếu AccessError tức scope lệch rule — phải sửa scope.
+        Offu = env['hocba.offboarding']
         return request.make_json_response({
-            'canManage': can_manage,
-            'items': [self._offb_json(r) for r in recs],
+            'isOfficer': is_officer,
+            'isEmployee': bool(emp) and not is_officer,
+            'mine': [self._offb_json(r) for r in Offu.browse(mine_ids)],
+            'managed': [self._offb_json(r) for r in Offu.browse(managed_ids)],
         })
 
     @http.route('/hocba-hrm/api/offboarding/action', auth='user',

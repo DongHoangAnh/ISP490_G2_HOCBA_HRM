@@ -59,9 +59,13 @@ class HocbaOffboarding(models.Model):
 
     @api.depends('employee_id.x_asset_ids.state')
     def _compute_asset_pending_count(self):
+        # sudo: ACL hr.employee.asset chỉ cấp nhóm HR, nhưng NV/quản lý cần
+        # thấy SỐ ĐẾM tài sản chưa thu trên đơn trong phạm vi mình (chỉ đếm,
+        # không lộ chi tiết tài sản).
         for rec in self:
-            rec.asset_pending_count = len(rec.employee_id.x_asset_ids.filtered(
-                lambda a: a.state == 'assigned'))
+            rec.asset_pending_count = len(
+                rec.employee_id.sudo().x_asset_ids.filtered(
+                    lambda a: a.state == 'assigned'))
 
     @api.model_create_multi
     def create(self, vals_list):
