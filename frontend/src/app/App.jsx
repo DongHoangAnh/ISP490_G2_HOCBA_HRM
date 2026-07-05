@@ -24,9 +24,14 @@ export default function App() {
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
   const [focus, setFocus] = useState(null);
 
-  const openRequest = (requestId, kind) => {
-    setView('timeoff');
-    setFocus({ requestId, kind, nonce: Date.now() });
+  /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
+     đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay). */
+  const openNotification = (n) => {
+    const view = n.targetView || 'timeoff';
+    setView(view);
+    if (view === 'timeoff') {
+      setFocus({ requestId: n.targetRef, kind: n.kind, nonce: Date.now() });
+    }
   };
 
   const loadRoles = () => {
@@ -60,7 +65,7 @@ export default function App() {
     <div className="app">
       <Sidebar view={view} setView={setView} me={me} />
       <div className="main">
-        <Topbar view={view} onSearch={setSearch} me={me} onOpenRequest={openRequest} />
+        <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
