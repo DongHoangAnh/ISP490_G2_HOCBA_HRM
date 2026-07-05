@@ -106,3 +106,25 @@ class TestAutoCloseRecruitment(TransactionCase):
         self.assertEqual(self.job.recruitment_status, 'recruiting')
         self.assertEqual(self.job.no_of_recruitment, 1, 'còn thiếu = 1 từ phiếu mới')
         self.assertFalse(self.job.x_published, 'không được tự publish lại')
+
+    def test_05_publish_flag_syncs_status(self):
+        """Đổi cờ publish ở tầng model (mọi cửa) → trạng thái tuyển khớp theo."""
+        self.assertEqual(self.job.recruitment_status, 'recruiting')
+        # Ngừng đăng → Dừng tuyển
+        self.job.write({'x_published': False})
+        self.assertEqual(self.job.recruitment_status, 'stopped')
+        # Đăng lại → Đang tuyển, 2 cờ gương nhau
+        self.job.write({'x_published': True})
+        self.assertEqual(self.job.recruitment_status, 'recruiting')
+        if 'is_published' in self.job._fields:
+            self.assertTrue(self.job.is_published)
+            # Cửa website: ghi is_published cũng đồng bộ ngược
+            self.job.write({'is_published': False})
+            self.assertEqual(self.job.recruitment_status, 'stopped')
+            self.assertFalse(self.job.x_published)
+
+    def test_06_explicit_status_wins_over_sync(self):
+        """Trạng thái truyền tường minh cùng write không bị sync đè."""
+        self.job.write({'x_published': False, 'recruitment_status': 'recruiting'})
+        self.assertEqual(self.job.recruitment_status, 'recruiting')
+        self.assertFalse(self.job.x_published)
