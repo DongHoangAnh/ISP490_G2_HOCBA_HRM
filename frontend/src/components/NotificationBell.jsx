@@ -10,7 +10,8 @@ import {
 
 const POLL_MS = 60000;
 
-/* Mức thông báo → màu chấm (level do BE quyết, không phụ thuộc kind). */
+/* Mức thông báo → màu chấm (level do BE quyết, không phụ thuộc kind).
+   'lapsed' của timeoff dùng level='danger' (đỏ) — xem _KIND_LEVEL ở BE. */
 const LEVEL_DOT = {
   info: 'var(--blue,#3b82f6)', success: 'var(--green,#10b981)',
   warning: 'var(--amber,#f59e0b)', danger: 'var(--red-600,#dc2626)',

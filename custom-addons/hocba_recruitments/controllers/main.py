@@ -184,9 +184,16 @@ class HocBaTuyenDung(http.Controller):
 
     def _cv_row(self, a):
         """Một dòng CV cho SPA (wire format camelCase) — dùng cho cả list & detail."""
-        att = request.env['ir.attachment'].sudo().search(
+        Att = request.env['ir.attachment'].sudo()
+        att = Att.search(
             [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id),
              ('description', '=', 'hb_cv')], order='id desc', limit=1)
+        if not att:
+            # CV nộp từ form công khai /jobs/apply: website form lưu attachment
+            # thường (không nhãn hb_cv) → fallback file mới nhất của ứng viên.
+            att = Att.search(
+                [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id)],
+                order='id desc', limit=1)
         return {
             'id': a.id,
             'dateReceived': _d(a.date_received or (a.create_date and a.create_date.date())),
@@ -495,7 +502,8 @@ class HocBaTuyenDung(http.Controller):
             # published = trạng thái hiển thị trên WEBSITE công khai (is_published) — nguồn sự thật.
             # x_published (badge nội bộ kanban) được giữ đồng bộ khi ghi.
             'published': bool(getattr(j, 'is_published', j.x_published)),
-            'websiteUrl': '',
+            # Link trang tuyển dụng công khai (/jobs/detail/<slug>) — để copy đi truyền thông.
+            'websiteUrl': getattr(j, 'website_url', '') or '',
             'jdLink': j.jd_google_link or '',
             'expected': j.no_of_recruitment or 0,
             'hired': j.no_of_hired_employee or 0,
@@ -511,34 +519,86 @@ class HocBaTuyenDung(http.Controller):
         return data
 
     def _build_website_description(self, j):
-        """Tổng hợp TOÀN BỘ thông tin vị trí thành nội dung JD công khai (website_description),
-        để trang /jobs hiển thị đầy đủ khi đăng tuyển. Trả về Markup an toàn (đã escape)."""
+        """Tổng hợp TOÀN BỘ thông tin vị trí + phiếu yêu cầu tuyển dụng gắn với nó
+        thành nội dung JD công khai (website_description) cho trang /jobs.
+        Ưu tiên phiếu ĐANG TUYỂN mới nhất; không có thì lấy phiếu mới nhất bất kỳ.
+        Trả về Markup an toàn (đã escape)."""
         env = request.env
-        rows = []
+
+        def sel_label(rec, fname):
+            val = rec[fname]
+            if not val:
+                return ''
+            return dict(rec._fields[fname]._description_selection(env)).get(val, val)
+
+        def money(v):
+            return '{:,.0f}'.format(v).replace(',', '.')
+
+        Req = env['hb.recruitment.request'].sudo()
+        req = Req.search([('job_id', '=', j.id), ('state', '=', 'recruiting')],
+                         order='id desc', limit=1)
+        if not req:
+            req = Req.search([('job_id', '=', j.id)], order='id desc', limit=1)
+
+        # ── Thông tin tuyển dụng ─────────────────────────────────────────────
+        info = []
         if j.department_id:
-            rows.append(('Phòng ban', j.department_id.name or ''))
+            info.append(('Phòng ban', j.department_id.name or ''))
+        if req and req.level:
+            info.append(('Cấp bậc', sel_label(req, 'level')))
         if j.no_of_recruitment:
-            rows.append(('Số lượng cần tuyển', str(int(j.no_of_recruitment))))
-        if j.recruitment_status:
-            labels = dict(j._fields['recruitment_status']._description_selection(env))
-            rows.append(('Trạng thái tuyển', labels.get(j.recruitment_status, j.recruitment_status)))
+            info.append(('Số lượng cần tuyển', str(int(j.no_of_recruitment))))
+        if req and req.work_type:
+            info.append(('Hình thức làm việc', sel_label(req, 'work_type')))
+        if req:
+            # Mức lương: ưu tiên mô tả chữ, fallback khoảng số, trống → Thoả thuận
+            if req.salary_range:
+                info.append(('Mức lương', req.salary_range))
+            elif req.salary_from or req.salary_to:
+                if req.salary_from and req.salary_to:
+                    sal = '%s – %s VNĐ' % (money(req.salary_from), money(req.salary_to))
+                else:
+                    sal = 'Từ %s VNĐ' % money(req.salary_from or req.salary_to)
+                info.append(('Mức lương', sal))
+            else:
+                info.append(('Mức lương', 'Thoả thuận'))
+            if req.expected_start_date:
+                info.append(('Thời gian nhận việc dự kiến',
+                             req.expected_start_date.strftime('%d/%m/%Y')))
         if j.x_teaching_level and j.x_teaching_level != 'na':
-            tl = dict(j._fields['x_teaching_level']._description_selection(env))
-            rows.append(('Trình độ giảng dạy', tl.get(j.x_teaching_level, j.x_teaching_level)))
+            info.append(('Trình độ giảng dạy', sel_label(j, 'x_teaching_level')))
         if j.x_required_sessions_per_week:
-            rows.append(('Số buổi/tuần tối thiểu', str(int(j.x_required_sessions_per_week))))
+            info.append(('Số buổi/tuần tối thiểu', str(int(j.x_required_sessions_per_week))))
+
+        # ── Yêu cầu ứng viên (từ phiếu yêu cầu) ──────────────────────────────
+        require = []
+        if req:
+            if req.education and req.education != 'none':
+                require.append(('Bằng cấp tối thiểu', sel_label(req, 'education')))
+            if req.experience_years:
+                require.append(('Kinh nghiệm tối thiểu', '%g năm' % req.experience_years))
+            if req.language_requirement:
+                require.append(('Yêu cầu ngoại ngữ', req.language_requirement))
+            if req.skill_description:
+                require.append(('Kỹ năng yêu cầu', req.skill_description))
+
+        def ul(rows):
+            items = Markup('').join(
+                Markup('<li class="mb-1"><strong>%s:</strong> %s</li>')
+                % (k, escape(v).replace('\n', Markup('<br/>'))) for k, v in rows)
+            return Markup('<ul>%s</ul>') % items
 
         parts = []
-        if rows:
-            items = Markup('').join(
-                Markup('<li><strong>%s:</strong> %s</li>') % (k, v) for k, v in rows)
-            parts.append(Markup('<h4>Thông tin tuyển dụng</h4><ul>%s</ul>') % items)
+        if info:
+            parts.append(Markup('<h4>Thông tin tuyển dụng</h4>%s') % ul(info))
+        if require:
+            parts.append(Markup('<h4 class="mt-4">Yêu cầu ứng viên</h4>%s') % ul(require))
         if j.description:
             desc = escape(j.description).replace('\n', Markup('<br/>'))
-            parts.append(Markup('<h4>Mô tả công việc</h4><p>%s</p>') % desc)
+            parts.append(Markup('<h4 class="mt-4">Mô tả công việc</h4><p>%s</p>') % desc)
         if j.jd_google_link:
             link = j.jd_google_link
-            parts.append(Markup('<p><strong>JD chi tiết:</strong> '
+            parts.append(Markup('<p class="mt-3"><strong>JD chi tiết:</strong> '
                                 '<a href="%s" target="_blank" rel="noreferrer">%s</a></p>') % (link, link))
         if not parts:
             return False
@@ -616,6 +676,7 @@ class HocBaTuyenDung(http.Controller):
             'jobId': r.job_id.id or False,
             'jobName': r.job_id.name or '',
             'published': bool(getattr(r.job_id, 'is_published', False)) if r.job_id else False,
+            'websiteUrl': (getattr(r.job_id, 'website_url', '') or '') if r.job_id else '',
             'levelLabel': level_labels.get(r.level, '') if r.level else '',
             'jdLink': r.jd_link or '',
         } for r in reqs]
@@ -786,6 +847,8 @@ class HocBaTuyenDung(http.Controller):
             return self._forbidden('Phiếu phải thuộc phòng ban bạn quản lý.')
         try:
             r = request.env['hb.recruitment.request'].sudo().create(vals)
+            if r.job_id:
+                self._sync_website_description(r.job_id)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -809,6 +872,8 @@ class HocBaTuyenDung(http.Controller):
         try:
             if vals:
                 r.write(vals)
+            if r.job_id:
+                self._sync_website_description(r.job_id)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -839,6 +904,8 @@ class HocBaTuyenDung(http.Controller):
             if action == 'refuse' and payload.get('refuseReason'):
                 r.write({'refuse_reason': payload['refuseReason']})
             getattr(r, method)()
+            if r.job_id:
+                self._sync_website_description(r.job_id)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(

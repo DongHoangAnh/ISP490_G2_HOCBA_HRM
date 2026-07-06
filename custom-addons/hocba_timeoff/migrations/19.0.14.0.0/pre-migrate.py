@@ -20,7 +20,7 @@ def migrate(cr, version):
         SELECT n.recipient_id, 'timeoff', n.kind,
                CASE WHEN n.kind IN ('pending','withdraw_pending','sub_request','sub_returned') THEN 'warning'
                     WHEN n.kind IN ('approved','sub_accepted','withdraw_approved') THEN 'success'
-                    WHEN n.kind IN ('refused','sub_declined','sub_cancelled','withdraw_refused') THEN 'danger'
+                    WHEN n.kind IN ('refused','sub_declined','sub_cancelled','withdraw_refused','lapsed') THEN 'danger'
                     ELSE 'info' END,
                n.title, n.body, 'timeoff', n.leave_id,
                CASE WHEN n.kind LIKE 'sub_%' THEN 'sub' ELSE NULL END,

@@ -87,6 +87,11 @@ export default function ApprovalPanel({ isHrManager }) {
                     {r.overdue && (
                       <Badge kind="red">Quá hạn {r.ageDays} ngày</Badge>
                     )}
+                    {r.lapsed && (
+                      <Badge kind="red">
+                        Lỡ hạn{r.lapsed.lapsedDays > 0 ? ` ${r.lapsed.lapsedDays} ngày` : ''}
+                      </Badge>
+                    )}
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
                     {r.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
                     {r.overlapCount >= OVERLAP_WARN && (
@@ -253,6 +258,31 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
           <div className="muted" style={{ fontSize: 13 }}><b>Lý do:</b> {req.reason}</div>
         )}
 
+        {req.lapsed && (
+          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, fontSize: 12.5, color: 'var(--red-700)' }}>
+            <b>Đơn lỡ hạn duyệt{req.lapsed.lapsedDays > 0 ? ` ${req.lapsed.lapsedDays} ngày làm việc` : ''}</b>
+            {' '}— đã qua ngày bắt đầu nghỉ mà chưa được duyệt.
+            <div style={{ marginTop: 6, color: 'var(--ink)' }}>
+              {req.lapsed.exempt
+                ? 'Nghỉ buổi dạy — không đối chiếu chấm công.'
+                : req.lapsed.checkedCount === 0
+                  ? 'Chưa có ngày nghỉ nào qua để đối chiếu chấm công.'
+                  : `Đối chiếu chấm công: đi làm ${req.lapsed.workedCount}/${req.lapsed.checkedCount} ngày nghỉ đã qua.`}
+              {req.lapsed.suggestion === 'approve' && <b> Nhân viên nghỉ thật — đề xuất duyệt trễ.</b>}
+              {req.lapsed.suggestion === 'refuse' && <b> Nhân viên vẫn đi làm — đề xuất từ chối (hoàn quỹ).</b>}
+            </div>
+            {req.lapsed.dayChecks.length > 0 && (
+              <div style={{ marginTop: 6, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {req.lapsed.dayChecks.map((d) => (
+                  <Badge key={d.date} kind={d.worked ? 'amber' : 'green'}>
+                    {fmtDate(d.date)}: {d.worked ? `đi làm (${d.workCredit} công)` : 'nghỉ'}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {req.overlapCount > 0 && (
           <div style={{
             padding: '10px 13px', borderRadius: 10, fontSize: 12.5,
@@ -297,6 +327,20 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
         <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Đóng</button>
+        {req.lapsed && req.lapsed.suggestion && (
+          <button className="btn btn-soft" disabled={busy}
+            style={{ marginRight: 'auto', borderColor: 'var(--red-600)', color: 'var(--red-700)' }}
+            onClick={() => {
+              const label = req.lapsed.suggestion === 'approve'
+                ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)';
+              if (window.confirm(label + ' đơn này theo đề xuất đối chiếu chấm công?')) {
+                decide(req.lapsed.suggestion);
+              }
+            }}>
+            <Icon name="alertCircle" size={16} />
+            {req.lapsed.suggestion === 'approve' ? 'Duyệt trễ theo đề xuất' : 'Từ chối theo đề xuất'}
+          </button>
+        )}
         <button className="btn btn-soft" onClick={() => decide('refuse')} disabled={busy}>
           <Icon name="x" size={16} />Từ chối</button>
         <button className="btn btn-primary" onClick={() => decide('approve')} disabled={busy}>
