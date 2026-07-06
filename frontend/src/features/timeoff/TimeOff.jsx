@@ -14,6 +14,7 @@ import LeaveForm from './LeaveForm';
 import SubstitutionsPanel from './SubstitutionsPanel';
 import ApprovalPanel from './ApprovalPanel';
 import LapsedPanel from './LapsedPanel';
+import BurnoutPanel from './BurnoutPanel';
 import ApprovedPanel from './ApprovedPanel';
 import BalancesPanel from './BalancesPanel';
 import DashboardPanel from './DashboardPanel';
@@ -85,6 +86,7 @@ export default function TimeOff({ search, focus }) {
   if (data.isOfficer) {
     tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
               ['approvals', 'Chờ duyệt'], ['lapsed', 'Giám sát duyệt'],
+              ['health', 'Sức khỏe NV'],
               ['approved', 'Đơn đã duyệt'],
               ['balances', 'Quỹ phép']);
   } else {
@@ -147,6 +149,7 @@ export default function TimeOff({ search, focus }) {
         <ApprovalPanel isHrManager={data.isHrManager} />
       )}
       {activeTab === 'lapsed' && data.isOfficer && <LapsedPanel />}
+      {activeTab === 'health' && data.isOfficer && <BurnoutPanel />}
       {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
       {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
       {activeTab === 'substitutions' && data.employee && data.employee.isTeacher && (
