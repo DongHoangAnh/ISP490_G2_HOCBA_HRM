@@ -675,6 +675,49 @@ def _post_lapsed_decision_note(env, leave, action, info):
     )
 
 
+def _burnout_table(env, scope, dept_id=False):
+    """Bảng cảnh báo burnout (Widget 5-6, BR-040): KPI theo nhóm lý do
+    + bảng NV có cờ + đếm theo phòng. Đọc SQL view hb.timeoff.burnout.line
+    (đã sắp burnout desc, sick desc). sudo + lọc phòng ban tường minh."""
+    domain = [('burnout_risk', '=', True)] + _dept_domain(scope)
+    if dept_id:
+        domain.append(('department_id', '=', dept_id))
+    lines = env['hb.timeoff.burnout.line'].sudo().search(domain)
+
+    items, by_dept = [], {}
+    n_sick = n_absence = n_balance = 0
+    for line in lines:
+        reason = line.risk_reason or ''
+        # view trả đúng 1 lý do chính/NV → 3 nhóm cộng lại = total
+        if reason.startswith('Nghỉ ốm'):
+            n_sick += 1
+        elif reason.startswith('Vắng'):
+            n_absence += 1
+        else:
+            n_balance += 1
+        dept = line.department_id
+        row = by_dept.setdefault(dept.id or 0, {
+            'id': dept.id or False, 'name': dept.name or '—', 'count': 0})
+        row['count'] += 1
+        items.append({
+            'employeeId': line.employee_id.id,
+            'employee': line.employee_id.name,
+            'departmentId': dept.id or False,
+            'department': dept.name or '—',
+            'sickCount3m': line.sick_leave_count_3m,
+            'absenceDays3m': round(line.total_absence_days_3m, 2),
+            'remainingBalance': round(line.remaining_leave_balance, 2),
+            'riskReason': reason,
+        })
+    return {
+        'kpi': {'total': len(items), 'sickFreq': n_sick,
+                'highAbsence': n_absence, 'lowBalance': n_balance},
+        'items': items,
+        'byDepartment': sorted(by_dept.values(),
+                               key=lambda r: r['count'], reverse=True),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Nghỉ phép giáo viên — dò xung đột lịch dạy + áp dụng cách xử lý từng buổi.
 # Lịch dạy là nguồn chính trong Neon (hocba.teaching.session). Helper cấp module
