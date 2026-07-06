@@ -52,6 +52,7 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
       else setDecision(row);
     }
     onFocusConsumed && onFocusConsumed();
+    // onFocusConsumed cố ý KHÔNG nằm trong deps: arrow inline tạo mới mỗi render, đưa vào sẽ refire effect.
   }, [data, focusRequestId]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;

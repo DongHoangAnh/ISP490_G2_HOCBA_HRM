@@ -124,7 +124,7 @@ export default function TimeOff({ search, focus }) {
       <div className="tabs">
         {tabs.map(([id, l]) => (
           <button key={id} className={'tab' + (activeTab === id ? ' active' : '')}
-            onClick={() => setTab(id)}>
+            onClick={() => { setTab(id); setApprovalFocus(null); /* bấm tab tay → hủy focus deep-link còn treo */ }}>
             {l}
             {id === 'approvals' && pendingCount > 0 && (
               <span style={{ marginLeft: 6 }}><Badge kind="amber">{pendingCount}</Badge></span>
