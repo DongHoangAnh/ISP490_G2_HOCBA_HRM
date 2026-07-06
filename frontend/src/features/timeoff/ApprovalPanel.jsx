@@ -27,7 +27,7 @@ const inp = {
 // Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
 const OVERLAP_WARN = 3;
 
-export default function ApprovalPanel({ isHrManager }) {
+export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusConsumed }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
@@ -40,6 +40,19 @@ export default function ApprovalPanel({ isHrManager }) {
     fetchApprovals().then(setData).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
+
+  // Deep-link từ tab "Giám sát duyệt": mở thẳng modal xử lý của đơn được trỏ.
+  // Tiêu thụ 1 lần (onFocusConsumed) — user đóng modal thì không tự mở lại;
+  // đơn không còn trong danh sách (vừa được xử lý) → chỉ hiện tab, không modal.
+  useEffect(() => {
+    if (!data || !focusRequestId) return;
+    const row = data.requests.find((r) => r.id === focusRequestId);
+    if (row) {
+      if (row.withdrawState === 'pending') setWithdrawDecision(row);
+      else setDecision(row);
+    }
+    onFocusConsumed && onFocusConsumed();
+  }, [data, focusRequestId]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải đơn chờ duyệt…" />;

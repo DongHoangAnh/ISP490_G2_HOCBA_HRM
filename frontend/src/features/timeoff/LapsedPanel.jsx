@@ -18,7 +18,7 @@ function Kpi({ label, value, sub, color }) {
   );
 }
 
-export default function LapsedPanel() {
+export default function LapsedPanel({ onOpenApproval }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [dept, setDept] = useState('');
@@ -127,7 +127,10 @@ export default function LapsedPanel() {
                         {busy === r.requestId ? 'Đang xử lý…' : 'Xử lý theo đề xuất'}
                       </button>
                     ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>xử lý ở tab Chờ duyệt</span>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => onOpenApproval && onOpenApproval(r.requestId)}>
+                        Xử lý ở tab Chờ duyệt →
+                      </button>
                     )}
                   </td>
                 </tr>

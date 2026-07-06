@@ -33,6 +33,7 @@ export default function TimeOff({ search, focus }) {
   const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
   const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
+  const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Giám sát duyệt → mở modal ở tab Chờ duyệt
 
   const load = () => {
     setErr(null); setData(null);
@@ -146,9 +147,13 @@ export default function TimeOff({ search, focus }) {
           isTeacher={!!(data.employee && data.employee.isTeacher)} />
       )}
       {activeTab === 'approvals' && data.isOfficer && (
-        <ApprovalPanel isHrManager={data.isHrManager} />
+        <ApprovalPanel isHrManager={data.isHrManager}
+          focusRequestId={approvalFocus}
+          onFocusConsumed={() => setApprovalFocus(null)} />
       )}
-      {activeTab === 'lapsed' && data.isOfficer && <LapsedPanel />}
+      {activeTab === 'lapsed' && data.isOfficer && (
+        <LapsedPanel onOpenApproval={(id) => { setApprovalFocus(id); setTab('approvals'); }} />
+      )}
       {activeTab === 'health' && data.isOfficer && <BurnoutPanel />}
       {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
       {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
