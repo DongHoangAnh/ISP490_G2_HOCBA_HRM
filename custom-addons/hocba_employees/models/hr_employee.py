@@ -812,6 +812,23 @@ class HrEmployee(models.Model):
             title=title, body=body, target_view='employees',
             target_ref=self.id, dedup_key=dedup_key)
 
+    def _hocba_notify_reminder(self, kind, level, title, body=None,
+                               dedup_key=None, include_employee=True):
+        """Chuông nhắc hạn hồ sơ (hr_reminder) → HR (± chính NV). dedup_key để
+        cron chạy hằng ngày không nhân bản khi thông báo cũ chưa đọc."""
+        self.ensure_one()
+        users = self.env['res.users']
+        grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if grp:
+            users |= self.env['res.users'].sudo().search(
+                [('all_group_ids', 'in', grp.id), ('active', '=', True)])
+        if include_employee and self.user_id:
+            users |= self.user_id
+        self.env['hb.notification'].sudo()._notify(
+            users, category='hr_reminder', kind=kind, level=level,
+            title=title, body=body, target_view='employees',
+            target_ref=self.id, dedup_key=dedup_key)
+
     def _hocba_aut_001(self):
         """Cổng tuần-2: Đạt → cấp thiết bị + tài sản + hẹn tháng-1;
         Gia hạn → tái đánh giá; Không đạt → offboarding."""
@@ -947,6 +964,13 @@ class HrEmployee(models.Model):
             emp._hocba_gate_activity(
                 _('Chứng chỉ sắp hết hạn: %s') % ', '.join(
                     skills.mapped('skill_id.name')), deadline)
+            nearest = min(skills.mapped('x_cert_expiry'))
+            emp._hocba_notify_reminder(
+                'cert_expiry', 'warning',
+                _('Chứng chỉ sắp hết hạn: %s') % ', '.join(
+                    skills.mapped('skill_id.name')),
+                body=_('Hạn gần nhất: %s') % nearest,
+                dedup_key='cert_expiry:%s:%s' % (emp.id, nearest))
         # Đã hết hạn → ưu tiên cao
         expired = Skill.search(common + [('x_cert_expiry', '<', today)])
         for emp in expired.employee_id:
@@ -954,3 +978,27 @@ class HrEmployee(models.Model):
             emp._hocba_gate_activity(
                 _('Chứng chỉ ĐÃ HẾT HẠN: %s') % ', '.join(
                     skills.mapped('skill_id.name')), today)
+            emp._hocba_notify_reminder(
+                'cert_expired', 'danger',
+                _('Chứng chỉ ĐÃ HẾT HẠN: %s') % ', '.join(
+                    skills.mapped('skill_id.name')),
+                dedup_key='cert_expired:%s:%s' % (emp.id, today.strftime('%Y-%m')))
+
+    @api.model
+    def _cron_contract_end_alerts(self, days=30):
+        """CRON: nhắc HR khi hợp đồng NV sắp hết hạn trong <days> ngày.
+        Odoo 19: ngày hết hạn HĐ nằm ở hr.version.contract_date_end (bản version
+        hiện hành của NV = employee.version_id). Chỉ báo HR (không báo NV)."""
+        today = fields.Date.today()
+        limit = today + timedelta(days=days)
+        for emp in self.search([
+                ('active', '=', True),
+                ('version_id.contract_date_end', '>=', today),
+                ('version_id.contract_date_end', '<=', limit)]):
+            end = emp.version_id.contract_date_end
+            emp._hocba_notify_reminder(
+                'contract_end', 'warning',
+                _('Hợp đồng sắp hết hạn: %s') % emp.name,
+                body=_('Ngày hết hạn: %s') % end,
+                dedup_key='contract_end:%s:%s' % (emp.id, end),
+                include_employee=False)
