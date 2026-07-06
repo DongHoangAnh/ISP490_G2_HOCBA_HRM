@@ -151,6 +151,11 @@ class TestTimeoffBurnout(TransactionCase):
 
     def test_regular_user_has_no_approve_scope(self):
         """User thường: canApprove=False → endpoint /burnout trả 403
-        (gate nằm trong api_burnout, y hệt api_lapsed_dashboard)."""
+        (gate trong api_burnout, y hệt api_lapsed_dashboard). Phòng thủ
+        chiều sâu: helper với scope NV thường cũng trả bảng rỗng."""
         env_nv = self.env(user=self.user_a)
-        self.assertFalse(_scope_for(env_nv)['canApprove'])
+        scope = _scope_for(env_nv)
+        self.assertFalse(scope['canApprove'])
+        table = _burnout_table(env_nv, scope)
+        self.assertEqual(table['kpi']['total'], 0)
+        self.assertEqual(table['items'], [])
