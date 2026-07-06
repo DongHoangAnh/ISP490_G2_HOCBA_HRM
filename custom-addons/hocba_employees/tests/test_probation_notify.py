@@ -75,6 +75,11 @@ class TestProbationNotify(TransactionCase):
         recipients = notifs.mapped('recipient_id')
         self.assertIn(self.mgr_user, recipients)
         self.assertIn(self.emp_user, recipients)
+        # NV nhận bản trỏ 'profile' (mở được), QL trỏ 'employees'
+        emp_n = notifs.filtered(lambda n: n.recipient_id == self.emp_user)
+        mgr_n = notifs.filtered(lambda n: n.recipient_id == self.mgr_user)
+        self.assertEqual(emp_n.target_view, 'profile')
+        self.assertEqual(mgr_n.target_view, 'employees')
 
     def test_gate_extend_notifies(self):
         # Tuần-2 Đạt rồi tháng-1 Gia hạn → chuông warning cho QL + NV

@@ -796,36 +796,49 @@ class HrEmployee(models.Model):
     def _hocba_notify_probation(self, kind, level, title, body=None,
                                 dedup_key=None, include_employee=False):
         """Chuông onboarding/thử việc (hb.notification) → QL trực tiếp + HR
-        (± chính NV). dedup_key để cron nhắc-hạn không nhân bản mỗi ngày."""
+        (trỏ view quản lý 'employees'). Nếu include_employee: gửi thêm bản
+        RIÊNG cho chính NV trỏ view self-service 'profile' — NV thường không mở
+        được 'employees' nên bấm sẽ trơ. dedup_key để cron không nhân bản."""
         self.ensure_one()
-        users = self.env['res.users']
+        Notif = self.env['hb.notification'].sudo()
+        staff = self.env['res.users']
         if self.parent_id.user_id:
-            users |= self.parent_id.user_id
+            staff |= self.parent_id.user_id
         grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
         if grp:
-            users |= self.env['res.users'].sudo().search(
+            staff |= self.env['res.users'].sudo().search(
                 [('all_group_ids', 'in', grp.id), ('active', '=', True)])
         if include_employee and self.user_id:
-            users |= self.user_id
-        self.env['hb.notification'].sudo()._notify(
-            users, category='onboarding', kind=kind, level=level,
+            staff -= self.user_id  # NV nhận bản 'profile' riêng, tránh trùng
+            Notif._notify(
+                self.user_id, category='onboarding', kind=kind, level=level,
+                title=title, body=body, target_view='profile',
+                target_ref=self.id, dedup_key=dedup_key)
+        Notif._notify(
+            staff, category='onboarding', kind=kind, level=level,
             title=title, body=body, target_view='employees',
             target_ref=self.id, dedup_key=dedup_key)
 
     def _hocba_notify_reminder(self, kind, level, title, body=None,
                                dedup_key=None, include_employee=True):
-        """Chuông nhắc hạn hồ sơ (hr_reminder) → HR (± chính NV). dedup_key để
-        cron chạy hằng ngày không nhân bản khi thông báo cũ chưa đọc."""
+        """Chuông nhắc hạn hồ sơ (hr_reminder) → HR (view 'employees'). Nếu
+        include_employee: bản RIÊNG cho NV trỏ 'profile' (NV thường không mở
+        được 'employees'). dedup_key để cron hằng ngày không nhân bản."""
         self.ensure_one()
-        users = self.env['res.users']
+        Notif = self.env['hb.notification'].sudo()
+        staff = self.env['res.users']
         grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
         if grp:
-            users |= self.env['res.users'].sudo().search(
+            staff |= self.env['res.users'].sudo().search(
                 [('all_group_ids', 'in', grp.id), ('active', '=', True)])
         if include_employee and self.user_id:
-            users |= self.user_id
-        self.env['hb.notification'].sudo()._notify(
-            users, category='hr_reminder', kind=kind, level=level,
+            staff -= self.user_id  # NV nhận bản 'profile' riêng, tránh trùng
+            Notif._notify(
+                self.user_id, category='hr_reminder', kind=kind, level=level,
+                title=title, body=body, target_view='profile',
+                target_ref=self.id, dedup_key=dedup_key)
+        Notif._notify(
+            staff, category='hr_reminder', kind=kind, level=level,
             title=title, body=body, target_view='employees',
             target_ref=self.id, dedup_key=dedup_key)
 

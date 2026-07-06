@@ -50,6 +50,13 @@ class TestReminderNotify(TransactionCase):
         recips = n.mapped('recipient_id')
         self.assertIn(self.hr_user, recips)
         self.assertIn(self.emp_user, recips)  # cert: báo cả HR lẫn NV
+        # NV trỏ 'profile' (mở được), HR trỏ 'employees'
+        self.assertEqual(
+            n.filtered(lambda x: x.recipient_id == self.emp_user).target_view,
+            'profile')
+        self.assertEqual(
+            n.filtered(lambda x: x.recipient_id == self.hr_user).target_view,
+            'employees')
         hr_before = len(n.filtered(lambda x: x.recipient_id == self.hr_user))
         # dedup: chạy lần 2 không nhân bản
         self.Emp._cron_cert_expiry_alerts()
