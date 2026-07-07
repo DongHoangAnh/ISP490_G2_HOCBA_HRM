@@ -7,6 +7,7 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchDashboard } from '../../api/timeoff';
+import Kpi from './Kpi';
 
 const THIS_YEAR = new Date().getFullYear();
 
@@ -38,16 +39,6 @@ export default function DashboardPanel() {
   return data.isManager
     ? <ManagerView data={data} year={year} dept={dept} setDept={setDept} nav={nav} />
     : <EmployeeView data={data} nav={nav} />;
-}
-
-function Kpi({ label, value, sub, color }) {
-  return (
-    <div className="card" style={{ padding: '16px 18px' }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
-    </div>
-  );
 }
 
 function BarList({ rows, unit = 'ngày', onEmpty = 'Chưa có dữ liệu.' }) {

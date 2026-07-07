@@ -10,6 +10,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { downloadXlsx } from '../../utils/xlsx';
 import { fetchBalances, adjustQuota, fetchAdjustHistory } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
+import Kpi from './Kpi';
 
 /* Datetime ISO (UTC từ Odoo) → "dd/mm/yyyy HH:MM". */
 function fmtDateTime(s) {
@@ -339,15 +340,5 @@ function HistoryModal({ row, onClose }) {
         <button className="btn btn-ghost" onClick={onClose}>Đóng</button>
       </div>
     </Modal>
-  );
-}
-
-function Kpi({ label, value, sub, color }) {
-  return (
-    <div className="card" style={{ padding: '16px 18px' }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
-    </div>
   );
 }

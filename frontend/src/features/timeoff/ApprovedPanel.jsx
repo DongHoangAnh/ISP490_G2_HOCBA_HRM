@@ -8,6 +8,7 @@ import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchApproved } from '../../api/timeoff';
+import Kpi from './Kpi';
 import { downloadXlsx } from '../../utils/xlsx';
 import SortBar, { sortRows } from './SortBar';
 import HistoryTimeline from './HistoryTimeline';
@@ -216,16 +217,6 @@ function Row({ label, children }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>{label}</span>
       <div style={{ fontSize: 13.5 }}>{children}</div>
-    </div>
-  );
-}
-
-function Kpi({ label, value, sub, color }) {
-  return (
-    <div className="card" style={{ padding: '16px 18px' }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
     </div>
   );
 }

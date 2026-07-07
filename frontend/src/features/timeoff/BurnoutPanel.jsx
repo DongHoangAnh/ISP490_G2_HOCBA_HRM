@@ -6,16 +6,7 @@ import { useState, useEffect } from 'react';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchBurnout } from '../../api/timeoff';
-
-function Kpi({ label, value, sub, color }) {
-  return (
-    <div className="card" style={{ padding: '16px 18px' }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
-    </div>
-  );
-}
+import Kpi from './Kpi';
 
 /* Màu badge theo nhóm lý do (khớp 3 chuỗi risk_reason của SQL view). */
 const reasonKind = (reason) => (
