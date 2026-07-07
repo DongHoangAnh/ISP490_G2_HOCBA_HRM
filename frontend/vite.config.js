@@ -11,18 +11,28 @@ export default defineConfig({
   base: '/hocba_hrm/static/spa/',
   server: {
     proxy: {
-      '/hocba-hrm/api': { target: 'http://localhost:8069', changeOrigin: true },
-      '/hocba-hrm': { target: 'http://localhost:8069', changeOrigin: true },
-      '/hocba_employees/static': { target: 'http://localhost:8069', changeOrigin: true },
-      '/web': { target: 'http://localhost:8069', changeOrigin: true },
-      '/odoo': { target: 'http://localhost:8069', changeOrigin: true },
-      '/jobs': { target: 'http://localhost:8069', changeOrigin: true },
-      '/website': { target: 'http://localhost:8069', changeOrigin: true },
+      '/hocba-hrm/api': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/hocba-hrm': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/hocba_employees/static': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/web': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/odoo': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/jobs': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/website': { target: 'http://[::1]:8069', changeOrigin: false },
     },
   },
   build: {
     outDir: '../custom-addons/hocba_hrm/static/spa',
     emptyOutDir: true,
-    rollupOptions: {},
+    // Tên file CỐ ĐỊNH (không content-hash) để mỗi lần build không sinh bundle
+    // mới → tránh conflict git ở static/spa mỗi lần push. Chống cache trình
+    // duyệt được xử lý ở controller: thêm ?v=<hash nội dung> vào URL asset khi
+    // serve index.html (xem controllers/main.py::hrm_dashboard).
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name][extname]',
+      },
+    },
   },
 });

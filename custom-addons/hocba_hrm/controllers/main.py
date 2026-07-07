@@ -1,4 +1,6 @@
 import calendar
+import hashlib
+import re
 from datetime import date, datetime, timedelta
 
 from psycopg2 import IntegrityError
@@ -1637,6 +1639,7 @@ class HocBaHRM(http.Controller):
         try:
             with file_open('hocba_hrm/static/spa/index.html', 'r') as f:
                 html = f.read()
+            html = self._bust_asset_cache(html)
         except (FileNotFoundError, OSError):
             html = ('<h3 style="font-family:sans-serif">SPA chưa được build.</h3>'
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
@@ -1645,6 +1648,28 @@ class HocBaHRM(http.Controller):
         resp = Response(html, content_type='text/html; charset=utf-8')
         resp.headers['Cache-Control'] = 'no-store'
         return resp
+
+    @staticmethod
+    def _bust_asset_cache(html):
+        """Chèn ?v=<hash nội dung> vào URL asset SPA trong index.html.
+
+        Vite build với tên file cố định (assets/index.js, assets/index.css) để
+        không sinh bundle mới mỗi lần build → tránh conflict git ở static/spa.
+        Bù lại, tên cố định khiến trình duyệt cache bản cũ; ta thêm query
+        ?v=<md5 8 ký tự của chính file> để bust cache khi nội dung đổi.
+        """
+        def repl(m):
+            url = m.group(1)
+            rel = url.split('/hocba_hrm/', 1)[1]  # static/spa/assets/index.js
+            try:
+                with file_open('hocba_hrm/' + rel, 'rb') as af:
+                    digest = hashlib.md5(af.read()).hexdigest()[:8]
+            except (FileNotFoundError, OSError):
+                return m.group(0)
+            return m.group(0).replace(url, '%s?v=%s' % (url, digest))
+
+        return re.sub(r'(?:src|href)="(/hocba_hrm/static/spa/assets/[^"?]+)"',
+                      repl, html)
 
     # ------------------------------------------------------------------
     # JSON API cho SPA — dữ liệu thật từ hocba_employees.
