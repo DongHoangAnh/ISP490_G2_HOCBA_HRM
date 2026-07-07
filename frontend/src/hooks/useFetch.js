@@ -10,7 +10,10 @@ const cache = new Map();
 
 /* fetcher: () => Promise<payload>.
    deps: mảng dependency — đổi là fetch lại (truyền thẳng cho useEffect).
-   cacheKey: chuỗi định danh cache (vd `timeoff:dashboard:2026:5`); null = không cache. */
+   cacheKey: chuỗi định danh cache (vd `timeoff:dashboard:2026:5`); null = không cache.
+   BẤT BIẾN cho caller: deps phải là mảng độ dài cố định giữa các render;
+   cacheKey chỉ được ghép từ các giá trị đã nằm trong deps (đổi key mà không
+   đổi deps sẽ không refetch → cache lệch). */
 export default function useFetch(fetcher, deps, cacheKey) {
   const [state, setState] = useState(() => {
     const hit = cacheKey != null && cache.has(cacheKey);
