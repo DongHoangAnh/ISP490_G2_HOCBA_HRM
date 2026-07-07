@@ -20,6 +20,10 @@ export default defineConfig({
   build: {
     outDir: '../custom-addons/hocba_hrm/static/spa',
     emptyOutDir: true,
+    // Tên file CỐ ĐỊNH (không content-hash) để mỗi lần build không sinh bundle
+    // mới → tránh conflict git ở static/spa mỗi lần push. Chống cache trình
+    // duyệt được xử lý ở controller: thêm ?v=<hash nội dung> vào URL asset khi
+    // serve index.html (xem controllers/main.py::hrm_dashboard).
     rollupOptions: {
       output: {
         entryFileNames: 'assets/index.js',
