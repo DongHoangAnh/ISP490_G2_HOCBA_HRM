@@ -2,9 +2,11 @@
    (HR/Admin mọi phòng, Trưởng phòng phòng mình). Dữ liệu 90 ngày gần nhất.
    Spec: docs/superpowers/specs/2026-07-07-timeoff-burnout-dashboard-lapsed-link-design.md
    Owner: Nhật Anh. */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import DeptSelect from './DeptSelect';
 import { fetchBurnout } from '../../api/timeoff';
 import Kpi from './Kpi';
 
@@ -15,18 +17,12 @@ const reasonKind = (reason) => (
 );
 
 export default function BurnoutPanel() {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
   const [dept, setDept] = useState('');
-  const [tick, setTick] = useState(0);
+  const { data, err, loading, reload } = useFetch(
+    () => fetchBurnout(dept || undefined), [dept], `timeoff:burnout:${dept}`);
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchBurnout(dept || undefined).then(setData).catch((e) => setErr(e.message));
-  }, [dept, tick]);
-
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải cảnh báo sức khỏe nhân viên…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
   const k = data.kpi;
   const maxDept = Math.max(...data.byDepartment.map((r) => r.count), 1);
@@ -36,10 +32,7 @@ export default function BurnoutPanel() {
       {data.seeAll && (
         <div className="filterbar">
           <div style={{ marginLeft: 'auto' }}>
-            <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">Mọi phòng ban</option>
-              {data.allDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
           </div>
         </div>
       )}
