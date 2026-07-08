@@ -2,27 +2,23 @@
    công + KPI. Chỉ officer (HR/Admin mọi phòng, Trưởng phòng phòng mình).
    Spec: docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
    Owner: Nhật Anh. */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchLapsedDashboard, decideRequest } from '../../api/timeoff';
 import Kpi from './Kpi';
 
 export default function LapsedPanel({ onOpenApproval }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
   const [dept, setDept] = useState('');
   const [busy, setBusy] = useState(null);
-  const [tick, setTick] = useState(0);
+  const { data, err, loading, reload } = useFetch(
+    () => fetchLapsedDashboard(dept || undefined), [dept], `timeoff:lapsed:${dept}`);
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchLapsedDashboard(dept || undefined).then(setData).catch((e) => setErr(e.message));
-  }, [dept, tick]);
-
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải giám sát duyệt đơn…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
   const k = data.kpi;
   const maxDept = Math.max(...data.byDepartment.map((r) => r.count), 1);
@@ -34,7 +30,7 @@ export default function LapsedPanel({ onOpenApproval }) {
     if (!window.confirm(`${label} đơn của ${row.employee}?`)) return;
     setBusy(row.requestId);
     decideRequest(row.requestId, { action: row.suggestion })
-      .then(() => setTick((t) => t + 1))
+      .then(() => reload())
       .catch((e) => alert('Không xử lý được đơn: ' + e.message))
       .finally(() => setBusy(null));
   };
@@ -44,10 +40,7 @@ export default function LapsedPanel({ onOpenApproval }) {
       {data.seeAll && (
         <div className="filterbar">
           <div style={{ marginLeft: 'auto' }}>
-            <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">Mọi phòng ban</option>
-              {data.allDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
           </div>
         </div>
       )}
