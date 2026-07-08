@@ -6,7 +6,11 @@ import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import ModalHeader from '../../components/ModalHeader';
+import { LoadingState, ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import YearNav from './YearNav';
+import DeptSelect from './DeptSelect';
 import { downloadXlsx } from '../../utils/xlsx';
 import { fetchBalances, adjustQuota, fetchAdjustHistory } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
@@ -27,8 +31,6 @@ const inp = {
   fontSize: 13.5, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
 };
 
-const THIS_YEAR = new Date().getFullYear();
-
 const SORT_FIELDS = [
   { key: 'employee', label: 'Nhân viên', type: 'text' },
   { key: 'department', label: 'Phòng ban', type: 'text' },
@@ -38,24 +40,18 @@ const SORT_FIELDS = [
 ];
 
 export default function BalancesPanel({ search }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [year, setYear] = useState(THIS_YEAR);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [dept, setDept] = useState('');
-  const [tick, setTick] = useState(0);
   const [sort, setSort] = useState({ key: 'totalRemaining', dir: 'asc' });
   const [adjust, setAdjust] = useState(null);   // dòng đang điều chỉnh
   const [history, setHistory] = useState(null); // dòng đang xem lịch sử
   const [expiring, setExpiring] = useState(false); // lọc "sắp mất phép"
+  const { data, err, loading, reload } = useFetch(
+    () => fetchBalances(year, dept || undefined, undefined, expiring ? 'expiring' : undefined),
+    [year, dept, expiring], `timeoff:balances:${year}:${dept}:${expiring ? 1 : 0}`);
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchBalances(year, dept || undefined, undefined, expiring ? 'expiring' : undefined)
-      .then(setData).catch((e) => setErr(e.message));
-  }, [year, dept, expiring, tick]);
-
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải quỹ phép…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
   const types = data.leaveTypes || [];
   const k = data.kpi || {};
@@ -97,23 +93,14 @@ export default function BalancesPanel({ search }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Thanh điều khiển */}
       <div className="filterbar">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
-            <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
-          <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
-          <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
-        </div>
+        <YearNav year={year} onChange={setYear} />
         <button className={'btn btn-sm ' + (expiring ? 'btn-primary' : 'btn-soft')}
           onClick={() => setExpiring((v) => !v)} title={`Còn ≥ ${data.atRiskDays ?? 5} ngày phép năm chưa dùng`}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 12 }}>
           <Icon name="bell" size={15} />Sắp mất phép{(k.atRisk ?? 0) > 0 ? ` (${k.atRisk})` : ''}
         </button>
         <div style={{ marginLeft: 'auto' }}>
-          <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-            <option value="">Mọi phòng ban</option>
-            {(data.allDepartments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
         </div>
       </div>
 
@@ -202,7 +189,7 @@ export default function BalancesPanel({ search }) {
       {adjust && (
         <AdjustQuotaModal row={adjust} leaveTypes={types}
           onClose={() => setAdjust(null)}
-          onDone={() => { setAdjust(null); setTick((t) => t + 1); }} />
+          onDone={() => { setAdjust(null); reload(); }} />
       )}
       {history && (
         <HistoryModal row={history} onClose={() => setHistory(null)} />
@@ -234,16 +221,8 @@ function AdjustQuotaModal({ row, leaveTypes, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Điều chỉnh quỹ phép</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>{row.employee} · {row.department}</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="calendar" title="Điều chỉnh quỹ phép"
+        sub={`${row.employee} · ${row.department}`} onClose={onClose} />
 
       <div style={{ padding: '22px 24px', display: 'grid', gap: 14 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -297,16 +276,8 @@ function HistoryModal({ row, onClose }) {
   const list = data?.history || [];
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="file" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Lịch sử điều chỉnh</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>{row.employee} · {row.department}</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="file" title="Lịch sử điều chỉnh"
+        sub={`${row.employee} · ${row.department}`} onClose={onClose} />
 
       <div style={{ padding: '16px 24px', maxHeight: '60vh', overflowY: 'auto' }}>
         {err && <ErrorState message={err} />}
