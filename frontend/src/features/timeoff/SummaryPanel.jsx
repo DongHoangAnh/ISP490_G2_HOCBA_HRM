@@ -2,41 +2,27 @@
    Chỉ hiển thị cho role Nhân viên (xem TimeOff.jsx). Thống kê nghỉ phép
    của chính mình trong năm: quỹ phép năm, KPI, theo loại nghỉ, theo tháng,
    và danh sách đơn. Owner: Nhật Anh. Spec §3.8 (đã đổi sang báo cáo cá nhân). */
-import { useState, useEffect } from 'react';
-import Icon from '../../components/Icon';
+import { useState } from 'react';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchSummary } from '../../api/timeoff';
 import Kpi from './Kpi';
+import useFetch from '../../hooks/useFetch';
+import YearNav from './YearNav';
 
-const THIS_YEAR = new Date().getFullYear();
 const MONTHS = ['Th1', 'Th2', 'Th3', 'Th4', 'Th5', 'Th6',
                 'Th7', 'Th8', 'Th9', 'Th10', 'Th11', 'Th12'];
 
 export default function SummaryPanel() {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [year, setYear] = useState(THIS_YEAR);
-  const [tick, setTick] = useState(0);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const { data, err, loading, reload } = useFetch(
+    () => fetchSummary(year), [year], `timeoff:summary:${year}`);
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchSummary(year).then(setData).catch((e) => setErr(e.message));
-  }, [year, tick]);
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải báo cáo nghỉ phép…" />;
-
-  const nav = (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
-        <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
-      <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
-      <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
-      <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
-    </div>
-  );
+  const nav = <YearNav year={year} onChange={setYear} />;
 
   if (data.empMissing) {
     return (
