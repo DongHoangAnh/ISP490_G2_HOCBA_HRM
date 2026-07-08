@@ -162,14 +162,19 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
     () => fetchCalendar(year, seeAll ? (dept || undefined) : undefined),
     [year, dept, seeAll], `timeoff:calendar:${year}:${seeAll ? dept : 'mine'}`);
 
-  // Query đổi (năm/phòng ban) và data về → bật tất cả loại nghỉ. So khóa query
-  // qua ref: revalidate ngầm CÙNG query trả payload mới sẽ không reset, khỏi
-  // xóa toggle user đang chỉnh trong lúc cache tươi lại.
+  // Query đổi (năm/phòng ban) và data MỚI về → bật tất cả loại nghỉ. Hai điều
+  // kiện qua ref: (1) cùng query mà revalidate trả payload mới → không reset,
+  // khỏi xóa toggle user đang chỉnh; (2) query vừa đổi nhưng data còn của query
+  // cũ (effect chạy trước khi useFetch kịp setState) → chờ payload mới rồi mới
+  // reset, không chốt nhầm danh sách loại của query trước.
   const activeKeyRef = useRef(null);
+  const prevDataRef = useRef(null);
   useEffect(() => {
     if (!data) return;
     const key = `${year}:${seeAll ? dept : 'mine'}`;
-    if (activeKeyRef.current === key) return;
+    const dataChanged = prevDataRef.current !== data;
+    prevDataRef.current = data;
+    if (activeKeyRef.current === key || !dataChanged) return;
     activeKeyRef.current = key;
     setActive(new Set(data.leaveTypes.map((t) => t.id)));
   }, [data, year, dept, seeAll]);
