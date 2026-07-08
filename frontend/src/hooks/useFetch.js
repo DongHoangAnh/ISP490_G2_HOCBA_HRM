@@ -54,8 +54,10 @@ export default function useFetch(fetcher, deps, cacheKey) {
   // Bọc load: effect không được trả Promise (React coi giá trị trả về là cleanup).
   useEffect(() => { load(); }, deps);
 
-  /* Action (duyệt/hủy/điều chỉnh…) ghi thẳng payload server trả về. */
+  /* Action (duyệt/hủy/điều chỉnh…) ghi thẳng payload server trả về.
+     Tăng runId để revalidate đang bay (payload CŨ) về sau không đè mất. */
   const setData = useCallback((payload) => {
+    runId.current++;
     if (keyRef.current != null) cache.set(keyRef.current, payload);
     setState({ data: payload, err: null, loading: false });
   }, []);
