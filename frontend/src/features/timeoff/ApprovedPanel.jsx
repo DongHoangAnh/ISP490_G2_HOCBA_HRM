@@ -1,19 +1,21 @@
 /* Trang quản lý "Đơn đã duyệt" — danh sách đơn nghỉ đã xử lý (duyệt / từ chối).
    HR/Admin xem mọi phòng ban; Trưởng phòng chỉ phòng ban mình quản lý.
    Bấm vào 1 đơn để xem chi tiết (gồm lương & lý do). Owner: Nhật Anh. */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import ModalHeader from '../../components/ModalHeader';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import YearNav from './YearNav';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchApproved } from '../../api/timeoff';
 import Kpi from './Kpi';
 import { downloadXlsx } from '../../utils/xlsx';
 import SortBar, { sortRows } from './SortBar';
 import HistoryTimeline from './HistoryTimeline';
-
-const THIS_YEAR = new Date().getFullYear();
 
 const SORT_FIELDS = [
   { key: 'employee', label: 'Nhân viên', type: 'text' },
@@ -27,21 +29,16 @@ const SORT_FIELDS = [
 ];
 
 export default function ApprovedPanel({ search }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [year, setYear] = useState(THIS_YEAR);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [dept, setDept] = useState('');
-  const [tick, setTick] = useState(0);
   const [detail, setDetail] = useState(null); // đơn đang xem chi tiết
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
+  const { data, err, loading, reload } = useFetch(
+    () => fetchApproved(year, dept || undefined), [year, dept],
+    `timeoff:approved:${year}:${dept}`);
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchApproved(year, dept || undefined).then(setData).catch((e) => setErr(e.message));
-  }, [year, dept, tick]);
-
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải đơn đã duyệt…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
   const k = data.kpi;
   const q = (search || '').toLowerCase();
@@ -69,18 +66,9 @@ export default function ApprovedPanel({ search }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Thanh điều khiển */}
       <div className="filterbar">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
-            <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
-          <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
-          <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
-        </div>
+        <YearNav year={year} onChange={setYear} />
         <div style={{ marginLeft: 'auto' }}>
-          <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-            <option value="">Mọi phòng ban</option>
-            {data.allDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
         </div>
       </div>
 
@@ -141,16 +129,8 @@ export default function ApprovedPanel({ search }) {
 function DetailModal({ req, onClose }) {
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: req.color || 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>{req.employee}</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>{req.department}</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="calendar" iconBg={req.color}
+        title={req.employee} sub={req.department} onClose={onClose} />
 
       <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
