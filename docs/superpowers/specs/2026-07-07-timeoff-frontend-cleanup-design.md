@@ -55,11 +55,11 @@ Thay thế tại: `TimeOff.jsx` (3), `ApprovalPanel` (2), `BalancesPanel` (2), `
 
 #### 1.5 `ConfirmModal.jsx` — `frontend/src/components/`
 
-`{ title, message, confirmLabel, danger, onConfirm, onClose }`:
+`{ title, message, confirmLabel, icon, onConfirm, onClose }`:
 
-- Dựng bằng `Modal` + `ModalHeader` (icon `alertCircle`).
+- Dựng bằng `Modal` + `ModalHeader` (icon mặc định `alertCircle`).
 - `onConfirm` trả Promise; component tự quản `busy` (disable nút, đổi nhãn "Đang xử lý…") và hiện lỗi trong modal (khối đỏ nhạt như `WithdrawModal`) — không dùng `alert`.
-- `danger=true` → nút xác nhận đỏ (`btn-primary` hiện tại đã đỏ theo theme — dùng luôn).
+- Không cần prop `danger`: `btn-primary` của theme đã là đỏ, dùng luôn cho nút xác nhận.
 
 #### 1.6 `TableSkeleton` — thêm vào `frontend/src/components/states.jsx`
 
@@ -80,7 +80,7 @@ Mỗi panel **một commit riêng**, hành vi giữ nguyên 100%, chỉ đổi c
 
 #### 3.2 Hủy đơn bằng `ConfirmModal`
 
-`TimeOff.jsx` bỏ `window.confirm` + `alert` trong `onCancel`; state `cancelling` (đơn đang chờ xác nhận) mở `ConfirmModal` với title "Hủy đơn nghỉ", message nêu loại nghỉ + khoảng ngày, `confirmLabel="Hủy đơn"`, `danger`. `onConfirm = () => cancelRequest(id).then(setData)` — lỗi hiện trong modal.
+`TimeOff.jsx` bỏ `window.confirm` + `alert` trong `onCancel`; state `cancelling` (đơn đang chờ xác nhận) mở `ConfirmModal` với title "Hủy đơn nghỉ", message nêu loại nghỉ + khoảng ngày, `confirmLabel="Hủy đơn"`. `onConfirm = () => cancelRequest(id).then(setData)` — lỗi hiện trong modal.
 
 #### 3.3 Lift filter năm/phòng ban lên `TimeOff`
 

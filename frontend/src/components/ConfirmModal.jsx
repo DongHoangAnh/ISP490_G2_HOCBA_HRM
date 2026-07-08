@@ -11,7 +11,8 @@ export default function ConfirmModal({ title, message, confirmLabel = 'Xác nh�
 
   const run = () => {
     setBusy(true); setErr(null);
-    Promise.resolve(onConfirm()).catch((e) => { setErr(e.message); setBusy(false); });
+    // .then(onConfirm) thay vì resolve(onConfirm()): throw đồng bộ cũng thành rejection.
+    Promise.resolve().then(onConfirm).catch((e) => { setErr(e.message); setBusy(false); });
   };
 
   return (
