@@ -2,7 +2,9 @@
    Owner: Nhật Anh. Spec §3.7. */
 import { useState, useEffect, useMemo } from 'react';
 import Icon from '../../components/Icon';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchCalendar } from '../../api/timeoff';
 import { fetchTeachingDays } from '../../api/attendance';
@@ -150,23 +152,20 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacher
 }
 
 export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
   const [year, setYear] = useState(NOW.getFullYear());
   const [month, setMonth] = useState(NOW.getMonth());
   const [mode, setMode] = useState('year');   // 'year' | 'month'
   const [dept, setDept] = useState('');         // HR lọc 1 phòng ban ('' = tất cả)
   const [active, setActive] = useState(null);   // Set id loại đang bật (null = tất cả)
   const [teaching, setTeaching] = useState(new Map()); // ngày dạy → số buổi (GV)
-  const [tick, setTick] = useState(0);
+  const { data, err, loading, reload } = useFetch(
+    () => fetchCalendar(year, seeAll ? (dept || undefined) : undefined),
+    [year, dept, seeAll], `timeoff:calendar:${year}:${seeAll ? dept : 'mine'}`);
 
+  // Data (mới hoặc từ cache) về → bật tất cả loại nghỉ.
   useEffect(() => {
-    setErr(null); setData(null);
-    fetchCalendar(year, seeAll ? (dept || undefined) : undefined).then((d) => {
-      setData(d);
-      setActive(new Set(d.leaveTypes.map((t) => t.id))); // bật tất cả loại
-    }).catch((e) => setErr(e.message));
-  }, [year, dept, seeAll, tick]);
+    if (data) setActive(new Set(data.leaveTypes.map((t) => t.id)));
+  }, [data]);
 
   // GV xem lịch cá nhân: đánh dấu ngày có lịch dạy cả năm. Lỗi gọi API lịch dạy
   // KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu. (Officer xem lịch đội → tắt.)
@@ -185,8 +184,8 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
   const workdays = useMemo(() => data ? buildWorkdays(data.workDays) : new Map(), [data]);
   const teachTotal = useMemo(() => [...teaching.values()].reduce((a, b) => a + b, 0), [teaching]);
 
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải lịch nghỉ phép…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton rows={8} />;
 
   const toggleType = (id) => setActive((prev) => {
     const next = new Set(prev);
@@ -234,13 +233,8 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
         {seeAll && (
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phòng ban</div>
-            <select className="sel" style={{ width: '100%' }}
-              value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">Tất cả phòng ban</option>
-              {(data.allDepartments || []).map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+            <DeptSelect value={dept} onChange={setDept} style={{ width: '100%' }}
+              departments={data.allDepartments} />
           </div>
         )}
 
