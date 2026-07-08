@@ -1,40 +1,28 @@
 /* Tab "Tổng quan" — dashboard Nghỉ phép, tự đổi view Manager/Nhân viên
    theo quyền (tái hiện OWL dashboard hr_holidays_modern). Owner: Nhật Anh.
    Spec §3.6. */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import YearNav from './YearNav';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchDashboard } from '../../api/timeoff';
 import Kpi from './Kpi';
 
-const THIS_YEAR = new Date().getFullYear();
-
 export default function DashboardPanel() {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [year, setYear] = useState(THIS_YEAR);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [dept, setDept] = useState('');
-  const [tick, setTick] = useState(0); // ép tải lại (nút Thử lại)
+  const { data, err, loading, reload } = useFetch(
+    () => fetchDashboard(year, dept || undefined), [year, dept],
+    `timeoff:dashboard:${year}:${dept}`);
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchDashboard(year, dept || undefined).then(setData).catch((e) => setErr(e.message));
-  }, [year, dept, tick]);
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải tổng quan nghỉ phép…" />;
-
-  const nav = (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
-        <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
-      <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
-      <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
-      <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
-    </div>
-  );
+  const nav = <YearNav year={year} onChange={setYear} />;
 
   return data.isManager
     ? <ManagerView data={data} year={year} dept={dept} setDept={setDept} nav={nav} />
@@ -68,10 +56,7 @@ function ManagerView({ data, dept, setDept, nav }) {
       <div className="filterbar">
         {nav}
         <div style={{ marginLeft: 'auto' }}>
-          <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-            <option value="">Mọi phòng ban</option>
-            {data.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <DeptSelect value={dept} onChange={setDept} departments={data.departments} />
         </div>
       </div>
 
