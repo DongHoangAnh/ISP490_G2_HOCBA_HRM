@@ -29,6 +29,9 @@ export default function LapsedPanel({ onOpenApproval }) {
       ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)';
     if (!window.confirm(`${label} đơn của ${row.employee}?`)) return;
     setBusy(row.requestId);
+    // decideRequest trả payload dạng approvals (khác shape lapsed-dashboard)
+    // → không setData được, phải reload; reload trả Promise nên busy giữ
+    // nút disabled tới khi danh sách mới về (chặn double-click).
     decideRequest(row.requestId, { action: row.suggestion })
       .then(() => reload())
       .catch((e) => alert('Không xử lý được đơn: ' + e.message))

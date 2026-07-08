@@ -31,7 +31,9 @@ export default function useFetch(fetcher, deps, cacheKey) {
     const hit = key != null && cache.has(key);
     // Có cache → hiện ngay (stale) rồi revalidate ngầm; chưa có → loading.
     setState({ data: hit ? cache.get(key) : null, err: null, loading: !hit });
-    fetcherRef.current()
+    // Trả Promise để caller chờ được revalidate xong (vd giữ nút disabled tới khi
+    // danh sách mới về). Lỗi đã nuốt trong .catch — chain thêm không cần catch lại.
+    return fetcherRef.current()
       .then((payload) => {
         if (id !== runId.current) return; // deps đã đổi — bỏ response cũ
         if (key != null) cache.set(key, payload);
@@ -49,7 +51,8 @@ export default function useFetch(fetcher, deps, cacheKey) {
       });
   }, []);
 
-  useEffect(load, deps);
+  // Bọc load: effect không được trả Promise (React coi giá trị trả về là cleanup).
+  useEffect(() => { load(); }, deps);
 
   /* Action (duyệt/hủy/điều chỉnh…) ghi thẳng payload server trả về. */
   const setData = useCallback((payload) => {
