@@ -1,6 +1,6 @@
 /* Tab "Lịch" — lịch nghỉ phép (toggle Năm/Tháng), giống màn Time Off của Odoo.
    Owner: Nhật Anh. Spec §3.7. */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Icon from '../../components/Icon';
 import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
 import useFetch from '../../hooks/useFetch';
@@ -162,10 +162,17 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
     () => fetchCalendar(year, seeAll ? (dept || undefined) : undefined),
     [year, dept, seeAll], `timeoff:calendar:${year}:${seeAll ? dept : 'mine'}`);
 
-  // Data (mới hoặc từ cache) về → bật tất cả loại nghỉ.
+  // Query đổi (năm/phòng ban) và data về → bật tất cả loại nghỉ. So khóa query
+  // qua ref: revalidate ngầm CÙNG query trả payload mới sẽ không reset, khỏi
+  // xóa toggle user đang chỉnh trong lúc cache tươi lại.
+  const activeKeyRef = useRef(null);
   useEffect(() => {
-    if (data) setActive(new Set(data.leaveTypes.map((t) => t.id)));
-  }, [data]);
+    if (!data) return;
+    const key = `${year}:${seeAll ? dept : 'mine'}`;
+    if (activeKeyRef.current === key) return;
+    activeKeyRef.current = key;
+    setActive(new Set(data.leaveTypes.map((t) => t.id)));
+  }, [data, year, dept, seeAll]);
 
   // GV xem lịch cá nhân: đánh dấu ngày có lịch dạy cả năm. Lỗi gọi API lịch dạy
   // KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu. (Officer xem lịch đội → tắt.)
