@@ -438,3 +438,14 @@ table.tbl th.tbl-num { text-align: right; }
 .tab:hover { color: var(--ink-soft); }
 .tab.active { color: var(--red-700); }
 .tab.active::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 2.5px; background: var(--red-600); border-radius: 3px; }
+
+/* Skeleton loading (timeoff cleanup 2026-07-07) */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
