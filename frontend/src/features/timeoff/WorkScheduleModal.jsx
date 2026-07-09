@@ -66,7 +66,7 @@ export default function WorkScheduleModal({ onClose }) {
 
       <div style={{ padding: '20px 24px', maxHeight: '62vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Năm */}
-        <YearNav year={year} onChange={setYear} />
+        <YearNav year={year} onChange={setYear} disabled={busy} />
 
         {/* Thêm ngày */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
