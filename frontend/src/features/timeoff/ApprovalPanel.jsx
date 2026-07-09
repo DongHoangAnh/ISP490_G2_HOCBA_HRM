@@ -29,7 +29,7 @@ const inp = {
 // Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
 const OVERLAP_WARN = 3;
 
-export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusConsumed }) {
+export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusConsumed, onChanged }) {
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
   const [withdrawDecision, setWithdrawDecision] = useState(null); // yêu cầu rút đang xử lý
   const [sort, setSort] = useState({ key: 'from', dir: 'asc' });
@@ -135,13 +135,20 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
       {decision && (
         <DecisionModal req={decision} isHrManager={isHrManager}
           onClose={() => setDecision(null)}
-          onDone={(payload) => { setDecision(null); setData(payload); }} />
+          onDone={(payload) => {
+            setDecision(null); setData(payload);
+            // Báo parent số đơn chờ mới để badge tab "Chờ duyệt" cập nhật ngay.
+            onChanged && onChanged((payload.requests || []).length);
+          }} />
       )}
 
       {withdrawDecision && (
         <WithdrawDecisionModal req={withdrawDecision}
           onClose={() => setWithdrawDecision(null)}
-          onDone={(payload) => { setWithdrawDecision(null); setData(payload); }} />
+          onDone={(payload) => {
+            setWithdrawDecision(null); setData(payload);
+            onChanged && onChanged((payload.requests || []).length);
+          }} />
       )}
     </div>
   );

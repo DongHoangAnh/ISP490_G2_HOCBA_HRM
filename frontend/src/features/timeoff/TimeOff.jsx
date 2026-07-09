@@ -150,7 +150,8 @@ export default function TimeOff({ search, focus }) {
       {activeTab === 'approvals' && data.isOfficer && (
         <ApprovalPanel isHrManager={data.isHrManager}
           focusRequestId={approvalFocus}
-          onFocusConsumed={() => setApprovalFocus(null)} />
+          onFocusConsumed={() => setApprovalFocus(null)}
+          onChanged={setPendingCount} />
       )}
       {activeTab === 'lapsed' && data.isOfficer && (
         <LapsedPanel onOpenApproval={(id) => { setApprovalFocus(id); setTab('approvals'); }} />
