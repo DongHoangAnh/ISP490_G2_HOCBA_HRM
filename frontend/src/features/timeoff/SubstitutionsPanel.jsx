@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
+import ModalHeader from '../../components/ModalHeader';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchSubstitutions, decideSubstitution, returnSubstitution } from '../../api/timeoff';
@@ -128,18 +129,9 @@ function DeclineModal({ req, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="alertCircle" size={20} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Từ chối dạy thay</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {req.requester} · {req.className} · {fmtDate(req.date)} {req.startTime}
-          </div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader icon="alertCircle" title="Từ chối dạy thay"
+        sub={`${req.requester} · ${req.className} · ${fmtDate(req.date)} ${req.startTime}`}
+        onClose={onClose} />
 
       <div style={{ padding: '18px 24px', display: 'grid', gap: 12 }}>
         <div className="muted" style={{ fontSize: 13 }}>

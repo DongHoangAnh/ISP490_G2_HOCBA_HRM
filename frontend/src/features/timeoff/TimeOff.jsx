@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
+import ModalHeader from '../../components/ModalHeader';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchOverview, cancelRequest, fetchApprovals, withdrawRequest, fetchSubstitutions } from '../../api/timeoff';
@@ -173,16 +174,8 @@ export default function TimeOff({ search, focus }) {
 
       {historyReq && (
         <Modal onClose={() => setHistoryReq(null)}>
-          <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <Icon name="clock" size={20} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Lịch sử xử lý đơn</h2>
-              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Dòng thời gian thao tác của đơn nghỉ</div>
-            </div>
-            <button className="icon-btn" onClick={() => setHistoryReq(null)}><Icon name="x" size={20} /></button>
-          </div>
+          <ModalHeader icon="clock" title="Lịch sử xử lý đơn"
+            sub="Dòng thời gian thao tác của đơn nghỉ" onClose={() => setHistoryReq(null)} />
           <div style={{ padding: '18px 24px' }}>
             <HistoryTimeline requestId={historyReq} />
           </div>
@@ -332,20 +325,10 @@ function LeaveDetailModal({ req, onClose }) {
   const sessions = req.sessionResolutions || [];
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={20} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {req.leaveType}
-            {req.halfDay && <Badge kind="blue">{req.halfDay}</Badge>}
-            {req.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
-          </h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Chi tiết đơn nghỉ</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader icon="calendar" title={req.leaveType} sub="Chi tiết đơn nghỉ" onClose={onClose}>
+        {req.halfDay && <Badge kind="blue">{req.halfDay}</Badge>}
+        {req.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
+      </ModalHeader>
 
       <div style={{ padding: '18px 24px', display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -418,18 +401,9 @@ function WithdrawModal({ req, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="alertCircle" size={20} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Rút đơn nghỉ đã duyệt</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)
-          </div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader icon="alertCircle" title="Rút đơn nghỉ đã duyệt"
+        sub={`${req.leaveType} · ${fmtDate(req.from)} → ${fmtDate(req.to)} (${req.days} ngày)`}
+        onClose={onClose} />
 
       <div style={{ padding: '18px 24px', display: 'grid', gap: 12 }}>
         <div className="muted" style={{ fontSize: 13 }}>
