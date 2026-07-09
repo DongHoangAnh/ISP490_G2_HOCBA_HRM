@@ -4,6 +4,7 @@
    Owner: Nhật Anh. */
 import { useState } from 'react';
 import Badge from '../../components/Badge';
+import ConfirmModal from '../../components/ConfirmModal';
 import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
 import useFetch from '../../hooks/useFetch';
 import DeptSelect from './DeptSelect';
@@ -13,7 +14,7 @@ import Kpi from './Kpi';
 
 export default function LapsedPanel({ onOpenApproval }) {
   const [dept, setDept] = useState('');
-  const [busy, setBusy] = useState(null);
+  const [confirming, setConfirming] = useState(null); // dòng chờ xác nhận xử lý nhanh
   const { data, err, loading, reload } = useFetch(
     () => fetchLapsedDashboard(dept || undefined), [dept], `timeoff:lapsed:${dept}`);
 
@@ -22,21 +23,6 @@ export default function LapsedPanel({ onOpenApproval }) {
 
   const k = data.kpi;
   const maxDept = Math.max(...data.byDepartment.map((r) => r.count), 1);
-
-  // Nút 1-chạm: gọi thẳng flow duyệt hiện có với action theo đề xuất (BR-L04).
-  const quickDecide = (row) => {
-    const label = row.suggestion === 'approve'
-      ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)';
-    if (!window.confirm(`${label} đơn của ${row.employee}?`)) return;
-    setBusy(row.requestId);
-    // decideRequest trả payload dạng approvals (khác shape lapsed-dashboard)
-    // → không setData được, phải reload; reload trả Promise nên busy giữ
-    // nút disabled tới khi danh sách mới về (chặn double-click).
-    decideRequest(row.requestId, { action: row.suggestion })
-      .then(() => reload())
-      .catch((e) => alert('Không xử lý được đơn: ' + e.message))
-      .finally(() => setBusy(null));
-  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -110,9 +96,7 @@ export default function LapsedPanel({ onOpenApproval }) {
                   <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                     {r.suggestion ? (
                       <button className="btn btn-primary btn-sm"
-                        disabled={busy === r.requestId} onClick={() => quickDecide(r)}>
-                        {busy === r.requestId ? 'Đang xử lý…' : 'Xử lý theo đề xuất'}
-                      </button>
+                        onClick={() => setConfirming(r)}>Xử lý theo đề xuất</button>
                     ) : (
                       <button className="btn btn-ghost btn-sm"
                         onClick={() => onOpenApproval && onOpenApproval(r.requestId)}>
@@ -129,6 +113,20 @@ export default function LapsedPanel({ onOpenApproval }) {
           <EmptyState>Không có đơn nào lỡ hạn duyệt. 🎉</EmptyState>
         )}
       </div>
+
+      {/* Nút 1-chạm: gọi thẳng flow duyệt hiện có với action theo đề xuất (BR-L04).
+          decideRequest trả payload dạng approvals (khác shape lapsed-dashboard)
+          → không setData được, phải reload. */}
+      {confirming && (
+        <ConfirmModal
+          title={confirming.suggestion === 'approve' ? 'Duyệt trễ theo đề xuất' : 'Từ chối theo đề xuất'}
+          confirmLabel={confirming.suggestion === 'approve' ? 'Duyệt trễ' : 'Từ chối'}
+          message={`${confirming.suggestion === 'approve'
+            ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)'} đơn của ${confirming.employee}?`}
+          onClose={() => setConfirming(null)}
+          onConfirm={() => decideRequest(confirming.requestId, { action: confirming.suggestion })
+            .then(() => { setConfirming(null); reload(); })} />
+      )}
     </div>
   );
 }

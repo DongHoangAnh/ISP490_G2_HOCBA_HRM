@@ -330,13 +330,7 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
         {req.lapsed && req.lapsed.suggestion && (
           <button className="btn btn-soft" disabled={busy}
             style={{ marginRight: 'auto', borderColor: 'var(--red-600)', color: 'var(--red-700)' }}
-            onClick={() => {
-              const label = req.lapsed.suggestion === 'approve'
-                ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)';
-              if (window.confirm(label + ' đơn này theo đề xuất đối chiếu chấm công?')) {
-                decide(req.lapsed.suggestion);
-              }
-            }}>
+            onClick={() => decide(req.lapsed.suggestion)}>
             <Icon name="alertCircle" size={16} />
             {req.lapsed.suggestion === 'approve' ? 'Duyệt trễ theo đề xuất' : 'Từ chối theo đề xuất'}
           </button>

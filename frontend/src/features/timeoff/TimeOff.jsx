@@ -7,6 +7,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import ModalHeader from '../../components/ModalHeader';
+import ConfirmModal from '../../components/ConfirmModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchOverview, cancelRequest, fetchApprovals, withdrawRequest, fetchSubstitutions } from '../../api/timeoff';
@@ -30,7 +31,7 @@ export default function TimeOff({ search, focus }) {
   const [tab, setTab] = useState(null);
   const [creating, setCreating] = useState(false);
   const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
-  const [busy, setBusy] = useState(null); // id đơn đang hủy
+  const [cancelling, setCancelling] = useState(null); // đơn đang chờ xác nhận hủy
   const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
   const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
@@ -70,15 +71,6 @@ export default function TimeOff({ search, focus }) {
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải dữ liệu nghỉ phép…" />;
-
-  const onCancel = (id) => {
-    if (!window.confirm('Hủy đơn nghỉ này?')) return;
-    setBusy(id);
-    cancelRequest(id)
-      .then(setData)
-      .catch((e) => alert('Không hủy được đơn: ' + e.message))
-      .finally(() => setBusy(null));
-  };
 
   // Tách luồng cá nhân / quản lý theo phân quyền:
   //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
@@ -140,8 +132,7 @@ export default function TimeOff({ search, focus }) {
       {activeTab === 'overview' && data.isOfficer && <DashboardPanel />}
       {activeTab === 'summary' && !data.isOfficer && <SummaryPanel />}
       {activeTab === 'me' && !data.isOfficer && (
-        <MyTimeOff data={data} search={search} busy={busy}
-          onCancel={onCancel} onUpdated={setData} />
+        <MyTimeOff data={data} search={search} onCancel={setCancelling} onUpdated={setData} />
       )}
       {activeTab === 'calendar' && (
         <CalendarPanel isOfficer={data.isOfficer} seeAll={data.seeAll}
@@ -173,6 +164,15 @@ export default function TimeOff({ search, focus }) {
 
       {schedOpen && <WorkScheduleModal onClose={() => setSchedOpen(false)} />}
 
+      {cancelling && (
+        <ConfirmModal title="Hủy đơn nghỉ" confirmLabel="Hủy đơn"
+          message={`Hủy đơn "${cancelling.leaveType}" (${fmtDate(cancelling.from)} → ${fmtDate(cancelling.to)})? Hành động không hoàn tác được.`}
+          onClose={() => setCancelling(null)}
+          onConfirm={() => cancelRequest(cancelling.id).then((payload) => {
+            setData(payload); setCancelling(null);
+          })} />
+      )}
+
       {historyReq && (
         <Modal onClose={() => setHistoryReq(null)}>
           <ModalHeader icon="clock" title="Lịch sử xử lý đơn"
@@ -199,7 +199,7 @@ const MY_SORT_FIELDS = [
   { key: 'stateLabel', label: 'Trạng thái', type: 'text' },
 ];
 
-function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
+function MyTimeOff({ data, search, onCancel, onUpdated }) {
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
   const [withdrawing, setWithdrawing] = useState(null); // đơn đang mở modal rút
   const [detail, setDetail] = useState(null); // đơn đang xem chi tiết (modal)
@@ -276,9 +276,8 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     {r.canCancel && (
-                      <button className="btn btn-ghost btn-sm" disabled={busy === r.id}
-                        onClick={(e) => { e.stopPropagation(); onCancel(r.id); }}>
-                        {busy === r.id ? 'Đang hủy…' : 'Hủy'}</button>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={(e) => { e.stopPropagation(); onCancel(r); }}>Hủy</button>
                     )}
                     {r.canWithdraw && (
                       <button className="btn btn-ghost btn-sm"
