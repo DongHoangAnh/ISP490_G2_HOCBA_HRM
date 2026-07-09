@@ -5,11 +5,13 @@ import { useState, useEffect } from 'react';
 import Modal from '../../components/Modal';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
+import ModalHeader from '../../components/ModalHeader';
 import { LoadingState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchWorkdays, addWorkdays, deleteWorkday } from '../../api/timeoff';
+import useFetch from '../../hooks/useFetch';
+import YearNav from './YearNav';
 
-const THIS_YEAR = new Date().getFullYear();
 const DOW = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
 const inp = {
@@ -20,16 +22,16 @@ const inp = {
 const dowOf = (iso) => { const [y, m, d] = iso.split('-').map(Number); return DOW[new Date(y, m - 1, d).getDay()]; };
 
 export default function WorkScheduleModal({ onClose }) {
-  const [year, setYear] = useState(THIS_YEAR);
-  const [data, setData] = useState(null);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [staging, setStaging] = useState([]);   // các ngày chờ lưu
   const [pick, setPick] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
+  const [err, setErr] = useState(null);         // lỗi action (thêm/xoá)
+  const { data, err: loadErr, loading, setData } = useFetch(
+    () => fetchWorkdays(year), [year], `timeoff:workdays:${year}`);
 
-  const load = (y) => { setData(null); fetchWorkdays(y).then(setData).catch((e) => setErr(e.message)); };
-  useEffect(() => { load(year); setStaging([]); }, [year]);
+  useEffect(() => { setStaging([]); }, [year]);
 
   const existing = new Set((data?.workDays || []).map((d) => d.date));
 
@@ -59,26 +61,12 @@ export default function WorkScheduleModal({ onClose }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Thêm lịch làm việc</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Công ty làm Thứ 2 – Thứ 6 · thêm các ngày Thứ 7 đi làm</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="calendar" title="Thêm lịch làm việc"
+        sub="Công ty làm Thứ 2 – Thứ 6 · thêm các ngày Thứ 7 đi làm" onClose={onClose} />
 
       <div style={{ padding: '20px 24px', maxHeight: '62vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Năm */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
-            <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
-          <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
-          <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
-        </div>
+        <YearNav year={year} onChange={setYear} />
 
         {/* Thêm ngày */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -120,14 +108,14 @@ export default function WorkScheduleModal({ onClose }) {
           </div>
         )}
 
-        {err && (
-          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>{err}</div>
+        {(err || loadErr) && (
+          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>{err || loadErr}</div>
         )}
 
         {/* Danh sách ngày đã có */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>Ngày đi làm trong năm {year}</div>
-          {!data ? <LoadingState label="Đang tải…" /> : (
+          {loading || !data ? <LoadingState label="Đang tải…" /> : (
             data.workDays.length === 0
               ? <div className="muted" style={{ fontSize: 13 }}>Chưa có ngày đi làm thêm nào.</div>
               : (
