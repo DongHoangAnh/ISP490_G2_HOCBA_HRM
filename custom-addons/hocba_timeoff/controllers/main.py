@@ -151,6 +151,21 @@ def _dept_domain(scope):
     return [('department_id', 'in', scope['deptIds'])]
 
 
+def _approvals_domain(scope):
+    """Domain tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có
+    yêu cầu rút đang chờ (Phase 7), lọc theo phạm vi phòng ban.
+
+    Dùng chung cho GET /approvals VÀ payload refresh của decision/withdraw-decide
+    — 3 nơi lệch nhau là bảng + badge "Chờ duyệt" tạm mất các dòng yêu cầu rút
+    sau khi duyệt một đơn thường (bug đã gặp: FE ghi thẳng payload này vào cache).
+    """
+    return ['|',
+            '&', ('state', 'in', list(PENDING_STATES)),
+                 ('x_withdraw_state', '=', 'none'),
+            '&', ('state', '=', 'validate'),
+                 ('x_withdraw_state', '=', 'pending')] + _dept_domain(scope)
+
+
 def _scoped_departments(env, scope):
     """Phòng ban cho dropdown lọc: HR/Admin = tất cả, Trưởng phòng = phòng mình."""
     Dept = env['hr.department'].sudo()
@@ -1155,6 +1170,9 @@ class HocBaTimeoff(http.Controller):
     def _dept_domain(self, scope):
         return _dept_domain(scope)
 
+    def _approvals_domain(self, scope):
+        return _approvals_domain(scope)
+
     def _scoped_departments(self, scope):
         return _scoped_departments(request.env, scope)
 
@@ -1372,16 +1390,10 @@ class HocBaTimeoff(http.Controller):
         if not scope['canApprove']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
-        # Tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có yêu cầu
-        # rút đang chờ (Phase 7) — FE phân biệt bằng withdrawState + Badge riêng.
-        domain = ['|',
-                  '&', ('state', 'in', list(PENDING_STATES)),
-                       ('x_withdraw_state', '=', 'none'),
-                  '&', ('state', '=', 'validate'),
-                       ('x_withdraw_state', '=', 'pending')]
-        domain += self._dept_domain(scope)
+        # FE phân biệt đơn mới / yêu cầu rút bằng withdrawState + Badge riêng.
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             # HR/Admin lọc theo phòng ban ngay trong thanh sắp xếp; Trưởng phòng
@@ -1772,10 +1784,11 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban).
-        domain = [('state', 'in', list(PENDING_STATES))] + self._dept_domain(scope)
+        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban,
+        # cùng domain với GET /approvals — gồm cả yêu cầu rút đang chờ).
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
@@ -1867,15 +1880,11 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh.
-        domain = ['|',
-                  '&', ('state', 'in', list(PENDING_STATES)),
-                       ('x_withdraw_state', '=', 'none'),
-                  '&', ('state', '=', 'validate'),
-                       ('x_withdraw_state', '=', 'pending')]
-        domain += self._dept_domain(scope)
+        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh —
+        # cùng domain với GET /approvals.
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
