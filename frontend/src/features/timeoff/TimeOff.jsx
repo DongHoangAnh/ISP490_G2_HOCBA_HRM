@@ -131,6 +131,12 @@ export default function TimeOff({ search, focus }) {
         ))}
       </div>
 
+      {search && !SEARCHABLE_TABS.has(activeTab) && (
+        <div className="muted" style={{ fontSize: 12.5, margin: '-8px 0 4px' }}>
+          Tìm kiếm không áp dụng cho tab này.
+        </div>
+      )}
+
       {activeTab === 'overview' && data.isOfficer && (
         <DashboardPanel year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
       )}
@@ -214,6 +220,8 @@ const MY_SORT_FIELDS = [
   { key: 'days', label: 'Số ngày', type: 'num' },
   { key: 'stateLabel', label: 'Trạng thái', type: 'text' },
 ];
+
+const SEARCHABLE_TABS = new Set(['me', 'approved', 'balances']);
 
 function MyTimeOff({ data, search, onCancel, onUpdated }) {
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
