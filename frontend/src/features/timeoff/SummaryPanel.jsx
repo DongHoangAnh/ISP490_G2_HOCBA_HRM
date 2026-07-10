@@ -2,7 +2,6 @@
    Chỉ hiển thị cho role Nhân viên (xem TimeOff.jsx). Thống kê nghỉ phép
    của chính mình trong năm: quỹ phép năm, KPI, theo loại nghỉ, theo tháng,
    và danh sách đơn. Owner: Nhật Anh. Spec §3.8 (đã đổi sang báo cáo cá nhân). */
-import { useState } from 'react';
 import Badge from '../../components/Badge';
 import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
 import { fmtDate } from '../../utils/format';
@@ -14,15 +13,14 @@ import YearNav from './YearNav';
 const MONTHS = ['Th1', 'Th2', 'Th3', 'Th4', 'Th5', 'Th6',
                 'Th7', 'Th8', 'Th9', 'Th10', 'Th11', 'Th12'];
 
-export default function SummaryPanel() {
-  const [year, setYear] = useState(new Date().getFullYear());
+export default function SummaryPanel({ year, onYearChange }) {
   const { data, err, loading, reload } = useFetch(
     () => fetchSummary(year), [year], `timeoff:summary:${year}`);
 
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <TableSkeleton />;
 
-  const nav = <YearNav year={year} onChange={setYear} />;
+  const nav = <YearNav year={year} onChange={onYearChange} />;
 
   if (data.empMissing) {
     return (

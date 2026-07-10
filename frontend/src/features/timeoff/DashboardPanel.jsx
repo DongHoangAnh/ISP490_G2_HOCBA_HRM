@@ -1,7 +1,6 @@
 /* Tab "Tổng quan" — dashboard Nghỉ phép, tự đổi view Manager/Nhân viên
    theo quyền (tái hiện OWL dashboard hr_holidays_modern). Owner: Nhật Anh.
    Spec §3.6. */
-import { useState } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
@@ -12,9 +11,7 @@ import { fmtDate } from '../../utils/format';
 import { fetchDashboard } from '../../api/timeoff';
 import Kpi from './Kpi';
 
-export default function DashboardPanel() {
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [dept, setDept] = useState('');
+export default function DashboardPanel({ year, onYearChange, dept, onDeptChange }) {
   const { data, err, loading, reload } = useFetch(
     () => fetchDashboard(year, dept || undefined), [year, dept],
     `timeoff:dashboard:${year}:${dept}`);
@@ -22,10 +19,10 @@ export default function DashboardPanel() {
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <TableSkeleton />;
 
-  const nav = <YearNav year={year} onChange={setYear} />;
+  const nav = <YearNav year={year} onChange={onYearChange} />;
 
   return data.isManager
-    ? <ManagerView data={data} year={year} dept={dept} setDept={setDept} nav={nav} />
+    ? <ManagerView data={data} year={year} dept={dept} onDeptChange={onDeptChange} nav={nav} />
     : <EmployeeView data={data} nav={nav} />;
 }
 
@@ -49,14 +46,14 @@ function BarList({ rows, unit = 'ngày', onEmpty = 'Chưa có dữ liệu.' }) {
 }
 
 /* ---------- View Manager ---------- */
-function ManagerView({ data, dept, setDept, nav }) {
+function ManagerView({ data, dept, onDeptChange, nav }) {
   const k = data.kpi;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="filterbar">
         {nav}
         <div style={{ marginLeft: 'auto' }}>
-          <DeptSelect value={dept} onChange={setDept} departments={data.departments} />
+          <DeptSelect value={dept} onChange={onDeptChange} departments={data.departments} />
         </div>
       </div>
 

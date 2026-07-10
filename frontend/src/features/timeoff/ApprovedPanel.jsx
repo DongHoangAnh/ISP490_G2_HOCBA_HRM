@@ -28,9 +28,7 @@ const SORT_FIELDS = [
   { key: 'days', label: 'Số ngày', type: 'num' },
 ];
 
-export default function ApprovedPanel({ search }) {
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [dept, setDept] = useState('');
+export default function ApprovedPanel({ search, year, onYearChange, dept, onDeptChange }) {
   const [detail, setDetail] = useState(null); // đơn đang xem chi tiết
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
   const { data, err, loading, reload } = useFetch(
@@ -66,9 +64,9 @@ export default function ApprovedPanel({ search }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Thanh điều khiển */}
       <div className="filterbar">
-        <YearNav year={year} onChange={setYear} />
+        <YearNav year={year} onChange={onYearChange} />
         <div style={{ marginLeft: 'auto' }}>
-          <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
+          <DeptSelect value={dept} onChange={onDeptChange} departments={data.allDepartments} />
         </div>
       </div>
 

@@ -2,7 +2,6 @@
    (HR/Admin mọi phòng, Trưởng phòng phòng mình). Dữ liệu 90 ngày gần nhất.
    Spec: docs/superpowers/specs/2026-07-07-timeoff-burnout-dashboard-lapsed-link-design.md
    Owner: Nhật Anh. */
-import { useState } from 'react';
 import Badge from '../../components/Badge';
 import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
 import useFetch from '../../hooks/useFetch';
@@ -16,8 +15,7 @@ const reasonKind = (reason) => (
     : reason.startsWith('Vắng') ? 'amber' : 'gray'
 );
 
-export default function BurnoutPanel() {
-  const [dept, setDept] = useState('');
+export default function BurnoutPanel({ dept, onDeptChange }) {
   const { data, err, loading, reload } = useFetch(
     () => fetchBurnout(dept || undefined), [dept], `timeoff:burnout:${dept}`);
 
@@ -32,7 +30,7 @@ export default function BurnoutPanel() {
       {data.seeAll && (
         <div className="filterbar">
           <div style={{ marginLeft: 'auto' }}>
-            <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
+            <DeptSelect value={dept} onChange={onDeptChange} departments={data.allDepartments} />
           </div>
         </div>
       )}

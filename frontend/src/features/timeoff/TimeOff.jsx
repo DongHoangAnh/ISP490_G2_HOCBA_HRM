@@ -36,6 +36,8 @@ export default function TimeOff({ search, focus }) {
   const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
   const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Giám sát duyệt → mở modal ở tab Chờ duyệt
+  const [year, setYear] = useState(new Date().getFullYear()); // filter chung xuyên tab
+  const [dept, setDept] = useState('');                        // '' = mọi phòng ban
 
   const load = () => {
     setErr(null); setData(null);
@@ -129,14 +131,19 @@ export default function TimeOff({ search, focus }) {
         ))}
       </div>
 
-      {activeTab === 'overview' && data.isOfficer && <DashboardPanel />}
-      {activeTab === 'summary' && !data.isOfficer && <SummaryPanel />}
+      {activeTab === 'overview' && data.isOfficer && (
+        <DashboardPanel year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
+      )}
+      {activeTab === 'summary' && !data.isOfficer && (
+        <SummaryPanel year={year} onYearChange={setYear} />
+      )}
       {activeTab === 'me' && !data.isOfficer && (
         <MyTimeOff data={data} search={search} onCancel={setCancelling} onUpdated={setData} />
       )}
       {activeTab === 'calendar' && (
         <CalendarPanel isOfficer={data.isOfficer} seeAll={data.seeAll}
-          isTeacher={!!(data.employee && data.employee.isTeacher)} />
+          isTeacher={!!(data.employee && data.employee.isTeacher)}
+          year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
       )}
       {activeTab === 'approvals' && data.isOfficer && (
         <ApprovalPanel isHrManager={data.isHrManager}
@@ -145,11 +152,18 @@ export default function TimeOff({ search, focus }) {
           onChanged={setPendingCount} />
       )}
       {activeTab === 'lapsed' && data.isOfficer && (
-        <LapsedPanel onOpenApproval={(id) => { setApprovalFocus(id); setTab('approvals'); }} />
+        <LapsedPanel dept={dept} onDeptChange={setDept}
+          onOpenApproval={(id) => { setApprovalFocus(id); setTab('approvals'); }} />
       )}
-      {activeTab === 'health' && data.isOfficer && <BurnoutPanel />}
-      {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
-      {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
+      {activeTab === 'health' && data.isOfficer && (
+        <BurnoutPanel dept={dept} onDeptChange={setDept} />
+      )}
+      {activeTab === 'approved' && data.isOfficer && (
+        <ApprovedPanel search={search} year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
+      )}
+      {activeTab === 'balances' && data.isOfficer && (
+        <BalancesPanel search={search} year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
+      )}
       {activeTab === 'substitutions' && data.employee && data.employee.isTeacher && (
         <SubstitutionsPanel onChanged={refreshSubCount} />
       )}

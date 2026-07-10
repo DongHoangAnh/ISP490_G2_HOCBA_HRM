@@ -39,9 +39,7 @@ const SORT_FIELDS = [
   { key: 'totalRemaining', label: 'Tổng còn lại', type: 'num' },
 ];
 
-export default function BalancesPanel({ search }) {
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [dept, setDept] = useState('');
+export default function BalancesPanel({ search, year, onYearChange, dept, onDeptChange }) {
   const [sort, setSort] = useState({ key: 'totalRemaining', dir: 'asc' });
   const [adjust, setAdjust] = useState(null);   // dòng đang điều chỉnh
   const [history, setHistory] = useState(null); // dòng đang xem lịch sử
@@ -93,14 +91,14 @@ export default function BalancesPanel({ search }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Thanh điều khiển */}
       <div className="filterbar">
-        <YearNav year={year} onChange={setYear} />
+        <YearNav year={year} onChange={onYearChange} />
         <button className={'btn btn-sm ' + (expiring ? 'btn-primary' : 'btn-soft')}
           onClick={() => setExpiring((v) => !v)} title={`Còn ≥ ${data.atRiskDays ?? 5} ngày phép năm chưa dùng`}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 12 }}>
           <Icon name="bell" size={15} />Sắp mất phép{(k.atRisk ?? 0) > 0 ? ` (${k.atRisk})` : ''}
         </button>
         <div style={{ marginLeft: 'auto' }}>
-          <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
+          <DeptSelect value={dept} onChange={onDeptChange} departments={data.allDepartments} />
         </div>
       </div>
 

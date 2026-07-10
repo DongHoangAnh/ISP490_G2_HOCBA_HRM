@@ -151,11 +151,9 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacher
   );
 }
 
-export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
-  const [year, setYear] = useState(NOW.getFullYear());
+export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYearChange, dept, onDeptChange }) {
   const [month, setMonth] = useState(NOW.getMonth());
   const [mode, setMode] = useState('year');   // 'year' | 'month'
-  const [dept, setDept] = useState('');         // HR lọc 1 phòng ban ('' = tất cả)
   const [active, setActive] = useState(null);   // Set id loại đang bật (null = tất cả)
   const [teaching, setTeaching] = useState(new Map()); // ngày dạy → số buổi (GV)
   const { data, err, loading, reload } = useFetch(
@@ -205,10 +203,10 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
     return next;
   });
 
-  const stepBack = () => mode === 'year' ? setYear((y) => y - 1)
-    : (month === 0 ? (setMonth(11), setYear((y) => y - 1)) : setMonth((m) => m - 1));
-  const stepFwd = () => mode === 'year' ? setYear((y) => y + 1)
-    : (month === 11 ? (setMonth(0), setYear((y) => y + 1)) : setMonth((m) => m + 1));
+  const stepBack = () => mode === 'year' ? onYearChange(year - 1)
+    : (month === 0 ? (setMonth(11), onYearChange(year - 1)) : setMonth((m) => m - 1));
+  const stepFwd = () => mode === 'year' ? onYearChange(year + 1)
+    : (month === 11 ? (setMonth(0), onYearChange(year + 1)) : setMonth((m) => m + 1));
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 16, alignItems: 'start' }}>
@@ -221,7 +219,7 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
             <span className="mono" style={{ fontWeight: 700, minWidth: mode === 'year' ? 48 : 110, textAlign: 'center' }}>
               {mode === 'year' ? year : `${MONTH_LABEL(month)} ${year}`}</span>
             <button className="icon-btn" onClick={stepFwd}><Icon name="chevR" size={16} /></button>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setYear(NOW.getFullYear()); setMonth(NOW.getMonth()); }}>Hôm nay</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { onYearChange(NOW.getFullYear()); setMonth(NOW.getMonth()); }}>Hôm nay</button>
           </div>
           <div style={{ marginLeft: 'auto' }} className="seg">
             <button className={mode === 'year' ? 'active' : ''} onClick={() => setMode('year')}>Năm</button>
@@ -245,7 +243,7 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
         {seeAll && (
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phòng ban</div>
-            <DeptSelect value={dept} onChange={setDept} style={{ width: '100%' }}
+            <DeptSelect value={dept} onChange={onDeptChange} style={{ width: '100%' }}
               departments={data.allDepartments} />
           </div>
         )}

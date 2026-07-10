@@ -12,8 +12,7 @@ import { fmtDate } from '../../utils/format';
 import { fetchLapsedDashboard, decideRequest } from '../../api/timeoff';
 import Kpi from './Kpi';
 
-export default function LapsedPanel({ onOpenApproval }) {
-  const [dept, setDept] = useState('');
+export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
   const [confirming, setConfirming] = useState(null); // dòng chờ xác nhận xử lý nhanh
   const { data, err, loading, reload } = useFetch(
     () => fetchLapsedDashboard(dept || undefined), [dept], `timeoff:lapsed:${dept}`);
@@ -29,7 +28,7 @@ export default function LapsedPanel({ onOpenApproval }) {
       {data.seeAll && (
         <div className="filterbar">
           <div style={{ marginLeft: 'auto' }}>
-            <DeptSelect value={dept} onChange={setDept} departments={data.allDepartments} />
+            <DeptSelect value={dept} onChange={onDeptChange} departments={data.allDepartments} />
           </div>
         </div>
       )}
