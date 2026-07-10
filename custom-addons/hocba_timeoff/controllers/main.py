@@ -936,8 +936,14 @@ def _return_substitution(env, res_id, employee):
 
 # ---------------------------------------------------------------------------
 # Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn (audit).
-# Chuông: model riêng hb.leave.notification (xem docstring model để biết vì sao
-# KHÔNG dùng mail.message needaction). Audit: message_post chatter trên hr.leave.
+# Chuông: dùng model hợp nhất hb.notification của module hocba_notify (list/
+# read/read-all qua /hocba-hrm/api/notifications* của module đó). Vì sao KHÔNG
+# dùng mail.message needaction: trong Odoo 19 res.users.notification_type là
+# field computed/stored, mặc định 'email' (chỉ user thuộc group
+# mail.group_mail_notification_type_inbox mới là 'inbox') → đa số tài khoản SPA
+# có inbox needaction rỗng, chuông sẽ trống. Model thông báo riêng chủ động,
+# robust, không phụ thuộc tuỳ chọn nhận thông báo của user.
+# Audit: message_post chatter trên hr.leave.
 # Helper cấp module để controller dùng dưới request VÀ test gọi trực tiếp.
 # ---------------------------------------------------------------------------
 def _approver_users(env, leave):
@@ -973,17 +979,24 @@ def _leave_span_label(leave):
     return f if f == t else '%s → %s' % (f, t)
 
 
+_KIND_LEVEL = {
+    'pending': 'warning', 'withdraw_pending': 'warning',
+    'sub_request': 'warning', 'sub_returned': 'warning',
+    'approved': 'success', 'sub_accepted': 'success', 'withdraw_approved': 'success',
+    'refused': 'danger', 'sub_declined': 'danger', 'sub_cancelled': 'danger',
+    'withdraw_refused': 'danger', 'lapsed': 'danger',
+}
+
+
 def _push_notification(env, recipient, leave, kind, title, body):
-    """Tạo 1 thông báo chuông cho 1 user (sudo: chủ đơn/người duyệt không có ACL ghi)."""
+    """Wrapper mỏng → hb.notification hợp nhất (giữ chữ ký cũ cho mọi caller)."""
     if not recipient:
         return
-    env['hb.leave.notification'].sudo().create({
-        'recipient_id': recipient.id,
-        'leave_id': leave.id,
-        'kind': kind,
-        'title': title,
-        'body': body,
-    })
+    env['hb.notification'].sudo()._notify(
+        recipient, category='timeoff', kind=kind,
+        level=_KIND_LEVEL.get(kind, 'info'), title=title, body=body,
+        target_view='timeoff', target_ref=leave.id,
+        target_tab='sub' if kind.startswith('sub_') else None)
 
 
 def _notify_request_created(env, leave):
@@ -1016,46 +1029,6 @@ def _notify_decision(env, leave, action):
         body='Đơn nghỉ %s bởi %s.' % ('được duyệt' if approved else 'bị từ chối', actor),
         subtype_xmlid='mail.mt_note',
     )
-
-
-def _notif_row(rec):
-    return {
-        'id': rec.id,
-        'requestId': rec.leave_id.id,
-        'title': rec.title,
-        'body': rec.body or '',
-        'kind': rec.kind,
-        'isRead': rec.is_read,
-        'createdAt': _d(rec.create_date),
-    }
-
-
-def _list_notifications(env, limit=20, only_unread=False):
-    """Thông báo của chính user đăng nhập (mới nhất trước) + số chưa đọc cho badge."""
-    Notif = env['hb.leave.notification'].sudo()
-    base = [('recipient_id', '=', env.uid)]
-    domain = base + ([('is_read', '=', False)] if only_unread else [])
-    recs = Notif.search(domain, limit=limit or 20)
-    unread = Notif.search_count(base + [('is_read', '=', False)])
-    return {'items': [_notif_row(r) for r in recs], 'unread': unread}
-
-
-def _mark_notification_read(env, notif_id):
-    """Đánh dấu 1 thông báo đã đọc — chỉ khi thuộc về chính user. Trả True/False."""
-    rec = env['hb.leave.notification'].sudo().browse(notif_id)
-    if not rec.exists() or rec.recipient_id.id != env.uid:
-        return False
-    if not rec.is_read:
-        rec.is_read = True
-    return True
-
-
-def _mark_all_notifications_read(env):
-    """Đánh dấu tất cả thông báo của user là đã đọc — trả số dòng vừa đổi."""
-    recs = env['hb.leave.notification'].sudo().search(
-        [('recipient_id', '=', env.uid), ('is_read', '=', False)])
-    recs.write({'is_read': True})
-    return len(recs)
 
 
 def _notify_withdraw_requested(env, leave):
@@ -1891,33 +1864,9 @@ class HocBaTimeoff(http.Controller):
         })
 
     # ------------------------------------------------------------------
-    # 3.5b. Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn.
+    # 3.5b. Phase 5 — Nhật ký thao tác đơn (chuông đã chuyển sang API hợp
+    # nhất /hocba-hrm/api/notifications* của module hocba_notify).
     # ------------------------------------------------------------------
-    @http.route('/hocba-hrm/api/timeoff/notifications', auth='user',
-                type='http', methods=['GET'])
-    def api_notifications(self, **kw):
-        """Thông báo của chính user (cho chuông góc phải). Ai cũng xem của mình."""
-        try:
-            limit = int(kw.get('limit')) if kw.get('limit') else 20
-        except (TypeError, ValueError):
-            limit = 20
-        only_unread = kw.get('onlyUnread') in ('1', 'true', 'True')
-        return request.make_json_response(
-            _list_notifications(request.env, limit, only_unread))
-
-    @http.route('/hocba-hrm/api/timeoff/notifications/<int:notif_id>/read',
-                auth='user', type='http', methods=['POST'], csrf=False)
-    def api_notification_read(self, notif_id, **kw):
-        if not _mark_notification_read(request.env, notif_id):
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        return request.make_json_response(_list_notifications(request.env))
-
-    @http.route('/hocba-hrm/api/timeoff/notifications/read-all',
-                auth='user', type='http', methods=['POST'], csrf=False)
-    def api_notifications_read_all(self, **kw):
-        _mark_all_notifications_read(request.env)
-        return request.make_json_response(_list_notifications(request.env))
-
     @http.route('/hocba-hrm/api/timeoff/request/<int:leave_id>/history',
                 auth='user', type='http', methods=['GET'])
     def api_request_history(self, leave_id, **kw):

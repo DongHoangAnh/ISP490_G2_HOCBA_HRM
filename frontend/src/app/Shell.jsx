@@ -120,7 +120,7 @@ export function Sidebar({ view, setView, me }) {
   );
 }
 
-export function Topbar({ view, onSearch, onOpenRequest }) {
+export function Topbar({ view, onSearch, onOpenNotification }) {
   const m = PAGE_META[view] || { t: '', c: '' };
   return (
     <header className="topbar">
@@ -133,7 +133,7 @@ export function Topbar({ view, onSearch, onOpenRequest }) {
         <input placeholder="Tìm nhân viên, mã HB, phòng ban…"
           onChange={(e) => onSearch && onSearch(e.target.value)} />
       </label>
-      <NotificationBell onOpenRequest={onOpenRequest} />
+      <NotificationBell onOpenNotification={onOpenNotification} />
       <button className="icon-btn" title="Mở Odoo backend"
         onClick={() => window.open('/odoo', '_blank')}>
         <Icon name="settings" size={20} />

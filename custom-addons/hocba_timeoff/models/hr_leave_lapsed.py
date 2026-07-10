@@ -14,13 +14,6 @@ class HrLeaveLapsed(models.Model):
         string='Đã báo lỡ hạn duyệt', default=False,
         help='Cron đã bắn chuông "đơn lỡ hạn" cho người duyệt (chỉ báo 1 lần).',
     )
-
-
-class HbLeaveNotification(models.Model):
-    """Mở rộng selection 'kind' của chuông cho sự kiện đơn lỡ hạn duyệt."""
-    _inherit = 'hb.leave.notification'
-
-    kind = fields.Selection(
-        selection_add=[('lapsed', 'Lỡ hạn duyệt')],
-        ondelete={'lapsed': 'cascade'},
-    )
+    # Chuông đã hợp nhất sang hb.notification (module hocba_notify): 'kind' là
+    # Char tự do nên KHÔNG cần selection_add cho 'lapsed'. Level map ở
+    # _KIND_LEVEL (controllers/main.py).

@@ -132,9 +132,10 @@ class TestTimeoffLapsed(TransactionCase):
     def test_notification_kind_lapsed_accepted(self):
         days = self._past_working_days(1)
         leave = self._mk_leave(self.emp_a, days[0], days[0])
-        notif = self.env['hb.leave.notification'].sudo().create({
-            'recipient_id': self.mgr_a_user.id, 'leave_id': leave.id,
-            'kind': 'lapsed', 'title': 't', 'body': 'b'})
+        notif = self.env['hb.notification'].sudo().create({
+            'recipient_id': self.mgr_a_user.id, 'target_ref': leave.id,
+            'category': 'timeoff', 'kind': 'lapsed', 'level': 'danger',
+            'title': 't', 'body': 'b'})
         self.assertEqual(notif.kind, 'lapsed')
 
     # ----- Task 2: _lapsed_info -----
@@ -294,10 +295,10 @@ class TestTimeoffLapsed(TransactionCase):
 
     # ----- Task 5: cron báo chuông 1 lần -----
     def _notifs_of(self, user, kind=None):
-        domain = [('recipient_id', '=', user.id)]
+        domain = [('recipient_id', '=', user.id), ('category', '=', 'timeoff')]
         if kind:
             domain.append(('kind', '=', kind))
-        return self.env['hb.leave.notification'].sudo().search(domain)
+        return self.env['hb.notification'].sudo().search(domain)
 
     def test_cron_notifies_approvers_once(self):
         """BR-L05: đơn lỡ hạn → chuông cho trưởng phòng + HR đúng 1 LẦN."""
@@ -311,7 +312,7 @@ class TestTimeoffLapsed(TransactionCase):
 
         mgr_notifs = self._notifs_of(self.mgr_a_user, kind='lapsed')
         self.assertEqual(len(mgr_notifs), 1)
-        self.assertEqual(mgr_notifs.leave_id.id, leave.id)
+        self.assertEqual(mgr_notifs.target_ref, leave.id)
         self.assertTrue(self._notifs_of(self.hr_user, kind='lapsed'))
         self.assertTrue(leave.x_lapsed_notified)
         # Đơn chưa lỡ hạn: không báo, không set cờ.

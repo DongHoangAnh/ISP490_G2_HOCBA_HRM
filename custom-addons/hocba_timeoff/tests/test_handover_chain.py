@@ -19,7 +19,11 @@ class TestHandoverChain(TransactionCase):
     def setUp(self):
         super().setUp()
         # Ngày tương lai cố định để _upcoming_teaching_sessions (hôm nay→+28) ổn định.
+        # Né T7/CN: lịch làm việc chuẩn không có ca cuối tuần → hr_holidays chặn
+        # duyệt đơn ("not supposed to work during that period") nếu rơi cuối tuần.
         self.sdate = date.today() + timedelta(days=7)
+        while self.sdate.weekday() >= 5:
+            self.sdate += timedelta(days=1)
         U = self.env['res.users']
         self.uA = U.create({'name': 'UA', 'login': 'hc_ua'})
         self.uB = U.create({'name': 'UB', 'login': 'hc_ub'})
@@ -34,7 +38,7 @@ class TestHandoverChain(TransactionCase):
             'start_time': '08:00', 'end_time': '10:00'})
         self.unpaid = self.env.ref('hocba_timeoff.hb_leave_type_unpaid')
         self.Res = self.env['hocba.leave.session.resolution']
-        self.Notif = self.env['hb.leave.notification']
+        self.Notif = self.env['hb.notification']
 
     def _leave_for(self, emp, resolution='substitute', sub=None, state='accepted'):
         leave = self.env['hr.leave'].create({

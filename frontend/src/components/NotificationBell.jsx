@@ -1,20 +1,20 @@
-/* Chuông thông báo Nghỉ phép (Phase 5) — đặt ở góc phải Topbar (file CHUNG).
-   Poll số chưa đọc mỗi 60s; mở dropdown xem danh sách, đánh dấu đã đọc, bấm 1
-   thông báo → mở đúng đơn (onOpenRequest). Owner: Nhật Anh. */
+/* Chuông thông báo hợp nhất — đặt ở góc phải Topbar (file CHUNG). Dùng chung
+   MỌI module (timeoff/offboarding/onboarding/nhắc hạn): poll /api/notifications
+   mỗi 60s; mở dropdown xem danh sách, đánh dấu đã đọc, bấm 1 thông báo →
+   điều hướng view đích (onOpenNotification). */
 import { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
 import {
   fetchNotifications, markNotificationRead, markAllNotificationsRead,
-} from '../api/timeoff';
+} from '../api/notifications';
 
 const POLL_MS = 60000;
 
-/* Loại thông báo → màu chấm. */
-const KIND_DOT = {
-  pending: 'var(--amber,#f59e0b)', approved: 'var(--green,#10b981)', refused: 'var(--red-600,#dc2626)',
-  sub_request: 'var(--amber,#f59e0b)', sub_accepted: 'var(--green,#10b981)', sub_declined: 'var(--red-600,#dc2626)',
-  sub_cancelled: 'var(--red-600,#dc2626)', sub_returned: 'var(--amber,#f59e0b)',
-  lapsed: 'var(--red-600,#dc2626)',
+/* Mức thông báo → màu chấm (level do BE quyết, không phụ thuộc kind).
+   'lapsed' của timeoff dùng level='danger' (đỏ) — xem _KIND_LEVEL ở BE. */
+const LEVEL_DOT = {
+  info: 'var(--blue,#3b82f6)', success: 'var(--green,#10b981)',
+  warning: 'var(--amber,#f59e0b)', danger: 'var(--red-600,#dc2626)',
 };
 
 function timeAgo(s) {
@@ -28,7 +28,7 @@ function timeAgo(s) {
   return Math.floor(sec / 86400) + ' ngày trước';
 }
 
-export default function NotificationBell({ onOpenRequest }) {
+export default function NotificationBell({ onOpenNotification }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ items: [], unread: 0 });
   const wrapRef = useRef(null);
@@ -52,10 +52,7 @@ export default function NotificationBell({ onOpenRequest }) {
   const onItem = (n) => {
     setOpen(false);
     if (!n.isRead) markNotificationRead(n.id).then(setData).catch(() => {});
-    // kind đi kèm để màn Nghỉ phép mở đúng nơi (sub_request → tab "Yêu cầu dạy thay").
-    if (onOpenRequest && (n.requestId || n.kind === 'sub_request')) {
-      onOpenRequest(n.requestId, n.kind);
-    }
+    if (onOpenNotification) onOpenNotification(n);
   };
 
   const onReadAll = () => { markAllNotificationsRead().then(setData).catch(() => {}); };
@@ -92,7 +89,7 @@ export default function NotificationBell({ onOpenRequest }) {
                 <li key={n.id}>
                   <button onClick={() => onItem(n)}
                     style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 10, padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: n.isRead ? '#fff' : 'var(--red-50,#fef2f2)', cursor: 'pointer' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: KIND_DOT[n.kind] || 'var(--muted)' }}></span>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: LEVEL_DOT[n.level] || 'var(--muted)' }}></span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 13, fontWeight: n.isRead ? 500 : 700, color: 'var(--ink)' }}>{n.title}</span>
                       <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.body}</span>

@@ -25,21 +25,3 @@ class HrLeave(models.Model):
     x_withdraw_reason = fields.Text(
         string='Lý do rút đơn',
     )
-
-
-class HbLeaveNotification(models.Model):
-    """Mở rộng selection 'kind' của thông báo cho 3 sự kiện rút đơn."""
-    _inherit = 'hb.leave.notification'
-
-    kind = fields.Selection(
-        selection_add=[
-            ('withdraw_pending', 'Chờ duyệt rút'),
-            ('withdraw_approved', 'Đã duyệt rút'),
-            ('withdraw_refused', 'Từ chối rút'),
-        ],
-        ondelete={
-            'withdraw_pending': 'cascade',
-            'withdraw_approved': 'cascade',
-            'withdraw_refused': 'cascade',
-        },
-    )
