@@ -97,7 +97,10 @@ export default function ApprovedPanel({ search, year, onYearChange, dept, onDept
             </tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setDetail(r)}>
+                <tr key={r.id} tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => setDetail(r)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(r); }
+                  }}>
                   <td style={{ fontWeight: 600 }}>
                     {r.employee}{r.isEmergency && <Badge kind="red">Khẩn</Badge>}</td>
                   <td className="muted">{r.department}</td>

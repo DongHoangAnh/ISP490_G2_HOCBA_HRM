@@ -281,7 +281,12 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
             </tr></thead>
             <tbody>
               {requests.map((r) => (
-                <tr key={r.id} onClick={() => setDetail(r)} style={{ cursor: 'pointer' }}>
+                <tr key={r.id} tabIndex={0} onClick={() => setDetail(r)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(r); }
+                  }}
+                  style={{ cursor: 'pointer' }}>
                   <td>
                     <span style={{ fontWeight: 600 }}>{r.leaveType}</span>
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
