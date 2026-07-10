@@ -151,12 +151,14 @@ export default function TimeOff({ search, focus }) {
           onFocusConsumed={() => setApprovalFocus(null)}
           onChanged={setPendingCount} />
       )}
+      {/* Lapsed/Burnout chỉ hiện DeptSelect khi seeAll → chặn dept chọn ở tab khác
+          leak vào thành filter ẩn (trưởng phòng nhiều phòng ban không thấy/xóa được). */}
       {activeTab === 'lapsed' && data.isOfficer && (
-        <LapsedPanel dept={dept} onDeptChange={setDept}
+        <LapsedPanel dept={data.seeAll ? dept : ''} onDeptChange={setDept}
           onOpenApproval={(id) => { setApprovalFocus(id); setTab('approvals'); }} />
       )}
       {activeTab === 'health' && data.isOfficer && (
-        <BurnoutPanel dept={dept} onDeptChange={setDept} />
+        <BurnoutPanel dept={data.seeAll ? dept : ''} onDeptChange={setDept} />
       )}
       {activeTab === 'approved' && data.isOfficer && (
         <ApprovedPanel search={search} year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
