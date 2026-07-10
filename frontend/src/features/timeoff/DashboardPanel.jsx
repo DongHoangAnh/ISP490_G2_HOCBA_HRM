@@ -65,8 +65,8 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
           sub={k.overdue > 0 ? 'cần xử lý gấp' : 'trong SLA'} />
         <Kpi label="Tuổi đơn cũ nhất" value={k.oldestAgeDays}
           sub={`TB: ${k.avgAgeDays} ngày làm việc`} />
-        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)" />
-        <Kpi label="Ngày phép đã duyệt" value={k.approvedDays} sub="tổng số ngày" />
+        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)"
+          sub={`${k.approvedDays} ngày phép đã duyệt`} />
         <Kpi label="Đang nghỉ hôm nay" value={k.onLeaveToday} color="var(--blue)" />
       </div>
 
