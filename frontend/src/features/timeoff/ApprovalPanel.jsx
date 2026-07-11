@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react';
 import Modal from '../../components/Modal';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import ModalHeader from '../../components/ModalHeader';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
 import { fmtDate } from '../../utils/format';
 import { fetchApprovals, decideRequest, decideWithdraw } from '../../api/timeoff';
 import SortBar, { sortRows } from './SortBar';
@@ -27,22 +29,30 @@ const inp = {
 // Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
 const OVERLAP_WARN = 3;
 
-export default function ApprovalPanel({ isHrManager }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
+export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusConsumed, onChanged }) {
   const [decision, setDecision] = useState(null); // đơn đang mở modal duyệt
   const [withdrawDecision, setWithdrawDecision] = useState(null); // yêu cầu rút đang xử lý
   const [sort, setSort] = useState({ key: 'from', dir: 'asc' });
   const [dept, setDept] = useState(''); // lọc phòng ban (chỉ role HR, khi sắp xếp theo phòng ban)
+  const { data, err, loading, reload, setData } = useFetch(
+    () => fetchApprovals(), [], 'timeoff:approvals');
 
-  const load = () => {
-    setErr(null); setData(null);
-    fetchApprovals().then(setData).catch((e) => setErr(e.message));
-  };
-  useEffect(load, []);
+  // Deep-link từ tab "Giám sát duyệt": mở thẳng modal xử lý của đơn được trỏ.
+  // Tiêu thụ 1 lần (onFocusConsumed) — user đóng modal thì không tự mở lại;
+  // đơn không còn trong danh sách (vừa được xử lý) → chỉ hiện tab, không modal.
+  useEffect(() => {
+    if (!data || !focusRequestId) return;
+    const row = data.requests.find((r) => r.id === focusRequestId);
+    if (row) {
+      if (row.withdrawState === 'pending') setWithdrawDecision(row);
+      else setDecision(row);
+    }
+    onFocusConsumed && onFocusConsumed();
+    // onFocusConsumed cố ý KHÔNG nằm trong deps: arrow inline tạo mới mỗi render, đưa vào sẽ refire effect.
+  }, [data, focusRequestId]);
 
-  if (err) return <ErrorState message={err} onRetry={load} />;
-  if (!data) return <LoadingState label="Đang tải đơn chờ duyệt…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
   // Lọc phòng ban chỉ áp dụng khi role HR đang sắp xếp theo phòng ban + đã chọn 1 phòng.
   const deptFilterOn = data.seeAll && sort.key === 'department' && dept;
@@ -125,13 +135,20 @@ export default function ApprovalPanel({ isHrManager }) {
       {decision && (
         <DecisionModal req={decision} isHrManager={isHrManager}
           onClose={() => setDecision(null)}
-          onDone={(payload) => { setDecision(null); setData(payload); }} />
+          onDone={(payload) => {
+            setDecision(null); setData(payload);
+            // Báo parent số đơn chờ mới để badge tab "Chờ duyệt" cập nhật ngay.
+            onChanged && onChanged((payload.requests || []).length);
+          }} />
       )}
 
       {withdrawDecision && (
         <WithdrawDecisionModal req={withdrawDecision}
           onClose={() => setWithdrawDecision(null)}
-          onDone={(payload) => { setWithdrawDecision(null); setData(payload); }} />
+          onDone={(payload) => {
+            setWithdrawDecision(null); setData(payload);
+            onChanged && onChanged((payload.requests || []).length);
+          }} />
       )}
     </div>
   );
@@ -154,18 +171,9 @@ function WithdrawDecisionModal({ req, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="alertCircle" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Xử lý yêu cầu rút đơn</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {req.employee} · {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)
-          </div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="alertCircle" title="Xử lý yêu cầu rút đơn"
+        sub={`${req.employee} · ${req.leaveType} · ${fmtDate(req.from)} → ${fmtDate(req.to)} (${req.days} ngày)`}
+        onClose={onClose} />
 
       <div style={{ padding: '22px 24px', display: 'grid', gap: 14 }}>
         {req.withdrawReason && (
@@ -239,17 +247,9 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="checkCircle" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Xử lý đơn nghỉ</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {req.employee} · {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="checkCircle" title="Xử lý đơn nghỉ"
+        sub={`${req.employee} · ${req.leaveType} · ${fmtDate(req.from)} → ${fmtDate(req.to)} (${req.days} ngày)`}
+        onClose={onClose} />
 
       <div style={{ padding: '22px 24px', maxHeight: '58vh', overflowY: 'auto', display: 'grid', gap: 14 }}>
         <div className="muted" style={{ fontSize: 13 }}><b>Ngày tạo đơn:</b> {fmtDate(req.createdAt)}</div>
@@ -330,13 +330,7 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
         {req.lapsed && req.lapsed.suggestion && (
           <button className="btn btn-soft" disabled={busy}
             style={{ marginRight: 'auto', borderColor: 'var(--red-600)', color: 'var(--red-700)' }}
-            onClick={() => {
-              const label = req.lapsed.suggestion === 'approve'
-                ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)';
-              if (window.confirm(label + ' đơn này theo đề xuất đối chiếu chấm công?')) {
-                decide(req.lapsed.suggestion);
-              }
-            }}>
+            onClick={() => decide(req.lapsed.suggestion)}>
             <Icon name="alertCircle" size={16} />
             {req.lapsed.suggestion === 'approve' ? 'Duyệt trễ theo đề xuất' : 'Từ chối theo đề xuất'}
           </button>

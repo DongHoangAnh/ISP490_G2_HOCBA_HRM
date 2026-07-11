@@ -1,53 +1,29 @@
 /* Tab "Tổng quan" — dashboard Nghỉ phép, tự đổi view Manager/Nhân viên
    theo quyền (tái hiện OWL dashboard hr_holidays_modern). Owner: Nhật Anh.
    Spec §3.6. */
-import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import YearNav from './YearNav';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchDashboard } from '../../api/timeoff';
+import Kpi from './Kpi';
 
-const THIS_YEAR = new Date().getFullYear();
+export default function DashboardPanel({ year, onYearChange, dept, onDeptChange }) {
+  const { data, err, loading, reload } = useFetch(
+    () => fetchDashboard(year, dept || undefined), [year, dept],
+    `timeoff:dashboard:${year}:${dept}`);
 
-export default function DashboardPanel() {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [year, setYear] = useState(THIS_YEAR);
-  const [dept, setDept] = useState('');
-  const [tick, setTick] = useState(0); // ép tải lại (nút Thử lại)
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchDashboard(year, dept || undefined).then(setData).catch((e) => setErr(e.message));
-  }, [year, dept, tick]);
-
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải tổng quan nghỉ phép…" />;
-
-  const nav = (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <button className="icon-btn" onClick={() => setYear((y) => y - 1)}>
-        <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevR" size={16} /></span></button>
-      <span className="mono" style={{ fontWeight: 700, minWidth: 48, textAlign: 'center' }}>{year}</span>
-      <button className="icon-btn" onClick={() => setYear((y) => y + 1)}><Icon name="chevR" size={16} /></button>
-      <button className="btn btn-ghost btn-sm" onClick={() => setYear(THIS_YEAR)}>Năm nay</button>
-    </div>
-  );
+  const nav = <YearNav year={year} onChange={onYearChange} />;
 
   return data.isManager
-    ? <ManagerView data={data} year={year} dept={dept} setDept={setDept} nav={nav} />
+    ? <ManagerView data={data} year={year} dept={dept} onDeptChange={onDeptChange} nav={nav} />
     : <EmployeeView data={data} nav={nav} />;
-}
-
-function Kpi({ label, value, sub, color }) {
-  return (
-    <div className="card" style={{ padding: '16px 18px' }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
-    </div>
-  );
 }
 
 function BarList({ rows, unit = 'ngày', onEmpty = 'Chưa có dữ liệu.' }) {
@@ -70,17 +46,14 @@ function BarList({ rows, unit = 'ngày', onEmpty = 'Chưa có dữ liệu.' }) {
 }
 
 /* ---------- View Manager ---------- */
-function ManagerView({ data, dept, setDept, nav }) {
+function ManagerView({ data, dept, onDeptChange, nav }) {
   const k = data.kpi;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="filterbar">
         {nav}
         <div style={{ marginLeft: 'auto' }}>
-          <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-            <option value="">Mọi phòng ban</option>
-            {data.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          <DeptSelect value={dept} onChange={onDeptChange} departments={data.departments} />
         </div>
       </div>
 
@@ -92,8 +65,8 @@ function ManagerView({ data, dept, setDept, nav }) {
           sub={k.overdue > 0 ? 'cần xử lý gấp' : 'trong SLA'} />
         <Kpi label="Tuổi đơn cũ nhất" value={k.oldestAgeDays}
           sub={`TB: ${k.avgAgeDays} ngày làm việc`} />
-        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)" />
-        <Kpi label="Ngày phép đã duyệt" value={k.approvedDays} sub="tổng số ngày" />
+        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)"
+          sub={`${k.approvedDays} ngày phép đã duyệt`} />
         <Kpi label="Đang nghỉ hôm nay" value={k.onLeaveToday} color="var(--blue)" />
       </div>
 

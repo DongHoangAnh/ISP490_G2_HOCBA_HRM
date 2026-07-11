@@ -171,3 +171,10 @@ export const fetchLapsedDashboard = (dept) => {
   const q = p.toString();
   return hbGet('/hocba-hrm/api/timeoff/lapsed-dashboard' + (q ? '?' + q : ''));
 };
+
+export const fetchBurnout = (dept) => {
+  const p = new URLSearchParams();
+  if (dept) p.set('dept', dept);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/burnout' + (q ? '?' + q : ''));
+};

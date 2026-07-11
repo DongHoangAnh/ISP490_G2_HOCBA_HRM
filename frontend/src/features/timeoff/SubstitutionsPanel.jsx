@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
+import ModalHeader from '../../components/ModalHeader';
+import ConfirmModal from '../../components/ConfirmModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchSubstitutions, decideSubstitution, returnSubstitution } from '../../api/timeoff';
@@ -19,7 +21,9 @@ export default function SubstitutionsPanel({ onChanged }) {
   const [items, setItems] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(null); // id đang đồng ý
+  const [actionErr, setActionErr] = useState(null); // lỗi khi Đồng ý (hiện banner trong card)
   const [declining, setDeclining] = useState(null); // yêu cầu đang mở modal từ chối
+  const [returning, setReturning] = useState(null); // yêu cầu đang chờ xác nhận trả buổi
 
   const load = useCallback(() => {
     setErr(null);
@@ -33,20 +37,10 @@ export default function SubstitutionsPanel({ onChanged }) {
   if (!items) return <LoadingState label="Đang tải yêu cầu dạy thay…" />;
 
   const accept = (id) => {
-    setBusy(id);
+    setBusy(id); setActionErr(null);
     decideSubstitution(id, true, '')
       .then((d) => { setItems(d.items || []); onChanged && onChanged(); })
-      .catch((e) => alert('Không xử lý được: ' + e.message))
-      .finally(() => setBusy(null));
-  };
-
-  const giveBack = (id) => {
-    if (!window.confirm('Trả lại buổi dạy thay này? Buổi sẽ về lại giáo viên đã nhờ bạn.'))
-      return;
-    setBusy(id);
-    returnSubstitution(id)
-      .then((d) => { setItems(d.items || []); onChanged && onChanged(); })
-      .catch((e) => alert('Không trả được: ' + e.message))
+      .catch((e) => setActionErr('Không xử lý được: ' + e.message))
       .finally(() => setBusy(null));
   };
 
@@ -61,6 +55,11 @@ export default function SubstitutionsPanel({ onChanged }) {
           )}
         </h3>
       </div>
+      {actionErr && (
+        <div style={{ margin: '0 16px 12px', padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
+          {actionErr}
+        </div>
+      )}
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
@@ -89,8 +88,8 @@ export default function SubstitutionsPanel({ onChanged }) {
                     )}
                     {r.canReturn && (
                       <button className="btn btn-ghost btn-sm" disabled={busy === r.id}
-                        onClick={() => giveBack(r.id)}>
-                        <Icon name="rotateCcw" size={14} />{busy === r.id ? '…' : 'Trả buổi'}</button>
+                        onClick={() => setReturning(r)}>
+                        <Icon name="rotateCcw" size={14} />Trả buổi</button>
                     )}
                   </td>
                 </tr>
@@ -105,6 +104,15 @@ export default function SubstitutionsPanel({ onChanged }) {
         <DeclineModal req={declining}
           onClose={() => setDeclining(null)}
           onDone={(d) => { setDeclining(null); setItems(d.items || []); onChanged && onChanged(); }} />
+      )}
+
+      {returning && (
+        <ConfirmModal title="Trả lại buổi dạy thay" confirmLabel="Trả buổi" icon="rotateCcw"
+          message={`Trả lại buổi ${returning.className || '—'} ngày ${fmtDate(returning.date)}? Buổi sẽ về lại giáo viên đã nhờ bạn.`}
+          onClose={() => setReturning(null)}
+          onConfirm={() => returnSubstitution(returning.id).then((d) => {
+            setReturning(null); setItems(d.items || []); onChanged && onChanged();
+          })} />
       )}
     </div>
   );
@@ -128,18 +136,9 @@ function DeclineModal({ req, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="alertCircle" size={20} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Từ chối dạy thay</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {req.requester} · {req.className} · {fmtDate(req.date)} {req.startTime}
-          </div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader icon="alertCircle" title="Từ chối dạy thay"
+        sub={`${req.requester} · ${req.className} · ${fmtDate(req.date)} ${req.startTime}`}
+        onClose={onClose} />
 
       <div style={{ padding: '18px 24px', display: 'grid', gap: 12 }}>
         <div className="muted" style={{ fontSize: 13 }}>

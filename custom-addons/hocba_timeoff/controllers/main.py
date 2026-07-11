@@ -151,6 +151,21 @@ def _dept_domain(scope):
     return [('department_id', 'in', scope['deptIds'])]
 
 
+def _approvals_domain(scope):
+    """Domain tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có
+    yêu cầu rút đang chờ (Phase 7), lọc theo phạm vi phòng ban.
+
+    Dùng chung cho GET /approvals VÀ payload refresh của decision/withdraw-decide
+    — 3 nơi lệch nhau là bảng + badge "Chờ duyệt" tạm mất các dòng yêu cầu rút
+    sau khi duyệt một đơn thường (bug đã gặp: FE ghi thẳng payload này vào cache).
+    """
+    return ['|',
+            '&', ('state', 'in', list(PENDING_STATES)),
+                 ('x_withdraw_state', '=', 'none'),
+            '&', ('state', '=', 'validate'),
+                 ('x_withdraw_state', '=', 'pending')] + _dept_domain(scope)
+
+
 def _scoped_departments(env, scope):
     """Phòng ban cho dropdown lọc: HR/Admin = tất cả, Trưởng phòng = phòng mình."""
     Dept = env['hr.department'].sudo()
@@ -675,6 +690,49 @@ def _post_lapsed_decision_note(env, leave, action, info):
     )
 
 
+def _burnout_table(env, scope, dept_id=False):
+    """Bảng cảnh báo burnout (Widget 5-6, BR-040): KPI theo nhóm lý do
+    + bảng NV có cờ + đếm theo phòng. Đọc SQL view hb.timeoff.burnout.line
+    (đã sắp burnout desc, sick desc). sudo + lọc phòng ban tường minh."""
+    domain = [('burnout_risk', '=', True)] + _dept_domain(scope)
+    if dept_id:
+        domain.append(('department_id', '=', dept_id))
+    lines = env['hb.timeoff.burnout.line'].sudo().search(domain)
+
+    items, by_dept = [], {}
+    n_sick = n_absence = n_balance = 0
+    for line in lines:
+        reason = line.risk_reason or ''
+        # view trả đúng 1 lý do chính/NV → 3 nhóm cộng lại = total
+        if reason.startswith('Nghỉ ốm'):
+            n_sick += 1
+        elif reason.startswith('Vắng'):
+            n_absence += 1
+        else:
+            n_balance += 1
+        dept = line.department_id
+        row = by_dept.setdefault(dept.id or 0, {
+            'id': dept.id or False, 'name': dept.name or '—', 'count': 0})
+        row['count'] += 1
+        items.append({
+            'employeeId': line.employee_id.id,
+            'employee': line.employee_id.name,
+            'departmentId': dept.id or False,
+            'department': dept.name or '—',
+            'sickCount3m': line.sick_leave_count_3m,
+            'absenceDays3m': round(line.total_absence_days_3m, 2),
+            'remainingBalance': round(line.remaining_leave_balance, 2),
+            'riskReason': reason,
+        })
+    return {
+        'kpi': {'total': len(items), 'sickFreq': n_sick,
+                'highAbsence': n_absence, 'lowBalance': n_balance},
+        'items': items,
+        'byDepartment': sorted(by_dept.values(),
+                               key=lambda r: r['count'], reverse=True),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Nghỉ phép giáo viên — dò xung đột lịch dạy + áp dụng cách xử lý từng buổi.
 # Lịch dạy là nguồn chính trong Neon (hocba.teaching.session). Helper cấp module
@@ -1085,6 +1143,9 @@ class HocBaTimeoff(http.Controller):
     def _dept_domain(self, scope):
         return _dept_domain(scope)
 
+    def _approvals_domain(self, scope):
+        return _approvals_domain(scope)
+
     def _scoped_departments(self, scope):
         return _scoped_departments(request.env, scope)
 
@@ -1302,16 +1363,10 @@ class HocBaTimeoff(http.Controller):
         if not scope['canApprove']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
-        # Tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có yêu cầu
-        # rút đang chờ (Phase 7) — FE phân biệt bằng withdrawState + Badge riêng.
-        domain = ['|',
-                  '&', ('state', 'in', list(PENDING_STATES)),
-                       ('x_withdraw_state', '=', 'none'),
-                  '&', ('state', '=', 'validate'),
-                       ('x_withdraw_state', '=', 'pending')]
-        domain += self._dept_domain(scope)
+        # FE phân biệt đơn mới / yêu cầu rút bằng withdrawState + Badge riêng.
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             # HR/Admin lọc theo phòng ban ngay trong thanh sắp xếp; Trưởng phòng
@@ -1702,10 +1757,11 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban).
-        domain = [('state', 'in', list(PENDING_STATES))] + self._dept_domain(scope)
+        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban,
+        # cùng domain với GET /approvals — gồm cả yêu cầu rút đang chờ).
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
@@ -1797,15 +1853,11 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh.
-        domain = ['|',
-                  '&', ('state', 'in', list(PENDING_STATES)),
-                       ('x_withdraw_state', '=', 'none'),
-                  '&', ('state', '=', 'validate'),
-                       ('x_withdraw_state', '=', 'pending')]
-        domain += self._dept_domain(scope)
+        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh —
+        # cùng domain với GET /approvals.
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
@@ -1872,6 +1924,31 @@ class HocBaTimeoff(http.Controller):
         if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
             dept_id = False
         data = _lapsed_table(request.env, scope, dept_id)
+        data.update({
+            **self._scope_flags(scope),
+            'allDepartments': [{'id': d.id, 'name': d.name}
+                               for d in self._scoped_departments(scope)],
+        })
+        return request.make_json_response(data)
+
+    # ------------------------------------------------------------------
+    # 3.6c. GET /burnout — tab "Sức khỏe NV" (Widget 5-6, BR-040).
+    # Chỉ officer; HR/Admin mọi phòng, Trưởng phòng phòng mình.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/burnout', auth='user',
+                type='http', methods=['GET'])
+    def api_burnout(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            dept_id = int(kw.get('dept')) if kw.get('dept') else False
+        except (TypeError, ValueError):
+            dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        data = _burnout_table(request.env, scope, dept_id)
         data.update({
             **self._scope_flags(scope),
             'allDepartments': [{'id': d.id, 'name': d.name}
