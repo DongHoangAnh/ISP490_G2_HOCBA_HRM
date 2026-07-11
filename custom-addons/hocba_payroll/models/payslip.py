@@ -13,6 +13,7 @@ import logging
 import re as _re
 import uuid
 from collections import deque
+from datetime import timedelta
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError, UserError
@@ -36,22 +37,117 @@ PIT_BRACKETS = [
 # Each entry maps a source key to model, date/employee fields, and aggregatable
 # fields.  Only sources listed here can be queried by "lookup" salary rules —
 # this is the security boundary.
-LOOKUP_SOURCES = {
-    'attendance': {
-        'model': 'hocba.attendance',
-        'label': 'Chấm công',
-        'employee_field': 'employee_id',
-        'date_field': 'date',
-        'fields': {
-            'work_credit':         {'label': 'Số công (0/0.5/1.0)', 'agg': 'sum'},
-            'working_hours':       {'label': 'Giờ làm việc',        'agg': 'sum'},
-            'late_minutes':        {'label': 'Phút đi trễ',         'agg': 'sum'},
-            'early_leave_minutes': {'label': 'Phút về sớm',         'agg': 'sum'},
-            'morning_credit':      {'label': 'Công sáng',           'agg': 'sum'},
-            'afternoon_credit':    {'label': 'Công chiều',          'agg': 'sum'},
-        },
-    },
-}
+# ── Catalog nguồn lookup cho quy tắc lương ─────────────────────────────────────
+# "Nguồn dữ liệu" = NHÓM NGHIỆP VỤ (bộ lọc phân loại), KHÔNG phải 1 model. Mỗi
+# field bên trong map tới (model, field, agg) THẬT — có thể khác bảng nhau. Chỉ
+# chọn các field SỐ hay dùng nhất khi tính lương (không đổ hết field mọi bảng).
+#   agg: 'current' = giá trị hiện tại (bản ghi mới nhất của NV, vd lương hợp đồng);
+#        'sum'/'avg'/'max'/'min' = tổng hợp theo kỳ lương; 'count' = đếm bản ghi.
+# rule.lookup_source = key nhóm (employee/attendance/…); rule.lookup_field = key field.
+LOOKUP_CATALOG = [
+    {'key': 'employee', 'label': 'Nhân sự & Hợp đồng', 'fields': [
+        # Lương cơ bản đọc từ hr.version (qua employee.version_id) — ĐÚNG nguồn mà
+        # form Nhân viên hiển thị/chỉnh (HR sửa lương ở đó). KHÔNG dùng hb.contract.wage
+        # vì đó là bản sao riêng, dễ lệch với lương HR thực sự đặt.
+        {'key': 'wage',                 'label': 'Lương cơ bản',          'model': 'hr.version', 'field': 'wage',                 'agg': 'current'},
+        {'key': 'x_fixed_base',         'label': 'Lương cố định',         'model': 'hb.contract', 'field': 'x_fixed_base',         'agg': 'current'},
+        {'key': 'x_insurance_base',     'label': 'Lương đóng BH',         'model': 'hb.contract', 'field': 'x_insurance_base',     'agg': 'current'},
+        {'key': 'x_dependent_count',    'label': 'Số người phụ thuộc',    'model': 'hb.contract', 'field': 'x_dependent_count',    'agg': 'current'},
+        {'key': 'x_pc_position',        'label': 'PC chức vụ',            'model': 'hb.contract', 'field': 'x_pc_position',        'agg': 'current'},
+        {'key': 'x_pc_seniority',       'label': 'PC thâm niên',          'model': 'hb.contract', 'field': 'x_pc_seniority',       'agg': 'current'},
+        {'key': 'x_pc_fuel',            'label': 'PC xăng xe',            'model': 'hb.contract', 'field': 'x_pc_fuel',            'agg': 'current'},
+        {'key': 'x_sp_phone',           'label': 'HT điện thoại',         'model': 'hb.contract', 'field': 'x_sp_phone',           'agg': 'current'},
+        {'key': 'x_sp_meal',            'label': 'HT ăn ca',              'model': 'hb.contract', 'field': 'x_sp_meal',            'agg': 'current'},
+        {'key': 'x_teaching_hourly_rate', 'label': 'Đơn giá giờ dạy',     'model': 'hb.contract', 'field': 'x_teaching_hourly_rate', 'agg': 'current'},
+    ]},
+    {'key': 'attendance', 'label': 'Chấm công', 'fields': [
+        {'key': 'work_credit',          'label': 'Số công (0/0.5/1.0)',   'model': 'hocba.attendance', 'field': 'work_credit',        'agg': 'sum'},
+        {'key': 'working_hours',        'label': 'Giờ làm việc',          'model': 'hocba.attendance', 'field': 'working_hours',      'agg': 'sum'},
+        {'key': 'morning_credit',       'label': 'Công sáng',             'model': 'hocba.attendance', 'field': 'morning_credit',     'agg': 'sum'},
+        {'key': 'afternoon_credit',     'label': 'Công chiều',            'model': 'hocba.attendance', 'field': 'afternoon_credit',   'agg': 'sum'},
+        {'key': 'late_minutes',         'label': 'Phút đi trễ',           'model': 'hocba.attendance', 'field': 'late_minutes',       'agg': 'sum'},
+        {'key': 'early_leave_minutes',  'label': 'Phút về sớm',           'model': 'hocba.attendance', 'field': 'early_leave_minutes', 'agg': 'sum'},
+        {'key': 'missing_minutes',      'label': 'Phút thiếu',            'model': 'hocba.attendance', 'field': 'missing_minutes',    'agg': 'sum'},
+        {'key': 'attendance_days',      'label': 'Số ngày có chấm công',  'model': 'hocba.attendance', 'field': None,                 'agg': 'count'},
+    ]},
+    {'key': 'overtime', 'label': 'Tăng ca / Ca làm việc', 'fields': [
+        {'key': 'shift_hours',          'label': 'Giờ làm theo ca',       'model': 'hocba.shift.attendance', 'field': 'worked_hours', 'agg': 'sum'},
+        {'key': 'shift_count',          'label': 'Số ca đã làm',          'model': 'hocba.shift.attendance', 'field': None,           'agg': 'count'},
+    ]},
+    {'key': 'teaching', 'label': 'Giảng dạy (Giáo viên)', 'fields': [
+        {'key': 'teaching_hours',       'label': 'Giờ dạy',               'model': 'hocba.teaching.attendance', 'field': 'worked_hours', 'agg': 'sum'},
+        {'key': 'teaching_sessions',    'label': 'Số buổi dạy',           'model': 'hocba.teaching.attendance', 'field': None,          'agg': 'count'},
+    ]},
+    {'key': 'leave', 'label': 'Nghỉ phép', 'fields': [
+        {'key': 'leave_days',           'label': 'Số ngày nghỉ',          'model': 'hr.leave', 'field': 'number_of_days', 'agg': 'sum'},
+        {'key': 'leave_count',          'label': 'Số lần nghỉ',           'model': 'hr.leave', 'field': None,             'agg': 'count'},
+    ]},
+]
+
+# Giữ tên cũ cho tương thích (một số nơi có thể import).
+LOOKUP_SOURCES = {}
+
+_DATE_FIELD_PREFS = ('date', 'date_from', 'check_in', 'work_date')
+
+
+def _find_employee_field(model):
+    """Tên field liên kết model → hr.employee (ưu tiên 'employee_id'); hr.employee → 'id'."""
+    if model._name == 'hr.employee':
+        return 'id'
+    emp = model._fields.get('employee_id')
+    if emp is not None and emp.type == 'many2one' and emp.comodel_name == 'hr.employee' and emp.store:
+        return 'employee_id'
+    for fname, f in model._fields.items():
+        if f.type == 'many2one' and f.comodel_name == 'hr.employee' and f.store:
+            return fname
+    return None
+
+
+def _find_date_field(model):
+    """Field ngày sự kiện để lọc theo kỳ lương (date, date_from, check_in, work_date), hoặc None."""
+    for pref in _DATE_FIELD_PREFS:
+        f = model._fields.get(pref)
+        if f is not None and f.type in ('date', 'datetime') and f.store:
+            return pref
+    return None
+
+
+def _period_domain(date_field, date_from, date_to):
+    """Domain lọc theo kỳ, đúng cho cả field Date lẫn Datetime.
+
+    Dùng '< date_to + 1 ngày' thay vì '<= date_to' để KHÔNG loại bản ghi Datetime
+    trong ngày cuối kỳ (vd check_in 08:00 ngày cuối, nếu '<= date_to' → 00:00 → mất).
+    """
+    return [(date_field, '>=', date_from),
+            (date_field, '<', date_to + timedelta(days=1))]
+
+
+def _lookup_field_def(source_key, field_key):
+    """Trả về field-def {key,label,model,field,agg} trong catalog, hoặc None."""
+    for cat in LOOKUP_CATALOG:
+        if cat['key'] == source_key:
+            for fd in cat['fields']:
+                if fd['key'] == field_key:
+                    return fd
+            return None
+    return None
+
+
+def list_lookup_sources(env):
+    """{source_key: {label, fields:{field_key:{label}}}} — chỉ field mà model đã cài & field tồn tại."""
+    data = {}
+    for cat in LOOKUP_CATALOG:
+        fields = {}
+        for fd in cat['fields']:
+            if fd['model'] not in env:
+                continue
+            m = env[fd['model']]
+            if fd['field'] and fd['field'] not in m._fields:
+                continue
+            fields[fd['key']] = {'label': fd['label']}
+        if fields:
+            data[cat['key']] = {'label': cat['label'], 'fields': fields}
+    return data
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -914,46 +1010,74 @@ class HbPayslip(models.Model):
         ]
         if not lookup_rules:
             return cache
+        env = self.env
 
-        # Group by source model
-        by_source = {}
+        # Gom theo MODEL (nhiều field trong 1 nhóm có thể ở model khác nhau).
+        # specs: model → [(source_key, field_key, fd)]
+        specs_by_model = {}
         for rule in lookup_rules:
-            by_source.setdefault(rule.lookup_source, set()).add(
-                rule.lookup_field)
+            fd = _lookup_field_def(rule.lookup_source, rule.lookup_field)
+            if not fd or fd['model'] not in env:
+                continue
+            specs_by_model.setdefault(fd['model'], []).append(
+                (rule.lookup_source, rule.lookup_field, fd))
 
-        for source_key, field_names in by_source.items():
-            src_def = LOOKUP_SOURCES.get(source_key)
-            if not src_def:
+        for model_name, specs in specs_by_model.items():
+            # hr.version: đọc qua employee.version_id (bản phiên bản hiện tại của NV).
+            if model_name == 'hr.version':
+                for emp in env['hr.employee'].sudo().browse(emp_ids):
+                    ver = emp.version_id
+                    for skey, fkey, fd in specs:
+                        cache[(emp.id, skey, fkey)] = \
+                            float(ver[fd['field']] or 0.0) if (ver and fd['field'] and fd['field'] in ver._fields) else 0.0
                 continue
 
-            # ONE query for ALL employees
-            Model = self.env[src_def['model']].sudo()
-            records = Model.search([
-                (src_def['employee_field'], 'in', emp_ids),
-                (src_def['date_field'], '>=', date_from),
-                (src_def['date_field'], '<=', date_to),
-            ])
-            if not records:
+            Model = env[model_name].sudo()
+            emp_f = _find_employee_field(Model)
+            if not emp_f:
                 continue
+            emp_dom = [('id', 'in', emp_ids)] if emp_f == 'id' \
+                else [(emp_f, 'in', emp_ids)]
+            date_field = _find_date_field(Model)
 
-            for field_name in field_names:
-                agg = src_def['fields'].get(
-                    field_name, {}).get('agg', 'sum')
-                # Group by employee
-                emp_vals = {}
-                for rec in records:
-                    eid = rec[src_def['employee_field']].id
-                    emp_vals.setdefault(eid, []).append(rec[field_name])
+            def _eid(rec):
+                return rec.id if emp_f == 'id' else rec[emp_f].id
 
-                for eid, vals in emp_vals.items():
-                    if agg == 'sum':     v = sum(vals)
-                    elif agg == 'avg':   v = sum(vals) / len(vals) \
-                        if vals else 0.0
-                    elif agg == 'count': v = float(len(vals))
-                    elif agg == 'max':   v = max(vals)
-                    elif agg == 'min':   v = min(vals)
-                    else:                v = sum(vals)
-                    cache[(eid, source_key, field_name)] = v
+            need_current = any(fd['agg'] == 'current' for _, _, fd in specs)
+            need_period  = any(fd['agg'] != 'current' for _, _, fd in specs)
+
+            # ── Giá trị hiện tại: bản ghi mới nhất mỗi NV ──
+            if need_current:
+                latest = {}
+                for rec in Model.search(emp_dom, order='id desc'):
+                    latest.setdefault(_eid(rec), rec)
+                for skey, fkey, fd in specs:
+                    if fd['agg'] != 'current':
+                        continue
+                    for eid, rec in latest.items():
+                        cache[(eid, skey, fkey)] = \
+                            float(rec[fd['field']] or 0.0) if fd['field'] else 0.0
+
+            # ── Tổng hợp theo kỳ (1 query cho tất cả NV) ──
+            if need_period:
+                dom = emp_dom + (_period_domain(date_field, date_from, date_to)
+                                 if date_field else [])
+                by_emp = {}
+                for rec in Model.search(dom):
+                    by_emp.setdefault(_eid(rec), []).append(rec)
+                for skey, fkey, fd in specs:
+                    if fd['agg'] == 'current':
+                        continue
+                    for eid, ers in by_emp.items():
+                        if fd['agg'] == 'count':
+                            v = float(len(ers))
+                        else:
+                            vals = [er[fd['field']] for er in ers] if fd['field'] else []
+                            if fd['agg'] == 'avg':   v = sum(vals) / len(vals) if vals else 0.0
+                            elif fd['agg'] == 'max': v = max(vals) if vals else 0.0
+                            elif fd['agg'] == 'min': v = min(vals) if vals else 0.0
+                            else:                    v = sum(vals)
+                        cache[(eid, skey, fkey)] = v
 
         return cache
 
@@ -1092,50 +1216,53 @@ class HbPayslip(models.Model):
         return amount, qty, rate
 
     def _compute_lookup(self, rule):
-        """Aggregate a field from a whitelisted source for the current
-        employee within the payslip date range."""
+        """Lấy giá trị lookup theo catalog (nhóm nghiệp vụ → field → model+field+agg)."""
         self.ensure_one()
-        source_key = rule.lookup_source
-        field_name = rule.lookup_field
-
-        if not source_key or source_key not in LOOKUP_SOURCES:
+        fd = _lookup_field_def(rule.lookup_source, rule.lookup_field)
+        if not fd:
             _logger.warning(
-                'Payslip %s: lookup rule %s — invalid source "%s"',
-                self.number, rule.code, source_key,
+                'Payslip %s: lookup rule %s — nguồn/trường không hợp lệ (%s/%s)',
+                self.number, rule.code, rule.lookup_source, rule.lookup_field,
             )
             return 0.0
+        return self._lookup_value(fd, self.employee_id.id)
 
-        src_def = LOOKUP_SOURCES[source_key]
-        if not field_name or field_name not in src_def['fields']:
-            _logger.warning(
-                'Payslip %s: lookup rule %s — invalid field "%s" for source "%s"',
-                self.number, rule.code, field_name, source_key,
-            )
+    def _lookup_value(self, fd, emp_id):
+        """Tính 1 giá trị lookup cho 1 nhân viên theo field-def catalog."""
+        env = self.env
+        if fd['model'] not in env:
             return 0.0
+        # hr.version: đọc qua employee.version_id — đúng bản ghi phiên bản hiện tại
+        # mà form Nhân viên hiển thị (không phải latest-by-id có thể là bản cũ/mới hơn).
+        if fd['model'] == 'hr.version':
+            ver = env['hr.employee'].sudo().browse(emp_id).version_id
+            return float(ver[fd['field']] or 0.0) if (ver and fd['field'] and fd['field'] in ver._fields) else 0.0
+        Model = env[fd['model']].sudo()
+        emp_f = _find_employee_field(Model)
+        if not emp_f:
+            return 0.0
+        emp_dom = [('id', '=', emp_id)] if emp_f == 'id' else [(emp_f, '=', emp_id)]
+        field, agg = fd['field'], fd['agg']
 
-        Model  = self.env[src_def['model']].sudo()
-        domain = [
-            (src_def['employee_field'], '=', self.employee_id.id),
-            (src_def['date_field'], '>=', self.date_from),
-            (src_def['date_field'], '<=', self.date_to),
-        ]
-        agg     = src_def['fields'][field_name].get('agg', 'sum')
+        if agg == 'current':
+            # Giá trị hiện tại: bản ghi mới nhất của NV (vd lương hợp đồng).
+            rec = Model.search(emp_dom, order='id desc', limit=1)
+            return float(rec[field] or 0.0) if (rec and field) else 0.0
+
+        date_field = _find_date_field(Model)
+        domain = emp_dom
+        if date_field:
+            domain = emp_dom + _period_domain(date_field, self.date_from, self.date_to)
         records = Model.search(domain)
-        if not records:
+        if agg == 'count':
+            return float(len(records))
+        if not records or not field:
             return 0.0
-
-        vals = records.mapped(field_name)
-        if agg == 'sum':   return sum(vals)
+        vals = records.mapped(field)
         if agg == 'avg':   return sum(vals) / len(vals) if vals else 0.0
-        if agg == 'count': return float(len(records))
-        if agg == 'max':   return max(vals)
-        if agg == 'min':   return min(vals)
-
-        _logger.warning(
-            'Payslip %s: lookup rule %s — unknown agg "%s"',
-            self.number, rule.code, agg,
-        )
-        return 0.0
+        if agg == 'max':   return max(vals) if vals else 0.0
+        if agg == 'min':   return min(vals) if vals else 0.0
+        return sum(vals)                       # 'sum' mặc định
 
     # ── PIT helper (called from 'code' type rules via payslip._hocba_pit) ────
     def _hocba_pit(self, taxable_income):
