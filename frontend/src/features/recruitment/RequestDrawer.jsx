@@ -19,7 +19,11 @@ const ACTIONS_BY_STATE = {
   closed: [['reset', 'Mở lại (về nháp)', 'edit']],
 };
 
-export default function RequestDrawer({ req, meta, isRecruiter, onClose, onChanged }) {
+/* Tách vai: duyệt/từ chối/đóng phiếu chỉ BP tuyển dụng/HR (canApprove);
+   gửi duyệt/về nháp thì TBP (người order) cũng làm được (isRecruiter). */
+const HR_ACTIONS = new Set(['approve', 'refuse', 'close']);
+
+export default function RequestDrawer({ req, meta, isRecruiter, canApprove, onClose, onChanged }) {
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -63,7 +67,8 @@ export default function RequestDrawer({ req, meta, isRecruiter, onClose, onChang
     ['Hình thức làm việc', meta.workTypeLabels[d.workType] || '—'],
   ] : [];
 
-  const actions = isRecruiter ? (ACTIONS_BY_STATE[d.state] || []) : [];
+  const actions = (ACTIONS_BY_STATE[d.state] || []).filter(([act]) =>
+    HR_ACTIONS.has(act) ? canApprove : isRecruiter);
 
   return (
     <Modal onClose={onClose} lg>

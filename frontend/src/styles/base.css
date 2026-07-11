@@ -270,6 +270,12 @@ table.tbl th {
 }
 table.tbl td { padding: 10px 16px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0; }
 table.tbl tr:last-child td { border-bottom: none; }
+
+/* Opt-in: bảng cho phép CUỘN NGANG để xem đủ thông tin (cột co theo nội dung,
+   không ép vừa khung & không cắt chữ). Dùng cho bảng nhiều cột/nội dung rộng. */
+.tbl-wrap.tbl-scroll { overflow-x: auto; }
+.tbl-wrap.tbl-scroll table.tbl { width: auto; min-width: 100%; }
+.tbl-wrap.tbl-scroll table.tbl td { max-width: none; overflow: visible; text-overflow: clip; }
 table.tbl tbody tr { transition: background .12s; }
 table.tbl tbody tr:hover { background: #f8fafc; }
 
@@ -376,12 +382,36 @@ table.tbl th.tbl-num { text-align: right; }
 .faint { color: var(--faint); }
 .mono { font-variant-numeric: tabular-nums; }
 .divider { height: 1px; background: var(--border); margin: 16px 0; }
-.kv { display: flex; flex-direction: column; gap: 3px; }
+.kv { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .kv .k { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--faint); font-weight: 700; }
-.kv .v { font-size: 14px; font-weight: 600; color: var(--ink); }
+.kv .v { font-size: 14px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+
+/* Lưới form (view + edit) — co về 1 cột khi màn hẹp */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
 .dot-sep { color: var(--border-strong); }
 
 .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+
+/* ============ PHÂN TRANG ============ */
+.pager { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.pager-info { font-size: 12.5px; color: var(--muted); }
+.pager-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.pager-btn {
+  min-width: 32px; height: 32px; padding: 0 9px;
+  border: 1px solid var(--border); background: #fff; border-radius: 9px;
+  font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.pager-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+.pager-btn.active { background: var(--red-600); border-color: var(--red-600); color: #fff; cursor: default; }
+.pager-btn:disabled { opacity: .4; cursor: default; }
+.pager-gap { color: var(--faint); padding: 0 2px; }
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 720px) {
+  .grid-2, .grid-3, .form-grid { grid-template-columns: 1fr; }
+  .overlay { padding: 16px 10px; }
+}
 
 /* avatar — soft tinted, refined */
 .av {

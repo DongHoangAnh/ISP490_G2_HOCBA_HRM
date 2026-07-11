@@ -146,7 +146,7 @@ function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
 
   return (
     <div className="card">
-      <div className="tbl-wrap">
+      <div className="tbl-wrap tbl-scroll">
         <table className="tbl">
           <thead><tr>
             <th>Ứng viên</th><th>Vị trí</th><th>Ngày nhận</th><th>CTV</th>

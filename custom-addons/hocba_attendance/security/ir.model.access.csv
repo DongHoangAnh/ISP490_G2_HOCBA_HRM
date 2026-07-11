@@ -11,3 +11,7 @@ access_hocba_attendance_request_user,access.hocba.attendance.request.user,model_
 access_hocba_attendance_request_manager,access.hocba.attendance.request.manager,model_hocba_attendance_request,hr.group_hr_manager,1,1,1,1
 access_hocba_work_shift_user,access.hocba.work_shift.user,model_hocba_work_shift,hr.group_hr_user,1,1,1,0
 access_hocba_work_shift_manager,access.hocba.work_shift.manager,model_hocba_work_shift,hr.group_hr_manager,1,1,1,1
+access_hocba_shift_attendance_user,access.hocba.shift.attendance.user,model_hocba_shift_attendance,hr.group_hr_user,1,1,1,0
+access_hocba_shift_attendance_manager,access.hocba.shift.attendance.manager,model_hocba_shift_attendance,hr.group_hr_manager,1,1,1,1
+access_hocba_teaching_attendance_user,access.hocba.teaching.attendance.user,model_hocba_teaching_attendance,hr.group_hr_user,1,1,1,0
+access_hocba_teaching_attendance_manager,access.hocba.teaching.attendance.manager,model_hocba_teaching_attendance,hr.group_hr_manager,1,1,1,1

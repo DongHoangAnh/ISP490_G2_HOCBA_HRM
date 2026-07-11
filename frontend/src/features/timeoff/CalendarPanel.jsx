@@ -5,6 +5,7 @@ import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchCalendar } from '../../api/timeoff';
+import { fetchTeachingDays } from '../../api/attendance';
 
 const NOW = new Date();
 const DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']; // Chủ nhật trước
@@ -17,7 +18,12 @@ const parseISO = (s) => { const [y, m, d] = s.split('-').map(Number); return new
 /* Thứ hạng trạng thái để chọn "đơn mạnh nhất" khi 1 ngày trùng nhiều đơn. */
 const RANK = { validate: 3, validate1: 2, confirm: 2, draft: 1, refuse: 1, cancel: 0 };
 
-/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). */
+/* Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
+   Ngày có >= ngần này người nghỉ (đã duyệt) tô cảnh báo "quá tải". */
+const OVERLAP_WARN = 3;
+
+/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). count = số người đã DUYỆT
+   nghỉ trong ngày (Phase 4: cảnh báo ngày trùng lịch khi xem "Cả đội"). */
 function buildDayMap(leaves, activeIds) {
   const map = {};
   for (const lv of leaves) {
@@ -27,8 +33,11 @@ function buildDayMap(leaves, activeIds) {
     for (let cur = parseISO(lv.from); cur <= end; cur.setDate(cur.getDate() + 1)) {
       const key = isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate());
       const r = RANK[lv.state] ?? 1;
-      if (!map[key] || r > map[key].rank) {
-        map[key] = { rank: r, color: lv.color, state: lv.state, leaveType: lv.leaveType, employee: lv.employee };
+      const slot = map[key] || (map[key] = { rank: -1, count: 0 });
+      if (lv.state === 'validate') slot.count += 1;
+      if (r > slot.rank) {
+        slot.rank = r; slot.color = lv.color; slot.state = lv.state;
+        slot.leaveType = lv.leaveType; slot.employee = lv.employee;
       }
     }
   }
@@ -48,6 +57,15 @@ function buildMandatory(mdays) {
   return set;
 }
 
+/* Tập ngày đi làm thêm (date string) → nhãn. */
+function buildWorkdays(workDays) {
+  const set = new Map();
+  for (const w of (workDays || [])) {
+    if (w.date) set.set(w.date, w.name || 'Ngày đi làm');
+  }
+  return set;
+}
+
 function cellStyle(info, big) {
   const base = {
     aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -56,16 +74,17 @@ function cellStyle(info, big) {
   };
   if (!info) return base;
   if (info.state === 'validate') {
-    return { ...base, background: info.color, color: '#fff' };
+    // đã duyệt: nền tint nhẹ + viền mảnh + chữ đậm (dịu hơn nền tô đặc cũ)
+    return { ...base, background: info.color + '22', boxShadow: `inset 0 0 0 1px ${info.color}`, fontWeight: 700 };
   }
   if (info.state === 'refuse') {
     return { ...base, color: 'var(--muted)', textDecoration: 'line-through' };
   }
-  // chờ duyệt: nền nhạt + viền màu (sọc nhẹ qua border)
-  return { ...base, background: info.color + '26', boxShadow: `inset 0 0 0 1.5px ${info.color}` };
+  // chờ duyệt: nền trắng + viền màu + chữ màu
+  return { ...base, color: info.color, boxShadow: `inset 0 0 0 1.5px ${info.color}` };
 }
 
-function MonthGrid({ year, month, dayMap, mandatory, big }) {
+function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacherView, big }) {
   const firstDow = new Date(year, month, 1).getDay(); // 0 = CN
   const nDays = new Date(year, month + 1, 0).getDate();
   const cells = [];
@@ -86,17 +105,41 @@ function MonthGrid({ year, month, dayMap, mandatory, big }) {
           const key = isoOf(year, month, d);
           const info = dayMap[key];
           const mdName = mandatory.get(key);
+          // GV (xem "Của tôi"): bỏ ngày đi làm văn phòng, thay bằng lịch dạy.
+          const wdName = teacherView ? null : workdays.get(key);
+          const teachCount = teacherView ? (teaching.get(key) || 0) : 0;
           const dow = (firstDow + d - 1) % 7;
           const st = cellStyle(info, big);
-          if (!info && (dow === 0 || dow === 6)) st.background = st.background || 'var(--surface-2)';
+          if (!info) {
+            if (wdName) { st.background = 'rgba(16,185,129,.12)'; st.boxShadow = 'inset 0 0 0 1.5px var(--green)'; }
+            else if (teacherView) {
+              if (teachCount) st.background = 'var(--blue-bg)';
+              else if (dow === 0 || dow === 6) st.color = 'var(--faint)';
+            }
+            else if (dow === 0 || dow === 6) st.background = st.background || 'var(--surface-2)';
+          }
+          const overloaded = info && info.count >= OVERLAP_WARN;
+          if (overloaded) st.boxShadow = 'inset 0 0 0 2px var(--amber-600,#d97706)';
           return (
             <div key={key} style={st} title={[
               info && `${info.leaveType}${info.employee ? ' — ' + info.employee : ''}`,
+              info && info.count > 1 && (info.count + ' người nghỉ ngày này'),
+              teachCount > 0 && (teachCount + ' buổi dạy'),
+              wdName && ('Đi làm: ' + wdName),
               mdName,
             ].filter(Boolean).join(' · ')}>
               {d}
+              {teachCount > 0 && (
+                <span style={{ position: 'absolute', left: 2, top: 4, bottom: 4, width: 3, borderRadius: 2, background: 'var(--blue)' }}></span>
+              )}
+              {overloaded && (
+                <span style={{ position: 'absolute', top: 2, left: 2, minWidth: 13, height: 13, padding: '0 3px', borderRadius: 7, background: 'var(--amber-600,#d97706)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'grid', placeItems: 'center', lineHeight: 1 }}>{info.count}</span>
+              )}
               {mdName && (
                 <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--red-600)' }}></span>
+              )}
+              {wdName && (
+                <span style={{ position: 'absolute', bottom: 2, left: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--green)' }}></span>
               )}
             </div>
           );
@@ -106,26 +149,41 @@ function MonthGrid({ year, month, dayMap, mandatory, big }) {
   );
 }
 
-export default function CalendarPanel({ isOfficer }) {
+export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [year, setYear] = useState(NOW.getFullYear());
   const [month, setMonth] = useState(NOW.getMonth());
   const [mode, setMode] = useState('year');   // 'year' | 'month'
-  const [scope, setScope] = useState('me');     // 'me' | 'all'
+  const [dept, setDept] = useState('');         // HR lọc 1 phòng ban ('' = tất cả)
   const [active, setActive] = useState(null);   // Set id loại đang bật (null = tất cả)
+  const [teaching, setTeaching] = useState(new Map()); // ngày dạy → số buổi (GV)
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setErr(null); setData(null);
-    fetchCalendar(year, scope).then((d) => {
+    fetchCalendar(year, seeAll ? (dept || undefined) : undefined).then((d) => {
       setData(d);
       setActive(new Set(d.leaveTypes.map((t) => t.id))); // bật tất cả loại
     }).catch((e) => setErr(e.message));
-  }, [year, scope, tick]);
+  }, [year, dept, seeAll, tick]);
+
+  // GV xem lịch cá nhân: đánh dấu ngày có lịch dạy cả năm. Lỗi gọi API lịch dạy
+  // KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu. (Officer xem lịch đội → tắt.)
+  const teacherView = isTeacher && !isOfficer;
+  useEffect(() => {
+    if (!teacherView) { setTeaching(new Map()); return; }
+    let cancelled = false;
+    fetchTeachingDays(`${year}-01-01`, `${year}-12-31`)
+      .then((d) => { if (!cancelled) setTeaching(new Map((d.days || []).map((x) => [x.date, x.count]))); })
+      .catch(() => { if (!cancelled) setTeaching(new Map()); });
+    return () => { cancelled = true; };
+  }, [teacherView, year]);
 
   const dayMap = useMemo(() => data ? buildDayMap(data.leaves, active) : {}, [data, active]);
   const mandatory = useMemo(() => data ? buildMandatory(data.mandatoryDays) : new Map(), [data]);
+  const workdays = useMemo(() => data ? buildWorkdays(data.workDays) : new Map(), [data]);
+  const teachTotal = useMemo(() => [...teaching.values()].reduce((a, b) => a + b, 0), [teaching]);
 
   if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
   if (!data) return <LoadingState label="Đang tải lịch nghỉ phép…" />;
@@ -163,23 +221,26 @@ export default function CalendarPanel({ isOfficer }) {
         {mode === 'year' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(230px,1fr))', gap: 12 }}>
             {Array.from({ length: 12 }, (_, m) => (
-              <MonthGrid key={m} year={year} month={m} dayMap={dayMap} mandatory={mandatory} />
+              <MonthGrid key={m} year={year} month={m} dayMap={dayMap} mandatory={mandatory} workdays={workdays} teaching={teaching} teacherView={teacherView} />
             ))}
           </div>
         ) : (
-          <MonthGrid year={year} month={month} dayMap={dayMap} mandatory={mandatory} big />
+          <MonthGrid year={year} month={month} dayMap={dayMap} mandatory={mandatory} workdays={workdays} teaching={teaching} teacherView={teacherView} big />
         )}
       </div>
 
-      {/* Cột phải: phạm vi + lọc + legend + ngày bắt buộc */}
+      {/* Cột phải: chọn phòng ban (HR) + lọc loại + legend + ngày bắt buộc */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {isOfficer && (
+        {seeAll && (
           <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phạm vi</div>
-            <div className="seg" style={{ width: '100%' }}>
-              <button className={scope === 'me' ? 'active' : ''} onClick={() => setScope('me')}>Của tôi</button>
-              <button className={scope === 'all' ? 'active' : ''} onClick={() => setScope('all')}>Cả đội</button>
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phòng ban</div>
+            <select className="sel" style={{ width: '100%' }}
+              value={dept} onChange={(e) => setDept(e.target.value)}>
+              <option value="">Tất cả phòng ban</option>
+              {(data.allDepartments || []).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
           </div>
         )}
 
@@ -197,11 +258,45 @@ export default function CalendarPanel({ isOfficer }) {
 
         <div className="card" style={{ padding: 14 }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Chú thích</div>
-          <LegendRow swatch={{ background: 'var(--red-600)' }} label="Đã duyệt" />
-          <LegendRow swatch={{ background: 'rgba(200,16,46,.15)', boxShadow: 'inset 0 0 0 1.5px var(--red-600)' }} label="Chờ duyệt" />
+          <LegendRow swatch={{ background: 'rgba(200,16,46,.13)', boxShadow: 'inset 0 0 0 1px var(--red-600)' }} label="Đã duyệt" />
+          <LegendRow swatch={{ boxShadow: 'inset 0 0 0 1.5px var(--red-600)' }} label="Chờ duyệt" />
           <LegendRow swatch={{ border: '1px solid var(--border-strong)' }} label="Từ chối (gạch ngang)" />
+          {teacherView
+            ? <LegendRow swatch={{ background: 'var(--blue-bg)', boxShadow: 'inset 3px 0 0 var(--blue)' }} label="Ngày có lịch dạy" />
+            : <LegendRow swatch={{ background: 'rgba(16,185,129,.12)', boxShadow: 'inset 0 0 0 1.5px var(--green)' }} label="Ngày đi làm (Thứ 7)" />}
+          <LegendRow swatch={{ boxShadow: 'inset 0 0 0 2px var(--amber-600,#d97706)' }} label={`Trùng lịch (≥ ${OVERLAP_WARN} người nghỉ)`} />
           <LegendRow dot label="Ngày bắt buộc / nghỉ lễ" />
         </div>
+
+        {teacherView ? (
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Lịch dạy</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              Ngày có lịch dạy lấy từ lịch giảng dạy của bạn.
+            </div>
+            <div style={{ fontSize: 12.5, marginTop: 8 }}>
+              <b>{teaching.size}</b> ngày dạy · <b>{teachTotal}</b> buổi trong năm {year}
+            </div>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Lịch làm việc</div>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: workdays.size ? 10 : 0 }}>
+              Chuẩn: Thứ 2 – Thứ 6. Các ngày Thứ 7 đi làm do HR thêm.
+            </div>
+            {workdays.size > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {[...workdays.entries()].sort().map(([d, name]) => (
+                  <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 3, background: 'var(--green)', flexShrink: 0 }}></span>
+                    <span className="mono" style={{ fontWeight: 600 }}>{fmtDate(d)}</span>
+                    <span className="muted">{name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {data.mandatoryDays.length > 0 && (
           <div className="card" style={{ padding: 14 }}>

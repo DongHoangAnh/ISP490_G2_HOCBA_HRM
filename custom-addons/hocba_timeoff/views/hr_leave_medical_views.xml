@@ -43,7 +43,7 @@
                 <div class="alert alert-warning d-flex align-items-start mt-2"
                      role="alert"
                      invisible="not leave_type_support_document or x_has_medical_doc or x_medical_override"
-                     groups="hr_holidays.group_hr_holidays_user">
+                     groups="hr.group_hr_user">
                     <i class="fa fa-exclamation-triangle me-2 mt-1"/>
                     <span>
                         Đơn nghỉ ốm chưa có chứng từ y tế.
@@ -53,7 +53,7 @@
 
                 <!-- BR-011: Override section — chỉ HR Manager mới thấy -->
                 <group invisible="not leave_type_support_document"
-                       groups="hr_holidays.group_hr_holidays_manager">
+                       groups="hr.group_hr_manager">
                     <field name="x_medical_override"
                            string="Bỏ qua yêu cầu chứng từ (BR-011)"/>
                     <field name="x_medical_override_reason"

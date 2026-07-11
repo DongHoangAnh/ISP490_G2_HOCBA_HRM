@@ -83,7 +83,8 @@ class TestShiftCheckin(TransactionCase):
 
     def test_checkout_not_checked_in_raises(self):
         now = fields.Datetime.now()
-        self._shift(now - timedelta(hours=2), now + timedelta(minutes=5))
+        # Use 30min window so shift start is always on the same calendar day
+        self._shift(now - timedelta(minutes=30), now + timedelta(minutes=5))
         env = self.env(user=self.user)
         with self.assertRaises(UserError) as e:
             env['hocba.attendance'].sudo()._assert_shift_check_allowed(self.emp, 'out')
@@ -91,15 +92,15 @@ class TestShiftCheckin(TransactionCase):
 
     def test_checkout_within_window_ok(self):
         now = fields.Datetime.now()
-        self._shift(now - timedelta(hours=2), now + timedelta(minutes=5))
-        self._att(check_in=now - timedelta(hours=2))
+        self._shift(now - timedelta(minutes=30), now + timedelta(minutes=5))
+        self._att(check_in=now - timedelta(minutes=30))
         env = self.env(user=self.user)
         env['hocba.attendance'].sudo()._assert_shift_check_allowed(self.emp, 'out')
 
     def test_checkout_already_checked_out_raises(self):
         now = fields.Datetime.now()
-        self._shift(now - timedelta(hours=2), now + timedelta(minutes=5))
-        self._att(check_in=now - timedelta(hours=2), check_out=now - timedelta(minutes=1))
+        self._shift(now - timedelta(minutes=30), now + timedelta(minutes=5))
+        self._att(check_in=now - timedelta(minutes=30), check_out=now - timedelta(minutes=1))
         env = self.env(user=self.user)
         with self.assertRaises(UserError) as e:
             env['hocba.attendance'].sudo()._assert_shift_check_allowed(self.emp, 'out')

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+  <record id="crit_competency" model="hr.promotion.criteria">
+    <field name="name">Năng lực chuyên môn / KPI</field>
+    <field name="code">competency</field>
+    <field name="sequence">10</field>
+    <field name="weight">35</field>
+    <field name="max_score">5</field>
+    <field name="guideline">Mức độ hoàn thành công việc, chất lượng chuyên môn, KPI.</field>
+  </record>
+  <record id="crit_attitude" model="hr.promotion.criteria">
+    <field name="name">Thái độ &amp; kỷ luật</field>
+    <field name="code">attitude</field>
+    <field name="sequence">20</field>
+    <field name="weight">25</field>
+    <field name="max_score">5</field>
+  </record>
+  <record id="crit_teamwork" model="hr.promotion.criteria">
+    <field name="name">Phối hợp &amp; teamwork</field>
+    <field name="code">teamwork</field>
+    <field name="sequence">30</field>
+    <field name="weight">20</field>
+    <field name="max_score">5</field>
+  </record>
+  <record id="crit_potential" model="hr.promotion.criteria">
+    <field name="name">Tiềm năng phát triển</field>
+    <field name="code">potential</field>
+    <field name="sequence">40</field>
+    <field name="weight">20</field>
+    <field name="max_score">5</field>
+  </record>
+
+  <record id="ir_config_promo_qualified" model="ir.config_parameter">
+    <field name="key">hocba_employees.promo_eval_qualified</field>
+    <field name="value">80</field>
+  </record>
+  <record id="ir_config_promo_consider" model="ir.config_parameter">
+    <field name="key">hocba_employees.promo_eval_consider</field>
+    <field name="value">60</field>
+  </record>
+</odoo>

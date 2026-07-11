@@ -38,11 +38,17 @@ export const fetchMailTemplate = (id) => hbGet(`/hocba-hrm/api/recruitment/mail-
 export const createMailTemplate = (payload) => hbPost('/hocba-hrm/api/recruitment/mail-templates', payload);
 export const updateMailTemplate = (id, payload) =>
   hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}`, payload);
+export const deleteMailTemplate = (id) =>
+  hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}/delete`, {});
 export const sendMailTemplate = (id, applicantIds, override) =>
   hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}/send`, { applicantIds, ...(override || {}) });
 export const fetchMailLogs = () => hbGet('/hocba-hrm/api/recruitment/mail-logs');
 export const previewMailTemplate = (id, applicantId) =>
   hbPost(`/hocba-hrm/api/recruitment/mail-template/${id}/preview`, { applicantId });
+
+/* Ghi lịch sử mail đã gửi (qua Gmail redirect) — hiện ở tab Lịch sử gửi mail */
+export const logSentMail = (logs) =>
+  hbPost('/hocba-hrm/api/recruitment/mail/log-sent', { logs });
 
 /* Lịch rảnh phỏng vấn (hb.interview.slot) */
 export const fetchInterviewSlots = (from, to) =>
@@ -51,3 +57,7 @@ export const createInterviewSlots = (userId, slots) =>
   hbPost('/hocba-hrm/api/recruitment/interview-slots', { userId, slots });
 export const deleteInterviewSlot = (id) =>
   hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/delete`, {});
+export const bookInterviewSlot = (id, applicantId) =>
+  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/book`, { applicantId });
+export const unbookInterviewSlot = (id) =>
+  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/unbook`, {});

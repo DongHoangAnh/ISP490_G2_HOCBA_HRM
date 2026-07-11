@@ -13,6 +13,7 @@ const STATE_KIND = { pending: 'amber', approved: 'green', rejected: 'red' };
 
 export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
   const isPending = shift.state === 'pending';
+  const canAct = !shift.locked && shift.state !== 'rejected';   // duyệt/sửa/từ chối được
   const [start, setStart] = useState(shift.start ? shift.start.slice(0, 16) : '');
   const [end, setEnd] = useState(shift.end ? shift.end.slice(0, 16) : '');
   const [stype, setStype] = useState(shift.shiftType);
@@ -70,7 +71,12 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
         )}
       </div>
 
-      {canManage && isPending && (
+      {shift.locked && (
+        <div className="muted" style={{ padding: '0 24px 14px', fontSize: 12.5 }}>
+          Đã quá hạn thao tác (trước giờ bắt đầu 1 phút) — không thể sửa/duyệt/từ chối.
+        </div>
+      )}
+      {canManage && canAct && (
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 12 }}>Bắt đầu
@@ -100,7 +106,7 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
           </div>
         </div>
       )}
-      {!canManage && isPending && (
+      {!canManage && isPending && !shift.locked && (
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
           {err && <div style={{ color: 'var(--red-600)', fontSize: 12.5, marginBottom: 8 }}>{err}</div>}
           <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-600)' }} disabled={busy} onClick={cancel}>Hủy ca</button>

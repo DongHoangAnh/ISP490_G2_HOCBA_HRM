@@ -58,3 +58,15 @@ export const verifyCert = (certId, verified) =>
   hbPost(`/hocba-hrm/api/cert/${certId}/verify`, { verified });
 export const deleteCert = (certId) =>
   hbPost(`/hocba-hrm/api/cert/${certId}/delete`, {});
+
+/* Tài khoản đăng nhập (chỉ HR/Admin). createAccount/resetAccountPassword trả
+   khối account đã cập nhật; fetchAccounts trả { accounts, departments }. */
+export const createAccount = (empId, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${empId}/account`, payload);
+export const resetAccountPassword = (empId, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${empId}/account/reset`, payload);
+export const fetchAccounts = () => hbGet('/hocba-hrm/api/accounts');
+
+/* Dashboard đánh giá thăng tiến — lấy danh sách đánh giá của NV + lưu đánh giá mới. */
+export const fetchEvaluations = (empId) => hbGet(`/hocba-hrm/api/promotion/eval/${empId}`);
+export const saveEvaluation = (payload) => hbPost('/hocba-hrm/api/promotion/eval/save', payload);

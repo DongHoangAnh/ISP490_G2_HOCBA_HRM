@@ -1,9 +1,9 @@
 ﻿# SPEC — Module `hocba_recruitments` (v19.0.2.0.0)
 
 > **Trạng thái:** Đã implement — branch `Viet/Recruitment`  
-> **Cập nhật:** 2026-06-16 (SPA Tuyển dụng + API domain `recruitment`)  
+> **Cập nhật:** 2026-06-21 (tách vai duyệt phiếu, đặt lịch PV cho UV, map ngày nhận việc, dọn legacy)  
 > **Odoo version:** 19.0-20260609  
-> **Depends:** `hr_recruitment` (Odoo 19 core)
+> **Depends:** `hr_recruitment` (Odoo 19 core), `hocba_employees` (dùng `x_employee_code` / `x_employment_status` / `x_probation_start` khi tạo hồ sơ NV từ ứng viên)
 
 Module mở rộng tuyển dụng Odoo cho Học Bá Education. UI có **2 lớp**:
 1. **Backend Odoo** — menu **Recruitment** (models/views mô tả §1–§9 bên dưới).
@@ -22,7 +22,7 @@ hocba_recruitments/
 ├── __manifest__.py
 ├── __init__.py
 ├── controllers/
-│   └── main.py               # Legacy React shell (chưa dùng)
+│   └── main.py               # Controller API JSON cho SPA (/hocba-hrm/api/recruitment/*)
 ├── models/
 │   ├── hb_recruitment_request.py   # Model mới
 │   ├── hb_interview_slot.py        # Model mới — Screen 7.3
@@ -152,7 +152,30 @@ Model mới. Inherit `mail.thread`, `mail.activity.mixin`. Order: `create_date d
 | `group_hr_recruitment_user` | ✓ | ✓ | ✓ | ✓ |
 | `group_hr_recruitment_interviewer` | ✓ | — | — | — |
 
-> **Lưu ý:** Nút TBP Duyệt và HR Duyệt đều dùng `group_hr_recruitment_user` — chưa tách role riêng.
+**Tách vai theo sheet quy trình (TBP order ≠ BP tuyển dụng duyệt).** Sheet chỉ có 2 vai
+nên workflow chỉ cần **một** lần duyệt (BP tuyển dụng tiếp nhận order), không phải chuỗi
+"TBP duyệt → HR duyệt → BGĐ". Quyền chia **theo từng action** (enforce ở controller SPA
+`api_recruitment_request_action`; form backend đã gate sẵn bằng `group_hr_recruitment_user`):
+
+TBP = _is_dept_manager() (đứng manager_id của phòng), không thuộc group_hr_recruitment_user.
+BP tuyển dụng/HR = _is_hr() (recruitment user/manager + HR manager + admin).
+
+| Action | Trạng thái | Ai được làm |
+|--------|-----------|-------------|
+| `submit` (Gửi duyệt), `reset` (Về nháp) | draft / refused / closed | `_is_recruiter()` = **TBP** (trưởng phòng của phòng mình) **hoặc** BP tuyển dụng/HR |
+| `approve`, `refuse`, `close` | submitted / recruiting | **chỉ `_is_hr()`** = BP tuyển dụng (`group_hr_recruitment_user/manager`), HR Manager, Admin |
+
+- API list trả thêm cờ **`canApprove = _is_hr()`**; SPA (`RequestDrawer.jsx`) ẩn nút
+  Duyệt/Từ chối/Đóng nếu không có cờ này → TBP chỉ thấy Gửi duyệt / Về nháp.
+- ⚙️ **Ghi qua `.sudo()` sau khi kiểm vai+phạm vi:** model ACL chỉ cho
+  `group_hr_recruitment_user` ghi `hb.recruitment.request`, nên endpoint `create/update/action`
+  của SPA dùng `.sudo()` (sau khi đã chặn `_is_recruiter` + scope + gate `_is_hr` cho duyệt)
+  để **TBP order được phiếu** dù không có ACL model. `requester_id` vẫn = người đăng nhập
+  (sudo không đổi `env.user`).
+- 3 field `manager_id / hr_manager_id / director_id` chỉ **ghi nhận** ai ký duyệt, KHÔNG
+  enforce làm cổng workflow.
+- ⚠️ Điều kiện cấu hình: **TBP không được gán `group_hr_recruitment_user`** — nếu gán, TBP
+  trở thành BP tuyển dụng và mất tách vai.
 
 ---
 
@@ -343,6 +366,22 @@ Server action `hb_server_action_slot_wizard` binding vào model `hb.interview.sl
 | `access_hb_interview_slot_interviewer` | `hb.interview.slot` | `group_hr_recruitment_interviewer` | ✓ | ✓ | ✓ | — |
 | `access_hb_interview_slot_wizard_*` | wizard + line | cả 2 groups | ✓ | ✓ | ✓ | ✓ |
 
+### 7.7 Đặt lịch PV cho ứng viên (SPA — tab Danh sách PV)
+
+Khép vòng "chọn slot rảnh → đặt cho ứng viên" ngay trên SPA (không cần vào backend Odoo).
+Quyền: `_can_manage_slots()` (HR/BP tuyển dụng, trưởng phòng, hoặc interviewer).
+
+| Endpoint | Mô tả |
+|----------|-------|
+| `POST …/interview-slot/<id>/book` body `{applicantId}` | slot → `booked` + gán `applicant_id`; **đồng thời** điền lịch PV lên hồ sơ ứng viên: `interview_date` = ngày slot, `interview_time` = giờ bắt đầu (HH:MM), `interviewer_name` = tên người PV của slot |
+| `POST …/interview-slot/<id>/unbook` | slot → `available` + gỡ `applicant_id`; **giữ nguyên** lịch PV đã ghi trên hồ sơ ứng viên (chỉ giải phóng slot) |
+
+- `_slot_row` trả thêm `applicantId` để FE biết slot đã gán ai.
+- UI: slot **Rảnh** có nút **"Đặt UV"** (mở modal chọn ứng viên có tìm kiếm); slot **Đã đặt**
+  hiện tên UV + nút **"Hủy đặt"**. Đặt/hủy xong refresh cả lịch tuần lẫn bảng "Ứng viên đang phỏng vấn".
+- Nhờ đồng bộ `interview_date/time`, mail **Thư mời phỏng vấn** (biến `{{ object.interview_date }}`)
+  tự điền đúng lịch vừa đặt.
+
 ---
 
 ## 8. Mail Templates (4 templates — model: `hr.applicant`)
@@ -394,7 +433,8 @@ Nhóm endpoint:
   `POST /mail-template/<id>`, `POST /mail-template/<id>/preview`, `POST /mail-template/<id>/send`.
   Render bằng **inline_template engine** (vì `body_html` qweb không thay `{{ }}`); send hỗ trợ ghi đè `subject`/`bodyHtml` đã sửa.
 - **Lịch sử mail:** `GET /mail-logs` (nguồn `mail.message` + `mail.notification`).
-- **Lịch rảnh PV:** `GET /interview-slots`, `POST /interview-slots`, `POST /interview-slot/<id>/delete`.
+- **Lịch rảnh PV:** `GET /interview-slots`, `POST /interview-slots`, `POST /interview-slot/<id>/delete`,
+  `POST /interview-slot/<id>/book` (gán UV + điền lịch PV lên hồ sơ), `POST /interview-slot/<id>/unbook` (xem §7.7).
   Đọc/ghi datetime dùng `_user_tz()` đối xứng (fallback `Asia/Ho_Chi_Minh`) — tránh lệch giờ.
 
 > **Lưu ý môi trường:** Odoo 19 — `hr.applicant` không còn field `name`; gửi mail thật cần cấu hình `ir.mail_server` (hiện hàng đợi, chế độ soạn + xem trước).
@@ -403,11 +443,26 @@ Nhóm endpoint:
 
 ## 11. Điểm cần xem lại / TODO
 
+### Đã xử lý (cập nhật 2026-06-21)
+
+| # | Việc | Ghi chú |
+|---|------|---------|
+| ✅ | Tách vai duyệt phiếu (TBP order ≠ BP tuyển dụng duyệt) | §3.4 — gate action: TBP chỉ Gửi duyệt/Về nháp; Duyệt/Từ chối/Đóng chỉ `_is_hr`. Cờ `canApprove`. |
+| ✅ | TBP order được phiếu dù không có ACL model | endpoint `create/update/action` ghi `.sudo()` sau khi kiểm vai+phạm vi (§3.4). |
+| ✅ | Tạo hồ sơ NV từ ứng viên: map "Ngày nhận việc" | controller set `x_probation_start` = `start_date` của offer → tự seed mốc đánh giá thử việc. |
+| ✅ | Đặt lịch PV cho ứng viên (chọn slot → gán UV) | §7.7 — endpoint `book/unbook`, đồng bộ `interview_date/time/interviewer_name` lên hồ sơ; UI nút Đặt UV / Hủy đặt. |
+| ✅ | Thêm `depends: hocba_employees` vào manifest | controller dùng `x_employee_code/x_employment_status/x_probation_start`. |
+| ✅ | Xoá code legacy | gỡ route `/hocba-tuyen-dung` + 4 file `rec-*.jsx` + `rec-styles.css`. |
+
+### Còn lại
+
 | # | Vấn đề | Mức độ |
 |---|--------|--------|
-| 1 | Nút TBP Duyệt và HR Duyệt đều dùng `group_hr_recruitment_user` — chưa tách role | Trung bình |
+| 1 | **Chưa có test tự động** (`tests/`). Đã có kịch bản kiểm thử thủ công `docs/QUY_TRINH_TUYEN_DUNG.md` (chạy tay 16/06 — đạt). *Quyết định: tạm chưa viết test tự động.* | Trung bình |
 | 2 | `jd_google_link` trên `hb_job_positions.xml` bỏ trống — cần điền URL thực | Thấp |
 | 3 | Mail templates có thông tin liên hệ hardcode — cần cập nhật khi thay nhân sự | Thấp |
 | 4 | Chưa cấu hình `ir.mail_server` (SMTP) — mail gửi nằm hàng đợi; đang chạy chế độ soạn + xem trước | Trung bình |
 | 5 | Sample data (`hb_applicant_data*.xml`, `hb_interview_results.xml`) — chưa kiểm tra nội dung | Cần xác nhận |
 | 6 | `cv_link` seed là tên file (không phải URL) → cột Link CV chỉ hiện text; dùng upload PDF hoặc URL đầy đủ | Thấp |
+| 7 | Tạo hồ sơ NV xong chưa tự điều hướng sang form NV vừa tạo | Thấp (UX) |
+| 8 | Action `reset` (mở lại nháp) cho cả TBP trên phiếu closed/refused — cân nhắc giới hạn HR | Thấp (thiết kế) |

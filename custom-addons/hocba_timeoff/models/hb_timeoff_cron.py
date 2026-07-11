@@ -2,7 +2,7 @@ import logging
 import calendar
 from datetime import date
 
-from odoo import models, api, _
+from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
 
@@ -83,3 +83,29 @@ class HbTimeoffCron(models.AbstractModel):
             'line': '0',
         })
         return notified
+
+    @api.model
+    def _cron_notify_lapsed_approvals(self):
+        """CRON-TO-002 (Phase 12): báo chuông 1 LẦN cho người duyệt khi đơn
+        lỡ hạn — còn chờ duyệt mà ngày bắt đầu nghỉ đã qua (BR-L05).
+        Chống lặp bằng x_lapsed_notified. Không escalate, không email."""
+        # Import trong hàm: controllers nạp SAU models khi Odoo khởi động.
+        from odoo.addons.hocba_timeoff.controllers.main import (
+            PENDING_STATES, _approver_users, _push_notification,
+            _leave_span_label)
+        today = fields.Date.context_today(self.env.user)
+        leaves = self.env['hr.leave'].sudo().search([
+            ('state', 'in', list(PENDING_STATES)),
+            ('request_date_from', '<', today),
+            ('x_lapsed_notified', '=', False),
+        ])
+        for leave in leaves:
+            title = 'Đơn nghỉ lỡ hạn duyệt'
+            body = '%s — %s (%s) đã qua ngày nghỉ mà chưa được duyệt.' % (
+                leave.employee_id.name, leave.holiday_status_id.name,
+                _leave_span_label(leave))
+            for user in _approver_users(self.env, leave):
+                _push_notification(self.env, user, leave, 'lapsed', title, body)
+            leave.x_lapsed_notified = True
+        _logger.info('CRON-TO-002: đã báo %d đơn lỡ hạn duyệt.', len(leaves))
+        return len(leaves)

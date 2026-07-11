@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_hocba_offboarding_form" model="ir.ui.view">
+        <field name="name">hocba.offboarding.form</field>
+        <field name="model">hocba.offboarding</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_submit" type="object" string="Nộp đơn"
+                            class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_mgr_approve" type="object" string="Quản lý duyệt"
+                            class="btn-primary" invisible="state != 'submitted'"/>
+                    <button name="action_hr_approve" type="object" string="HR duyệt"
+                            class="btn-primary" invisible="state != 'mgr_approved'"/>
+                    <button name="action_done" type="object" string="Hoàn tất"
+                            class="btn-primary" invisible="state != 'hr_approved'"/>
+                    <button name="action_refuse" type="object" string="Từ chối"
+                            invisible="state not in ('submitted','mgr_approved')"/>
+                    <button name="action_cancel" type="object" string="Huỷ"
+                            invisible="state not in ('draft','submitted')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,submitted,mgr_approved,hr_approved,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="employee_id"/>
+                            <field name="source"/>
+                            <field name="reason_type"/>
+                            <field name="reason"/>
+                        </group>
+                        <group>
+                            <field name="request_date"/>
+                            <field name="expected_leave_date"/>
+                            <field name="actual_leave_date"/>
+                            <field name="asset_pending_count"/>
+                        </group>
+                    </group>
+                    <group string="Duyệt">
+                        <field name="mgr_approved_by"/>
+                        <field name="hr_approved_by"/>
+                    </group>
+                    <group string="Checklist thôi việc">
+                        <field name="chk_handover"/>
+                        <field name="chk_payroll"/>
+                        <field name="chk_documents"/>
+                        <field name="note"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_hocba_offboarding_list" model="ir.ui.view">
+        <field name="name">hocba.offboarding.list</field>
+        <field name="model">hocba.offboarding</field>
+        <field name="arch" type="xml">
+            <list decoration-muted="state in ('done','cancelled','refused')">
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="reason_type"/>
+                <field name="request_date"/>
+                <field name="expected_leave_date"/>
+                <field name="asset_pending_count"/>
+                <field name="state" widget="badge"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_hocba_offboarding" model="ir.actions.act_window">
+        <field name="name">Đơn thôi việc</field>
+        <field name="res_model">hocba.offboarding</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_hocba_offboarding"
+              name="Thôi việc"
+              parent="hr.menu_hr_root"
+              action="action_hocba_offboarding"
+              sequence="90"
+              groups="hr.group_hr_user"/>
+</odoo>

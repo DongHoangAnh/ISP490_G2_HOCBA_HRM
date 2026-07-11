@@ -94,39 +94,7 @@ export default function CheckInPanel({ me, onChanged }) {
         <div className="divider" style={{ margin: '14px 0' }}></div>
 
         {!me.isOfficial ? (
-          !enrolled ? (
-            <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
-              <Icon name="user" size={16} />Đăng ký khuôn mặt
-            </button>
-          ) : !me.shiftToday ? (
-            <div className="empty">Chưa có ca làm việc được duyệt hôm nay.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div className="muted" style={{ fontSize: 12.5 }}>
-                Ca: <b className="mono">{fmtTime(me.shiftToday.start)}–{fmtTime(me.shiftToday.end)}</b>
-                {' '}· {me.shiftToday.shiftType === 'ctv' ? 'CTV' : 'OT'} ×{me.shiftToday.rate}
-                {' '}· cửa sổ ±15'
-              </div>
-              {t && t.checkIn ? (
-                <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
-                  <Icon name="checkCircle" size={15} /> Đã check-in lúc {fmtTime(t.checkIn)}
-                </div>
-              ) : (
-                <button className="btn btn-primary" disabled={busy || !ready || !me.shiftToday.checkInOpen} onClick={() => doCheck('in')}>
-                  <Icon name="checkCircle" size={16} />Check-in
-                </button>
-              )}
-              {t && t.checkOut ? (
-                <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
-                  <Icon name="logout" size={15} /> Đã check-out lúc {fmtTime(t.checkOut)}
-                </div>
-              ) : (
-                <button className="btn btn-ghost" disabled={busy || !ready || !(t && t.checkIn) || !me.shiftToday.checkOutOpen} onClick={() => doCheck('out')}>
-                  <Icon name="logout" size={16} />Check-out
-                </button>
-              )}
-            </div>
-          )
+          <div className="empty">Bạn chấm công theo ca ở tab "Chấm công".</div>
         ) : !enrolled ? (
           <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
             <Icon name="user" size={16} />Đăng ký khuôn mặt

@@ -7,20 +7,48 @@ import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
+import Accounts from '../features/accounts/Accounts';
+import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
+import Offboarding from '../features/offboarding/Offboarding';
 import Payroll from '../features/payroll/Payroll';
-import ComingSoon from '../components/ComingSoon';
 import { LoadingState, ErrorState } from '../components/states';
+import Login from '../features/auth/Login';
 
 export default function App() {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
+  const [unauthenticated, setUnauthenticated] = useState(false);
   const [view, setView] = useState(() => localStorage.getItem('hocba_view') || 'dashboard');
   const [search, setSearch] = useState('');
+  // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
+  const [focus, setFocus] = useState(null);
+
+  /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
+     đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
+     Chỉ điều hướng khi vai trò được thấy view đích (vd NV thường nhận nhắc hạn
+     trỏ 'employees' → bỏ qua, tránh content trống + breadcrumb sai). */
+  const openNotification = (n) => {
+    const view = n.targetView || 'timeoff';
+    if (!allowedViews(me).has(view)) return;
+    setView(view);
+    if (view === 'timeoff') {
+      setFocus({ requestId: n.targetRef, kind: n.kind, nonce: Date.now() });
+    }
+  };
 
   const loadRoles = () => {
     setErr(null);
-    fetchRoles().then(setMe).catch((e) => setErr(e.message));
+    setUnauthenticated(false);
+    fetchRoles()
+      .then(setMe)
+      .catch((e) => {
+        if (e.status === 401 || e.code === 'login_required') {
+          setUnauthenticated(true);
+        } else {
+          setErr(e.message);
+        }
+      });
   };
   useEffect(loadRoles, []);
 
@@ -31,6 +59,7 @@ export default function App() {
     if (me && !allowedViews(me).has(view)) setView(defaultView(me));
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (unauthenticated) return <Login onSuccess={loadRoles} />;
   if (err) return <ErrorState message={err} onRetry={loadRoles} />;
   if (!me) return <LoadingState label="Đang tải tài khoản…" />;
 
@@ -39,14 +68,17 @@ export default function App() {
     <div className="app">
       <Sidebar view={view} setView={setView} me={me} />
       <div className="main">
-        <Topbar view={view} onSearch={setSearch} me={me} />
+        <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
         {view === 'employees' && canManage && <Employees search={search} />}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
-        {view === 'attendance' && canManage && <Attendance search={search} />}
-        {view === 'timeoff' && canManage && <TimeOff search={search} />}
+        {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
+        {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
+        {view === 'offboarding' && <Offboarding search={search} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
+        {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
+        {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
         {view === 'profile' && <Profile />}
       </div>
     </div>

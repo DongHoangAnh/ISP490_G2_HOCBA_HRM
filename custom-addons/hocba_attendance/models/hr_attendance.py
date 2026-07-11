@@ -106,11 +106,13 @@ class Attendance(models.Model):
     check_out_map_url = fields.Char(
         string='Check-out Map', compute='_compute_map_urls')
 
-    @api.depends('check_in')
+    @api.depends('check_in', 'employee_id')
     def _compute_date(self):
         for record in self:
             if record.check_in:
-                local_dt = fields.Datetime.context_timestamp(record, record.check_in)
+                emp_tz = record.employee_id.user_id.tz or 'UTC'
+                local_dt = fields.Datetime.context_timestamp(
+                    record.with_context(tz=emp_tz), record.check_in)
                 record.date = local_dt.date()
             else:
                 record.date = False
@@ -144,12 +146,15 @@ class Attendance(models.Model):
                 rec.morning_credit = 0.0
             if ci and co:
                 worked_min = (co - ci).total_seconds() / 60.0
-                rec.missing_minutes = max(0, int(round(std * 60 - worked_min)))
                 expected = ci + timedelta(hours=std)
                 rec.early_leave_minutes = max(
                     0, int(round((expected - co).total_seconds() / 60.0)))
                 aft_threshold = ci + timedelta(hours=std - aft_margin)
                 rec.afternoon_credit = 0.5 if co >= aft_threshold else 0.0
+                work_credit = rec.morning_credit + rec.afternoon_credit
+                basis = (std / 2.0) if work_credit == 0.5 else std
+                rec.missing_minutes = max(
+                    0, min(240, int(round(basis * 60 - worked_min))))
             else:
                 rec.missing_minutes = 0
                 rec.early_leave_minutes = 0
@@ -210,6 +215,32 @@ class Attendance(models.Model):
             return None
         return math.sqrt(sum((x - y) ** 2 for x, y in zip(desc_a, desc_b)))
 
+    @api.model
+    def _eval_face_geo(self, employee, payload, policy):
+        """Tính face_score/face_suspect/out_of_zone dùng chung cho chấm công
+        ngày thường và chấm công ca."""
+        face_score = None
+        enrolled = []
+        if employee.x_face_descriptor:
+            try:
+                enrolled = json.loads(employee.x_face_descriptor)
+            except (ValueError, TypeError):
+                enrolled = []
+        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
+        if dist is None:
+            face_suspect = True
+        else:
+            face_score = dist
+            face_suspect = dist > policy.face_threshold
+        lat = payload.get('latitude') or 0.0
+        lng = payload.get('longitude') or 0.0
+        if policy.office_lat and policy.office_lng:
+            out_of_zone = not policy.is_within_office(lat, lng)
+        else:
+            out_of_zone = False
+        return {'face_score': face_score, 'face_suspect': face_suspect,
+                'out_of_zone': out_of_zone}
+
     def _do_check(self, payload, kind):
         """Core check-in/out logic. `kind` is 'in' or 'out'.
         payload keys: employee_id, photo (base64 str), descriptor (list),
@@ -230,28 +261,10 @@ class Attendance(models.Model):
         lat = payload.get('latitude') or 0.0
         lng = payload.get('longitude') or 0.0
 
-        # Face matching
-        face_score = None
-        face_suspect = False
-        enrolled = []
-        if employee.x_face_descriptor:
-            try:
-                enrolled = json.loads(employee.x_face_descriptor)
-            except (ValueError, TypeError):
-                enrolled = []
-        dist = self._face_distance(payload.get('descriptor') or [], enrolled)
-        if dist is None:
-            face_suspect = True   # cannot verify -> flag for review
-        else:
-            face_score = dist
-            face_suspect = dist > policy.face_threshold
-
-        # Only enforce the geofence when the office location is configured;
-        # otherwise we cannot judge the location and must not flag everyone.
-        if policy.office_lat and policy.office_lng:
-            out_of_zone = not policy.is_within_office(lat, lng)
-        else:
-            out_of_zone = False
+        fg = self._eval_face_geo(employee, payload, policy)
+        face_score = fg['face_score']
+        face_suspect = fg['face_suspect']
+        out_of_zone = fg['out_of_zone']
         if employee.x_employment_status == 'official':
             out_of_window = not policy.is_within_window(now_local, kind)
         else:
@@ -344,8 +357,10 @@ class Attendance(models.Model):
         """Ca approved của employee có start rơi vào ngày local `today`."""
         shifts = self.env['hocba.work_shift'].sudo().search([
             ('employee_id', '=', employee.id), ('state', '=', 'approved')])
+        emp_tz = employee.user_id.tz or 'UTC'
+        tz_ctx = self.with_context(tz=emp_tz)
         return shifts.filtered(
-            lambda s: fields.Datetime.context_timestamp(s, s.start).date() == today)
+            lambda s: fields.Datetime.context_timestamp(tz_ctx, s.start).date() == today)
 
     def _assert_shift_check_allowed(self, employee, kind):
         """CTV/OT (non-official): check-in/out theo ca approved + cửa sổ ±W phút.
@@ -353,8 +368,9 @@ class Attendance(models.Model):
         already_checked_in / not_checked_in / already_checked_out."""
         policy = self.env['hocba.attendance.policy'].sudo().get_policy()
         window = policy.shift_window_minutes or 15
+        emp_tz = employee.user_id.tz or 'UTC'
         now_local = fields.Datetime.context_timestamp(
-            self.with_context(tz=self.env.user.tz or 'UTC'),
+            self.with_context(tz=emp_tz),
             fields.Datetime.now()).replace(tzinfo=None)
         today = now_local.date()
         shifts = self._todays_approved_shifts(employee, today)
@@ -364,7 +380,7 @@ class Attendance(models.Model):
         for s in shifts:
             anchor_utc = s.start if kind == 'in' else s.end
             anchor = fields.Datetime.context_timestamp(
-                s, anchor_utc).replace(tzinfo=None)
+                self.with_context(tz=emp_tz), anchor_utc).replace(tzinfo=None)
             if abs((now_local - anchor).total_seconds()) <= window * 60:
                 in_window = True
                 break

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
@@ -27,6 +29,19 @@ class TestShiftApi(TransactionCase):
             'employee_id': self.emp.id,
             'start': '2026-06-15 02:00:00',   # T2, 09:00 local
             'end': '2026-06-15 04:00:00',     # 11:00 local
+            'shift_type': 'ctv', 'ot_level': '150', 'state': 'pending',
+        }
+        base.update(vals)
+        return self.env['hocba.work_shift'].with_context(
+            tz='Asia/Ho_Chi_Minh').create(base)
+
+    def _make_future_shift(self, **vals):
+        """Ca tương lai (start = now + 2h) — dùng cho test cần vượt qua deadline guard."""
+        future = fields.Datetime.now() + timedelta(hours=2)
+        base = {
+            'employee_id': self.emp.id,
+            'start': future,
+            'end': future + timedelta(hours=2),
             'shift_type': 'ctv', 'ot_level': '150', 'state': 'pending',
         }
         base.update(vals)
@@ -84,13 +99,17 @@ class TestShiftApi(TransactionCase):
             _shift_create(env, {'start': '2026-06-15T11:00',
                                 'end': '2026-06-15T09:00', 'shiftType': 'ot'})
 
-    def test_create_overlap_raises(self):
+    def test_create_overlap_allowed(self):
+        # Cho phép 1 người đăng ký nhiều ca OT/ngày kể cả khi giờ chồng nhau.
         env = self.env(user=self.user)
         _shift_create(env, {'start': '2026-06-15T09:00',
                             'end': '2026-06-15T11:00', 'shiftType': 'ctv'})
-        with self.assertRaises(ValidationError):
-            _shift_create(env, {'start': '2026-06-15T10:00',
-                                'end': '2026-06-15T12:00', 'shiftType': 'ctv'})
+        row = _shift_create(env, {'start': '2026-06-15T10:00',
+                                  'end': '2026-06-15T12:00', 'shiftType': 'ctv'})
+        self.assertEqual(row['state'], 'pending')
+        cnt = self.env['hocba.work_shift'].search_count(
+            [('employee_id', '=', self.emp.id)])
+        self.assertEqual(cnt, 2)
 
     def test_create_no_employee_returns_none(self):
         u = self.env['res.users'].create({'name': 'NoEmp', 'login': 'noemp_shift'})
@@ -141,6 +160,38 @@ class TestShiftApi(TransactionCase):
         self.assertIn(self.emp.id, ids)
         self.assertTrue(data['canManage'])
 
+    def test_week_hr_manager_sees_pending_in_scope(self):
+        # Bug: manager phải thấy ca PENDING của NV trong phạm vi để duyệt.
+        # Dùng ngày tương lai để lazy auto-reject không loại ca này.
+        from odoo.fields import Datetime
+        from datetime import timedelta
+        future = Datetime.now() + timedelta(days=14)
+        future = future.replace(hour=2, minute=0, second=0, microsecond=0)
+        monday = future.date() - timedelta(days=future.date().weekday())
+        self._make_shift(start=future, end=future + timedelta(hours=2))
+        data = _shifts_week(self.env(user=self.hrm), monday.strftime('%Y-%m-%d'))
+        rows = [r for d in data['days'] for r in d['shifts']
+                if r['empId'] == self.emp.id]
+        self.assertTrue(rows, 'Manager phải thấy ca pending của NV để duyệt')
+        self.assertEqual(rows[0]['state'], 'pending')
+
+    def test_week_dept_head_sees_pending_in_scope(self):
+        dept = self.env['hr.department'].create({'name': 'Phòng P'})
+        in_emp = self.env['hr.employee'].create({
+            'name': 'NV trong P', 'department_id': dept.id,
+            'x_employment_status': 'ctv'})
+        mgr_emp = self.env['hr.employee'].create({'name': 'TP P'})
+        dept.manager_id = mgr_emp
+        mgr_user = self.env['res.users'].create({'name': 'TPP', 'login': 'tpp_shift'})
+        mgr_user.tz = 'Asia/Ho_Chi_Minh'
+        mgr_emp.user_id = mgr_user
+        self.env['hocba.work_shift'].with_context(tz='Asia/Ho_Chi_Minh').create({
+            'employee_id': in_emp.id, 'start': '2026-06-15 02:00:00',
+            'end': '2026-06-15 04:00:00', 'shift_type': 'ot', 'state': 'pending'})
+        data = _shifts_week(self.env(user=mgr_user), '2026-06-15')
+        ids = [r['empId'] for d in data['days'] for r in d['shifts']]
+        self.assertIn(in_emp.id, ids)
+
     def test_week_dept_head_scope(self):
         dept = self.env['hr.department'].create({'name': 'Phòng S'})
         in_emp = self.env['hr.employee'].create({
@@ -168,31 +219,37 @@ class TestShiftApi(TransactionCase):
 
     def test_decide_approve_with_override(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
+        # end override: now+4h expressed in hrm user's local tz (Asia/Ho_Chi_Minh)
+        from pytz import timezone as _tz
+        hrm_tz = _tz(self.hrm.tz or 'UTC')
+        import datetime as _dt
+        end_local = (fields.Datetime.now() + timedelta(hours=4)).replace(
+            tzinfo=_dt.timezone.utc).astimezone(hrm_tz)
+        end_override = end_local.strftime('%Y-%m-%dT%H:%M')
         row = _shift_decide(env, s.id, True, {'otLevel': '300',
-                            'end': '2026-06-15T12:00'})
+                            'end': end_override})
         self.assertEqual(row['state'], 'approved')
         self.assertEqual(row['otLevel'], '300')
         self.assertEqual(row['rate'], 3.0)
-        self.assertEqual(row['end'], '2026-06-15T12:00:00')
         self.assertEqual(row['reviewer'], self.hrm.name)
 
     def test_decide_bad_level_override_raises(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
         with self.assertRaises(ValidationError):
             _shift_decide(env, s.id, True, {'otLevel': '999'})
 
     def test_decide_reject_sets_note(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
         row = _shift_decide(env, s.id, False, {'reviewNote': 'Không cần'})
         self.assertEqual(row['state'], 'rejected')
         self.assertEqual(row['reviewNote'], 'Không cần')
 
     def test_decide_bad_type_override_raises(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift()
+        s = self._make_future_shift()
         with self.assertRaises(ValidationError):
             _shift_decide(env, s.id, True, {'shiftType': 'x'})
 
@@ -208,15 +265,15 @@ class TestShiftApi(TransactionCase):
 
     def test_decide_already_decided_raises(self):
         env = self.env(user=self.hrm)
-        s = self._make_shift(state='approved')
+        s = self._make_future_shift(state='rejected')
         with self.assertRaises(UserError):
-            _shift_decide(env, s.id, False, {})
+            _shift_decide(env, s.id, True, {})
 
     def test_decide_missing_returns_none(self):
         self.assertIsNone(_shift_decide(self.env(user=self.hrm), 999999, True, {}))
 
     def test_cancel_owner_pending_ok(self):
-        s = self._make_shift()
+        s = self._make_future_shift()
         res = _shift_cancel(self.env(user=self.user), s.id)
         self.assertEqual(res, {'ok': True})
         self.assertFalse(s.exists())
@@ -236,6 +293,21 @@ class TestShiftApi(TransactionCase):
         self.assertIsNone(_shift_cancel(self.env(user=self.user), 999999))
 
     def test_cancel_manager_in_scope_ok(self):
-        s = self._make_shift()
+        s = self._make_future_shift()
         res = _shift_cancel(self.env(user=self.hrm), s.id)
         self.assertEqual(res, {'ok': True})
+
+    def test_ctv_forced_level_100(self):
+        env = self.env(user=self.user)
+        row = _shift_create(env, {
+            'start': '2026-06-15T09:00', 'end': '2026-06-15T11:00',
+            'shiftType': 'ctv', 'otLevel': '300', 'reason': 'x'})
+        self.assertEqual(row['otLevel'], '100')
+        self.assertEqual(row['rate'], 1.0)
+
+    def test_set_level_blocked_for_ctv(self):
+        from odoo.addons.hocba_hrm.controllers.main import _shift_set_level
+        s = self._make_future_shift(shift_type='ctv', state='approved', ot_level='100')
+        env = self.env(user=self.hrm)
+        with self.assertRaises(ValidationError):
+            _shift_set_level(env, s.id, '150')

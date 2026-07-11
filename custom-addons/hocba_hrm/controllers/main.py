@@ -12,6 +12,10 @@ from odoo.http import request, Response
 from odoo.tools import file_open
 from odoo.osv import expression
 
+from odoo.addons.hocba_attendance.utils.cms_connector import (
+    get_sessions_for_tutor, get_sessions_for_week, session_to_dict
+)
+
 # 13/06/2026: SPA là frontend chính thức (FE/BE tách riêng qua API).
 # Dev:   cd frontend && npm run dev   (Vite :5173, proxy API về Odoo)
 # Build: cd frontend && npm run build → static/spa/, route này serve bản build.
@@ -44,6 +48,8 @@ EMP_FORM_FIELDS = {
     'hiPlace': ('x_health_care_place', 'hr'),
     'pit': ('x_pit_code', 'mgr'),
     'si': ('x_social_insurance_no', 'mgr'),
+    'bankAccountNo': ('x_bank_account_no', 'mgr'),
+    'bankCode': ('x_bank_code', 'mgr'),
 }
 # Field nằm trên hr.version (Odoo 19): CCCD + lương
 EMP_FORM_VERSION_FIELDS = {
@@ -96,6 +102,16 @@ CERT_FIELDS = {
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
     return v.isoformat() if v else None
+
+
+def _bank_options(env):
+    """Danh sách ngân hàng cho dropdown form NV — đọc từ cấu hình payroll
+    (hb.bank.format). Trả [] nếu module payroll chưa cài (loose coupling)."""
+    if 'hb.bank.format' not in env:
+        return []
+    return [{'code': b.code, 'name': b.name}
+            for b in env['hb.bank.format'].sudo().search(
+                [('active', '=', True)], order='sequence, name')]
 
 
 def _fmt_hm(hour_float):
@@ -158,6 +174,133 @@ def _att_row(rec, policy):
     }
 
 
+# ── Teaching schedule helpers ────────────────────────────────────────────────
+
+def _teaching_session_row(session_dict, att_rec, policy, now_utc):
+    """Chuẩn hóa 1 buổi dạy thành dict trả về API."""
+    window = policy.shift_window_minutes or 15
+
+    def _utc_from_local_time(d, t_str):
+        """Parse 'HH:MM' (ICT) → UTC datetime."""
+        if not d or not t_str:
+            return None
+        try:
+            h, m = map(int, t_str.split(':')[:2])
+            return datetime(d.year, d.month, d.day, h, m) - timedelta(hours=7)
+        except Exception:
+            return None
+
+    d = session_dict['_date_raw']
+    start_utc = _utc_from_local_time(d, session_dict['startTime'])
+    end_utc = _utc_from_local_time(d, session_dict['endTime'])
+
+    check_in_open = (start_utc and
+                     abs((now_utc - start_utc).total_seconds()) <= window * 60)
+    check_out_open = (end_utc and att_rec and att_rec.check_in and
+                      abs((now_utc - end_utc).total_seconds()) <= window * 60)
+
+    return {
+        'id': session_dict['id'],
+        'classId': session_dict['classId'],
+        'className': session_dict['className'],
+        'date': session_dict['date'],
+        'startTime': session_dict['startTime'],
+        'endTime': session_dict['endTime'],
+        'status': session_dict['status'],
+        'roleType': session_dict['roleType'],
+        'checkIn': att_rec.check_in.isoformat() if att_rec and att_rec.check_in else None,
+        'checkOut': att_rec.check_out.isoformat() if att_rec and att_rec.check_out else None,
+        'workedHours': att_rec.worked_hours if att_rec else 0.0,
+        'faceSuspect': att_rec.face_suspect if att_rec else False,
+        'outOfZone': att_rec.out_of_zone if att_rec else False,
+        'outOfWindow': att_rec.out_of_window if att_rec else False,
+        'checkInOpen': bool(check_in_open),
+        'checkOutOpen': bool(check_out_open),
+    }
+
+
+def _teaching_today_rows(env, emp, today, policy):
+    """Buổi dạy hôm nay của giáo viên. Trả về [] nếu không có x_cms_user_id."""
+    if not emp.x_cms_user_id:
+        return []
+    sessions_raw = get_sessions_for_tutor(emp.x_cms_user_id, today)
+    if not sessions_raw:
+        return []
+
+    session_ids = [r['id'] for r in sessions_raw]
+    att_map = {}
+    for att in env['hocba.teaching.attendance'].sudo().search(
+            [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+        att_map[att.cms_session_id] = att
+
+    now_utc = fields.Datetime.now()
+    rows = []
+    for raw in sessions_raw:
+        sd = session_to_dict(raw)
+        att = att_map.get(sd['id'])
+        rows.append(_teaching_session_row(sd, att, policy, now_utc))
+    return rows
+
+
+def _teaching_week_rows(env, emp, monday, policy):
+    """Buổi dạy của giáo viên trong tuần."""
+    if not emp.x_cms_user_id:
+        return []
+    sessions_raw = get_sessions_for_week(emp.x_cms_user_id, monday)
+    if not sessions_raw:
+        return []
+
+    session_ids = [r['id'] for r in sessions_raw]
+    att_map = {}
+    for att in env['hocba.teaching.attendance'].sudo().search(
+            [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+        att_map[att.cms_session_id] = att
+
+    now_utc = fields.Datetime.now()
+    rows = []
+    for raw in sessions_raw:
+        sd = session_to_dict(raw)
+        att = att_map.get(sd['id'])
+        rows.append(_teaching_session_row(sd, att, policy, now_utc))
+    return rows
+
+
+def _teaching_days_payload(env, from_str, to_str):
+    """Payload cho /api/teaching/days. Trả (dict, http_status).
+
+    Nguồn dữ liệu: model `hocba.teaching.session` trong Neon (KHÔNG đọc CMS).
+    - Không phải GV (không có x_cms_user_id) → ({isTeacher:False, days:[]}, 200)
+    - from/to thiếu hoặc sai định dạng → ({error:'invalid_date'}, 400)
+    - to < from hoặc khoảng > 366 ngày → ({error:'invalid_range'}, 400)
+    - Hợp lệ → ({isTeacher:True, days:[{date,count}]}, 200)
+      Đếm số buổi/ngày mà GV đang phụ trách (bỏ buổi đã hủy cả lớp).
+    """
+    emp = env.user.employee_id
+    if not emp or not emp.x_cms_user_id:
+        return {'isTeacher': False, 'days': []}, 200
+    try:
+        d_from = datetime.strptime(from_str or '', '%Y-%m-%d').date()
+        d_to = datetime.strptime(to_str or '', '%Y-%m-%d').date()
+    except ValueError:
+        return {'error': 'invalid_date'}, 400
+    if d_to < d_from or (d_to - d_from).days > 366:
+        return {'error': 'invalid_range'}, 400
+    # User thường không có ACL trên hocba.teaching.session → sudo SAU khi đã ghim
+    # employee_id của chính mình (self-service an toàn).
+    sessions = env['hocba.teaching.session'].sudo().search_read(
+        [('employee_id', '=', emp.id),
+         ('state', '!=', 'cancelled'),
+         ('session_date', '>=', d_from),
+         ('session_date', '<=', d_to)],
+        ['session_date'])
+    counts = {}
+    for s in sessions:
+        key = str(s['session_date'])
+        counts[key] = counts.get(key, 0) + 1
+    days = [{'date': d, 'count': c} for d, c in sorted(counts.items())]
+    return {'isTeacher': True, 'days': days}, 200
+
+
 def _att_me_info(env):
     """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -203,6 +346,10 @@ def _att_me_info(env):
                 'checkInOpen': abs((now_local - ci).total_seconds()) <= window * 60,
                 'checkOutOpen': abs((now_local - co).total_seconds()) <= window * 60,
             }
+    info['shiftsToday'] = _shift_today_rows(env, emp)
+    # Lịch dạy giáo viên từ CMS (chỉ khi employee có x_cms_user_id)
+    info['teachingToday'] = _teaching_today_rows(env, emp, today, policy)
+    info['isTeacher'] = bool(emp.x_cms_user_id)
     return info
 
 
@@ -247,13 +394,12 @@ def _att_day_table(env, date_str):
 
 
 def _ot_row(env, s):
-    """Một ca OT cho SPA (camelCase) + cờ counted / giờ quy đổi.
-    counted = ngày local của start có bản ghi attendance đã check-in."""
-    hours = ((s.end - s.start).total_seconds() / 3600.0) if (s.start and s.end) else 0.0
+    """Một ca OT cho SPA (camelCase) + công ca theo giờ chấm THỰC TẾ (hocba.shift.attendance).
+    counted = ca đã check-in; congCa = giờ_chấm/8 × hệ số (0 nếu chưa chấm)."""
+    att = env['hocba.shift.attendance'].sudo().search([('shift_id', '=', s.id)], limit=1)
+    hours = att.worked_hours if att else 0.0
+    counted = bool(att and att.check_in)
     d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
-    counted = bool(d and env['hocba.attendance'].sudo().search_count([
-        ('employee_id', '=', s.employee_id.id), ('date', '=', d),
-        ('check_in', '!=', False)]))
     emp = s.employee_id
     return {
         'id': s.id, 'empId': emp.id, 'empName': emp.name,
@@ -261,16 +407,16 @@ def _ot_row(env, s):
         'depName': emp.department_id.name or 'Chưa gán',
         'date': _d(d) if d else None,
         'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
-        'otLevel': s.ot_level, 'rate': s.rate,
+        'shiftType': s.shift_type, 'otLevel': s.ot_level, 'rate': s.rate,
         'hours': round(hours, 2), 'counted': counted,
-        'creditHours': round(hours * s.rate, 2) if counted else 0.0,
+        'congCa': round((hours / 8.0) * s.rate, 2) if counted else 0.0,
         'state': s.state,
     }
 
 
 def _ot_for_employee(env, emp, first, last):
     """Tổng OT của 1 NV trong [first,last] (ca approved, start trong tháng,
-    chỉ cộng ca counted). Trả {otHours, otCreditHours}."""
+    chỉ cộng ca counted). Trả {otHours, otCong}."""
     shifts = env['hocba.work_shift'].sudo().search([
         ('employee_id', '=', emp.id), ('state', '=', 'approved')])
     rows = []
@@ -280,7 +426,7 @@ def _ot_for_employee(env, emp, first, last):
             rows.append(_ot_row(env, s))
     return {
         'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
-        'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+        'otCong': round(sum(r['congCa'] for r in rows), 2),
     }
 
 
@@ -318,10 +464,93 @@ def _ot_table(env, month_str):
         'rows': rows,
         'totals': {
             'otHours': round(sum(r['hours'] for r in rows if r['counted']), 2),
-            'otCreditHours': round(sum(r['creditHours'] for r in rows), 2),
+            'otCong': round(sum(r['congCa'] for r in rows), 2),
             'count': len(rows),
             'countedCount': sum(1 for r in rows if r['counted']),
         },
+    }
+
+
+def _shift_history_row(env, s, att, row_type):
+    """Một dòng ca OT/CTV cho history-full (unified row format như _att_row).
+    s = hocba.work_shift, att = hocba.shift.attendance (có thể None/empty)."""
+    emp = s.employee_id
+    d = fields.Datetime.context_timestamp(s, s.start).date() if s.start else None
+    start_local = fields.Datetime.context_timestamp(s, s.start) if s.start else None
+    end_local = fields.Datetime.context_timestamp(s, s.end) if s.end else None
+
+    checked_in = bool(att and att.check_in)
+    hours = att.worked_hours if att else 0.0
+    worked_min = int(hours * 60)
+
+    # Shift duration (minutes)
+    shift_min = 0
+    if s.start and s.end:
+        shift_min = int((s.end - s.start).total_seconds() / 60)
+
+    # Late = check_in vượt quá shift.start
+    late_min = 0
+    if checked_in and s.start:
+        diff = (att.check_in - s.start).total_seconds()
+        late_min = max(0, int(diff / 60))
+
+    # Early leave = check_out trước shift.end
+    early_min = 0
+    if att and att.check_out and s.end:
+        diff = (s.end - att.check_out).total_seconds()
+        early_min = max(0, int(diff / 60))
+
+    # Missing = shift duration - worked (nếu đã check in)
+    missing_min = max(0, shift_min - worked_min) if checked_in else 0
+
+    # workCredit = congCa
+    cong_ca = round((hours / 8.0) * (s.rate or 1.0), 2) if checked_in else 0.0
+
+    # statusKey
+    if not checked_in:
+        status_key = 'none'
+    elif late_min > 0:
+        status_key = 'late'
+    else:
+        status_key = 'on_time'
+
+    # shiftLabel  e.g. "OT 150% · 08:00–12:00" hoặc "CTV · 08:00–12:00"
+    t_start = start_local.strftime('%H:%M') if start_local else '?'
+    t_end = end_local.strftime('%H:%M') if end_local else '?'
+    if row_type == 'ot':
+        level_label = '%s%%' % (s.ot_level,) if s.ot_level else '100%'
+        shift_label = 'OT %s · %s–%s' % (level_label, t_start, t_end)
+    else:
+        shift_label = 'CTV · %s–%s' % (t_start, t_end)
+
+    return {
+        'id': s.id,
+        'empId': emp.id,
+        'code': emp.x_employee_code or '—',
+        'name': emp.name,
+        'depName': emp.department_id.name or 'Chưa gán',
+        'hasImg': bool(att and att.check_in_photo),
+        'hasCheckOutImg': bool(att and att.check_out_photo),
+        'date': _d(d) if d else None,
+        'checkIn': _dt_local(att, att.check_in) if att and att.check_in else None,
+        'checkOut': _dt_local(att, att.check_out) if att and att.check_out else None,
+        'workingHours': round(hours, 2),
+        'statusKey': status_key,
+        'lateMinutes': late_min,
+        'earlyLeaveMinutes': early_min,
+        'missingMinutes': missing_min,
+        'workCredit': cong_ca,
+        'morningCredit': 0.0,
+        'afternoonCredit': 0.0,
+        'expectedCheckOut': _dt_local(s, s.end) if s.end else None,
+        'faceSuspect': att.face_suspect if att else False,
+        'outOfZone': att.out_of_zone if att else False,
+        'outOfWindow': att.out_of_window if att else False,
+        'needsReview': False,
+        'checkInMapUrl': None,
+        'checkOutMapUrl': None,
+        'rowType': row_type,
+        'shiftLabel': shift_label,
     }
 
 
@@ -352,21 +581,305 @@ def _att_me_history(env, month_str):
     std = policy.std_work_hours or 8.0
     deficit_credit = round(
         (sum(r['missingMinutes'] for r in counted) / 60.0) / std, 2)
+    ot = _ot_for_employee(env, emp, first, last)
     summary = {
         'onTime': sum(1 for r in rows if r['statusKey'] == 'on_time'),
         'late': sum(1 for r in rows if r['statusKey'] == 'late'),
         'needsReview': sum(1 for r in rows if r['needsReview']),
         'daysPresent': len(rows),
         'totalHours': round(sum(r['workingHours'] for r in rows), 2),
+        'totalCredit': round(total_credit + ot['otCong'], 2),
+        'deficitCredit': deficit_credit,
+        'netCredit': round(total_credit + ot['otCong'] - deficit_credit, 2),
+        'violationDays': len(violations),
+        'congOt': ot['otCong'],
+        'otHours': ot['otHours'],
+    }
+    return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
+
+
+def _att_me_history_full(env, month_str, att_type):
+    """Lịch sử chấm công đầy đủ (thường + OT + CTV) theo filter.
+    att_type: 'all' | 'regular' | 'ot' | 'ctv'. None nếu chưa có hồ sơ NV."""
+    emp = env.user.employee_id
+    if not emp:
+        return None
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+
+    # UTC bounds for shift searches (mirrors _ot_table pattern)
+    tz = timezone(env.user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+
+    # --- Regular rows ---
+    regular_rows = []
+    if att_type in ('regular', 'all'):
+        recs = env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('date', '>=', first), ('date', '<=', last),
+        ], order='date desc')
+        for r in recs:
+            row = _att_row(r, policy)
+            row['rowType'] = 'regular'
+            row['shiftLabel'] = None
+            regular_rows.append(row)
+
+    # --- Shift rows (OT / CTV) ---
+    ot_rows = []
+    ctv_rows = []
+    if att_type in ('ot', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ot'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        for s in shifts:
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ot_rows.append(_shift_history_row(env, s, att or None, 'ot'))
+    if att_type in ('ctv', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ctv'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        for s in shifts:
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ctv_rows.append(_shift_history_row(env, s, att or None, 'ctv'))
+
+    all_rows = sorted(
+        regular_rows + ot_rows + ctv_rows,
+        key=lambda r: r['date'] or '', reverse=True)
+
+    # --- Summary ---
+    total_credit = sum(r['workCredit'] for r in regular_rows)
+    violations = sorted(
+        [r for r in regular_rows if r['missingMinutes'] > 0],
+        key=lambda r: r['date'])
+    counted = violations[policy.violation_free_days:]
+    std = policy.std_work_hours or 8.0
+    deficit_credit = round(
+        (sum(r['missingMinutes'] for r in counted) / 60.0) / std, 2)
+    ot_hours = round(sum(r['workingHours'] for r in ot_rows if r['statusKey'] != 'none'), 2)
+    cong_ot = round(sum(r['workCredit'] for r in ot_rows), 2)
+    ctv_hours = round(sum(r['workingHours'] for r in ctv_rows if r['statusKey'] != 'none'), 2)
+    cong_ctv = round(sum(r['workCredit'] for r in ctv_rows), 2)
+
+    summary = {
+        'daysPresent': len(regular_rows),
+        'totalHours': round(sum(r['workingHours'] for r in regular_rows), 2),
         'totalCredit': round(total_credit, 2),
         'deficitCredit': deficit_credit,
         'netCredit': round(total_credit - deficit_credit, 2),
-        'violationDays': len(violations),
+        'onTime': sum(1 for r in regular_rows if r['statusKey'] == 'on_time'),
+        'late': sum(1 for r in regular_rows if r['statusKey'] == 'late'),
+        'needsReview': sum(1 for r in regular_rows if r['needsReview']),
+        'otHours': ot_hours,
+        'congOt': cong_ot,
+        'ctvHours': ctv_hours,
+        'congCtv': cong_ctv,
     }
-    ot = _ot_for_employee(env, emp, first, last)
-    summary['otHours'] = ot['otHours']
-    summary['otCreditHours'] = ot['otCreditHours']
-    return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'employmentStatus': emp.x_employment_status or 'official',
+        'summary': summary,
+        'rows': all_rows,
+    }
+
+
+def _att_manager_summary(env, month_str):
+    """Tổng hợp chấm công theo tháng cho manager: 1 dòng/NV trong phạm vi quản lý.
+    Cột: tổng công thường, OT, thiếu, tổng tháng."""
+    if not _user_can_manage(env):
+        raise AccessError('Không có quyền')
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    tz = timezone(env.user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    emp_domain = _emp_scope_domain(env)
+    employees = env['hr.employee'].sudo().search(
+        emp_domain, order='department_id, name')
+
+    rows = []
+    for emp in employees:
+        att_recs = env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('date', '>=', first), ('date', '<=', last),
+        ])
+        att_rows = [_att_row(r, policy) for r in att_recs]
+        total_regular = round(sum(r['workCredit'] for r in att_rows), 2)
+
+        violations = sorted(
+            [r for r in att_rows if r['missingMinutes'] > 0],
+            key=lambda r: r['date'])
+        counted_v = violations[policy.violation_free_days:]
+        std = policy.std_work_hours or 8.0
+        deficit = round(
+            (sum(r['missingMinutes'] for r in counted_v) / 60.0) / std, 2)
+
+        ot = _ot_for_employee(env, emp, first, last)
+
+        # CTV cong
+        ctv_shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ctv'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        ctv_cong = 0.0
+        for s in ctv_shifts:
+            att_s = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            if att_s and att_s.check_in:
+                hours = att_s.worked_hours or 0.0
+                ctv_cong += round((hours / 8.0) * (s.rate or 1.0), 2)
+        ctv_cong = round(ctv_cong, 2)
+
+        rows.append({
+            'empId': emp.id,
+            'empName': emp.name,
+            'code': emp.x_employee_code or '—',
+            'depId': emp.department_id.id if emp.department_id else None,
+            'depName': emp.department_id.name or 'Chưa gán',
+            'totalRegular': total_regular,
+            'totalOt': ot['otCong'],
+            'totalCtv': ctv_cong,
+            'totalMissing': deficit,
+            'totalMonth': round(total_regular + ot['otCong'] + ctv_cong, 2),
+        })
+
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'rows': rows,
+    }
+
+
+def _att_emp_history(env, emp_id, month_str, att_type):
+    """Lịch sử chấm công đầy đủ cho 1 NV cụ thể (manager xem/sửa).
+    att_type: 'all' | 'regular' | 'ot' | 'ctv'. Kiểm tra phạm vi quản lý."""
+    if not _user_can_manage(env):
+        raise AccessError('Không có quyền')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise UserError('Nhân viên không tồn tại')
+    if not _emp_in_scope(env, emp):
+        raise AccessError('Ngoài phạm vi quản lý')
+
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    if month_str:
+        y, m = (int(x) for x in month_str.split('-'))
+    else:
+        today = fields.Date.context_today(env.user)
+        y, m = today.year, today.month
+    first = date(y, m, 1)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    tz = timezone(env.user.tz or 'UTC')
+    start_local = tz.localize(datetime(y, m, 1))
+    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
+                 else tz.localize(datetime(y, m + 1, 1)))
+    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+
+    regular_rows = []
+    if att_type in ('regular', 'all'):
+        recs = env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('date', '>=', first), ('date', '<=', last),
+        ], order='date desc')
+        for r in recs:
+            row = _att_row(r, policy)
+            row['rowType'] = 'regular'
+            row['shiftLabel'] = None
+            regular_rows.append(row)
+
+    ot_rows = []
+    if att_type in ('ot', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ot'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        for s in shifts:
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ot_rows.append(_shift_history_row(env, s, att or None, 'ot'))
+
+    ctv_rows = []
+    if att_type in ('ctv', 'all'):
+        shifts = env['hocba.work_shift'].sudo().search([
+            ('employee_id', '=', emp.id),
+            ('state', '=', 'approved'),
+            ('shift_type', '=', 'ctv'),
+            ('start', '>=', start_utc), ('start', '<', end_utc),
+        ])
+        for s in shifts:
+            att = env['hocba.shift.attendance'].sudo().search(
+                [('shift_id', '=', s.id)], limit=1)
+            ctv_rows.append(_shift_history_row(env, s, att or None, 'ctv'))
+
+    all_rows = sorted(
+        regular_rows + ot_rows + ctv_rows,
+        key=lambda r: r['date'] or '', reverse=True)
+
+    total_credit = sum(r['workCredit'] for r in regular_rows)
+    violations = sorted(
+        [r for r in regular_rows if r['missingMinutes'] > 0],
+        key=lambda r: r['date'])
+    counted_v = violations[policy.violation_free_days:]
+    std = policy.std_work_hours or 8.0
+    deficit = round(
+        (sum(r['missingMinutes'] for r in counted_v) / 60.0) / std, 2)
+    ot_hours = round(sum(r['workingHours'] for r in ot_rows if r['statusKey'] != 'none'), 2)
+    cong_ot = round(sum(r['workCredit'] for r in ot_rows), 2)
+    ctv_hours = round(sum(r['workingHours'] for r in ctv_rows if r['statusKey'] != 'none'), 2)
+    cong_ctv = round(sum(r['workCredit'] for r in ctv_rows), 2)
+
+    summary = {
+        'daysPresent': len(regular_rows),
+        'totalHours': round(sum(r['workingHours'] for r in regular_rows), 2),
+        'totalCredit': round(total_credit, 2),
+        'deficitCredit': deficit,
+        'netCredit': round(total_credit - deficit, 2),
+        'otHours': ot_hours,
+        'congOt': cong_ot,
+        'ctvHours': ctv_hours,
+        'congCtv': cong_ctv,
+    }
+    return {
+        'month': '%04d-%02d' % (y, m),
+        'emp': {
+            'id': emp.id, 'name': emp.name,
+            'code': emp.x_employee_code or '—',
+            'depName': emp.department_id.name or 'Chưa gán',
+        },
+        'summary': summary,
+        'rows': all_rows,
+    }
 
 
 def _req_row(req):
@@ -486,13 +999,12 @@ def _request_create(env, body):
     Att = env['hocba.attendance'].sudo()
     att_id = body.get('attendanceId') or None
     attendance = Att.browse(int(att_id)) if att_id else Att.browse()
-    if att_id and (not attendance.exists() or attendance.employee_id != emp):
+    if not att_id or not attendance.exists() or attendance.employee_id != emp:
         raise ValidationError('Bản ghi không hợp lệ.')
-    request_date = body.get('requestDate') or (attendance.date if att_id else False)
     req = env['hocba.attendance.request'].sudo().create({
         'employee_id': emp.id,
-        'request_date': request_date,
-        'attendance_id': attendance.id or False,
+        'request_date': attendance.date,
+        'attendance_id': attendance.id,
         'proposed_check_in': _to_utc(env, body.get('checkIn')),
         'proposed_check_out': _to_utc(env, body.get('checkOut')),
         'reason': reason,
@@ -528,6 +1040,32 @@ def _request_decide(env, req_id, approve, body):
     return _req_row(req)
 
 
+def _request_preview(env, req_id, body):
+    """Tính thử (dry-run) các trường công khi áp giờ đề xuất, KHÔNG lưu.
+    Manager xem trước khi duyệt. AccessError nếu vượt quyền; None nếu không tồn tại."""
+    req = env['hocba.attendance.request'].sudo().browse(req_id)
+    if not req.exists():
+        return None
+    if not (_user_can_manage(env) and _emp_in_scope(env, req.employee_id)):
+        raise AccessError('forbidden')
+    ci = _to_utc(env, body['checkIn']) if 'checkIn' in body else req.proposed_check_in
+    co = _to_utc(env, body['checkOut']) if 'checkOut' in body else req.proposed_check_out
+    draft = env['hocba.attendance'].sudo().new({
+        'employee_id': req.employee_id.id,
+        'check_in': ci or False,
+        'check_out': co or False,
+    })
+    return {
+        'workingHours': round(draft.working_hours, 2),
+        'workCredit': draft.work_credit,
+        'expectedCheckOut': _dt_local(draft, draft.expected_check_out),
+        'earlyLeaveMinutes': draft.early_leave_minutes,
+        'missingMinutes': draft.missing_minutes,
+        'lateMinutes': draft.late_minutes,
+        'needsReview': draft.needs_review,
+    }
+
+
 def _att_requests_mine(env):
     """Đơn chấm công của chính user (mọi state), mới nhất trước.
     None nếu user chưa có hồ sơ NV."""
@@ -554,6 +1092,45 @@ def _att_requests_pending(env):
     return [_req_row(r) for r in reqs]
 
 
+def _employee_search(env, q):
+    """Tìm NV theo mã (x_employee_code) hoặc tên cho manager (add-for-anyone).
+    [] nếu không phải manager hoặc query rỗng. Giới hạn theo phạm vi vai trò."""
+    if not _user_can_manage(env):
+        return []
+    q = (q or '').strip()
+    if not q:
+        return []
+    domain = ['|', ('x_employee_code', 'ilike', q), ('name', 'ilike', q)]
+    domain += _emp_scope_domain(env)
+    emps = env['hr.employee'].sudo().search(domain, limit=20)
+    return [{
+        'id': e.id,
+        'code': e.x_employee_code or '—',
+        'name': e.name,
+        'employmentStatus': e.x_employment_status or '',
+    } for e in emps]
+
+
+def _shift_scope_domain(env, type_filter=None):
+    """Domain trên hocba.work_shift theo người xem (Section 2 spec).
+    - Manager: theo _emp_scope_domain (dịch sang employee_id.*) + lọc loại nếu gửi.
+    - CTV (x_employment_status='ctv'): chỉ thấy ca CTV (của mọi người).
+    - NV thường: chỉ thấy ca OT (của mọi người)."""
+    if _user_can_manage(env):
+        dom = []
+        for field, op, val in _emp_scope_domain(env):
+            if field == 'id':
+                dom.append(('employee_id', op, val))
+            else:
+                dom.append(('employee_id.%s' % field, op, val))
+        if type_filter in ('ot', 'ctv'):
+            dom.append(('shift_type', '=', type_filter))
+        return dom
+    emp = env.user.employee_id
+    is_ctv = bool(emp) and emp.x_employment_status == 'ctv'
+    return [('shift_type', '=', 'ctv' if is_ctv else 'ot')]
+
+
 def _shift_row(s):
     """Một ca làm việc cho SPA (wire format camelCase)."""
     emp = s.employee_id
@@ -566,6 +1143,10 @@ def _shift_row(s):
         'start': _dt_local(s, s.start),
         'end': _dt_local(s, s.end),
         'shiftType': s.shift_type,
+        'shiftTypeLabel': 'CTV' if s.shift_type == 'ctv' else 'OT',
+        'deadline': _dt_local(s, s.deadline),
+        'locked': bool(s.deadline) and fields.Datetime.now() >= s.deadline,
+        'mine': bool(s.env.user.employee_id) and s.employee_id.id == s.env.user.employee_id.id,
         'otLevel': s.ot_level,
         'rate': s.rate,
         'state': s.state,
@@ -597,6 +1178,8 @@ def _shift_create(env, body):
     level = body.get('otLevel') or '100'
     if level not in ('100', '150', '300'):
         raise ValidationError('Mức hệ số không hợp lệ.')
+    if shift_type == 'ctv':
+        level = '100'   # CTV cố định 100%, bỏ qua giá trị client gửi
     start = _to_utc(env, body.get('start'))
     end = _to_utc(env, body.get('end'))
     if not start or not end:
@@ -615,10 +1198,10 @@ def _shift_create(env, body):
     return _shift_row(shift)
 
 
-def _shifts_week(env, monday_str):
+def _shifts_week(env, monday_str, type_filter=None):
     """Dữ liệu lịch tuần (T2→CN của tuần chứa monday_str; rỗng = tuần hiện tại).
-    Owner thấy ca của mình mọi state; người khác chỉ thấy ca approved trong
-    phạm vi vai trò (HR=tất cả, trưởng phòng=phòng mình, NV thường=của mình)."""
+    Visibility theo loại ca: NV thường thấy ca OT của mọi người; CTV thấy ca CTV;
+    Manager thấy ca theo phạm vi + filter loại tuỳ chọn."""
     user = env.user
     d = fields.Date.from_string(monday_str) if monday_str else fields.Date.context_today(user)
     monday = d - timedelta(days=d.weekday())
@@ -627,17 +1210,16 @@ def _shifts_week(env, monday_str):
     end_local = start_local + timedelta(days=7)
     start_utc = start_local.astimezone(utc).replace(tzinfo=None)
     end_utc = end_local.astimezone(utc).replace(tzinfo=None)
-    approved = [('state', '=', 'approved')]
-    for field, op, val in _emp_scope_domain(env):
-        if field == 'id':
-            approved.append(('employee_id', op, val))
-        else:
-            approved.append(('employee_id.%s' % field, op, val))
+    can_manage = _user_can_manage(env)
+    scope = _shift_scope_domain(env, type_filter)
+    env['hocba.work_shift'].sudo()._auto_reject_expired(scope)  # lazy backstop (Section 3)
     me = user.employee_id
-    if me:
-        visible = expression.OR([[('employee_id', '=', me.id)], approved])
+    if can_manage:
+        visible = scope
     else:
-        visible = approved
+        # NV thường/CTV: ca approved của mọi người cùng loại + ca của mình mọi state
+        visible = scope + ['|', ('state', '=', 'approved'),
+                           ('employee_id', '=', me.id if me else -1)]
     domain = [('start', '>=', start_utc), ('start', '<', end_utc)] + visible
     recs = env['hocba.work_shift'].sudo().search(domain)
     by_day = {}
@@ -650,7 +1232,7 @@ def _shifts_week(env, monday_str):
         day = monday + timedelta(days=i)
         days.append({'date': _d(day), 'weekday': weekdays[i],
                      'shifts': by_day.get(day, [])})
-    return {'weekStart': _d(monday), 'canManage': _user_can_manage(env), 'days': days}
+    return {'weekStart': _d(monday), 'canManage': can_manage, 'days': days}
 
 
 def _shift_decide(env, shift_id, approve, body):
@@ -662,8 +1244,9 @@ def _shift_decide(env, shift_id, approve, body):
         return None
     if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
         raise AccessError('forbidden')
-    if shift.state != 'pending':
+    if shift.state == 'rejected':
         raise UserError('already_decided')
+    shift._assert_actionable()
     vals = {
         'reviewer_id': env.user.id,
         'decision_date': fields.Datetime.now(),
@@ -700,8 +1283,11 @@ def _shift_set_level(env, shift_id, level):
         return None
     if not (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id)):
         raise AccessError('forbidden')
+    shift._assert_actionable()
     if shift.state != 'approved':
         raise ValidationError('Chỉ đổi mức cho ca đã duyệt.')
+    if shift.shift_type == 'ctv':
+        raise ValidationError('Ca CTV cố định hệ số 100%.')
     shift.write({'ot_level': level})
     return _shift_row(shift)
 
@@ -717,10 +1303,62 @@ def _shift_cancel(env, shift_id):
     is_owner = bool(me) and shift.employee_id == me
     if not (is_owner or (_user_can_manage(env) and _emp_in_scope(env, shift.employee_id))):
         raise AccessError('forbidden')
+    shift._assert_actionable()
     if shift.state != 'pending':
         raise UserError('only_pending')
     shift.unlink()
     return {'ok': True}
+
+
+def _shift_today_rows(env, emp):
+    """Ca approved hôm nay của emp (local) + trạng thái chấm cho màn chấm công ca."""
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    window = policy.shift_window_minutes or 15
+    now_local = fields.Datetime.context_timestamp(
+        env.user, fields.Datetime.now()).replace(tzinfo=None)
+    today = now_local.date()
+    shifts = env['hocba.attendance']._todays_approved_shifts(emp, today)
+    rows = []
+    for s in shifts:
+        att = env['hocba.shift.attendance'].sudo().search(
+            [('shift_id', '=', s.id)], limit=1)
+        ci_anchor = fields.Datetime.context_timestamp(s, s.start).replace(tzinfo=None)
+        co_anchor = fields.Datetime.context_timestamp(s, s.end).replace(tzinfo=None)
+        has_in = bool(att and att.check_in)
+        has_out = bool(att and att.check_out)
+        rows.append({
+            'id': s.id,
+            'start': _dt_local(s, s.start), 'end': _dt_local(s, s.end),
+            'shiftType': s.shift_type, 'otLevel': s.ot_level, 'rate': s.rate,
+            'checkIn': _dt_local(att, att.check_in) if has_in else None,
+            'checkOut': _dt_local(att, att.check_out) if has_out else None,
+            'checkInOpen': (not has_in) and abs((now_local - ci_anchor).total_seconds()) <= window * 60,
+            'checkOutOpen': has_in and (not has_out) and abs((now_local - co_anchor).total_seconds()) <= window * 60,
+            'faceSuspect': att.face_suspect if att else False,
+            'outOfZone': att.out_of_zone if att else False,
+            'outOfWindow': att.out_of_window if att else False,
+        })
+    return rows
+
+
+def _shift_check(env, shift_id, kind, payload):
+    """Chấm công 1 ca cho user hiện tại. Raise AccessError nếu ca không thuộc user."""
+    emp = env.user.employee_id
+    shift = env['hocba.work_shift'].sudo().browse(shift_id)
+    if not shift.exists():
+        raise UserError('no_shift')
+    if not emp or shift.employee_id.id != emp.id:
+        raise AccessError('forbidden')
+    SA = env['hocba.shift.attendance'].sudo()
+    SA._assert_allowed(shift, kind)
+    rec = SA._do_check(shift, payload, kind)
+    return {
+        'recordId': rec.id, 'kind': kind,
+        'faceSuspect': rec.face_suspect, 'outOfZone': rec.out_of_zone,
+        'outOfWindow': rec.out_of_window,
+        'faceScore': (rec.check_in_face_score if kind == 'in'
+                      else rec.check_out_face_score),
+    }
 
 
 def _managed_department_ids(env, emp):
@@ -789,6 +1427,197 @@ def _user_can_manage(env):
             or is_manager)
 
 
+# --- Quản lý tài khoản đăng nhập (account management) --------------------
+ACCOUNT_ROLES = ('employee', 'giaovu', 'truongphong')
+MIN_PASSWORD_LEN = 8
+
+
+def _account_payload(emp):
+    """Khối trạng thái tài khoản đăng nhập cho hồ sơ NV."""
+    u = emp.user_id
+    if not u:
+        return {'hasAccount': False}
+    return {'hasAccount': True, 'login': u.login, 'active': u.active}
+
+
+def _is_hr(env):
+    return env.user.has_group('hr.group_hr_user')
+
+
+def _validate_password(body):
+    pw = body.get('password') or ''
+    pw2 = body.get('password_confirm') or ''
+    if len(pw) < MIN_PASSWORD_LEN:
+        raise ValidationError(
+            'Mật khẩu phải có ít nhất %d ký tự.' % MIN_PASSWORD_LEN)
+    if pw != pw2:
+        raise ValidationError('Xác nhận mật khẩu không khớp.')
+    return pw
+
+
+def _account_create(env, emp_id, body):
+    """HR/Admin cấp tài khoản đăng nhập cho 1 nhân viên.
+    AccessError nếu không phải HR; ValidationError nếu dữ liệu sai;
+    UserError nếu trưởng phòng cần xác nhận ghi đè."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp tài khoản.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if emp.user_id:
+        raise ValidationError('Nhân viên đã có tài khoản. Dùng cấp lại mật khẩu.')
+    login = (body.get('login') or '').strip()
+    if not login:
+        raise ValidationError('Vui lòng nhập tên đăng nhập.')
+    if env['res.users'].sudo().with_context(active_test=False).search_count(
+            [('login', '=', login)]):
+        raise ValidationError('Tên đăng nhập đã tồn tại.')
+    password = _validate_password(body)
+    role = body.get('role') or 'employee'
+    if role not in ACCOUNT_ROLES:
+        raise ValidationError('Loại tài khoản không hợp lệ.')
+
+    group_ids = [env.ref('base.group_user').id]
+    if role == 'giaovu':
+        group_ids.append(env.ref('hocba_employees.group_hocba_giaovu').id)
+
+    dept = None
+    if role == 'truongphong':
+        dept_id = body.get('department_id')
+        if not dept_id:
+            raise ValidationError('Trưởng phòng cần chọn phòng ban.')
+        dept = env['hr.department'].sudo().browse(int(dept_id))
+        if not dept.exists():
+            raise ValidationError('Phòng ban không hợp lệ.')
+        if (dept.manager_id and dept.manager_id != emp
+                and not body.get('confirm_overwrite')):
+            raise UserError(
+                'Phòng "%s" đã có trưởng phòng (%s). Xác nhận để ghi đè.'
+                % (dept.name, dept.manager_id.name))
+
+    user = env['res.users'].sudo().create({
+        'name': emp.name, 'login': login, 'password': password,
+        'group_ids': [(6, 0, group_ids)],
+    })
+    emp.sudo().user_id = user.id
+    if dept is not None:
+        dept.manager_id = emp.id
+    return _account_payload(emp)
+
+
+def _account_reset(env, emp_id, body):
+    """HR/Admin cấp lại mật khẩu cho nhân viên đã có tài khoản."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được cấp lại mật khẩu.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists() or not emp.user_id:
+        raise ValidationError('Nhân viên chưa có tài khoản.')
+    password = _validate_password(body)
+    emp.user_id.sudo().write({'password': password})
+    return _account_payload(emp)
+
+
+def _account_list(env):
+    """Danh sách NV đã có tài khoản + danh mục phòng ban (cho form). Chỉ HR."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách tài khoản.')
+    Dept = env['hr.department'].sudo()
+    emps = env['hr.employee'].sudo().search(
+        [('user_id', '!=', False)], order='x_employee_code, id')
+    rows = []
+    for e in emps:
+        u = e.user_id
+        is_tp = bool(Dept.search_count([('manager_id', '=', e.id)]))
+        is_gv = u.has_group('hocba_employees.group_hocba_giaovu')
+        role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
+        rows.append({
+            'employeeId': e.id, 'name': e.name,
+            'code': e.x_employee_code or '', 'depName': e.department_id.name or '',
+            'login': u.login, 'active': u.active, 'role': role,
+        })
+    depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
+    return {'accounts': rows, 'departments': depts}
+
+
+def _dept_payload(dept):
+    """Một dòng phòng ban cho SPA. employeeCount đếm trực tiếp member_ids
+    (chắc chắn, không phụ thuộc tên field computed của Odoo)."""
+    return {
+        'id': dept.id,
+        'name': dept.name,
+        'functionDesc': dept.x_function_desc or '',
+        'managerId': dept.manager_id.id or False,
+        'managerName': dept.manager_id.name or '',
+        'employeeCount': len(dept.member_ids),
+        'active': dept.active,
+    }
+
+
+def _dept_list(env, archived=False):
+    """Danh sách phòng ban + danh mục NV (cho dropdown trưởng phòng). Chỉ HR.
+    archived=True → gồm cả phòng đã lưu trữ (active=False)."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được xem danh sách phòng ban.')
+    Dept = env['hr.department'].sudo().with_context(active_test=not archived)
+    depts = Dept.search([], order='name')
+    employees = env['hr.employee'].sudo().search(
+        [], order='x_employee_code, name')
+    return {
+        'departments': [_dept_payload(d) for d in depts],
+        'employees': [{'id': e.id, 'name': e.name, 'code': e.x_employee_code or ''}
+                      for e in employees],
+    }
+
+
+def _dept_create(env, body):
+    """HR/Admin tạo phòng ban mới."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được tạo phòng ban.')
+    name = (body.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập tên phòng ban.')
+    vals = {'name': name,
+            'x_function_desc': (body.get('functionDesc') or '').strip()}
+    manager_id = body.get('managerId')
+    if manager_id:
+        vals['manager_id'] = int(manager_id)
+    dept = env['hr.department'].sudo().create(vals)
+    return _dept_payload(dept)
+
+
+def _dept_update(env, dept_id, body):
+    """HR/Admin sửa tên / chức năng / trưởng phòng. managerId rỗng → gỡ trưởng phòng."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được sửa phòng ban.')
+    dept = env['hr.department'].sudo().with_context(
+        active_test=False).browse(dept_id)
+    if not dept.exists():
+        raise ValidationError('Không tìm thấy phòng ban.')
+    name = (body.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập tên phòng ban.')
+    manager_id = body.get('managerId')
+    dept.write({
+        'name': name,
+        'x_function_desc': (body.get('functionDesc') or '').strip(),
+        'manager_id': int(manager_id) if manager_id else False,
+    })
+    return _dept_payload(dept)
+
+
+def _dept_archive(env, dept_id, body):
+    """HR/Admin lưu trữ (active=False) / khôi phục (active=True) phòng ban.
+    Đây là đường thay cho xóa cứng — xóa cứng bị chặn bởi ràng buộc model."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được lưu trữ phòng ban.')
+    dept = env['hr.department'].sudo().with_context(
+        active_test=False).browse(dept_id)
+    if not dept.exists():
+        raise ValidationError('Không tìm thấy phòng ban.')
+    dept.write({'active': bool(body.get('active'))})
+    return _dept_payload(dept)
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -796,12 +1625,14 @@ _CHECK_ERR_STATUS = {
     'already_checked_out': 409,
     'no_shift_today': 403,
     'outside_shift_window': 403,
+    'no_shift': 404,
+    'shift_not_approved': 409,
 }
 
 
 class HocBaHRM(http.Controller):
 
-    @http.route('/hocba-hrm', auth='user', type='http', csrf=False)
+    @http.route('/hocba-hrm', auth='public', type='http', csrf=False)
     def hrm_dashboard(self, **kw):
         if not SPA_ENABLED:
             return request.redirect('/odoo')
@@ -814,7 +1645,9 @@ class HocBaHRM(http.Controller):
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
                     'npm install &amp;&amp; npm run build</code> rồi tải lại trang '
                     '(xem docs/QUY_UOC_FRONTEND.md §8).</p>')
-        return Response(html, content_type='text/html; charset=utf-8')
+        resp = Response(html, content_type='text/html; charset=utf-8')
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     @staticmethod
     def _bust_asset_cache(html):
@@ -875,6 +1708,18 @@ class HocBaHRM(http.Controller):
         return bool(e.department_id
                     and e.department_id.id
                     in self._managed_department_ids(user.employee_id))
+
+    def _can_eval_trial(self, e):
+        """Ai được chấm thử giảng (F-008): HR (mọi NV) hoặc Giáo vụ với giáo
+        viên trong phạm vi của họ (giáo vụ là người quản lý giáo viên)."""
+        user = request.env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return True
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            return self._emp_in_scope(e)  # phạm vi giáo vụ = giáo viên
+        return False
 
     def _labels(self):
         env = request.env
@@ -989,15 +1834,30 @@ class HocBaHRM(http.Controller):
                 } for dp in e.x_dependent_ids],
             })
         if is_mgr:
+            # Tên ngân hàng: tra từ list payroll (hb.bank.format) theo mã đã lưu;
+            # guard nếu payroll chưa cài, fallback hiển thị mã.
+            bank_name = e.x_bank_code or ''
+            if e.x_bank_code and 'hb.bank.format' in e.env:
+                bank = e.env['hb.bank.format'].sudo().search(
+                    [('code', '=', e.x_bank_code)], limit=1)
+                if bank:
+                    bank_name = bank.name
             data.update({
                 'pit': e.x_pit_code or '',
                 'si': e.x_social_insurance_no or '',
+                'bankCode': e.x_bank_code or '',
+                'bankName': bank_name,
+                'bankAccountNo': e.x_bank_account_no or '',
             })
 
         # --- Thử việc 2 cổng (F-004/005) — Nhóm B ---
+        # Giáo viên (loại nhân sự = teacher) luôn đi luồng thử giảng (Nhóm A),
+        # kể cả offline → loại khỏi Nhóm B để không hiện cổng thử việc nhầm.
+        is_teacher = e.x_employee_type_id.code == 'teacher'
         data['probation'] = {
             'isGroupB': (e.x_position_type in ('staff', 'manager')
-                         and e.x_work_form == 'offline'),
+                         and e.x_work_form == 'offline'
+                         and not is_teacher),
             'canEval': self._can_eval_emp(e),
             'start': _d(e.x_probation_start),
             'd2wDue': _d(e.x_eval_2w_due),
@@ -1019,7 +1879,8 @@ class HocBaHRM(http.Controller):
 
         # --- Thử giảng (F-008) — Nhóm A ---
         if (e.x_work_form == 'online'
-                or e.x_employment_status in ('parttime', 'ctv', 'advisor')):
+                or e.x_employment_status in ('parttime', 'ctv', 'advisor')
+                or is_teacher):
             data['trial'] = {
                 'date': _d(e.x_trial_lesson_date),
                 'class': e.x_trial_lesson_class or '',
@@ -1027,6 +1888,7 @@ class HocBaHRM(http.Controller):
                 'scoreContent': e.x_trial_score_content or 0,
                 'result': e.x_trial_lesson_result or 'draft',
                 'note': e.x_trial_lesson_note or '',
+                'canEval': self._can_eval_trial(e),
             }
 
         # --- Tài sản (F-006) ---
@@ -1073,6 +1935,9 @@ class HocBaHRM(http.Controller):
                 'levelId': s.skill_level_id.id or False,
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
+
+        if is_hr:
+            data['account'] = _account_payload(e)
 
         return data
 
@@ -1130,8 +1995,10 @@ class HocBaHRM(http.Controller):
             e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
+            # Từ chối nghiệp vụ (sai trình tự / thiếu ngày thử việc / BR-010…):
+            # trả 422 + lý do thật để FE hiển thị; 403 chỉ dành cho thiếu quyền.
             return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=403)
+                {'error': 'rejected', 'message': str(ex)}, status=422)
 
         # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
         is_hr, is_mgr = self._hr_flags()
@@ -1142,14 +2009,17 @@ class HocBaHRM(http.Controller):
                 type='http', methods=['POST'], csrf=False)
     def api_employee_trial(self, emp_id, **kw):
         """Đánh giá thử giảng (F-008) cho giảng viên Nhóm A từ SPA: ghi ngày,
-        lớp, 2 điểm, kết quả, nhận xét. KHÔNG sudo — model áp ràng buộc (điểm
-        1–10, ngày ≤ hôm nay, fail cần nhận xét) + activity nhắc HR."""
-        is_hr, _ = self._hr_flags()
-        if not is_hr:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        e = request.env['hr.employee'].browse(emp_id)
+        lớp, 2 điểm, kết quả, nhận xét. Quyền: HR (mọi NV) hoặc Giáo vụ (giáo
+        viên trong phạm vi). Kiểm phạm vi RỒI sudo ghi; model vẫn áp ràng buộc
+        (điểm 1–10, ngày ≤ hôm nay, fail cần nhận xét) qua @api.constrains."""
+        e = request.env['hr.employee'].sudo().browse(emp_id)
         if not e.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_trial(e):
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Bạn không có quyền chấm thử giảng nhân viên này.'},
+                status=403)
 
         payload = request.get_json_data()
         result = payload.get('result')
@@ -1168,11 +2038,11 @@ class HocBaHRM(http.Controller):
             'x_trial_lesson_result': result,
         }
         try:
-            e.write(vals)
+            e.sudo().write(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=400)
+                {'error': 'rejected', 'message': str(ex)}, status=422)
         return self._detail_response(e)
 
     # ------------------------------------------------------------------
@@ -1335,6 +2205,148 @@ class HocBaHRM(http.Controller):
         return self._detail_response(e)
 
     # ------------------------------------------------------------------
+    # Offboarding — đơn thôi việc (self-service + duyệt 2 cấp)
+    # ------------------------------------------------------------------
+    # Nhãn + màu badge theo trạng thái (SPA render trực tiếp, không hard-code FE)
+    OFFB_STATE_UI = {
+        'draft': ('Nháp', 'gray'),
+        'submitted': ('Chờ quản lý duyệt', 'amber'),
+        'mgr_approved': ('Chờ HR duyệt', 'blue'),
+        'hr_approved': ('Chờ hoàn tất', 'violet'),
+        'done': ('Đã nghỉ', 'gray'),
+        'refused': ('Từ chối', 'red'),
+        'cancelled': ('Đã huỷ', 'gray'),
+    }
+
+    def _offb_json(self, rec):
+        # Quyền tính theo user của env gắn trên record (route browse dưới
+        # request.env nên chính là user hiện tại; test truyền env(user=...)).
+        user = rec.env.user
+        is_hr_mgr = rec.env.su or user.has_group('hr.group_hr_manager')
+        try:
+            rec._ensure_manages()
+            manages = True
+        except AccessError:
+            manages = False
+        own = rec.employee_id == user.employee_id
+        label, kind = self.OFFB_STATE_UI.get(rec.state, (rec.state, 'gray'))
+        return {
+            'id': rec.id, 'name': rec.name,
+            'employeeId': rec.employee_id.id,
+            'employeeName': rec.employee_id.name,
+            'source': rec.source, 'reasonType': rec.reason_type,
+            'reason': rec.reason or '',
+            'requestDate': rec.request_date and str(rec.request_date) or '',
+            'expectedLeaveDate': rec.expected_leave_date
+                and str(rec.expected_leave_date) or '',
+            'state': rec.state, 'stateLabel': label, 'stateKind': kind,
+            'assetPending': rec.asset_pending_count,
+            'mgrApprovedBy': rec.mgr_approved_by.name or '',
+            'hrApprovedBy': rec.hr_approved_by.name or '',
+            'canMgrApprove': rec.state == 'submitted' and manages,
+            'canHrApprove': rec.state == 'mgr_approved' and is_hr_mgr,
+            'canDone': rec.state == 'hr_approved' and is_hr_mgr,
+            'canRefuse': (rec.state == 'submitted' and manages)
+                or (rec.state == 'mgr_approved' and is_hr_mgr),
+            'canCancel': rec.state in ('draft', 'submitted')
+                and (own or is_hr_mgr),
+        }
+
+    def _offb_managed_employee_ids(self, env):
+        """Phạm vi NV mà user hiện tại được xử lý đơn nghỉ việc — KHỚP quyền
+        duyệt của model (_ensure_manages): HR=tất cả; trưởng phòng=phòng mình;
+        quản lý trực tiếp=cấp dưới parent_id; giáo vụ=giáo viên.
+        Không dùng _emp_scope_domain (helper chung, thiếu parent_id)."""
+        user = env.user
+        Emp = env['hr.employee'].sudo()
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')):
+            return Emp.search([]).ids
+        ids = set()
+        emp = user.employee_id
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            ids.update(Emp.search([('department_id', 'in', dept_ids)]).ids)
+        if emp:
+            ids.update(Emp.search([('parent_id', '=', emp.id)]).ids)
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            ids.update(Emp.search(
+                [('x_employee_type_id.code', '=', 'teacher')]).ids)
+        ids.discard(emp.id if emp else -1)
+        return list(ids)
+
+    @http.route('/hocba-hrm/api/offboarding/submit', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_offboarding_submit(self, **kw):
+        emp = request.env.user.employee_id
+        if not emp:
+            return request.make_json_response(
+                {'error': 'no_employee'}, status=400)
+        payload = request.get_json_data() or {}
+        try:
+            rec = request.env['hocba.offboarding'].create({
+                'employee_id': emp.id,
+                'source': 'self',
+                'reason_type': payload.get('reasonType') or 'voluntary',
+                'reason': (payload.get('reason') or '').strip(),
+                'expected_leave_date': payload.get('expectedLeaveDate')
+                    or fields.Date.context_today(request.env.user),
+            })
+            rec.action_submit()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True, 'item': self._offb_json(rec)})
+
+    @http.route('/hocba-hrm/api/offboarding/list', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_offboarding_list(self, **kw):
+        env = request.env
+        is_officer = _user_can_manage(env)
+        emp = env.user.employee_id
+        Off = env['hocba.offboarding'].sudo()
+        mine_ids = Off.search(
+            [('employee_id', '=', emp.id if emp else -1)]).ids
+        managed_ids = []
+        if is_officer:
+            managed_ids = Off.search([
+                ('employee_id', 'in',
+                 self._offb_managed_employee_ids(env))]).ids
+        # _offb_json tính quyền từ rec.env.user → browse dưới env user thật.
+        # Scope đã khớp record rule (own/dept/parent/teacher/HR) nên đọc không
+        # vướng ACL; nếu AccessError tức scope lệch rule — phải sửa scope.
+        Offu = env['hocba.offboarding']
+        return request.make_json_response({
+            'isOfficer': is_officer,
+            'isEmployee': bool(emp) and not is_officer,
+            'mine': [self._offb_json(r) for r in Offu.browse(mine_ids)],
+            'managed': [self._offb_json(r) for r in Offu.browse(managed_ids)],
+        })
+
+    @http.route('/hocba-hrm/api/offboarding/action', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_offboarding_action(self, **kw):
+        payload = request.get_json_data() or {}
+        rec_id = self._conv_id(payload.get('id'))
+        action = payload.get('action')
+        allowed = {'submit', 'mgr_approve', 'hr_approve',
+                   'refuse', 'cancel', 'done'}
+        if not rec_id or action not in allowed:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        rec = request.env['hocba.offboarding'].browse(rec_id)
+        if not rec.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            getattr(rec, 'action_%s' % action)()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True, 'item': self._offb_json(rec)})
+
+    # ------------------------------------------------------------------
     # Thăng tiến (F-007) — thêm mốc thăng tiến inline (HR Manager). Tạo
     # bản ghi sẽ tự cập nhật chức vụ/phòng ban NV (model). KHÔNG xoá.
     # ------------------------------------------------------------------
@@ -1363,12 +2375,92 @@ class HocBaHRM(http.Controller):
                     v = v if v not in ('', None) else False
                 vals[field] = v
         try:
-            request.env['hr.promotion.history'].create(vals)
+            promo = request.env['hr.promotion.history'].create(vals)
+            ev_id = self._conv_id(payload.get('evaluationId'))
+            if ev_id:
+                ev = request.env['hr.promotion.evaluation'].sudo().browse(ev_id)
+                if ev.exists() and ev.employee_id.id == emp_id:
+                    ev.promotion_id = promo.id
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/promotion/eval/<int:emp_id>', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_eval_get(self, emp_id, **kw):
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_emp(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        crits = request.env['hr.promotion.criteria'].sudo().search(
+            [('active', '=', True)])
+        criteria = [{'id': c.id, 'name': c.name, 'code': c.code,
+                     'weight': c.weight, 'maxScore': c.max_score,
+                     'guideline': c.guideline or ''} for c in crits]
+        evals = []
+        for ev in e.sudo().x_evaluation_ids.sorted('eval_date'):
+            evals.append({
+                'id': ev.id,
+                'date': _d(ev.eval_date),
+                'evaluator': ev.evaluator_id.name or '',
+                'state': ev.state,
+                'totalScore': round(ev.total_score, 1),
+                'verdictAuto': ev.verdict_auto or '',
+                'verdictFinal': ev.verdict_final or '',
+                'note': ev.conclusion_note or '',
+                'lines': [{'criteriaId': l.criteria_id.id,
+                           'name': l.criteria_id.name,
+                           'score': l.score, 'maxScore': l.max_score,
+                           'weight': l.weight, 'note': l.note or ''}
+                          for l in ev.line_ids],
+            })
+        return request.make_json_response({
+            'criteria': criteria,
+            'autoMetrics': e.sudo()._promo_auto_metrics(),
+            'evaluations': evals,
+        })
+
+    @http.route('/hocba-hrm/api/promotion/eval/save', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_eval_save(self, **kw):
+        payload = request.get_json_data()
+        emp_id = self._conv_id(payload.get('employeeId'))
+        e = request.env['hr.employee'].browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_eval_emp(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        lines = []
+        for ln in payload.get('lines', []):
+            cid = self._conv_id(ln.get('criteriaId'))
+            if not cid:
+                continue
+            lines.append((0, 0, {
+                'criteria_id': cid,
+                'score': float(ln.get('score') or 0),
+                'note': ln.get('note') or False,
+            }))
+        vals = {
+            'employee_id': emp_id,
+            'eval_date': payload.get('date') or fields.Date.context_today(
+                request.env['hr.promotion.evaluation']),
+            'verdict_final': payload.get('verdictFinal') or False,
+            'conclusion_note': payload.get('note') or False,
+            'line_ids': lines,
+            'snapshot_job_id': e.job_id.id or False,
+        }
+        try:
+            ev = request.env['hr.promotion.evaluation'].sudo().create(vals)
+            if payload.get('confirm'):
+                ev.action_confirm()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self.api_eval_get(emp_id)
 
     # ------------------------------------------------------------------
     # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
@@ -1524,6 +2616,7 @@ class HocBaHRM(http.Controller):
                 'levels': [{'id': lv.id, 'name': lv.name} for lv in t.skill_level_ids],
             } for t in self._cert_skill_types(env)],
             'canManager': is_mgr,
+            'banks': _bank_options(env),
         })
 
     def _split_form_payload(self, payload, is_hr, is_mgr):
@@ -1610,6 +2703,115 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr))
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_account_create(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_create(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        except UserError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'needs_confirm', 'message': str(ex)}, status=409)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/reset',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_account_reset(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_reset(request.env, emp_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/accounts', auth='user', type='http',
+                methods=['GET'])
+    def api_accounts(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _account_list(request.env)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/departments', auth='user', type='http',
+                methods=['GET'])
+    def api_departments(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        archived = kw.get('archived') in ('1', 'true', 'True')
+        try:
+            data = _dept_list(request.env, archived=archived)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_department_create(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_create(request.env, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department/<int:dept_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_department_update(self, dept_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_update(request.env, dept_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/department/<int:dept_id>/archive', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_department_archive(self, dept_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _dept_archive(request.env, dept_id, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
 
     def _me_payload(self, e):
         """Dựng payload /api/me: hồ sơ đầy đủ (tự xem nên is_hr=is_mgr=True) +
@@ -1862,6 +3064,39 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'no_employee'}, status=400)
         return request.make_json_response(data)
 
+    @http.route('/hocba-hrm/api/attendance/me/history-full', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_history_full(self, month=None, type=None, **kw):
+        att_type = type if type in ('regular', 'ot', 'ctv', 'all') else 'all'
+        data = _att_me_history_full(request.env, month, att_type)
+        if data is None:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/manager-summary', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_manager_summary(self, month=None, **kw):
+        try:
+            data = _att_manager_summary(request.env, month)
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/attendance/emp-history', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_emp_history(self, empId=None, month=None, type=None, **kw):
+        if not empId:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        att_type = type if type in ('regular', 'ot', 'ctv', 'all') else 'all'
+        try:
+            data = _att_emp_history(request.env, int(empId), month, att_type)
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except (UserError, ValidationError) as ex:
+            return request.make_json_response(
+                {'error': 'not_found', 'message': str(ex)}, status=404)
+        return request.make_json_response(data)
+
     @http.route('/hocba-hrm/api/attendance/enroll', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_attendance_enroll(self, **kw):
@@ -1909,6 +3144,32 @@ class HocBaHRM(http.Controller):
             'faceSuspect': res['face_suspect'], 'outOfZone': res['out_of_zone'],
             'outOfWindow': res['out_of_window'], 'faceScore': res['face_score'],
         })
+
+    @http.route(['/hocba-hrm/api/attendance/shift/<int:shift_id>/check-in',
+                 '/hocba-hrm/api/attendance/shift/<int:shift_id>/check-out'],
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_shift_attendance_check(self, shift_id, **kw):
+        if not request.env.user.employee_id:
+            return request.make_json_response({'error': 'no_employee'}, status=400)
+        if _user_can_manage(request.env):
+            return request.make_json_response({'error': 'manager_no_checkin'}, status=403)
+        payload = request.get_json_data()
+        kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
+        try:
+            res = _shift_check(request.env, shift_id, kind, {
+                'photo': payload.get('photo'),
+                'descriptor': payload.get('descriptor') or [],
+                'latitude': payload.get('latitude') or 0.0,
+                'longitude': payload.get('longitude') or 0.0,
+            })
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        except UserError as ex:
+            code = str(ex)
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': code}, status=_CHECK_ERR_STATUS.get(code, 400))
+        return request.make_json_response(res)
 
     @http.route('/hocba-hrm/api/attendance/<int:rec_id>', auth='user',
                 type='http', methods=['POST'], csrf=False)
@@ -1996,6 +3257,18 @@ class HocBaHRM(http.Controller):
     def api_attendance_request_reject(self, req_id, **kw):
         return self._decide_request(req_id, False)
 
+    @http.route('/hocba-hrm/api/attendance/requests/<int:req_id>/preview',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_request_preview(self, req_id, **kw):
+        try:
+            row = _request_preview(request.env, req_id,
+                                   request.get_json_data() or {})
+        except AccessError:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        if row is None:
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        return request.make_json_response(row)
+
     # ------------------------------------------------------------------
     # Ca làm việc CTV/OT (Gói 4A): user đăng ký ca → manager duyệt/chỉnh/từ chối
     # hoặc thêm ca hộ; lịch hiển thị theo tuần. Spec:
@@ -2015,8 +3288,8 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(row)
 
     @http.route('/hocba-hrm/api/shifts/week', auth='user', type='http', methods=['GET'])
-    def api_shifts_week(self, monday=None, **kw):
-        return request.make_json_response(_shifts_week(request.env, monday))
+    def api_shifts_week(self, monday=None, type=None, **kw):
+        return request.make_json_response(_shifts_week(request.env, monday, type))
 
     @http.route('/hocba-hrm/api/shifts/ot', auth='user', type='http', methods=['GET'])
     def api_shifts_ot(self, month=None, **kw):
@@ -2078,3 +3351,131 @@ class HocBaHRM(http.Controller):
         if row is None:
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/employees/search', auth='user',
+                type='http', methods=['GET'])
+    def api_employee_search(self, q=None, **kw):
+        return request.make_json_response(
+            {'rows': _employee_search(request.env, q)})
+
+    # ── Teaching Schedule API ─────────────────────────────────────────────────
+
+    @http.route('/hocba-hrm/api/teaching/schedule', auth='user',
+                type='http', methods=['GET'])
+    def api_teaching_schedule(self, date=None, monday=None, **kw):
+        """Lịch dạy của giáo viên đang đăng nhập.
+        ?date=YYYY-MM-DD  → buổi dạy trong ngày đó
+        ?monday=YYYY-MM-DD → buổi dạy trong tuần (7 ngày)
+        """
+        env = request.env
+        emp = env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        if not emp.x_cms_user_id:
+            return request.make_json_response({'error': 'not_teacher', 'rows': []})
+
+        policy = env['hocba.attendance.policy'].sudo().get_policy()
+
+        if monday:
+            try:
+                mon = datetime.strptime(monday, '%Y-%m-%d').date()
+            except ValueError:
+                return request.make_json_response({'error': 'invalid_date'}, status=400)
+            rows = _teaching_week_rows(env, emp, mon, policy)
+            return request.make_json_response({'monday': monday, 'rows': rows})
+
+        if date:
+            try:
+                target = datetime.strptime(date, '%Y-%m-%d').date()
+            except ValueError:
+                return request.make_json_response({'error': 'invalid_date'}, status=400)
+        else:
+            target = fields.Date.context_today(env.user)
+
+        sessions_raw = get_sessions_for_tutor(emp.x_cms_user_id, target)
+        session_ids = [r['id'] for r in sessions_raw]
+        att_map = {}
+        for att in env['hocba.teaching.attendance'].sudo().search(
+                [('cms_session_id', 'in', session_ids), ('employee_id', '=', emp.id)]):
+            att_map[att.cms_session_id] = att
+
+        now_utc = fields.Datetime.now()
+        rows = []
+        for raw in sessions_raw:
+            sd = session_to_dict(raw)
+            att = att_map.get(sd['id'])
+            rows.append(_teaching_session_row(sd, att, policy, now_utc))
+
+        return request.make_json_response({'date': str(target), 'rows': rows})
+
+    @http.route('/hocba-hrm/api/teaching/days', auth='user',
+                type='http', methods=['GET'])
+    def api_teaching_days(self, **kw):
+        """Các ngày có lịch dạy của GV đang đăng nhập trong khoảng [from, to].
+        Dùng để đánh dấu ngày dạy trên lịch năm/tháng (tab "Lịch").
+        → { 'isTeacher': bool, 'days': [ { 'date': 'YYYY-MM-DD', 'count': N } ] }
+        """
+        payload, status = _teaching_days_payload(
+            request.env, kw.get('from'), kw.get('to'))
+        return request.make_json_response(payload, status=status)
+
+    @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-in',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_teaching_check_in(self, session_id, **kw):
+        return self._teaching_do_check(session_id, 'in')
+
+    @http.route('/hocba-hrm/api/teaching/sessions/<string:session_id>/check-out',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_teaching_check_out(self, session_id, **kw):
+        return self._teaching_do_check(session_id, 'out')
+
+    def _teaching_do_check(self, session_id, kind):
+        env = request.env
+        emp = env.user.employee_id
+        if not emp:
+            return request.make_json_response({'error': 'no_employee'}, status=403)
+        if not emp.x_cms_user_id:
+            return request.make_json_response({'error': 'not_teacher'}, status=403)
+
+        payload = request.get_json_data() or {}
+
+        # Tìm buổi học trong CMS theo session_id (không phụ thuộc ngày)
+        today = fields.Date.context_today(env.user)
+        # Thử ngày hôm nay trước, nếu không có thì lấy từ attendance record đã có
+        sessions_today = get_sessions_for_tutor(emp.x_cms_user_id, today)
+        session_info = next((r for r in sessions_today if r['id'] == session_id), None)
+
+        if not session_info:
+            # Kiểm tra xem có attendance record không để lấy ngày
+            att = env['hocba.teaching.attendance'].sudo().search(
+                [('cms_session_id', '=', session_id), ('employee_id', '=', emp.id)], limit=1)
+            if att and att.session_date:
+                sessions_on_date = get_sessions_for_tutor(emp.x_cms_user_id, att.session_date)
+                session_info = next((r for r in sessions_on_date if r['id'] == session_id), None)
+
+        if not session_info:
+            return request.make_json_response({'error': 'session_not_found'}, status=404)
+
+        att_model = env['hocba.teaching.attendance']
+        try:
+            att_model.sudo()._assert_allowed(session_info, emp, kind)
+        except UserError as ex:
+            err = str(ex)
+            status_map = {
+                'outside_shift_window': 403,
+                'already_checked_in': 409,
+                'not_checked_in': 409,
+                'already_checked_out': 409,
+            }
+            return request.make_json_response(
+                {'error': err}, status=status_map.get(err, 400))
+
+        rec = att_model.sudo()._do_check(session_info, emp, payload, kind)
+        return request.make_json_response({
+            'recordId': rec.id,
+            'kind': kind,
+            'faceSuspect': rec.face_suspect,
+            'outOfZone': rec.out_of_zone,
+            'outOfWindow': rec.out_of_window,
+            'faceScore': rec.check_in_face_score if kind == 'in' else rec.check_out_face_score,
+        })

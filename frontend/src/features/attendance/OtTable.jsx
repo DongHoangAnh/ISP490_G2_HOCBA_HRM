@@ -46,8 +46,8 @@ export default function OtTable() {
               <div className="stat-lbl" style={{ marginTop: 4 }}>Tổng giờ OT</div>
             </div>
             <div className="stat" style={{ padding: '14px 16px' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: 'var(--green)' }}>{data.totals.otCreditHours}</div>
-              <div className="stat-lbl" style={{ marginTop: 4 }}>Giờ OT quy đổi</div>
+              <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: 'var(--green)' }}>{data.totals.otCong}</div>
+              <div className="stat-lbl" style={{ marginTop: 4 }}>Tổng công ca</div>
             </div>
             <div className="stat" style={{ padding: '14px 16px' }}>
               <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{data.totals.countedCount}/{data.totals.count}</div>
@@ -60,7 +60,7 @@ export default function OtTable() {
               <thead><tr>
                 <th>Nhân viên</th><th>Phòng</th><th>Ngày</th><th>Giờ ca</th>
                 <th className="tbl-num">Số giờ</th><th>Mức</th>
-                <th className="tbl-num">Giờ quy đổi</th><th>Đã chấm</th>
+                <th className="tbl-num">Công</th><th>Đã chấm</th>
               </tr></thead>
               <tbody>
                 {data.rows.map((r) => (
@@ -71,14 +71,14 @@ export default function OtTable() {
                     <td className="mono">{fmtTime(r.start)}–{fmtTime(r.end)}</td>
                     <td className="tbl-num mono">{r.hours}</td>
                     <td>
-                      {data.canManage ? (
+                      {data.canManage && r.shiftType === 'ot' ? (
                         <select className="sel" value={r.otLevel} disabled={busyId === r.id}
                           onChange={(e) => changeLevel(r.id, e.target.value)}>
                           {LEVELS.map((l) => <option key={l} value={l}>{l}%</option>)}
                         </select>
                       ) : `${r.otLevel}%`}
                     </td>
-                    <td className="tbl-num mono" style={{ fontWeight: 600, color: r.counted ? 'var(--green)' : undefined }}>{r.creditHours}</td>
+                    <td className="tbl-num mono" style={{ fontWeight: 600, color: r.counted ? 'var(--green)' : undefined }}>{r.congCa}</td>
                     <td>{r.counted ? <Badge kind="green" dot>Đã chấm</Badge> : <Badge kind="gray">Chưa</Badge>}</td>
                   </tr>
                 ))}

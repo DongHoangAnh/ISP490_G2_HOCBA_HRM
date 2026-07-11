@@ -47,7 +47,13 @@ class HrLeave(models.Model):
                     )
 
     def _validate_medical_requirement(self):
-        """BR-011, BR-012: Yêu cầu chứng từ khi duyệt, hoặc HR Manager override."""
+        """BR-011 (đã nới): chứng từ y tế KHÔNG còn bắt buộc để duyệt đơn nghỉ ốm.
+
+        Trước đây thiếu chứng từ thì chỉ HR/Admin mới override duyệt được; nay
+        người duyệt nào (HR hoặc Trưởng phòng) cũng duyệt được dù chưa có chứng
+        từ — chỉ ghi chú lại vào chatter để truy vết. BR-012 vẫn giữ: nếu CÓ
+        đính kèm thì kiểm tra định dạng/dung lượng.
+        """
         self._check_attachment_file_types()
         for leave in self:
             if not leave.leave_type_support_document:
@@ -55,24 +61,17 @@ class HrLeave(models.Model):
             if leave.attachment_ids:
                 continue  # đã có chứng từ, type/size đã kiểm ở trên
 
-            # Không có chứng từ — kiểm tra override
-            if leave.x_medical_override:
-                if not self.env.user.has_group('hr_holidays.group_hr_holidays_manager'):
-                    raise ValidationError(
-                        _('Chỉ HR Manager mới được phép bỏ qua yêu cầu chứng từ y tế.')
-                    )
-                if not leave.x_medical_override_reason:
-                    raise ValidationError(
-                        _('Vui lòng nhập lý do bỏ qua yêu cầu chứng từ y tế.')
-                    )
+            # Không có chứng từ: vẫn cho duyệt (không còn chỉ mỗi HR), chỉ log.
+            if leave.x_medical_override and leave.x_medical_override_reason:
                 leave.message_post(
-                    body=_('HR Manager đã bỏ qua yêu cầu chứng từ y tế. Lý do: %s')
-                    % leave.x_medical_override_reason,
+                    body=_('Duyệt đơn nghỉ ốm và bỏ qua yêu cầu chứng từ y tế. '
+                           'Lý do: %s') % leave.x_medical_override_reason,
                     subtype_xmlid='mail.mt_note',
                 )
             else:
-                raise ValidationError(
-                    _('Đơn nghỉ ốm phải đính kèm chứng từ y tế (PDF, JPG, PNG, tối đa 5 MB).')
+                leave.message_post(
+                    body=_('Đơn nghỉ ốm được duyệt khi chưa có chứng từ y tế.'),
+                    subtype_xmlid='mail.mt_note',
                 )
 
     def action_confirm(self):

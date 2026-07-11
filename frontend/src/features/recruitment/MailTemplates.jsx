@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
-import { fetchMailTemplates } from '../../api/recruitment';
+import { fetchMailTemplates, deleteMailTemplate } from '../../api/recruitment';
 import MailTemplateForm from './MailTemplateForm';
 import SendMailModal from './SendMailModal';
 
@@ -12,9 +12,21 @@ export default function MailTemplates({ search }) {
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null);   // null | 'new' | {id,name,subject}
   const [sending, setSending] = useState(null);   // null | {id,name}
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = () => { setErr(null); setData(null); fetchMailTemplates().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
+
+  const remove = async (t) => {
+    if (!window.confirm(`Xoá mail mẫu "${t.name}"?\nHành động này không hoàn tác được.`)) return;
+    setDeletingId(t.id);
+    try {
+      await deleteMailTemplate(t.id);
+      setData((p) => ({ ...p, rows: p.rows.filter((r) => r.id !== t.id) }));
+    } catch (e) {
+      alert(e.message || 'Không xoá được mẫu.');
+    } finally { setDeletingId(null); }
+  };
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải mail mẫu…" />;
@@ -55,6 +67,12 @@ export default function MailTemplates({ search }) {
               {isRecruiter && (
                 <button className="btn btn-ghost btn-sm" onClick={() => setEditing(t)}>
                   <Icon name="edit" size={14} />Sửa</button>
+              )}
+              {isRecruiter && (
+                <button className="btn btn-ghost btn-sm" title="Xoá mẫu"
+                  style={{ color: 'var(--red-600)' }}
+                  disabled={deletingId === t.id} onClick={() => remove(t)}>
+                  <Icon name="trash" size={14} />{deletingId === t.id ? '…' : ''}</button>
               )}
             </div>
           </div>

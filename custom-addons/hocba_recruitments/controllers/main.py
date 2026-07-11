@@ -5,7 +5,7 @@ from psycopg2 import IntegrityError
 
 from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
-from odoo.http import Response, request
+from odoo.http import request
 
 
 def _d(v):
@@ -82,6 +82,10 @@ REQUEST_ACTIONS = {
     'refuse': 'action_refuse',
     'reset': 'action_reset_draft',
 }
+
+# Tách vai theo sheet quy trình: TBP (người order) chỉ GỬI DUYỆT / mở lại nháp;
+# DUYỆT / TỪ CHỐI / ĐÓNG phiếu là việc của BP tuyển dụng/HR (_is_hr).
+REQUEST_HR_ACTIONS = frozenset({'approve', 'refuse', 'close'})
 
 
 def _conv(typ, v):
@@ -180,9 +184,16 @@ class HocBaTuyenDung(http.Controller):
 
     def _cv_row(self, a):
         """Một dòng CV cho SPA (wire format camelCase) — dùng cho cả list & detail."""
-        att = request.env['ir.attachment'].sudo().search(
+        Att = request.env['ir.attachment'].sudo()
+        att = Att.search(
             [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id),
              ('description', '=', 'hb_cv')], order='id desc', limit=1)
+        if not att:
+            # CV nộp từ form công khai /jobs/apply: website form lưu attachment
+            # thường (không nhãn hb_cv) → fallback file mới nhất của ứng viên.
+            att = Att.search(
+                [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id)],
+                order='id desc', limit=1)
         return {
             'id': a.id,
             'dateReceived': _d(a.date_received or (a.create_date and a.create_date.date())),
@@ -439,7 +450,7 @@ class HocBaTuyenDung(http.Controller):
         # Đồng bộ sequence mã NV để tránh trùng mã đã tồn tại (DB import lệch sequence).
         self._sync_employee_code_sequence()
         try:
-            emp = request.env['hr.employee'].sudo().create({
+            emp_vals = {
                 'name': a.partner_name,
                 'job_id': a.job_id.id or False,
                 'job_title': a.job_id.name or False,
@@ -450,7 +461,12 @@ class HocBaTuyenDung(http.Controller):
                 'private_phone': a.partner_phone or False,
                 'x_employment_status': 'probation',
                 'applicant_ids': [(6, 0, [a.id])],
-            })
+            }
+            # "Ngày nhận việc" ở Offer → ngày bắt đầu thử việc của hồ sơ NV
+            # (đồng thời là mốc tính các cổng đánh giá thử việc tuần-2/tháng-1).
+            if a.start_date:
+                emp_vals['x_probation_start'] = a.start_date
+            emp = request.env['hr.employee'].sudo().create(emp_vals)
             # Đảm bảo liên kết ngược (phòng khi o2m không tự set inverse).
             if not a.employee_id:
                 a.write({'employee_id': emp.id})
@@ -486,7 +502,8 @@ class HocBaTuyenDung(http.Controller):
             # published = trạng thái hiển thị trên WEBSITE công khai (is_published) — nguồn sự thật.
             # x_published (badge nội bộ kanban) được giữ đồng bộ khi ghi.
             'published': bool(getattr(j, 'is_published', j.x_published)),
-            'websiteUrl': '',
+            # Link trang tuyển dụng công khai (/jobs/detail/<slug>) — để copy đi truyền thông.
+            'websiteUrl': getattr(j, 'website_url', '') or '',
             'jdLink': j.jd_google_link or '',
             'expected': j.no_of_recruitment or 0,
             'hired': j.no_of_hired_employee or 0,
@@ -502,34 +519,86 @@ class HocBaTuyenDung(http.Controller):
         return data
 
     def _build_website_description(self, j):
-        """Tổng hợp TOÀN BỘ thông tin vị trí thành nội dung JD công khai (website_description),
-        để trang /jobs hiển thị đầy đủ khi đăng tuyển. Trả về Markup an toàn (đã escape)."""
+        """Tổng hợp TOÀN BỘ thông tin vị trí + phiếu yêu cầu tuyển dụng gắn với nó
+        thành nội dung JD công khai (website_description) cho trang /jobs.
+        Ưu tiên phiếu ĐANG TUYỂN mới nhất; không có thì lấy phiếu mới nhất bất kỳ.
+        Trả về Markup an toàn (đã escape)."""
         env = request.env
-        rows = []
+
+        def sel_label(rec, fname):
+            val = rec[fname]
+            if not val:
+                return ''
+            return dict(rec._fields[fname]._description_selection(env)).get(val, val)
+
+        def money(v):
+            return '{:,.0f}'.format(v).replace(',', '.')
+
+        Req = env['hb.recruitment.request'].sudo()
+        req = Req.search([('job_id', '=', j.id), ('state', '=', 'recruiting')],
+                         order='id desc', limit=1)
+        if not req:
+            req = Req.search([('job_id', '=', j.id)], order='id desc', limit=1)
+
+        # ── Thông tin tuyển dụng ─────────────────────────────────────────────
+        info = []
         if j.department_id:
-            rows.append(('Phòng ban', j.department_id.name or ''))
+            info.append(('Phòng ban', j.department_id.name or ''))
+        if req and req.level:
+            info.append(('Cấp bậc', sel_label(req, 'level')))
         if j.no_of_recruitment:
-            rows.append(('Số lượng cần tuyển', str(int(j.no_of_recruitment))))
-        if j.recruitment_status:
-            labels = dict(j._fields['recruitment_status']._description_selection(env))
-            rows.append(('Trạng thái tuyển', labels.get(j.recruitment_status, j.recruitment_status)))
+            info.append(('Số lượng cần tuyển', str(int(j.no_of_recruitment))))
+        if req and req.work_type:
+            info.append(('Hình thức làm việc', sel_label(req, 'work_type')))
+        if req:
+            # Mức lương: ưu tiên mô tả chữ, fallback khoảng số, trống → Thoả thuận
+            if req.salary_range:
+                info.append(('Mức lương', req.salary_range))
+            elif req.salary_from or req.salary_to:
+                if req.salary_from and req.salary_to:
+                    sal = '%s – %s VNĐ' % (money(req.salary_from), money(req.salary_to))
+                else:
+                    sal = 'Từ %s VNĐ' % money(req.salary_from or req.salary_to)
+                info.append(('Mức lương', sal))
+            else:
+                info.append(('Mức lương', 'Thoả thuận'))
+            if req.expected_start_date:
+                info.append(('Thời gian nhận việc dự kiến',
+                             req.expected_start_date.strftime('%d/%m/%Y')))
         if j.x_teaching_level and j.x_teaching_level != 'na':
-            tl = dict(j._fields['x_teaching_level']._description_selection(env))
-            rows.append(('Trình độ giảng dạy', tl.get(j.x_teaching_level, j.x_teaching_level)))
+            info.append(('Trình độ giảng dạy', sel_label(j, 'x_teaching_level')))
         if j.x_required_sessions_per_week:
-            rows.append(('Số buổi/tuần tối thiểu', str(int(j.x_required_sessions_per_week))))
+            info.append(('Số buổi/tuần tối thiểu', str(int(j.x_required_sessions_per_week))))
+
+        # ── Yêu cầu ứng viên (từ phiếu yêu cầu) ──────────────────────────────
+        require = []
+        if req:
+            if req.education and req.education != 'none':
+                require.append(('Bằng cấp tối thiểu', sel_label(req, 'education')))
+            if req.experience_years:
+                require.append(('Kinh nghiệm tối thiểu', '%g năm' % req.experience_years))
+            if req.language_requirement:
+                require.append(('Yêu cầu ngoại ngữ', req.language_requirement))
+            if req.skill_description:
+                require.append(('Kỹ năng yêu cầu', req.skill_description))
+
+        def ul(rows):
+            items = Markup('').join(
+                Markup('<li class="mb-1"><strong>%s:</strong> %s</li>')
+                % (k, escape(v).replace('\n', Markup('<br/>'))) for k, v in rows)
+            return Markup('<ul>%s</ul>') % items
 
         parts = []
-        if rows:
-            items = Markup('').join(
-                Markup('<li><strong>%s:</strong> %s</li>') % (k, v) for k, v in rows)
-            parts.append(Markup('<h4>Thông tin tuyển dụng</h4><ul>%s</ul>') % items)
+        if info:
+            parts.append(Markup('<h4>Thông tin tuyển dụng</h4>%s') % ul(info))
+        if require:
+            parts.append(Markup('<h4 class="mt-4">Yêu cầu ứng viên</h4>%s') % ul(require))
         if j.description:
             desc = escape(j.description).replace('\n', Markup('<br/>'))
-            parts.append(Markup('<h4>Mô tả công việc</h4><p>%s</p>') % desc)
+            parts.append(Markup('<h4 class="mt-4">Mô tả công việc</h4><p>%s</p>') % desc)
         if j.jd_google_link:
             link = j.jd_google_link
-            parts.append(Markup('<p><strong>JD chi tiết:</strong> '
+            parts.append(Markup('<p class="mt-3"><strong>JD chi tiết:</strong> '
                                 '<a href="%s" target="_blank" rel="noreferrer">%s</a></p>') % (link, link))
         if not parts:
             return False
@@ -607,6 +676,7 @@ class HocBaTuyenDung(http.Controller):
             'jobId': r.job_id.id or False,
             'jobName': r.job_id.name or '',
             'published': bool(getattr(r.job_id, 'is_published', False)) if r.job_id else False,
+            'websiteUrl': (getattr(r.job_id, 'website_url', '') or '') if r.job_id else '',
             'levelLabel': level_labels.get(r.level, '') if r.level else '',
             'jdLink': r.jd_link or '',
         } for r in reqs]
@@ -742,6 +812,7 @@ class HocBaTuyenDung(http.Controller):
         reqs = env['hb.recruitment.request'].sudo().search(
             domain, order='create_date desc')
         data = {'isRecruiter': self._is_recruiter(),
+                'canApprove': self._is_hr(),
                 'rows': [self._req_row(r) for r in reqs]}
         data.update(self._req_meta())
         return request.make_json_response(data)
@@ -759,8 +830,9 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/requests', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_recruitment_request_create(self, **kw):
-        """Thêm phiếu yêu cầu (chỉ nhóm tuyển dụng). KHÔNG sudo -> requester_id
-        mặc định đúng người tạo + ACL của model phát huy."""
+        """Thêm phiếu yêu cầu. Theo sheet, người order là TBP (trưởng phòng) — họ
+        KHÔNG có ACL ghi trên model, nên ghi qua .sudo() SAU khi đã kiểm vai + phạm vi.
+        requester_id vẫn = người đăng nhập (sudo giữ nguyên env.user)."""
         if not self._is_recruiter():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data()
@@ -774,7 +846,9 @@ class HocBaTuyenDung(http.Controller):
         if not self._is_hr() and not self._dep_in_scope(vals.get('department_id')):
             return self._forbidden('Phiếu phải thuộc phòng ban bạn quản lý.')
         try:
-            r = request.env['hb.recruitment.request'].create(vals)
+            r = request.env['hb.recruitment.request'].sudo().create(vals)
+            if r.job_id:
+                self._sync_website_description(r.job_id)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -786,7 +860,7 @@ class HocBaTuyenDung(http.Controller):
     def api_recruitment_request_update(self, req_id, **kw):
         if not self._is_recruiter():
             return request.make_json_response({'error': 'forbidden'}, status=403)
-        r = request.env['hb.recruitment.request'].browse(req_id)
+        r = request.env['hb.recruitment.request'].sudo().browse(req_id)
         if not r.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(r.department_id.id):
@@ -798,6 +872,8 @@ class HocBaTuyenDung(http.Controller):
         try:
             if vals:
                 r.write(vals)
+            if r.job_id:
+                self._sync_website_description(r.job_id)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -810,7 +886,7 @@ class HocBaTuyenDung(http.Controller):
         """Chuyển trạng thái phiếu (gửi duyệt / duyệt / đóng / từ chối / về nháp)."""
         if not self._is_recruiter():
             return request.make_json_response({'error': 'forbidden'}, status=403)
-        r = request.env['hb.recruitment.request'].browse(req_id)
+        r = request.env['hb.recruitment.request'].sudo().browse(req_id)
         if not r.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(r.department_id.id):
@@ -820,10 +896,16 @@ class HocBaTuyenDung(http.Controller):
         method = REQUEST_ACTIONS.get(action)
         if not method:
             return request.make_json_response({'error': 'bad_request'}, status=400)
+        # Duyệt/từ chối/đóng phiếu: chỉ BP tuyển dụng/HR; TBP order không tự duyệt.
+        if action in REQUEST_HR_ACTIONS and not self._is_hr():
+            return self._forbidden(
+                'Chỉ Bộ phận tuyển dụng/HR mới được duyệt, từ chối hoặc đóng phiếu.')
         try:
             if action == 'refuse' and payload.get('refuseReason'):
                 r.write({'refuse_reason': payload['refuseReason']})
             getattr(r, method)()
+            if r.job_id:
+                self._sync_website_description(r.job_id)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -926,6 +1008,23 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(self._tmpl_row(t, detail=True))
+
+    @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/delete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_mail_template_delete(self, tmpl_id, **kw):
+        """Xoá mail mẫu — chỉ HR toàn quyền (cấu hình email toàn hệ thống)."""
+        if not self._is_hr():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        t = request.env['mail.template'].sudo().browse(tmpl_id)
+        if not t.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            t.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True})
 
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/send',
                 auth='user', type='http', methods=['POST'], csrf=False)
@@ -1048,6 +1147,41 @@ class HocBaTuyenDung(http.Controller):
         return request.make_json_response({'isRecruiter': self._is_hr(), 'rows': rows})
 
     # ------------------------------------------------------------------
+    # Gửi mail qua Gmail (chuyển hướng tab) — bỏ phụ thuộc SMTP server.
+    # FE mở Gmail compose điền sẵn nội dung (render từ mail mẫu của app), người dùng
+    # gửi bằng Gmail của mình, rồi gọi /mail/log-sent để ghi lịch sử (tab Mail logs).
+    # ------------------------------------------------------------------
+
+    @http.route('/hocba-hrm/api/recruitment/mail/log-sent', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_recruitment_mail_log_sent(self, **kw):
+        """Ghi lịch sử mail đã gửi (qua Gmail) — chỉ nhóm tuyển dụng.
+        body: {logs: [{applicantId, subject}]}. Tạo mail.message (message_type='email')
+        để tab Mail logs hiển thị như mail gửi qua server."""
+        if not self._is_recruiter():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        logs = (request.get_json_data() or {}).get('logs') or []
+        Applicant = request.env['hr.applicant'].sudo()
+        logged = 0
+        for item in logs:
+            aid = item.get('applicantId')
+            if not aid:
+                continue
+            a = Applicant.browse(int(aid))
+            if not a.exists():
+                continue
+            subject = (item.get('subject') or 'Email tuyển dụng').strip() or 'Email tuyển dụng'
+            a.message_post(
+                subject=subject,
+                body=Markup('<p>Đã gửi email <b>%s</b> tới %s (qua Gmail).</p>')
+                     % (subject, a.email_from or '—'),
+                message_type='email',
+                subtype_xmlid='mail.mt_note',
+            )
+            logged += 1
+        return request.make_json_response({'logged': logged})
+
+    # ------------------------------------------------------------------
     # Lịch rảnh phỏng vấn (hb.interview.slot) — tab "Danh sách PV".
     # HR/BP tạo slot rảnh theo tuần; SPA xem lịch theo ngày/giờ.
     # ------------------------------------------------------------------
@@ -1083,6 +1217,7 @@ class HocBaTuyenDung(http.Controller):
             'department': s.department_id.name or '',
             'state': s.state or 'available',
             'applicant': s.applicant_id.partner_name or '',
+            'applicantId': s.applicant_id.id or False,
             'notes': s.notes or '',
         }
 
@@ -1161,29 +1296,52 @@ class HocBaTuyenDung(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response({'ok': True})
 
-    @http.route('/hocba-tuyen-dung', auth='user', type='http', csrf=False)
-    def recruitment_app(self, **kw):
-        base = '/hocba_recruitments/static/src'
-        html = f"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Tuyển dụng Học Bá — Hệ thống Quản lý Tuyển dụng</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="{base}/css/rec-styles.css" />
-</head>
-<body>
-<div id="root"></div>
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
-<script type="text/babel" src="{base}/js/rec-data.jsx"></script>
-<script type="text/babel" src="{base}/js/rec-shell.jsx"></script>
-<script type="text/babel" src="{base}/js/rec-dashboard.jsx"></script>
-<script type="text/babel" src="{base}/js/rec-app.jsx"></script>
-</body>
-</html>"""
-        return Response(html, content_type='text/html; charset=utf-8')
+    @http.route('/hocba-hrm/api/recruitment/interview-slot/<int:slot_id>/book',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_slot_book(self, slot_id, **kw):
+        """Đặt slot rảnh cho 1 ứng viên: slot -> 'booked' + gán applicant_id, đồng thời
+        điền lịch PV lên hồ sơ ứng viên (ngày/giờ/người PV) để khép vòng với tab
+        Danh sách CV và mail Thư mời phỏng vấn (biến interview_date/time)."""
+        if not self._can_manage_slots():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        s = request.env['hb.interview.slot'].sudo().browse(slot_id)
+        if not s.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        aid = (request.get_json_data() or {}).get('applicantId')
+        if not aid:
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Chưa chọn ứng viên.'}, status=400)
+        a = request.env['hr.applicant'].sudo().browse(int(aid))
+        if not a.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            start_local = pytz.utc.localize(s.start_datetime).astimezone(self._user_tz())
+            s.write({'state': 'booked', 'applicant_id': a.id})
+            a.write({
+                'interview_date': start_local.date(),
+                'interview_time': start_local.strftime('%H:%M'),
+                'interviewer_name': s.user_id.name or a.interviewer_name,
+            })
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._slot_row(s))
+
+    @http.route('/hocba-hrm/api/recruitment/interview-slot/<int:slot_id>/unbook',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_slot_unbook(self, slot_id, **kw):
+        """Hủy đặt slot: trả về 'available' + gỡ ứng viên (giữ nguyên lịch PV đã ghi
+        trên hồ sơ ứng viên — chỉ giải phóng slot)."""
+        if not self._can_manage_slots():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        s = request.env['hb.interview.slot'].sudo().browse(slot_id)
+        if not s.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            s.write({'state': 'available', 'applicant_id': False})
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._slot_row(s))

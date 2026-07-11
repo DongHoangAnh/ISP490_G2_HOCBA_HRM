@@ -15,3 +15,20 @@ export const REQUEST_STATE_KIND = {
 /* Tham gia PV (đã đến / không đến) + kết quả phỏng vấn */
 export const ATTENDANCE_KIND = { present: 'green', absent: 'red' };
 export const INTERVIEW_RESULT_KIND = { pass: 'green', fail: 'red', potential: 'amber' };
+
+/* Link tuyển dụng công khai: BE trả đường dẫn tương đối (/jobs/detail/...) →
+   ghép origin hiện tại thành URL tuyệt đối để copy đi truyền thông. */
+export const publicJobUrl = (u) => (u ? new URL(u, window.location.origin).href : '');
+
+/* Copy text vào clipboard — fallback execCommand cho ngữ cảnh không có
+   navigator.clipboard (http không secure-context). */
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { return document.execCommand('copy'); }
+    catch { return false; }
+    finally { document.body.removeChild(ta); }
+  }
+}

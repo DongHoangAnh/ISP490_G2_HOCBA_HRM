@@ -1,22 +1,24 @@
 /* Màn Chấm công — điều phối tab theo quyền (mẫu chuẩn: màn Nhân viên).
    Owner: Hoàng Anh. Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md */
 import { useState, useEffect } from 'react';
-import { LoadingState, ErrorState } from '../../components/states';
+import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
+import { fetchRoles } from '../../api/employees';
 import CheckInPanel from './CheckInPanel';
-import MyHistory from './MyHistory';
 import AttendanceTable from './AttendanceTable';
+import ManagerAttendanceBoard from './ManagerAttendanceBoard';
 import ShiftCalendar from './ShiftCalendar';
-import OtTable from './OtTable';
-import RequestForm from './RequestForm';
 import RequestList from './RequestList';
+import ShiftAttendance from './ShiftAttendance';
+import AttendanceHistory from './AttendanceHistory';
+import TeachingSchedule from './TeachingSchedule';
+import TeachingCalendar from './TeachingCalendar';
 
-export default function Attendance({ search }) {
+export default function Attendance({ search, onNavigate }) {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
   const [reqs, setReqs] = useState({ rows: null, loading: false, error: null });
-  const [showForm, setShowForm] = useState(false);
 
   const loadReqs = (manager) => {
     setReqs({ rows: null, loading: true, error: null });
@@ -27,18 +29,34 @@ export default function Attendance({ search }) {
 
   const load = () => {
     setErr(null); setMe(null);
-    fetchMyAttendance().then(setMe).catch((e) => setErr(e.message));
+    // Tài khoản vai trò (HR/Admin/Giáo vụ) có thể KHÔNG gắn hồ sơ NV (tách tài khoản
+    // quản lý ↔ cá nhân — họp #2). /api/attendance/me trả 400 'no_employee' cho các
+    // tài khoản này, nên đọc cờ vai trò trước và chỉ gọi endpoint cá nhân khi có hồ sơ NV.
+    fetchRoles().then((roles) => {
+      if (roles.hasEmployee) return fetchMyAttendance().then(setMe);
+      setMe({ canManage: roles.canManage, hasEmployee: false, isOfficial: false });
+    }).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!me) return <LoadingState label="Đang tải dữ liệu chấm công…" />;
+  // Không có hồ sơ NV và cũng không phải tài khoản quản lý → không có dữ liệu chấm công
+  // cá nhân để hiển thị (tránh rơi vào tab cá nhân vốn cần employeeId).
+  if (me.hasEmployee === false && !me.canManage)
+    return <EmptyState>Tài khoản này chưa gắn hồ sơ nhân viên nên không có dữ liệu chấm công.</EmptyState>;
 
   const isManager = me.canManage;
+  const isTeacher = !isManager && !!me.isTeacher;
+  const isCtv = !isManager && !me.isOfficial && !isTeacher;
   const tabs = isManager
-    ? [['day', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)'], ['otpay', 'Chấm công OT']]
-    : [['me', 'Chấm công của tôi'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
-  const activeTab = tab || (isManager ? 'day' : 'me');
+    ? [['mgr', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)']]
+    : isTeacher
+      ? [['teaching', 'Chấm công hôm nay'], ['cal', 'Lịch tuần'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi']]
+      : isCtv
+        ? [['shift', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']]
+        : [['me', 'Chấm công của tôi'], ['history', 'Lịch sử chấm công'], ['shift', 'Chấm công OT'], ['requests', 'Đơn của tôi'], ['ot', 'Ca làm việc (CTV/OT)']];
+  const activeTab = tab || (isManager ? 'mgr' : isTeacher ? 'teaching' : isCtv ? 'shift' : 'me');
 
   const goTab = (id) => {
     setTab(id);
@@ -63,17 +81,21 @@ export default function Attendance({ search }) {
       {activeTab === 'me' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <CheckInPanel me={me} onChanged={load} />
-          <MyHistory />
         </div>
       )}
+      {activeTab === 'history' && <AttendanceHistory me={me} />}
+      {activeTab === 'shift' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <ShiftAttendance me={me} onChanged={load} />
+        </div>
+      )}
+      {activeTab === 'mgr' && <ManagerAttendanceBoard search={search} />}
       {activeTab === 'day' && <AttendanceTable search={search} />}
       {activeTab === 'requests' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {!isManager && (
-            <div>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>
-                Gửi đơn quên chấm công
-              </button>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              Để gửi đơn sửa/quên chấm công, mở một bản ghi trong "Lịch sử chấm công" rồi bấm "Gửi đơn sửa".
             </div>
           )}
           <RequestList rows={reqs.rows} loading={reqs.loading} error={reqs.error}
@@ -81,11 +103,14 @@ export default function Attendance({ search }) {
         </div>
       )}
       {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
-      {activeTab === 'otpay' && <OtTable />}
-
-      {showForm && (
-        <RequestForm onClose={() => setShowForm(false)} onSaved={() => loadReqs(false)} />
+      {activeTab === 'teaching' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <TeachingSchedule me={me} onChanged={load}
+            onGoTimeOff={onNavigate ? () => onNavigate('timeoff') : undefined} />
+        </div>
       )}
+      {activeTab === 'cal' && <TeachingCalendar />}
+
     </div>
   );
 }

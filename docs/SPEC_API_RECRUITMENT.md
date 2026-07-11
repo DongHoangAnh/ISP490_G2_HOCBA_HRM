@@ -168,9 +168,11 @@ Khi `approve` (→ recruiting): nếu phiếu có `job_id` thì **cộng dồn `
 
 ## 9. Endpoints — Lịch rảnh PV (`hb.interview.slot`)
 
-- `GET /interview-slots?from=YYYY-MM-DD&to=YYYY-MM-DD` — `{ canManage, meId, meName, interviewers, rows }`.
+- `GET /interview-slots?from=YYYY-MM-DD&to=YYYY-MM-DD` — `{ canManage, meId, meName, interviewers, rows }`. Mỗi row có `applicantId` (slot đã đặt cho ai).
 - `POST /interview-slots` *(canManage)* — tạo batch: `{ userId, slots:[{date, startHour, endHour}] }`.
 - `POST /interview-slot/<id>/delete` *(canManage)*.
+- `POST /interview-slot/<id>/book` *(canManage)* — `{ applicantId }`: slot → `booked` + gán ứng viên; đồng thời điền `interview_date/interview_time/interviewer_name` lên hồ sơ ứng viên. Trả về slot row.
+- `POST /interview-slot/<id>/unbook` *(canManage)* — slot → `available`, gỡ ứng viên (giữ lịch PV trên hồ sơ). Trả về slot row.
 
 **⚠️ Múi giờ (đã fix):** create dùng `_user_tz()` (fallback `Asia/Ho_Chi_Minh`) chuyển local→UTC; **đọc** (`_slot_row`) cũng dùng `_user_tz()` (không dùng `context_timestamp` vì nó để nguyên UTC khi user chưa set timezone → lệch -7h). Hai chiều đối xứng.
 

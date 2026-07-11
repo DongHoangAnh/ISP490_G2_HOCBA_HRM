@@ -236,8 +236,8 @@ class TestScopeHelpers(TransactionCase):
         Att = self.env['hocba.attendance'].with_context(tz='Asia/Ho_Chi_Minh')
         rec = Att.create({'employee_id': e.id,
                           'check_in': '2026-06-17 02:00:00',
-                          'check_out': '2026-06-17 07:00:00'})  # 5h -> thiếu 180
-        self.assertEqual(rec.missing_minutes, 180)
+                          'check_out': '2026-06-17 07:00:00'})  # 5h, half-day basis 4h -> missing=0
+        self.assertEqual(rec.missing_minutes, 0)
         row = _attendance_edit(self.env(user=self.mgr_user), rec.id,
                                {'checkOut': '2026-06-17T17:00'})  # 09:00->17:00 = 8h
         self.assertEqual(row['missingMinutes'], 0)

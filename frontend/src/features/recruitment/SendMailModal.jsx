@@ -1,19 +1,24 @@
-/* Gửi mail mẫu cho ứng viên được chọn — Owner: Việt.
-   Chọn nhiều ứng viên (có email) rồi gửi template đã render cho từng người. */
+/* Gửi mail mẫu cho nhiều ứng viên qua Gmail — Owner: Việt.
+   B1 chọn ứng viên → B2 mở Gmail soạn sẵn cho từng người (bấm tay, tránh chặn popup)
+   → B3 lưu lịch sử cho những người đã mở. Nội dung render từ mail mẫu của app. */
 import { useState } from 'react';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/states';
-import { sendMailTemplate } from '../../api/recruitment';
+import { renderForGmail, gmailComposeUrl, logSentMail } from './mailSend';
 
 export default function SendMailModal({ tmpl, recipients, onClose }) {
+  const [phase, setPhase] = useState('pick');   // 'pick' | 'links' | 'done'
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(() => new Set());
+  const [prepared, setPrepared] = useState([]);  // [{id,name,email,subject,url}]
+  const [opened, setOpened] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
+  const [sentCount, setSentCount] = useState(0);
   const [err, setErr] = useState(null);
 
-  const filtered = recipients.filter((r) => {
+  const withEmail = recipients.filter((r) => r.email);
+  const filtered = withEmail.filter((r) => {
     if (!q) return true;
     const s = q.toLowerCase();
     return (r.name || '').toLowerCase().includes(s) || (r.email || '').toLowerCase().includes(s) || (r.jobName || '').toLowerCase().includes(s);
@@ -28,12 +33,31 @@ export default function SendMailModal({ tmpl, recipients, onClose }) {
     return n;
   });
 
-  const send = async () => {
+  // Render nội dung từng người được chọn rồi sang bước "mở Gmail".
+  const prepare = async () => {
     setBusy(true); setErr(null);
     try {
-      const res = await sendMailTemplate(tmpl.id, [...picked]);
-      setResult(res);
-    } catch (e) { setErr(e.message || 'Gửi thất bại.'); } finally { setBusy(false); }
+      const targets = withEmail.filter((r) => picked.has(r.id));
+      const rows = [];
+      for (const r of targets) {
+        const { subject, bodyText } = await renderForGmail(tmpl.id, r.id);
+        rows.push({ id: r.id, name: r.name, email: r.email, subject, url: gmailComposeUrl(r.email, subject, bodyText) });
+      }
+      setPrepared(rows); setPhase('links');
+    } catch (e) { setErr(e.message || 'Không chuẩn bị được nội dung.'); } finally { setBusy(false); }
+  };
+
+  const markOpened = (id) => setOpened((p) => new Set(p).add(id));
+
+  // Lưu lịch sử cho những người đã mở Gmail (coi như đã gửi).
+  const saveHistory = async () => {
+    const logs = prepared.filter((r) => opened.has(r.id)).map((r) => ({ applicantId: r.id, subject: r.subject }));
+    if (logs.length === 0) { setErr('Chưa mở Gmail cho ứng viên nào.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      await logSentMail(logs);
+      setSentCount(logs.length); setPhase('done');
+    } catch (e) { setErr(e.message || 'Không lưu được lịch sử.'); } finally { setBusy(false); }
   };
 
   return (
@@ -44,20 +68,47 @@ export default function SendMailModal({ tmpl, recipients, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>Gửi mail: {tmpl.name}</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Chọn ứng viên nhận email (đã có địa chỉ email)</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            {phase === 'pick' ? 'Chọn ứng viên nhận email (đã có địa chỉ email)' : 'Mở Gmail gửi cho từng ứng viên rồi lưu lịch sử'}</div>
         </div>
         <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
       </div>
 
-      {result ? (
+      {phase === 'done' ? (
         <div style={{ padding: '28px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8 }}>Đã đưa vào hàng đợi gửi</div>
+          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8 }}>Đã ghi nhận đã gửi</div>
           <p className="muted" style={{ margin: 0 }}>
-            Đã tạo <b>{result.sent}</b> email{result.skipped ? `, bỏ qua ${result.skipped} (thiếu email)` : ''}.
-            <br />Email sẽ được gửi qua máy chủ thư của hệ thống.
+            Đã lưu lịch sử gửi cho <b>{sentCount}</b> ứng viên. Xem ở tab "Lịch sử gửi mail".
           </p>
           <button className="btn btn-primary" style={{ marginTop: 18 }} onClick={onClose}>Đóng</button>
         </div>
+      ) : phase === 'links' ? (
+        <>
+          <div style={{ padding: '12px 24px 4px' }} className="muted">
+            <span style={{ fontSize: 12.5 }}>Bấm "Mở Gmail" ở từng dòng → bấm Gửi trong Gmail. Xong tất cả thì "Lưu lịch sử".</span>
+          </div>
+          <div style={{ padding: '8px 12px', maxHeight: '52vh', overflowY: 'auto' }}>
+            {prepared.map((r) => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 8px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.name}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>{r.email}</div>
+                </div>
+                {opened.has(r.id) && <span className="badge badge-gray"><Icon name="check" size={12} /> đã mở</span>}
+                <a className="btn btn-soft btn-sm" href={r.url} target="_blank" rel="noreferrer" onClick={() => markOpened(r.id)}>
+                  <Icon name="mail" size={14} />Mở Gmail</a>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+            <span className="muted" style={{ fontSize: 13 }}>Đã mở <b>{opened.size}</b>/{prepared.length}{err && <span style={{ color: 'var(--red-600)', marginLeft: 10 }}>{err}</span>}</span>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-ghost" onClick={() => setPhase('pick')} disabled={busy}>Quay lại</button>
+              <button className="btn btn-primary" onClick={saveHistory} disabled={busy || opened.size === 0}>
+                <Icon name="check" size={16} />{busy ? 'Đang lưu…' : `Lưu lịch sử (${opened.size})`}</button>
+            </div>
+          </div>
+        </>
       ) : (
         <>
           <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -86,8 +137,8 @@ export default function SendMailModal({ tmpl, recipients, onClose }) {
             <span className="muted" style={{ fontSize: 13 }}>Đã chọn <b>{picked.size}</b> ứng viên{err && <span style={{ color: 'var(--red-600)', marginLeft: 10 }}>{err}</span>}</span>
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Huỷ</button>
-              <button className="btn btn-primary" onClick={send} disabled={busy || picked.size === 0}>
-                <Icon name="mail" size={16} />{busy ? 'Đang gửi…' : `Gửi (${picked.size})`}
+              <button className="btn btn-primary" onClick={prepare} disabled={busy || picked.size === 0}>
+                <Icon name="mail" size={16} />{busy ? 'Đang chuẩn bị…' : `Tiếp tục (${picked.size})`}
               </button>
             </div>
           </div>
