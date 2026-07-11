@@ -151,7 +151,7 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
                     <td className="mono">{fmtDate(d.from)}</td>
                     <td className="mono">{d.to ? fmtDate(d.to) : '—'}</td>
                     {depEditable && (
-                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
                         <button className="icon-btn" title="Sửa" onClick={() => setDepForm(d)}><Icon name="edit" size={15} className="faint" /></button>
                         <button className="icon-btn" title="Xoá" onClick={() => delDep(d)}><Icon name="trash" size={15} className="faint" /></button>
                       </td>
@@ -197,7 +197,7 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
                         ) : (c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa</Badge>)}
                       </td>
                       {editable && (
-                        <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
                           <button className="icon-btn" title="Sửa" onClick={() => setCertForm(c)}><Icon name="edit" size={15} className="faint" /></button>
                           <button className="icon-btn" title="Xoá" onClick={() => delCert(c)}><Icon name="trash" size={15} className="faint" /></button>
                         </td>
@@ -491,7 +491,7 @@ export function AssetsTab({ det, editable, onUpdated }) {
                 <td><Badge kind={kind(a.state)} dot>{a.stateLabel}</Badge></td>
                 <td className="mono">{a.returnDate ? fmtDate(a.returnDate) : '—'}</td>
                 {canAct && (
-                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
                     {a.state === 'assigned' ? (
                       <>
                         <button className="btn btn-ghost btn-sm" title="Thu hồi" onClick={() => setForm({ mode: 'return', asset: a })}>Thu hồi</button>
