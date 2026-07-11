@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_fund_user,hocba.fund.user,model_hocba_fund,base.group_user,1,0,0,0
+access_fund_acct,hocba.fund.acct,model_hocba_fund,group_finance_user,1,1,1,1
+access_fund_mgr,hocba.fund.mgr,model_hocba_fund,group_finance_manager,1,1,1,1
+access_category_user,hocba.fin.category.user,model_hocba_fin_category,base.group_user,1,0,0,0
+access_category_acct,hocba.fin.category.acct,model_hocba_fin_category,group_finance_user,1,1,1,1
+access_category_mgr,hocba.fin.category.mgr,model_hocba_fin_category,group_finance_manager,1,1,1,1
+access_voucher_user,hocba.fin.voucher.user,model_hocba_fin_voucher,base.group_user,1,1,1,0
+access_voucher_acct,hocba.fin.voucher.acct,model_hocba_fin_voucher,group_finance_user,1,1,1,1
+access_voucher_mgr,hocba.fin.voucher.mgr,model_hocba_fin_voucher,group_finance_manager,1,1,1,1

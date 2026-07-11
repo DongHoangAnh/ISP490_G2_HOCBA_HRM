@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="hocba_fin_voucher_list" model="ir.ui.view">
+        <field name="name">hocba.fin.voucher.list</field>
+        <field name="model">hocba.fin.voucher</field>
+        <field name="arch" type="xml">
+            <list decoration-muted="state == 'cancel'"
+                  decoration-success="state == 'posted'">
+                <field name="name"/>
+                <field name="voucher_date"/>
+                <field name="voucher_type"/>
+                <field name="category_id"/>
+                <field name="department_id"/>
+                <field name="partner_name"/>
+                <field name="amount" widget="monetary"/>
+                <field name="fund_id"/>
+                <field name="source"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'approved'"
+                       decoration-success="state == 'posted'"
+                       decoration-danger="state == 'cancel'"/>
+                <field name="currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="hocba_fin_voucher_form" model="ir.ui.view">
+        <field name="name">hocba.fin.voucher.form</field>
+        <field name="model">hocba.fin.voucher</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_approve" string="Duyệt"
+                            type="object" class="btn-primary"
+                            groups="hocba_finance.group_finance_user"
+                            invisible="state != 'draft'"/>
+                    <button name="action_post" string="Ghi sổ"
+                            type="object" class="btn-primary"
+                            groups="hocba_finance.group_finance_user"
+                            invisible="state != 'approved'"/>
+                    <button name="action_reset_draft" string="Về Nháp"
+                            type="object"
+                            groups="hocba_finance.group_finance_user"
+                            invisible="state not in ('approved',)"/>
+                    <button name="action_cancel" string="Huỷ"
+                            type="object"
+                            groups="hocba_finance.group_finance_user"
+                            invisible="state == 'cancel'"
+                            confirm="Huỷ phiếu này? Nếu đã ghi sổ, số dư quỹ sẽ được hoàn lại."/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,approved,posted"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="voucher_type"
+                                   readonly="state != 'draft'"/>
+                            <field name="amount" widget="monetary"
+                                   readonly="state == 'posted'"/>
+                            <field name="voucher_date"
+                                   readonly="state == 'posted'"/>
+                            <field name="fund_id"
+                                   readonly="state == 'posted'"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="category_id"
+                                   domain="[('category_type', '=', voucher_type)]"
+                                   readonly="state == 'posted'"/>
+                            <field name="department_id"
+                                   readonly="state == 'posted'"/>
+                            <field name="partner_name"
+                                   readonly="state == 'posted'"/>
+                            <field name="source"/>
+                            <field name="external_ref"
+                                   readonly="state == 'posted'"/>
+                        </group>
+                    </group>
+                    <group string="Diễn giải">
+                        <field name="memo" nolabel="1"
+                               readonly="state == 'posted'"/>
+                    </group>
+                    <group string="Nhật ký duyệt" col="4">
+                        <field name="approved_by"/>
+                        <field name="approved_date"/>
+                        <field name="posted_by"/>
+                        <field name="posted_date"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="hocba_fin_voucher_search" model="ir.ui.view">
+        <field name="name">hocba.fin.voucher.search</field>
+        <field name="model">hocba.fin.voucher</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="partner_name"/>
+                <field name="external_ref"/>
+                <field name="category_id"/>
+                <field name="fund_id"/>
+                <field name="department_id"/>
+                <filter name="income" string="Phiếu thu" domain="[('voucher_type', '=', 'income')]"/>
+                <filter name="expense" string="Phiếu chi" domain="[('voucher_type', '=', 'expense')]"/>
+                <separator/>
+                <filter name="draft" string="Nháp" domain="[('state', '=', 'draft')]"/>
+                <filter name="approved" string="Đã duyệt" domain="[('state', '=', 'approved')]"/>
+                <filter name="posted" string="Đã ghi sổ" domain="[('state', '=', 'posted')]"/>
+                <separator/>
+                <filter name="this_month" string="Tháng này"
+                        domain="[('voucher_date', '&gt;=', (context_today() + relativedelta(day=1)).strftime('%Y-%m-%d'))]"/>
+                <separator/>
+                <filter name="group_type" string="Loại"
+                        context="{'group_by': 'voucher_type'}"/>
+                <filter name="group_dept" string="Phòng ban"
+                        context="{'group_by': 'department_id'}"/>
+                <filter name="group_category" string="Mục"
+                        context="{'group_by': 'category_id'}"/>
+                <filter name="group_state" string="Trạng thái"
+                        context="{'group_by': 'state'}"/>
+                <filter name="group_month" string="Tháng"
+                        context="{'group_by': 'voucher_date:month'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hocba_fin_voucher" model="ir.actions.act_window">
+        <field name="name">Phiếu thu / chi</field>
+        <field name="res_model">hocba.fin.voucher</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_posted': 1}</field>
+    </record>
+</odoo>
