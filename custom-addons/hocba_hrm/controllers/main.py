@@ -2855,6 +2855,14 @@ class HocBaHRM(http.Controller):
         is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
         is_manager = _is_dept_manager(request.env, emp)
         can_manage = _user_can_manage(request.env)
+        # Vai trò Tài chính (module hocba_finance có thể chưa cài → guard).
+        def _has_group_safe(xmlid):
+            try:
+                return user.has_group(xmlid)
+            except Exception:  # noqa: BLE001 - group/module chưa tồn tại
+                return False
+        is_finance = _has_group_safe('hocba_finance.group_finance_user')
+        is_finance_mgr = _has_group_safe('hocba_finance.group_finance_manager')
         roles = []
         if is_admin:
             roles.append('Admin')
@@ -2866,6 +2874,10 @@ class HocBaHRM(http.Controller):
             roles.append('Giáo vụ')
         if is_manager:
             roles.append('Quản lý')
+        if is_finance_mgr:
+            roles.append('Giám đốc Tài chính')
+        elif is_finance:
+            roles.append('Kế toán')
         if not roles:
             roles.append('Nhân viên')
         return {
@@ -2879,6 +2891,8 @@ class HocBaHRM(http.Controller):
             'isHrUser': is_hr_user,
             'isGiaovu': is_giaovu,
             'isManager': is_manager,
+            'isFinance': is_finance,
+            'isFinanceManager': is_finance_mgr,
             'canManage': can_manage,
         }
 
