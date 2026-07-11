@@ -1814,12 +1814,17 @@ class HocBaHRM(http.Controller):
             'employees': rows,
         })
 
-    def _employee_detail(self, e, labels, is_hr, is_mgr, see_salary=None):
+    def _employee_detail(self, e, labels, is_hr, is_mgr, see_salary=None,
+                         can_account=None):
         """Dựng dict hồ sơ chi tiết theo quyền — dùng chung cho
-        /api/employee/<id> (HR xem người khác) và /api/me (tự xem hồ sơ mình).
-        see_salary=None → mặc định theo is_mgr (tương thích lời gọi cũ)."""
+        /api/employee/<id> (HR/TP/GV xem trong phạm vi) và /api/me (tự xem).
+        is_hr ở đây = 'được quản lý hồ sơ' (canEditEmp): mở pháp lý/NPT/chứng chỉ
+        cho cả TP/Giáo vụ. can_account (mặc định = is_hr) gác riêng khối tài khoản
+        cho HR/Admin. see_salary=None → mặc định theo is_mgr."""
         if see_salary is None:
             see_salary = is_mgr
+        if can_account is None:
+            can_account = is_hr
         data = self._emp_base(e, labels, see_salary)
 
         # --- Pháp lý (F-002) + NPT (F-003): chỉ HR ---
@@ -1953,7 +1958,7 @@ class HocBaHRM(http.Controller):
             } for s in e.employee_skill_ids
                 if s.x_cert_date or s.x_cert_expiry]
 
-        if is_hr:
+        if can_account:
             data['account'] = _account_payload(e)
 
         return data
@@ -1971,8 +1976,10 @@ class HocBaHRM(http.Controller):
         if not self._emp_in_scope(e):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         return request.make_json_response(
-            self._employee_detail(e, labels, is_hr, is_mgr,
-                                  _cap_see_salary(request.env)))
+            self._employee_detail(e, labels,
+                                  _cap_edit_emp(request.env), is_mgr,
+                                  _cap_see_salary(request.env),
+                                  _cap_manage_account(request.env)))
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/gate', auth='user',
                 type='http', methods=['POST'], csrf=False)
@@ -2021,8 +2028,10 @@ class HocBaHRM(http.Controller):
         # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
         is_hr, is_mgr = self._hr_flags()
         return request.make_json_response(
-            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr,
-                                  _cap_see_salary(request.env)))
+            self._employee_detail(e.sudo(), self._labels(),
+                                  _cap_edit_emp(request.env), is_mgr,
+                                  _cap_see_salary(request.env),
+                                  _cap_manage_account(request.env)))
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/trial', auth='user',
                 type='http', methods=['POST'], csrf=False)
@@ -2079,8 +2088,10 @@ class HocBaHRM(http.Controller):
     def _detail_response(self, e):
         is_hr, is_mgr = self._hr_flags()
         return request.make_json_response(
-            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr,
-                                  _cap_see_salary(request.env)))
+            self._employee_detail(e.sudo(), self._labels(),
+                                  _cap_edit_emp(request.env), is_mgr,
+                                  _cap_see_salary(request.env),
+                                  _cap_manage_account(request.env)))
 
     def _dep_response(self, e, is_hr):
         """Self (non-HR) cần payload đầy đủ kèm dependents → dùng _me_payload."""
@@ -2708,8 +2719,10 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
-            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr,
-                                  _cap_see_salary(request.env)))
+            self._employee_detail(e.sudo(), self._labels(),
+                                  _cap_edit_emp(request.env), is_mgr,
+                                  _cap_see_salary(request.env),
+                                  _cap_manage_account(request.env)))
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>', auth='user',
                 type='http', methods=['POST'], csrf=False)
@@ -2742,8 +2755,10 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(
-            self._employee_detail(e.sudo(), self._labels(), is_hr, is_mgr,
-                                  _cap_see_salary(request.env)))
+            self._employee_detail(e.sudo(), self._labels(),
+                                  _cap_edit_emp(request.env), is_mgr,
+                                  _cap_see_salary(request.env),
+                                  _cap_manage_account(request.env)))
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/account', auth='user',
                 type='http', methods=['POST'], csrf=False)

@@ -131,3 +131,8 @@ class TestScopeEnforcement(TransactionCase):
         base_no = ctrl._emp_base(self.in_emp, MIN_LABELS, False)
         self.assertIn('wage', base_yes)
         self.assertNotIn('wage', base_no)
+
+    # Ghi chú: khối pháp lý/NPT/chứng chỉ vs tài khoản trong _employee_detail
+    # phụ thuộc request context (_can_eval_emp/_can_eval_trial) nên không unit-test
+    # trực tiếp — đã kiểm end-to-end trên preview (TP thấy cccd/dependents/certs/
+    # wage, KHÔNG thấy account; ngoài phạm vi → 403).
