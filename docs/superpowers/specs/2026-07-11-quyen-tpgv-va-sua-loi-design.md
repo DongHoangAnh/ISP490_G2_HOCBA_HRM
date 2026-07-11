@@ -17,7 +17,8 @@ Sau khi chạy test tay 3 module (Nhân viên / Nhận việc / Nghỉ việc), 
 
 ## Quyết định đã chốt với người dùng
 
-- TP/GV: **tạo/sửa/xoá đầy đủ** hồ sơ NV + hồ sơ con (NPT, tài sản, chứng chỉ, thăng tiến) **trong phạm vi**.
+- TP/GV: **tạo/sửa/xoá đầy đủ** hồ sơ NV + hồ sơ con (NPT, tài sản, chứng chỉ) **trong phạm vi**.
+- **Thăng tiến (promotion) giữ nguyên HR-Manager-only**: bản ghi thăng tiến chứa `to_wage` (đổi lương) → nằm ngoài `canEditEmp` để tôn trọng "TP/GV chỉ xem lương".
 - TP/GV: **chỉ XEM** Lương CB, **không sửa** mức lương.
 - TP/GV: **được cấp/thu hồi/chuyển tài sản** trong phạm vi.
 - TP/GV: **không** có tab Tài khoản, **không** có trang Phòng ban.
@@ -55,11 +56,13 @@ TP = `_is_dept_manager(env, env.user.employee_id)`; GV = `has_group('hocba_emplo
 2. **Ghi hồ sơ con** — đổi gate `if not is_hr` → `if not _cap_edit_emp(env) or not _emp_in_scope(env, e)`:
    - `api_dependent_create/update/delete` (giữ nhánh self-service `e == user.employee_id`).
    - `api_asset_create/return/transfer`.
-   - `api_cert_*`, `api_promotion_*`.
+   - `api_cert_*`.
+   - `api_promotion_*` **giữ nguyên `is_mgr`** (HR-Manager-only, vì đổi lương).
 3. **Tạo/sửa NV** (`api_employee_create`, `api_employee_update`):
    - Gate `canEditEmp`.
    - **Tạo**: validate phòng ban đích ∈ phạm vi TP (`_managed_department_ids`) hoặc NV là giáo viên (GV). Ngoài phạm vi → 403.
    - **Sửa**: `_emp_in_scope` với NV đích.
+   - **Sudo sau khi kiểm phạm vi**: hiện `create/write` hr.employee KHÔNG sudo (dựa ACL Odoo mà TP/GV không có → AccessError). Đổi sang: gate `canEditEmp` + kiểm phạm vi ở tầng controller RỒI ghi bằng `.sudo()` (theo đúng pattern self-service của dự án). Ràng buộc nghiệp vụ (`@api.constrains`: CCCD, BR-010, gate) vẫn chạy dưới sudo nên không mất.
    - `_split_form_payload`: `wage` vẫn tier `mgr` → TP/GV gửi cũng bị bỏ (đảm bảo "chỉ xem").
 4. **Lộ lương theo `canSeeSalary`**: chỗ nào đang dùng `is_mgr` để chèn `wage`/`pit`/`si`/bank vào detail (`_emp_base`, `_employee_detail`, cột Lương ở list) đổi sang `_cap_see_salary(env)`.
 5. **Tài khoản/Phòng ban**: giữ gate `is_hr`/admin (không đổi).
