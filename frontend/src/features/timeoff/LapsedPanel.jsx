@@ -2,61 +2,33 @@
    công + KPI. Chỉ officer (HR/Admin mọi phòng, Trưởng phòng phòng mình).
    Spec: docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
    Owner: Nhật Anh. */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Badge from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import ConfirmModal from '../../components/ConfirmModal';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchLapsedDashboard, decideRequest } from '../../api/timeoff';
+import Kpi from './Kpi';
 
-function Kpi({ label, value, sub, color }) {
-  return (
-    <div className="card" style={{ padding: '16px 18px' }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, margin: '4px 0 2px', color: color || 'var(--ink)' }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
-    </div>
-  );
-}
+export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
+  const [confirming, setConfirming] = useState(null); // dòng chờ xác nhận xử lý nhanh
+  const { data, err, loading, reload } = useFetch(
+    () => fetchLapsedDashboard(dept || undefined), [dept], `timeoff:lapsed:${dept}`);
 
-export default function LapsedPanel() {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [dept, setDept] = useState('');
-  const [busy, setBusy] = useState(null);
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    setErr(null); setData(null);
-    fetchLapsedDashboard(dept || undefined).then(setData).catch((e) => setErr(e.message));
-  }, [dept, tick]);
-
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải giám sát duyệt đơn…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton />;
 
   const k = data.kpi;
   const maxDept = Math.max(...data.byDepartment.map((r) => r.count), 1);
-
-  // Nút 1-chạm: gọi thẳng flow duyệt hiện có với action theo đề xuất (BR-L04).
-  const quickDecide = (row) => {
-    const label = row.suggestion === 'approve'
-      ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)';
-    if (!window.confirm(`${label} đơn của ${row.employee}?`)) return;
-    setBusy(row.requestId);
-    decideRequest(row.requestId, { action: row.suggestion })
-      .then(() => setTick((t) => t + 1))
-      .catch((e) => alert('Không xử lý được đơn: ' + e.message))
-      .finally(() => setBusy(null));
-  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {data.seeAll && (
         <div className="filterbar">
           <div style={{ marginLeft: 'auto' }}>
-            <select className="sel" value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">Mọi phòng ban</option>
-              {data.allDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            <DeptSelect value={dept} onChange={onDeptChange} departments={data.allDepartments} />
           </div>
         </div>
       )}
@@ -123,11 +95,12 @@ export default function LapsedPanel() {
                   <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                     {r.suggestion ? (
                       <button className="btn btn-primary btn-sm"
-                        disabled={busy === r.requestId} onClick={() => quickDecide(r)}>
-                        {busy === r.requestId ? 'Đang xử lý…' : 'Xử lý theo đề xuất'}
-                      </button>
+                        onClick={() => setConfirming(r)}>Xử lý theo đề xuất</button>
                     ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>xử lý ở tab Chờ duyệt</span>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => onOpenApproval && onOpenApproval(r.requestId)}>
+                        Xử lý ở tab Chờ duyệt →
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -139,6 +112,20 @@ export default function LapsedPanel() {
           <EmptyState>Không có đơn nào lỡ hạn duyệt. 🎉</EmptyState>
         )}
       </div>
+
+      {/* Nút 1-chạm: gọi thẳng flow duyệt hiện có với action theo đề xuất (BR-L04).
+          decideRequest trả payload dạng approvals (khác shape lapsed-dashboard)
+          → không setData được, phải reload. */}
+      {confirming && (
+        <ConfirmModal
+          title={confirming.suggestion === 'approve' ? 'Duyệt trễ theo đề xuất' : 'Từ chối theo đề xuất'}
+          confirmLabel={confirming.suggestion === 'approve' ? 'Duyệt trễ' : 'Từ chối'}
+          message={`${confirming.suggestion === 'approve'
+            ? 'Duyệt trễ' : 'Từ chối (nhân viên vẫn đi làm)'} đơn của ${confirming.employee}?`}
+          onClose={() => setConfirming(null)}
+          onConfirm={() => decideRequest(confirming.requestId, { action: confirming.suggestion })
+            .then(() => { setConfirming(null); reload(); })} />
+      )}
     </div>
   );
 }

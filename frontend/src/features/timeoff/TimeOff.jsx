@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
+import ModalHeader from '../../components/ModalHeader';
+import ConfirmModal from '../../components/ConfirmModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchOverview, cancelRequest, fetchApprovals, withdrawRequest, fetchSubstitutions } from '../../api/timeoff';
@@ -14,6 +16,7 @@ import LeaveForm from './LeaveForm';
 import SubstitutionsPanel from './SubstitutionsPanel';
 import ApprovalPanel from './ApprovalPanel';
 import LapsedPanel from './LapsedPanel';
+import BurnoutPanel from './BurnoutPanel';
 import ApprovedPanel from './ApprovedPanel';
 import BalancesPanel from './BalancesPanel';
 import DashboardPanel from './DashboardPanel';
@@ -28,10 +31,13 @@ export default function TimeOff({ search, focus }) {
   const [tab, setTab] = useState(null);
   const [creating, setCreating] = useState(false);
   const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
-  const [busy, setBusy] = useState(null); // id đơn đang hủy
+  const [cancelling, setCancelling] = useState(null); // đơn đang chờ xác nhận hủy
   const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
   const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
+  const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Giám sát duyệt → mở modal ở tab Chờ duyệt
+  const [year, setYear] = useState(new Date().getFullYear()); // filter chung xuyên tab
+  const [dept, setDept] = useState('');                        // '' = mọi phòng ban
 
   const load = () => {
     setErr(null); setData(null);
@@ -68,15 +74,6 @@ export default function TimeOff({ search, focus }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải dữ liệu nghỉ phép…" />;
 
-  const onCancel = (id) => {
-    if (!window.confirm('Hủy đơn nghỉ này?')) return;
-    setBusy(id);
-    cancelRequest(id)
-      .then(setData)
-      .catch((e) => alert('Không hủy được đơn: ' + e.message))
-      .finally(() => setBusy(null));
-  };
-
   // Tách luồng cá nhân / quản lý theo phân quyền:
   //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
   //    KHÔNG có tab "Của tôi" (luồng quản lý thuần).
@@ -85,6 +82,7 @@ export default function TimeOff({ search, focus }) {
   if (data.isOfficer) {
     tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
               ['approvals', 'Chờ duyệt'], ['lapsed', 'Giám sát duyệt'],
+              ['health', 'Sức khỏe NV'],
               ['approved', 'Đơn đã duyệt'],
               ['balances', 'Quỹ phép']);
   } else {
@@ -121,7 +119,7 @@ export default function TimeOff({ search, focus }) {
       <div className="tabs">
         {tabs.map(([id, l]) => (
           <button key={id} className={'tab' + (activeTab === id ? ' active' : '')}
-            onClick={() => setTab(id)}>
+            onClick={() => { setTab(id); setApprovalFocus(null); /* bấm tab tay → hủy focus deep-link còn treo */ }}>
             {l}
             {id === 'approvals' && pendingCount > 0 && (
               <span style={{ marginLeft: 6 }}><Badge kind="amber">{pendingCount}</Badge></span>
@@ -133,22 +131,47 @@ export default function TimeOff({ search, focus }) {
         ))}
       </div>
 
-      {activeTab === 'overview' && data.isOfficer && <DashboardPanel />}
-      {activeTab === 'summary' && !data.isOfficer && <SummaryPanel />}
+      {search && !SEARCHABLE_TABS.has(activeTab) && (
+        <div className="muted" style={{ fontSize: 12.5, margin: '-8px 0 4px' }}>
+          Tìm kiếm không áp dụng cho tab này.
+        </div>
+      )}
+
+      {activeTab === 'overview' && data.isOfficer && (
+        <DashboardPanel year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
+      )}
+      {activeTab === 'summary' && !data.isOfficer && (
+        <SummaryPanel year={year} onYearChange={setYear} />
+      )}
       {activeTab === 'me' && !data.isOfficer && (
-        <MyTimeOff data={data} search={search} busy={busy}
-          onCancel={onCancel} onUpdated={setData} />
+        <MyTimeOff data={data} search={search} onCancel={setCancelling} onUpdated={setData} />
       )}
       {activeTab === 'calendar' && (
         <CalendarPanel isOfficer={data.isOfficer} seeAll={data.seeAll}
-          isTeacher={!!(data.employee && data.employee.isTeacher)} />
+          isTeacher={!!(data.employee && data.employee.isTeacher)}
+          year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
       )}
       {activeTab === 'approvals' && data.isOfficer && (
-        <ApprovalPanel isHrManager={data.isHrManager} />
+        <ApprovalPanel isHrManager={data.isHrManager}
+          focusRequestId={approvalFocus}
+          onFocusConsumed={() => setApprovalFocus(null)}
+          onChanged={setPendingCount} />
       )}
-      {activeTab === 'lapsed' && data.isOfficer && <LapsedPanel />}
-      {activeTab === 'approved' && data.isOfficer && <ApprovedPanel search={search} />}
-      {activeTab === 'balances' && data.isOfficer && <BalancesPanel search={search} />}
+      {/* Lapsed/Burnout chỉ hiện DeptSelect khi seeAll → chặn dept chọn ở tab khác
+          leak vào thành filter ẩn (trưởng phòng nhiều phòng ban không thấy/xóa được). */}
+      {activeTab === 'lapsed' && data.isOfficer && (
+        <LapsedPanel dept={data.seeAll ? dept : ''} onDeptChange={setDept}
+          onOpenApproval={(id) => { setApprovalFocus(id); setTab('approvals'); }} />
+      )}
+      {activeTab === 'health' && data.isOfficer && (
+        <BurnoutPanel dept={data.seeAll ? dept : ''} onDeptChange={setDept} />
+      )}
+      {activeTab === 'approved' && data.isOfficer && (
+        <ApprovedPanel search={search} year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
+      )}
+      {activeTab === 'balances' && data.isOfficer && (
+        <BalancesPanel search={search} year={year} onYearChange={setYear} dept={dept} onDeptChange={setDept} />
+      )}
       {activeTab === 'substitutions' && data.employee && data.employee.isTeacher && (
         <SubstitutionsPanel onChanged={refreshSubCount} />
       )}
@@ -163,18 +186,19 @@ export default function TimeOff({ search, focus }) {
 
       {schedOpen && <WorkScheduleModal onClose={() => setSchedOpen(false)} />}
 
+      {cancelling && (
+        <ConfirmModal title="Hủy đơn nghỉ" confirmLabel="Hủy đơn"
+          message={`Hủy đơn "${cancelling.leaveType}" (${fmtDate(cancelling.from)} → ${fmtDate(cancelling.to)})? Hành động không hoàn tác được.`}
+          onClose={() => setCancelling(null)}
+          onConfirm={() => cancelRequest(cancelling.id).then((payload) => {
+            setData(payload); setCancelling(null);
+          })} />
+      )}
+
       {historyReq && (
         <Modal onClose={() => setHistoryReq(null)}>
-          <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <Icon name="clock" size={20} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Lịch sử xử lý đơn</h2>
-              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Dòng thời gian thao tác của đơn nghỉ</div>
-            </div>
-            <button className="icon-btn" onClick={() => setHistoryReq(null)}><Icon name="x" size={20} /></button>
-          </div>
+          <ModalHeader icon="clock" title="Lịch sử xử lý đơn"
+            sub="Dòng thời gian thao tác của đơn nghỉ" onClose={() => setHistoryReq(null)} />
           <div style={{ padding: '18px 24px' }}>
             <HistoryTimeline requestId={historyReq} />
           </div>
@@ -197,7 +221,9 @@ const MY_SORT_FIELDS = [
   { key: 'stateLabel', label: 'Trạng thái', type: 'text' },
 ];
 
-function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
+const SEARCHABLE_TABS = new Set(['me', 'approved', 'balances']);
+
+function MyTimeOff({ data, search, onCancel, onUpdated }) {
   const [sort, setSort] = useState({ key: 'from', dir: 'desc' });
   const [withdrawing, setWithdrawing] = useState(null); // đơn đang mở modal rút
   const [detail, setDetail] = useState(null); // đơn đang xem chi tiết (modal)
@@ -255,7 +281,12 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
             </tr></thead>
             <tbody>
               {requests.map((r) => (
-                <tr key={r.id} onClick={() => setDetail(r)} style={{ cursor: 'pointer' }}>
+                <tr key={r.id} tabIndex={0} onClick={() => setDetail(r)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(r); }
+                  }}
+                  style={{ cursor: 'pointer' }}>
                   <td>
                     <span style={{ fontWeight: 600 }}>{r.leaveType}</span>
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
@@ -274,9 +305,8 @@ function MyTimeOff({ data, search, busy, onCancel, onUpdated }) {
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     {r.canCancel && (
-                      <button className="btn btn-ghost btn-sm" disabled={busy === r.id}
-                        onClick={(e) => { e.stopPropagation(); onCancel(r.id); }}>
-                        {busy === r.id ? 'Đang hủy…' : 'Hủy'}</button>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={(e) => { e.stopPropagation(); onCancel(r); }}>Hủy</button>
                     )}
                     {r.canWithdraw && (
                       <button className="btn btn-ghost btn-sm"
@@ -324,20 +354,10 @@ function LeaveDetailModal({ req, onClose }) {
   const sessions = req.sessionResolutions || [];
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={20} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {req.leaveType}
-            {req.halfDay && <Badge kind="blue">{req.halfDay}</Badge>}
-            {req.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
-          </h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Chi tiết đơn nghỉ</div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader icon="calendar" title={req.leaveType} sub="Chi tiết đơn nghỉ" onClose={onClose}>
+        {req.halfDay && <Badge kind="blue">{req.halfDay}</Badge>}
+        {req.isEmergency && <Badge kind="red">Khẩn cấp</Badge>}
+      </ModalHeader>
 
       <div style={{ padding: '18px 24px', display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -410,18 +430,9 @@ function WithdrawModal({ req, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="alertCircle" size={20} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Rút đơn nghỉ đã duyệt</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {req.leaveType} · {fmtDate(req.from)} → {fmtDate(req.to)} ({req.days} ngày)
-          </div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader icon="alertCircle" title="Rút đơn nghỉ đã duyệt"
+        sub={`${req.leaveType} · ${fmtDate(req.from)} → ${fmtDate(req.to)} (${req.days} ngày)`}
+        onClose={onClose} />
 
       <div style={{ padding: '18px 24px', display: 'grid', gap: 12 }}>
         <div className="muted" style={{ fontSize: 13 }}>

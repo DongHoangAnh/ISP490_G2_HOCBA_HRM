@@ -1,8 +1,10 @@
 /* Tab "Lịch" — lịch nghỉ phép (toggle Năm/Tháng), giống màn Time Off của Odoo.
    Owner: Nhật Anh. Spec §3.7. */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Icon from '../../components/Icon';
-import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import useFetch from '../../hooks/useFetch';
+import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
 import { fetchCalendar } from '../../api/timeoff';
 import { fetchTeachingDays } from '../../api/attendance';
@@ -149,24 +151,31 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacher
   );
 }
 
-export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
-  const [year, setYear] = useState(NOW.getFullYear());
+export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYearChange, dept, onDeptChange }) {
   const [month, setMonth] = useState(NOW.getMonth());
   const [mode, setMode] = useState('year');   // 'year' | 'month'
-  const [dept, setDept] = useState('');         // HR lọc 1 phòng ban ('' = tất cả)
   const [active, setActive] = useState(null);   // Set id loại đang bật (null = tất cả)
   const [teaching, setTeaching] = useState(new Map()); // ngày dạy → số buổi (GV)
-  const [tick, setTick] = useState(0);
+  const { data, err, loading, reload } = useFetch(
+    () => fetchCalendar(year, seeAll ? (dept || undefined) : undefined),
+    [year, dept, seeAll], `timeoff:calendar:${year}:${seeAll ? dept : 'mine'}`);
 
+  // Query đổi (năm/phòng ban) và data MỚI về → bật tất cả loại nghỉ. Hai điều
+  // kiện qua ref: (1) cùng query mà revalidate trả payload mới → không reset,
+  // khỏi xóa toggle user đang chỉnh; (2) query vừa đổi nhưng data còn của query
+  // cũ (effect chạy trước khi useFetch kịp setState) → chờ payload mới rồi mới
+  // reset, không chốt nhầm danh sách loại của query trước.
+  const activeKeyRef = useRef(null);
+  const prevDataRef = useRef(null);
   useEffect(() => {
-    setErr(null); setData(null);
-    fetchCalendar(year, seeAll ? (dept || undefined) : undefined).then((d) => {
-      setData(d);
-      setActive(new Set(d.leaveTypes.map((t) => t.id))); // bật tất cả loại
-    }).catch((e) => setErr(e.message));
-  }, [year, dept, seeAll, tick]);
+    if (!data) return;
+    const key = `${year}:${seeAll ? dept : 'mine'}`;
+    const dataChanged = prevDataRef.current !== data;
+    prevDataRef.current = data;
+    if (activeKeyRef.current === key || !dataChanged) return;
+    activeKeyRef.current = key;
+    setActive(new Set(data.leaveTypes.map((t) => t.id)));
+  }, [data, year, dept, seeAll]);
 
   // GV xem lịch cá nhân: đánh dấu ngày có lịch dạy cả năm. Lỗi gọi API lịch dạy
   // KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu. (Officer xem lịch đội → tắt.)
@@ -185,8 +194,8 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
   const workdays = useMemo(() => data ? buildWorkdays(data.workDays) : new Map(), [data]);
   const teachTotal = useMemo(() => [...teaching.values()].reduce((a, b) => a + b, 0), [teaching]);
 
-  if (err) return <ErrorState message={err} onRetry={() => setTick((t) => t + 1)} />;
-  if (!data) return <LoadingState label="Đang tải lịch nghỉ phép…" />;
+  if (err) return <ErrorState message={err} onRetry={reload} />;
+  if (loading || !data) return <TableSkeleton rows={8} />;
 
   const toggleType = (id) => setActive((prev) => {
     const next = new Set(prev);
@@ -194,10 +203,10 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
     return next;
   });
 
-  const stepBack = () => mode === 'year' ? setYear((y) => y - 1)
-    : (month === 0 ? (setMonth(11), setYear((y) => y - 1)) : setMonth((m) => m - 1));
-  const stepFwd = () => mode === 'year' ? setYear((y) => y + 1)
-    : (month === 11 ? (setMonth(0), setYear((y) => y + 1)) : setMonth((m) => m + 1));
+  const stepBack = () => mode === 'year' ? onYearChange(year - 1)
+    : (month === 0 ? (setMonth(11), onYearChange(year - 1)) : setMonth((m) => m - 1));
+  const stepFwd = () => mode === 'year' ? onYearChange(year + 1)
+    : (month === 11 ? (setMonth(0), onYearChange(year + 1)) : setMonth((m) => m + 1));
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 16, alignItems: 'start' }}>
@@ -210,7 +219,7 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
             <span className="mono" style={{ fontWeight: 700, minWidth: mode === 'year' ? 48 : 110, textAlign: 'center' }}>
               {mode === 'year' ? year : `${MONTH_LABEL(month)} ${year}`}</span>
             <button className="icon-btn" onClick={stepFwd}><Icon name="chevR" size={16} /></button>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setYear(NOW.getFullYear()); setMonth(NOW.getMonth()); }}>Hôm nay</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { onYearChange(NOW.getFullYear()); setMonth(NOW.getMonth()); }}>Hôm nay</button>
           </div>
           <div style={{ marginLeft: 'auto' }} className="seg">
             <button className={mode === 'year' ? 'active' : ''} onClick={() => setMode('year')}>Năm</button>
@@ -234,13 +243,8 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll }) {
         {seeAll && (
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Phòng ban</div>
-            <select className="sel" style={{ width: '100%' }}
-              value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">Tất cả phòng ban</option>
-              {(data.allDepartments || []).map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+            <DeptSelect value={dept} onChange={onDeptChange} style={{ width: '100%' }}
+              departments={data.allDepartments} />
           </div>
         )}
 
