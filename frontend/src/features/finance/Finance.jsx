@@ -126,49 +126,62 @@ function VouchersTab({ ctx, month, search, onReloadCtx }) {
           </button>
         </div>
         <div className="tbl-wrap">
-          <table className="tbl">
+          <table className="tbl" style={{ tableLayout: 'fixed', minWidth: 880 }}>
+            <colgroup>
+              <col style={{ width: 118 }} />
+              <col style={{ width: 92 }} />
+              <col style={{ width: 66 }} />
+              <col />
+              <col style={{ width: '13%' }} />
+              <col />
+              <col style={{ width: 148 }} />
+              <col style={{ width: 116 }} />
+              <col style={{ width: 104 }} />
+            </colgroup>
             <thead><tr>
               <th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Mục</th>
               <th>Phòng ban</th><th>Người nộp/nhận</th>
               <th style={{ textAlign: 'right' }}>Số tiền</th>
-              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
-              <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
+              <th>Trạng thái</th>
+              <th style={{ textAlign: 'right' }}>Thao tác</th>
             </tr></thead>
             <tbody>
               {rows.map((v) => {
                 const [lbl, kind] = STATE_BADGE[v.state] || ['—', 'gray'];
                 return (
                   <tr key={v.id}>
-                    <td><div className="nm mono">{v.name}</div></td>
-                    <td className="muted">{fmtDate(v.date)}</td>
-                    <td>
+                    <td style={nowrapCell}><span className="mono" style={{ fontWeight: 600 }}>{v.name}</span></td>
+                    <td className="muted" style={nowrapCell}>{fmtDate(v.date)}</td>
+                    <td style={nowrapCell}>
                       <Badge kind={v.type === 'income' ? 'green' : 'red'}>
                         {v.type === 'income' ? 'Thu' : 'Chi'}
                       </Badge>
                     </td>
-                    <td>{v.categoryName}</td>
-                    <td className="muted">{v.departmentName || '—'}</td>
-                    <td className="muted">{v.partnerName || '—'}</td>
-                    <td className="mono" style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700, color: v.type === 'income' ? 'var(--green-600,#16a34a)' : 'var(--red-600)' }}>
+                    <td title={v.categoryName}>{v.categoryName}</td>
+                    <td className="muted" title={v.departmentName || ''}>{v.departmentName || '—'}</td>
+                    <td className="muted" title={v.partnerName || ''}>{v.partnerName || '—'}</td>
+                    <td className="mono" style={{ ...nowrapCell, textAlign: 'right', fontWeight: 700, color: v.type === 'income' ? 'var(--green-600,#16a34a)' : 'var(--red-600)' }}>
                       {v.type === 'income' ? '+' : '−'}{hbVND(v.amount)}
                     </td>
-                    <td style={{ width: '1%', whiteSpace: 'nowrap' }}><Badge kind={kind} dot>{lbl}</Badge></td>
-                    <td style={{ display: 'flex', gap: 6, width: '1%', whiteSpace: 'nowrap' }}>
-                      {v.canApprove && (
-                        <button className="btn btn-ghost btn-sm" disabled={busyId === v.id}
-                          onClick={() => doAction(v, 'approve')}>
-                          <Icon name="check" size={14} />{ACTION_LABEL.approve}</button>
-                      )}
-                      {v.canPost && (
-                        <button className="btn btn-primary btn-sm" disabled={busyId === v.id}
-                          onClick={() => doAction(v, 'post')}>
-                          <Icon name="checkCircle" size={14} />{ACTION_LABEL.post}</button>
-                      )}
-                      {v.canCancel && v.state !== 'draft' && (
-                        <button className="btn btn-ghost btn-sm" disabled={busyId === v.id}
-                          onClick={() => doAction(v, 'cancel')}>
-                          <Icon name="x" size={14} /></button>
-                      )}
+                    <td style={nowrapCell}><Badge kind={kind} dot>{lbl}</Badge></td>
+                    <td style={{ ...nowrapCell, textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {v.canApprove && (
+                          <ActBtn icon="check" title="Duyệt" disabled={busyId === v.id}
+                            onClick={() => doAction(v, 'approve')} />
+                        )}
+                        {v.canPost && (
+                          <ActBtn icon="checkCircle" title="Ghi sổ" kind="primary" disabled={busyId === v.id}
+                            onClick={() => doAction(v, 'post')} />
+                        )}
+                        {v.canCancel && v.state !== 'draft' && (
+                          <ActBtn icon="x" title="Huỷ" disabled={busyId === v.id}
+                            onClick={() => doAction(v, 'cancel')} />
+                        )}
+                        {!v.canApprove && !v.canPost && !(v.canCancel && v.state !== 'draft') && (
+                          <span className="muted" style={{ fontSize: 12 }}>—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -299,3 +312,17 @@ const selStyle = {
   padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border-strong)',
   fontFamily: 'inherit', fontSize: 12.5, color: 'var(--ink)', background: '#fff',
 };
+
+/* Ô không cắt chữ (ghi đè max-width:0 mặc định của .tbl td cho cột số/ngày/trạng thái). */
+const nowrapCell = { whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' };
+
+/* Nút thao tác icon-only, vuông gọn — không chiếm chiều ngang như nút có chữ. */
+function ActBtn({ icon, title, kind = 'ghost', onClick, disabled }) {
+  return (
+    <button className={`btn btn-${kind} btn-sm`} title={title} aria-label={title}
+      onClick={onClick} disabled={disabled}
+      style={{ padding: '6px 8px', lineHeight: 0 }}>
+      <Icon name={icon} size={15} />
+    </button>
+  );
+}
