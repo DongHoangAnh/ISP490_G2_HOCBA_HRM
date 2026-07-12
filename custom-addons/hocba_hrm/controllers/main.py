@@ -2624,9 +2624,10 @@ class HocBaHRM(http.Controller):
     @http.route('/hocba-hrm/api/form/meta', auth='user', type='http', methods=['GET'])
     def api_form_meta(self, **kw):
         """Metadata cho form Thêm/Sửa nhân viên: phòng ban, chức danh, các lựa
-        chọn (hình thức/tình trạng/loại vị trí). Chỉ HR."""
-        is_hr, is_mgr = self._hr_flags()
-        if not is_hr:
+        chọn (hình thức/tình trạng/loại vị trí). Cho phép cả TP/Giáo vụ
+        (canEditEmp); phòng ban giới hạn theo phạm vi của Trưởng phòng."""
+        _, is_mgr = self._hr_flags()
+        if not _cap_edit_emp(request.env):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         env = request.env
         Emp = env['hr.employee']
@@ -2634,9 +2635,21 @@ class HocBaHRM(http.Controller):
         def opts(fname):
             return list(Emp._fields[fname]._description_selection(env))
 
+        # Trưởng phòng chỉ chọn được phòng mình quản lý (gồm phòng con); HR/Admin/
+        # Giáo vụ thấy mọi phòng (GV tạo giáo viên — phòng nào cũng hợp lệ).
+        user = env.user
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_user')
+                or user.has_group('hr.group_hr_manager')
+                or user.has_group('hocba_employees.group_hocba_giaovu')):
+            dep_domain = []
+        else:
+            managed = _managed_department_ids(env, user.employee_id)
+            dep_domain = [('id', 'in', managed)] if managed else [('id', '=', 0)]
+
         return request.make_json_response({
             'departments': [{'id': d.id, 'name': d.name}
-                            for d in env['hr.department'].sudo().search([], order='name')],
+                            for d in env['hr.department'].sudo().search(dep_domain, order='name')],
             'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id}
                      for j in env['hr.job'].sudo().search([], order='name')],
             'workForm': opts('x_work_form'),
@@ -2698,6 +2711,18 @@ class HocBaHRM(http.Controller):
         if not (emp_vals.get('name') or '').strip():
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên.'}, status=400)
+        # Giáo vụ (phạm vi = giáo viên): form không có ô "loại nhân sự" → mặc định
+        # NV mới là giáo viên để nằm trong phạm vi (nếu không sẽ bị chặn sau khi tạo).
+        u = request.env.user
+        if (u.has_group('hocba_employees.group_hocba_giaovu')
+                and not u.has_group('base.group_system')
+                and not u.has_group('hr.group_hr_user')
+                and not u.has_group('hr.group_hr_manager')
+                and not emp_vals.get('x_employee_type_id')):
+            tt = request.env['hocba.employee.type'].sudo().search(
+                [('code', '=', 'teacher')], limit=1)
+            if tt:
+                emp_vals['x_employee_type_id'] = tt.id
         try:
             # Ghi sudo sau khi đã kiểm quyền (TP/GV không có ACL Odoo trên hr.employee).
             e = request.env['hr.employee'].sudo().create(emp_vals)

@@ -272,6 +272,7 @@ Sidebar → **Nghỉ việc** (thấy bảng "Đơn nghỉ việc — chờ xử
 |---|---|---|---|
 | 5.1 | Sidebar | Quan sát menu | Giống TP về cấu trúc; **không** có "Hồ sơ của tôi"; **không** có Tài khoản/Phòng ban |
 | 5.2 | **Nhân viên** | Xem danh sách | **Chỉ** nhân sự là **giáo viên**; **có** nút "+ Thêm nhân viên"; **có** cột **Lương CB** (chỉ xem) |
+| 5.2a | **Nhân viên** | Bấm **+ Thêm nhân viên** → điền + Tạo | Form tải được; NV tạo ra **mặc định là giáo viên** (đúng phạm vi GV) — không cần chọn loại nhân sự |
 | 5.2b | **Nhân viên** | Bấm 1 giáo viên → drawer | Tab **Thông tin · Thử việc · Tài sản · Thăng tiến** (**không** "Tài khoản"); có **Chỉnh sửa**; sửa hồ sơ + **cấp/thu hồi tài sản** được; **không** có ô sửa Lương |
 | 5.3 | **Nhận việc** | Xem | Chỉ giảng viên đang thử việc (**Nhóm A**); **chấm thử giảng được** (F-008) |
 | 5.4 | **Nhận việc** | Với NV Nhóm B (nếu lọt vào phạm vi) | Không thuộc phạm vi GV → không thấy / không đánh giá |
