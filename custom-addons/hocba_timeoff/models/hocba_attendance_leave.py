@@ -77,7 +77,8 @@ class HocbaAttendanceLeave(models.Model):
 
     def _leave_checkin_utc(self, employee, day, policy):
         """check_in quy ước = day tại morning_start (giờ local NV) -> UTC naive."""
-        tz = pytz.timezone(employee.user_id.tz or self.env.user.tz or 'UTC')
+        # phải KHỚP _compute_date (base) để 'date' bản ghi ổn định
+        tz = pytz.timezone(employee.user_id.tz or 'UTC')
         hours = policy.morning_start or 8.0
         local = tz.localize(datetime.combine(day, time(0)) + timedelta(hours=hours))
         return local.astimezone(pytz.utc).replace(tzinfo=None)
@@ -97,7 +98,7 @@ class HocbaAttendanceLeave(models.Model):
             if self._is_working_day(cur, policy):
                 exist = Att.search([('employee_id', '=', emp.id), ('date', '=', cur)], limit=1)
                 if exist:
-                    if exist.source == 'checkin':
+                    if exist.source == 'checkin' and 'rà soát' not in (exist.notes or ''):
                         exist.write({'notes': (exist.notes or '')
                             + '\n[Cảnh báo] Có đơn nghỉ cả ngày đã duyệt trùng ngày đã chấm công — cần HR rà soát.'})
                 else:
