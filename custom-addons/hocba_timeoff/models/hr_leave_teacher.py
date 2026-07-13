@@ -87,34 +87,10 @@ class HrLeave(models.Model):
         sub_user = resolution.substitute_id.sudo().user_id
         if not sub_user:
             return
-        self.env['hb.leave.notification'].sudo().create({
-            'recipient_id': sub_user.id,
-            'leave_id': self.id,
-            'kind': 'sub_cancelled',
-            'title': 'Yêu cầu dạy thay đã hủy',
-            'body': '%s đã hủy/rút đơn — bạn không cần dạy thay buổi %s nữa.' % (
+        self.env['hb.notification'].sudo()._notify(
+            sub_user, category='timeoff', kind='sub_cancelled', level='danger',
+            title='Yêu cầu dạy thay đã hủy',
+            body='%s đã hủy/rút đơn — bạn không cần dạy thay buổi %s nữa.' % (
                 self.employee_id.sudo().name,
                 resolution.session_id.display_name),
-        })
-
-
-class HbLeaveNotification(models.Model):
-    """Mở rộng 'kind' chuông cho 3 sự kiện dạy thay."""
-    _inherit = 'hb.leave.notification'
-
-    kind = fields.Selection(
-        selection_add=[
-            ('sub_request', 'Yêu cầu dạy thay'),
-            ('sub_accepted', 'GV thay đồng ý'),
-            ('sub_declined', 'GV thay từ chối'),
-            ('sub_cancelled', 'Yêu cầu dạy thay đã hủy'),
-            ('sub_returned', 'GV thay đã trả lại buổi'),
-        ],
-        ondelete={
-            'sub_request': 'cascade',
-            'sub_accepted': 'cascade',
-            'sub_declined': 'cascade',
-            'sub_cancelled': 'cascade',
-            'sub_returned': 'cascade',
-        },
-    )
+            target_view='timeoff', target_ref=self.id, target_tab='sub')

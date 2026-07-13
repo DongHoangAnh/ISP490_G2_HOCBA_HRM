@@ -159,24 +159,22 @@ export const fetchAdjustHistory = (employeeId, leaveTypeId) => {
   return hbGet('/hocba-hrm/api/timeoff/balances/history' + (q ? '?' + q : ''));
 };
 
-/* Phase 5 — Thông báo in-app (chuông góc phải). Trả { items: [...], unread: N }.
-   onlyUnread=true → chỉ tin chưa đọc. */
-export const fetchNotifications = (limit, onlyUnread) => {
-  const p = new URLSearchParams();
-  if (limit) p.set('limit', limit);
-  if (onlyUnread) p.set('onlyUnread', '1');
-  const q = p.toString();
-  return hbGet('/hocba-hrm/api/timeoff/notifications' + (q ? '?' + q : ''));
-};
-
-/* Đánh dấu 1 thông báo đã đọc → trả { items, unread } mới. */
-export const markNotificationRead = (id) =>
-  hbPost(`/hocba-hrm/api/timeoff/notifications/${id}/read`, {});
-
-/* Đánh dấu tất cả thông báo đã đọc → trả { items, unread } mới. */
-export const markAllNotificationsRead = () =>
-  hbPost('/hocba-hrm/api/timeoff/notifications/read-all', {});
-
 /* Nhật ký thao tác (audit) của 1 đơn nghỉ. → { history: [{date, author, body, type}] } */
 export const fetchRequestHistory = (id) =>
   hbGet(`/hocba-hrm/api/timeoff/request/${id}/history`);
+
+/* Phase 12 — màn "Giám sát duyệt đơn": đơn lỡ hạn (qua ngày bắt đầu nghỉ mà
+   vẫn chờ duyệt) + đối chiếu chấm công + KPI. Chỉ officer; dept: lọc 1 phòng. */
+export const fetchLapsedDashboard = (dept) => {
+  const p = new URLSearchParams();
+  if (dept) p.set('dept', dept);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/lapsed-dashboard' + (q ? '?' + q : ''));
+};
+
+export const fetchBurnout = (dept) => {
+  const p = new URLSearchParams();
+  if (dept) p.set('dept', dept);
+  const q = p.toString();
+  return hbGet('/hocba-hrm/api/timeoff/burnout' + (q ? '?' + q : ''));
+};

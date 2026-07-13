@@ -715,6 +715,11 @@ class HrEmployee(models.Model):
             today + timedelta(days=1))
         self.message_post(body=_(
             '❌ Cổng %s KHÔNG ĐẠT — khởi động nghỉ thử việc.') % gate_label)
+        self._hocba_notify_probation(
+            'probation_fail', 'danger',
+            _('Không đạt thử việc: %s') % self.name,
+            body=_('Cổng %s không đạt — khởi động nghỉ thử việc.') % gate_label,
+            include_employee=True)
 
     def _hocba_grant_default_assets(self):
         """F-006: tự cấp các loại tài sản 'mặc định' khi qua cổng tuần-2."""
@@ -766,6 +771,10 @@ class HrEmployee(models.Model):
             '🎉 Cổng %(gate)s ĐẠT — chuyển Chính thức từ %(date)s. '
             'Vui lòng tạo hợp đồng chính thức.') % {
                 'gate': gate_label, 'date': fields.Date.to_string(today)})
+        self._hocba_notify_probation(
+            'probation_pass', 'success',
+            _('Đạt thử việc — lên chính thức: %s') % self.name,
+            body=_('Qua cổng %s.') % gate_label, include_employee=True)
 
     def _hocba_log_promotion(self, change_type, date_effective, reason):
         """Tạo snapshot lịch sử thăng tiến tự động (nhận việc / lên chính thức)."""
@@ -783,6 +792,55 @@ class HrEmployee(models.Model):
                 'reason': reason,
                 'approved_by': self.env.user.id,
             })
+
+    def _hocba_notify_probation(self, kind, level, title, body=None,
+                                dedup_key=None, include_employee=False):
+        """Chuông onboarding/thử việc (hb.notification) → QL trực tiếp + HR
+        (trỏ view quản lý 'employees'). Nếu include_employee: gửi thêm bản
+        RIÊNG cho chính NV trỏ view self-service 'profile' — NV thường không mở
+        được 'employees' nên bấm sẽ trơ. dedup_key để cron không nhân bản."""
+        self.ensure_one()
+        Notif = self.env['hb.notification'].sudo()
+        staff = self.env['res.users']
+        if self.parent_id.user_id:
+            staff |= self.parent_id.user_id
+        grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if grp:
+            staff |= self.env['res.users'].sudo().search(
+                [('all_group_ids', 'in', grp.id), ('active', '=', True)])
+        if include_employee and self.user_id:
+            staff -= self.user_id  # NV nhận bản 'profile' riêng, tránh trùng
+            Notif._notify(
+                self.user_id, category='onboarding', kind=kind, level=level,
+                title=title, body=body, target_view='profile',
+                target_ref=self.id, dedup_key=dedup_key)
+        Notif._notify(
+            staff, category='onboarding', kind=kind, level=level,
+            title=title, body=body, target_view='employees',
+            target_ref=self.id, dedup_key=dedup_key)
+
+    def _hocba_notify_reminder(self, kind, level, title, body=None,
+                               dedup_key=None, include_employee=True):
+        """Chuông nhắc hạn hồ sơ (hr_reminder) → HR (view 'employees'). Nếu
+        include_employee: bản RIÊNG cho NV trỏ 'profile' (NV thường không mở
+        được 'employees'). dedup_key để cron hằng ngày không nhân bản."""
+        self.ensure_one()
+        Notif = self.env['hb.notification'].sudo()
+        staff = self.env['res.users']
+        grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if grp:
+            staff |= self.env['res.users'].sudo().search(
+                [('all_group_ids', 'in', grp.id), ('active', '=', True)])
+        if include_employee and self.user_id:
+            staff -= self.user_id  # NV nhận bản 'profile' riêng, tránh trùng
+            Notif._notify(
+                self.user_id, category='hr_reminder', kind=kind, level=level,
+                title=title, body=body, target_view='profile',
+                target_ref=self.id, dedup_key=dedup_key)
+        Notif._notify(
+            staff, category='hr_reminder', kind=kind, level=level,
+            title=title, body=body, target_view='employees',
+            target_ref=self.id, dedup_key=dedup_key)
 
     def _hocba_aut_001(self):
         """Cổng tuần-2: Đạt → cấp thiết bị + tài sản + hẹn tháng-1;
@@ -808,6 +866,10 @@ class HrEmployee(models.Model):
                 today + timedelta(days=7), tbp_user)
             self.message_post(body=_(
                 '⏳ Cổng tuần-2 GIA HẠN — tiếp tục thử việc, hẹn tái đánh giá.'))
+            self._hocba_notify_probation(
+                'probation_extend', 'warning',
+                _('Gia hạn thử việc: %s') % self.name,
+                body=_('Cổng tuần-2 gia hạn.'), include_employee=True)
         elif self.x_eval_2w_result == 'fail':
             self._hocba_start_offboarding(_('tuần-2'))
 
@@ -825,6 +887,10 @@ class HrEmployee(models.Model):
                 self.x_eval_2m_due or today + timedelta(days=30), tbp_user)
             self.message_post(body=_(
                 '⏳ Cổng tháng-1 GIA HẠN — tiếp tục đến cổng tháng-2.'))
+            self._hocba_notify_probation(
+                'probation_extend', 'warning',
+                _('Gia hạn thử việc: %s') % self.name,
+                body=_('Cổng tháng-1 gia hạn.'), include_employee=True)
         elif self.x_eval_1m_result == 'fail':
             self._hocba_start_offboarding(_('tháng-1'))
 
@@ -842,6 +908,10 @@ class HrEmployee(models.Model):
                 today + timedelta(days=14), tbp_user)
             self.message_post(body=_(
                 '⏳ Cổng tháng-2 GIA HẠN — kéo dài thử việc, hẹn tái đánh giá.'))
+            self._hocba_notify_probation(
+                'probation_extend', 'warning',
+                _('Gia hạn thử việc: %s') % self.name,
+                body=_('Cổng tháng-2 gia hạn.'), include_employee=True)
         elif self.x_eval_2m_result == 'fail':
             self._hocba_start_offboarding(_('tháng-2'))
 
@@ -856,18 +926,33 @@ class HrEmployee(models.Model):
             emp._hocba_gate_activity(
                 _('Sắp đến hạn đánh giá tuần-2: %s') % emp.name,
                 emp.x_eval_2w_due, emp.parent_id.user_id or None)
+            emp._hocba_notify_probation(
+                'probation_eval', 'warning',
+                _('Sắp đến hạn đánh giá tuần-2: %s') % emp.name,
+                body=_('Hạn: %s') % emp.x_eval_2w_due,
+                dedup_key='probation_eval:%s:2w:%s' % (emp.id, emp.x_eval_2w_due))
         for emp in self.search(base + [('x_eval_2w_result', '=', 'pass'),
                                        ('x_eval_1m_result', '=', 'draft'),
                                        ('x_eval_1m_due', '<=', soon)]):
             emp._hocba_gate_activity(
                 _('Sắp đến hạn đánh giá tháng-1: %s') % emp.name,
                 emp.x_eval_1m_due, emp.parent_id.user_id or None)
+            emp._hocba_notify_probation(
+                'probation_eval', 'warning',
+                _('Sắp đến hạn đánh giá tháng-1: %s') % emp.name,
+                body=_('Hạn: %s') % emp.x_eval_1m_due,
+                dedup_key='probation_eval:%s:1m:%s' % (emp.id, emp.x_eval_1m_due))
         for emp in self.search(base + [('x_eval_1m_result', '=', 'extend'),
                                        ('x_eval_2m_result', '=', 'draft'),
                                        ('x_eval_2m_due', '<=', soon)]):
             emp._hocba_gate_activity(
                 _('Sắp đến hạn đánh giá tháng-2: %s') % emp.name,
                 emp.x_eval_2m_due, emp.parent_id.user_id or None)
+            emp._hocba_notify_probation(
+                'probation_eval', 'warning',
+                _('Sắp đến hạn đánh giá tháng-2: %s') % emp.name,
+                body=_('Hạn: %s') % emp.x_eval_2m_due,
+                dedup_key='probation_eval:%s:2m:%s' % (emp.id, emp.x_eval_2m_due))
 
     @api.model
     def _cron_cert_expiry_alerts(self):
@@ -892,6 +977,13 @@ class HrEmployee(models.Model):
             emp._hocba_gate_activity(
                 _('Chứng chỉ sắp hết hạn: %s') % ', '.join(
                     skills.mapped('skill_id.name')), deadline)
+            nearest = min(skills.mapped('x_cert_expiry'))
+            emp._hocba_notify_reminder(
+                'cert_expiry', 'warning',
+                _('Chứng chỉ sắp hết hạn: %s') % ', '.join(
+                    skills.mapped('skill_id.name')),
+                body=_('Hạn gần nhất: %s') % nearest,
+                dedup_key='cert_expiry:%s:%s' % (emp.id, nearest))
         # Đã hết hạn → ưu tiên cao
         expired = Skill.search(common + [('x_cert_expiry', '<', today)])
         for emp in expired.employee_id:
@@ -899,3 +991,27 @@ class HrEmployee(models.Model):
             emp._hocba_gate_activity(
                 _('Chứng chỉ ĐÃ HẾT HẠN: %s') % ', '.join(
                     skills.mapped('skill_id.name')), today)
+            emp._hocba_notify_reminder(
+                'cert_expired', 'danger',
+                _('Chứng chỉ ĐÃ HẾT HẠN: %s') % ', '.join(
+                    skills.mapped('skill_id.name')),
+                dedup_key='cert_expired:%s:%s' % (emp.id, today.strftime('%Y-%m')))
+
+    @api.model
+    def _cron_contract_end_alerts(self, days=30):
+        """CRON: nhắc HR khi hợp đồng NV sắp hết hạn trong <days> ngày.
+        Odoo 19: ngày hết hạn HĐ nằm ở hr.version.contract_date_end (bản version
+        hiện hành của NV = employee.version_id). Chỉ báo HR (không báo NV)."""
+        today = fields.Date.today()
+        limit = today + timedelta(days=days)
+        for emp in self.search([
+                ('active', '=', True),
+                ('version_id.contract_date_end', '>=', today),
+                ('version_id.contract_date_end', '<=', limit)]):
+            end = emp.version_id.contract_date_end
+            emp._hocba_notify_reminder(
+                'contract_end', 'warning',
+                _('Hợp đồng sắp hết hạn: %s') % emp.name,
+                body=_('Ngày hết hạn: %s') % end,
+                dedup_key='contract_end:%s:%s' % (emp.id, end),
+                include_employee=False)

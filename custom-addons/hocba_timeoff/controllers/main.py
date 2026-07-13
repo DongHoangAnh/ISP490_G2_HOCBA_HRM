@@ -151,6 +151,21 @@ def _dept_domain(scope):
     return [('department_id', 'in', scope['deptIds'])]
 
 
+def _approvals_domain(scope):
+    """Domain tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có
+    yêu cầu rút đang chờ (Phase 7), lọc theo phạm vi phòng ban.
+
+    Dùng chung cho GET /approvals VÀ payload refresh của decision/withdraw-decide
+    — 3 nơi lệch nhau là bảng + badge "Chờ duyệt" tạm mất các dòng yêu cầu rút
+    sau khi duyệt một đơn thường (bug đã gặp: FE ghi thẳng payload này vào cache).
+    """
+    return ['|',
+            '&', ('state', 'in', list(PENDING_STATES)),
+                 ('x_withdraw_state', '=', 'none'),
+            '&', ('state', '=', 'validate'),
+                 ('x_withdraw_state', '=', 'pending')] + _dept_domain(scope)
+
+
 def _scoped_departments(env, scope):
     """Phòng ban cho dropdown lọc: HR/Admin = tất cả, Trưởng phòng = phòng mình."""
     Dept = env['hr.department'].sudo()
@@ -498,20 +513,9 @@ def _public_holiday_dates_env(env, start, end):
 
 def _count_working_days_env(env, start, end):
     """Số ngày làm việc (T2–T6 + workday HR đánh dấu, trừ ngày lễ) trong
-    [start, end]. Helper module-level — tách logic khỏi controller để
-    _request_age_working_days dùng được dưới request VÀ test gọi trực tiếp."""
-    if not start or not end or end < start:
-        return 0
-    work_extra = set(env['hb.work.day'].sudo().search([
-        ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
-    holidays = _public_holiday_dates_env(env, start, end)
-    n, cur = 0, start
-    while cur <= end:
-        is_workday = cur.weekday() < 5 or cur in work_extra
-        if is_workday and cur not in holidays:
-            n += 1
-        cur += timedelta(days=1)
-    return n
+    [start, end]. Delegate về _working_dates_env để một chỗ duy nhất định
+    nghĩa 'ngày làm việc' (tránh drift). Dùng dưới request VÀ test gọi trực tiếp."""
+    return len(_working_dates_env(env, start, end))
 
 
 def _request_age_working_days(env, leave):
@@ -525,6 +529,208 @@ def _request_age_working_days(env, leave):
     if today < start:
         return 0
     return _count_working_days_env(env, start, today)
+
+
+# ---------------------------------------------------------------------------
+# Phase 12 — Đơn lỡ hạn duyệt. Spec:
+# docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
+# ---------------------------------------------------------------------------
+def _working_dates_env(env, start, end):
+    """Danh sách NGÀY LÀM VIỆC (T2–T6 + workday HR, trừ lễ) trong [start, end]."""
+    if not start or not end or end < start:
+        return []
+    work_extra = set(env['hb.work.day'].sudo().search([
+        ('date', '>=', start), ('date', '<=', end)]).mapped('date'))
+    holidays = _public_holiday_dates_env(env, start, end)
+    days, cur = [], start
+    while cur <= end:
+        if (cur.weekday() < 5 or cur in work_extra) and cur not in holidays:
+            days.append(cur)
+        cur += timedelta(days=1)
+    return days
+
+
+def _lapsed_info(env, leave):
+    """Thông tin 'lỡ hạn duyệt' của 1 đơn (BR-L01→L03) — None nếu chưa lỡ hạn.
+
+    Lỡ hạn = còn chờ duyệt mà ngày BẮT ĐẦU nghỉ đã qua. Đối chiếu
+    hocba.attendance từng ngày nghỉ ĐÃ QUA (đến hết hôm qua): tổng work_credit
+    trong ngày >= 0.5 là 'vẫn đi làm'; đơn NỬA NGÀY cần >= 1.0 mới tính (nửa
+    làm + nửa nghỉ là khớp đơn). Loại 'Nghỉ Buổi Dạy' miễn đối chiếu — GV có
+    thể vẫn chấm công ở trung tâm dù nghỉ 1 buổi dạy. Attendance đọc qua sudo:
+    người duyệt không có ACL hocba.attendance; quyền phạm vi kiểm ở tầng gọi."""
+    if leave.state not in PENDING_STATES:
+        return None
+    d0, d1 = _leave_day_bounds(leave)
+    today = fields.Date.context_today(env.user)
+    if not d0 or d0 >= today:
+        return None
+
+    yesterday = today - timedelta(days=1)
+    lapsed_days = _count_working_days_env(env, d0, yesterday)
+    exempt = leave.holiday_status_id.id == _teaching_off_type_id(env)
+
+    day_checks, worked = [], 0
+    if not exempt:
+        dates = _working_dates_env(env, d0, min(d1 or yesterday, yesterday))
+        if dates:
+            atts = env['hocba.attendance'].sudo().search([
+                ('employee_id', '=', leave.employee_id.id),
+                ('date', 'in', dates)])
+            credit_by_day = {}
+            for a in atts:
+                credit_by_day[a.date] = credit_by_day.get(a.date, 0.0) + a.work_credit
+            # 'Nửa ngày thật sự' theo convention module (_half_day_label):
+            # request_unit_half CHỈ báo đơn vị loại nghỉ là nửa ngày (Phép Năm
+            # seed half_day → luôn True), KHÔNG có nghĩa đơn này là nửa ngày.
+            # Đơn nửa ngày cần đủ công (1.0) mới là mâu thuẫn; đơn nguyên ngày
+            # chỉ cần >= 0.5.
+            is_half = bool(_half_day_label(leave))
+            threshold = 1.0 if is_half else 0.5
+            for d in dates:
+                credit = credit_by_day.get(d, 0.0)
+                is_worked = credit >= threshold
+                worked += 1 if is_worked else 0
+                day_checks.append({'date': _d(d), 'worked': is_worked,
+                                   'workCredit': round(credit, 1)})
+
+    checked = len(day_checks)
+    suggestion = None
+    if checked:
+        if worked == 0:
+            suggestion = 'approve'
+        elif worked == checked:
+            suggestion = 'refuse'
+    return {
+        'isLapsed': True,
+        'lapsedDays': lapsed_days,
+        'dayChecks': day_checks,
+        'workedCount': worked,
+        'checkedCount': checked,
+        'suggestion': suggestion,
+        'exempt': exempt,
+    }
+
+
+def _lapsed_summary_label(info):
+    """Chuỗi tóm tắt đối chiếu (dùng cả trong chatter và bảng giám sát FE)."""
+    if info['exempt']:
+        return 'nghỉ buổi dạy — không đối chiếu chấm công'
+    if not info['checkedCount']:
+        return 'chưa có ngày nghỉ nào qua để đối chiếu'
+    return 'đi làm %d/%d ngày nghỉ đã qua' % (
+        info['workedCount'], info['checkedCount'])
+
+
+def _lapsed_table(env, scope, dept_id=False):
+    """Dữ liệu màn 'Giám sát duyệt đơn' (BR-L06): KPI + bảng đơn lỡ hạn
+    + đếm theo phòng. sudo + lọc phòng ban tường minh theo scope."""
+    today = fields.Date.context_today(env.user)
+    domain = [('state', 'in', list(PENDING_STATES)),
+              ('request_date_from', '<', today)] + _dept_domain(scope)
+    if dept_id:
+        domain.append(('department_id', '=', dept_id))
+    leaves = env['hr.leave'].sudo().search(domain, order='request_date_from, id')
+
+    items, by_dept = [], {}
+    n_approve = n_refuse = n_review = oldest = 0
+    for leave in leaves:
+        info = _lapsed_info(env, leave)
+        if not info:
+            continue
+        if info['suggestion'] == 'approve':
+            n_approve += 1
+        elif info['suggestion'] == 'refuse':
+            n_refuse += 1
+        else:
+            n_review += 1
+        oldest = max(oldest, info['lapsedDays'])
+        dept = leave.department_id or leave.employee_id.department_id
+        row = by_dept.setdefault(dept.id or 0, {
+            'id': dept.id or False, 'name': dept.name or '—', 'count': 0})
+        row['count'] += 1
+        items.append({
+            'requestId': leave.id,
+            'employee': leave.employee_id.name,
+            'department': dept.name or '—',
+            'leaveType': leave.holiday_status_id.name,
+            'from': _d(leave.request_date_from),
+            'to': _d(leave.request_date_to),
+            'days': round(leave.number_of_days, 2),
+            'state': leave.state,
+            'stateLabel': STATE_LABEL.get(leave.state, leave.state),
+            'lapsedDays': info['lapsedDays'],
+            'summary': _lapsed_summary_label(info),
+            'suggestion': info['suggestion'],
+            'workedCount': info['workedCount'],
+            'checkedCount': info['checkedCount'],
+            'exempt': info['exempt'],
+        })
+    items.sort(key=lambda r: r['lapsedDays'], reverse=True)
+    return {
+        'kpi': {'total': len(items), 'suggestApprove': n_approve,
+                'suggestRefuse': n_refuse, 'needsReview': n_review,
+                'oldestLapsedDays': oldest},
+        'items': items,
+        'byDepartment': sorted(by_dept.values(),
+                               key=lambda r: r['count'], reverse=True),
+    }
+
+
+def _post_lapsed_decision_note(env, leave, action, info):
+    """BR-L04: ghi vết 'duyệt trễ / từ chối đơn lỡ hạn' vào chatter.
+    `info` phải lấy TRƯỚC khi duyệt (sau khi duyệt state đổi → hết lỡ hạn)."""
+    if not info or not info.get('isLapsed'):
+        return
+    head = 'Duyệt trễ' if action == 'approve' else 'Từ chối đơn lỡ hạn'
+    leave.sudo().message_post(
+        body='%s — đơn lỡ hạn %d ngày làm việc. Đối chiếu chấm công: %s.' % (
+            head, info['lapsedDays'], _lapsed_summary_label(info)),
+        subtype_xmlid='mail.mt_note',
+    )
+
+
+def _burnout_table(env, scope, dept_id=False):
+    """Bảng cảnh báo burnout (Widget 5-6, BR-040): KPI theo nhóm lý do
+    + bảng NV có cờ + đếm theo phòng. Đọc SQL view hb.timeoff.burnout.line
+    (đã sắp burnout desc, sick desc). sudo + lọc phòng ban tường minh."""
+    domain = [('burnout_risk', '=', True)] + _dept_domain(scope)
+    if dept_id:
+        domain.append(('department_id', '=', dept_id))
+    lines = env['hb.timeoff.burnout.line'].sudo().search(domain)
+
+    items, by_dept = [], {}
+    n_sick = n_absence = n_balance = 0
+    for line in lines:
+        reason = line.risk_reason or ''
+        # view trả đúng 1 lý do chính/NV → 3 nhóm cộng lại = total
+        if reason.startswith('Nghỉ ốm'):
+            n_sick += 1
+        elif reason.startswith('Vắng'):
+            n_absence += 1
+        else:
+            n_balance += 1
+        dept = line.department_id
+        row = by_dept.setdefault(dept.id or 0, {
+            'id': dept.id or False, 'name': dept.name or '—', 'count': 0})
+        row['count'] += 1
+        items.append({
+            'employeeId': line.employee_id.id,
+            'employee': line.employee_id.name,
+            'departmentId': dept.id or False,
+            'department': dept.name or '—',
+            'sickCount3m': line.sick_leave_count_3m,
+            'absenceDays3m': round(line.total_absence_days_3m, 2),
+            'remainingBalance': round(line.remaining_leave_balance, 2),
+            'riskReason': reason,
+        })
+    return {
+        'kpi': {'total': len(items), 'sickFreq': n_sick,
+                'highAbsence': n_absence, 'lowBalance': n_balance},
+        'items': items,
+        'byDepartment': sorted(by_dept.values(),
+                               key=lambda r: r['count'], reverse=True),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -730,8 +936,14 @@ def _return_substitution(env, res_id, employee):
 
 # ---------------------------------------------------------------------------
 # Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn (audit).
-# Chuông: model riêng hb.leave.notification (xem docstring model để biết vì sao
-# KHÔNG dùng mail.message needaction). Audit: message_post chatter trên hr.leave.
+# Chuông: dùng model hợp nhất hb.notification của module hocba_notify (list/
+# read/read-all qua /hocba-hrm/api/notifications* của module đó). Vì sao KHÔNG
+# dùng mail.message needaction: trong Odoo 19 res.users.notification_type là
+# field computed/stored, mặc định 'email' (chỉ user thuộc group
+# mail.group_mail_notification_type_inbox mới là 'inbox') → đa số tài khoản SPA
+# có inbox needaction rỗng, chuông sẽ trống. Model thông báo riêng chủ động,
+# robust, không phụ thuộc tuỳ chọn nhận thông báo của user.
+# Audit: message_post chatter trên hr.leave.
 # Helper cấp module để controller dùng dưới request VÀ test gọi trực tiếp.
 # ---------------------------------------------------------------------------
 def _approver_users(env, leave):
@@ -767,17 +979,24 @@ def _leave_span_label(leave):
     return f if f == t else '%s → %s' % (f, t)
 
 
+_KIND_LEVEL = {
+    'pending': 'warning', 'withdraw_pending': 'warning',
+    'sub_request': 'warning', 'sub_returned': 'warning',
+    'approved': 'success', 'sub_accepted': 'success', 'withdraw_approved': 'success',
+    'refused': 'danger', 'sub_declined': 'danger', 'sub_cancelled': 'danger',
+    'withdraw_refused': 'danger', 'lapsed': 'danger',
+}
+
+
 def _push_notification(env, recipient, leave, kind, title, body):
-    """Tạo 1 thông báo chuông cho 1 user (sudo: chủ đơn/người duyệt không có ACL ghi)."""
+    """Wrapper mỏng → hb.notification hợp nhất (giữ chữ ký cũ cho mọi caller)."""
     if not recipient:
         return
-    env['hb.leave.notification'].sudo().create({
-        'recipient_id': recipient.id,
-        'leave_id': leave.id,
-        'kind': kind,
-        'title': title,
-        'body': body,
-    })
+    env['hb.notification'].sudo()._notify(
+        recipient, category='timeoff', kind=kind,
+        level=_KIND_LEVEL.get(kind, 'info'), title=title, body=body,
+        target_view='timeoff', target_ref=leave.id,
+        target_tab='sub' if kind.startswith('sub_') else None)
 
 
 def _notify_request_created(env, leave):
@@ -810,46 +1029,6 @@ def _notify_decision(env, leave, action):
         body='Đơn nghỉ %s bởi %s.' % ('được duyệt' if approved else 'bị từ chối', actor),
         subtype_xmlid='mail.mt_note',
     )
-
-
-def _notif_row(rec):
-    return {
-        'id': rec.id,
-        'requestId': rec.leave_id.id,
-        'title': rec.title,
-        'body': rec.body or '',
-        'kind': rec.kind,
-        'isRead': rec.is_read,
-        'createdAt': _d(rec.create_date),
-    }
-
-
-def _list_notifications(env, limit=20, only_unread=False):
-    """Thông báo của chính user đăng nhập (mới nhất trước) + số chưa đọc cho badge."""
-    Notif = env['hb.leave.notification'].sudo()
-    base = [('recipient_id', '=', env.uid)]
-    domain = base + ([('is_read', '=', False)] if only_unread else [])
-    recs = Notif.search(domain, limit=limit or 20)
-    unread = Notif.search_count(base + [('is_read', '=', False)])
-    return {'items': [_notif_row(r) for r in recs], 'unread': unread}
-
-
-def _mark_notification_read(env, notif_id):
-    """Đánh dấu 1 thông báo đã đọc — chỉ khi thuộc về chính user. Trả True/False."""
-    rec = env['hb.leave.notification'].sudo().browse(notif_id)
-    if not rec.exists() or rec.recipient_id.id != env.uid:
-        return False
-    if not rec.is_read:
-        rec.is_read = True
-    return True
-
-
-def _mark_all_notifications_read(env):
-    """Đánh dấu tất cả thông báo của user là đã đọc — trả số dòng vừa đổi."""
-    recs = env['hb.leave.notification'].sudo().search(
-        [('recipient_id', '=', env.uid), ('is_read', '=', False)])
-    recs.write({'is_read': True})
-    return len(recs)
 
 
 def _notify_withdraw_requested(env, leave):
@@ -963,6 +1142,9 @@ class HocBaTimeoff(http.Controller):
 
     def _dept_domain(self, scope):
         return _dept_domain(scope)
+
+    def _approvals_domain(self, scope):
+        return _approvals_domain(scope)
 
     def _scoped_departments(self, scope):
         return _scoped_departments(request.env, scope)
@@ -1109,6 +1291,8 @@ class HocBaTimeoff(http.Controller):
             'slaDays': SLA_DAYS,
             'overdue': age > SLA_DAYS and leave.state in PENDING_STATES,
             'submittedAt': _d(leave.create_date.date() if leave.create_date else None),
+            # Phase 12 — đơn lỡ hạn duyệt + đối chiếu chấm công (None nếu chưa).
+            'lapsed': _lapsed_info(request.env, leave),
         }
 
     def _approver_name(self, leave):
@@ -1179,16 +1363,10 @@ class HocBaTimeoff(http.Controller):
         if not scope['canApprove']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
-        # Tab "Chờ duyệt" hợp nhất: đơn chờ duyệt MỚI + đơn validate có yêu cầu
-        # rút đang chờ (Phase 7) — FE phân biệt bằng withdrawState + Badge riêng.
-        domain = ['|',
-                  '&', ('state', 'in', list(PENDING_STATES)),
-                       ('x_withdraw_state', '=', 'none'),
-                  '&', ('state', '=', 'validate'),
-                       ('x_withdraw_state', '=', 'pending')]
-        domain += self._dept_domain(scope)
+        # FE phân biệt đơn mới / yêu cầu rút bằng withdrawState + Badge riêng.
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             # HR/Admin lọc theo phòng ban ngay trong thanh sắp xếp; Trưởng phòng
@@ -1551,6 +1729,9 @@ class HocBaTimeoff(http.Controller):
         if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
 
+        # Phase 12: chụp trạng thái lỡ hạn TRƯỚC khi duyệt (duyệt xong state
+        # đổi → _lapsed_info trả None) để ghi vết "duyệt trễ" chính xác.
+        lapsed_before = _lapsed_info(request.env, leave)
         try:
             if action == 'refuse':
                 leave.action_refuse()
@@ -1571,14 +1752,16 @@ class HocBaTimeoff(http.Controller):
                 leave.write({'first_approver_id': approver.id})
             # Phase 5: báo chủ đơn kết quả + ghi chú audit (chatter).
             _notify_decision(request.env, leave, action)
+            _post_lapsed_decision_note(request.env, leave, action, lapsed_before)
         except (AccessError, ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban).
-        domain = [('state', 'in', list(PENDING_STATES))] + self._dept_domain(scope)
+        # Trả lại danh sách chờ duyệt đã refresh (cùng phạm vi phòng ban,
+        # cùng domain với GET /approvals — gồm cả yêu cầu rút đang chờ).
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
@@ -1670,48 +1853,20 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)
 
-        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh.
-        domain = ['|',
-                  '&', ('state', 'in', list(PENDING_STATES)),
-                       ('x_withdraw_state', '=', 'none'),
-                  '&', ('state', '=', 'validate'),
-                       ('x_withdraw_state', '=', 'pending')]
-        domain += self._dept_domain(scope)
+        # Trả lại danh sách chờ duyệt (gồm cả yêu cầu rút) đã refresh —
+        # cùng domain với GET /approvals.
         leaves = request.env['hr.leave'].sudo().search(
-            domain, order='x_is_emergency desc, request_date_from, id')
+            self._approvals_domain(scope),
+            order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
             'requests': [self._approval_request(l) for l in leaves],
         })
 
     # ------------------------------------------------------------------
-    # 3.5b. Phase 5 — Thông báo in-app (chuông) + nhật ký thao tác đơn.
+    # 3.5b. Phase 5 — Nhật ký thao tác đơn (chuông đã chuyển sang API hợp
+    # nhất /hocba-hrm/api/notifications* của module hocba_notify).
     # ------------------------------------------------------------------
-    @http.route('/hocba-hrm/api/timeoff/notifications', auth='user',
-                type='http', methods=['GET'])
-    def api_notifications(self, **kw):
-        """Thông báo của chính user (cho chuông góc phải). Ai cũng xem của mình."""
-        try:
-            limit = int(kw.get('limit')) if kw.get('limit') else 20
-        except (TypeError, ValueError):
-            limit = 20
-        only_unread = kw.get('onlyUnread') in ('1', 'true', 'True')
-        return request.make_json_response(
-            _list_notifications(request.env, limit, only_unread))
-
-    @http.route('/hocba-hrm/api/timeoff/notifications/<int:notif_id>/read',
-                auth='user', type='http', methods=['POST'], csrf=False)
-    def api_notification_read(self, notif_id, **kw):
-        if not _mark_notification_read(request.env, notif_id):
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        return request.make_json_response(_list_notifications(request.env))
-
-    @http.route('/hocba-hrm/api/timeoff/notifications/read-all',
-                auth='user', type='http', methods=['POST'], csrf=False)
-    def api_notifications_read_all(self, **kw):
-        _mark_all_notifications_read(request.env)
-        return request.make_json_response(_list_notifications(request.env))
-
     @http.route('/hocba-hrm/api/timeoff/request/<int:leave_id>/history',
                 auth='user', type='http', methods=['GET'])
     def api_request_history(self, leave_id, **kw):
@@ -1749,6 +1904,56 @@ class HocBaTimeoff(http.Controller):
         else:
             data = self._dashboard_employee(year)
         data.update({**self._scope_flags(scope), 'year': year})
+        return request.make_json_response(data)
+
+    # ------------------------------------------------------------------
+    # 3.6b. GET /lapsed-dashboard — màn "Giám sát duyệt đơn" (Phase 12).
+    # Chỉ officer; HR/Admin mọi phòng, Trưởng phòng phòng mình (BR-L06).
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/lapsed-dashboard', auth='user',
+                type='http', methods=['GET'])
+    def api_lapsed_dashboard(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            dept_id = int(kw.get('dept')) if kw.get('dept') else False
+        except (TypeError, ValueError):
+            dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        data = _lapsed_table(request.env, scope, dept_id)
+        data.update({
+            **self._scope_flags(scope),
+            'allDepartments': [{'id': d.id, 'name': d.name}
+                               for d in self._scoped_departments(scope)],
+        })
+        return request.make_json_response(data)
+
+    # ------------------------------------------------------------------
+    # 3.6c. GET /burnout — tab "Sức khỏe NV" (Widget 5-6, BR-040).
+    # Chỉ officer; HR/Admin mọi phòng, Trưởng phòng phòng mình.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/burnout', auth='user',
+                type='http', methods=['GET'])
+    def api_burnout(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            dept_id = int(kw.get('dept')) if kw.get('dept') else False
+        except (TypeError, ValueError):
+            dept_id = False
+        # Trưởng phòng chỉ lọc trong phạm vi phòng ban được giao.
+        if dept_id and not scope['seeAll'] and dept_id not in scope['deptIds']:
+            dept_id = False
+        data = _burnout_table(request.env, scope, dept_id)
+        data.update({
+            **self._scope_flags(scope),
+            'allDepartments': [{'id': d.id, 'name': d.name}
+                               for d in self._scoped_departments(scope)],
+        })
         return request.make_json_response(data)
 
     def _dashboard_manager(self, year, dept_raw, scope):

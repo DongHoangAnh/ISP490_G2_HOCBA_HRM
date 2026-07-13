@@ -30,5 +30,18 @@
                    eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 00:05:00')"/>
             <field name="active" eval="True"/>
         </record>
+
+        <!-- Nhắc hạn hợp đồng (hr.version.contract_date_end) sắp hết trong 30 ngày -->
+        <record id="cron_contract_end_alert" model="ir.cron">
+            <field name="name">HOCBA: Nhắc hợp đồng sắp hết hạn</field>
+            <field name="model_id" ref="hr.model_hr_employee"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_contract_end_alerts()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall"
+                   eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 00:10:00')"/>
+            <field name="active" eval="True"/>
+        </record>
     </data>
 </odoo>

@@ -3,6 +3,7 @@
    - Giáo viên: mặc định nghỉ theo BUỔI dạy (SessionLeaveBody) + lối phụ nghỉ dài ngày. */
 import { useState, useEffect } from 'react';
 import Modal from '../../components/Modal';
+import ModalHeader from '../../components/ModalHeader';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState } from '../../components/states';
@@ -43,20 +44,11 @@ export default function LeaveForm({ leaveTypes, isTeacher, onClose, onSaved }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name="calendar" size={22} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Tạo đơn nghỉ</h2>
-          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {isTeacher && mode === 'sessions'
-              ? 'Chọn buổi dạy bạn muốn nghỉ — xử lý lớp cho từng buổi'
-              : 'Gửi đơn xin nghỉ để quản lý phê duyệt'}
-          </div>
-        </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
-      </div>
+      <ModalHeader lg icon="calendar" title="Tạo đơn nghỉ"
+        sub={isTeacher && mode === 'sessions'
+          ? 'Chọn buổi dạy bạn muốn nghỉ — xử lý lớp cho từng buổi'
+          : 'Gửi đơn xin nghỉ để quản lý phê duyệt'}
+        onClose={onClose} />
 
       {isTeacher && (
         <div style={{ display: 'flex', gap: 8, padding: '14px 24px 0' }}>

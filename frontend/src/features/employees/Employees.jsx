@@ -72,7 +72,7 @@ export default function Employees({ search }) {
           <p>{emps.length} nhân sự · {deps.length} phòng ban · dữ liệu trực tiếp từ Odoo</p>
         </div>
         <div className="actions">
-          {data.isHr && (
+          {data.canEditEmp && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} />Thêm nhân viên</button>
           )}
@@ -115,7 +115,7 @@ export default function Employees({ search }) {
                 <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Hình thức</th>
                 <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
                 <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày vào</th>
-                {data.isHrManager && <th className="tbl-num">Lương CB</th>}
+                {data.canSeeSalary && <th className="tbl-num">Lương CB</th>}
                 <th></th>
               </tr></thead>
               <tbody>
@@ -137,7 +137,7 @@ export default function Employees({ search }) {
                     <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={hbTypeKind(e.type)}>{e.type}</Badge></td>
                     <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={hbStatusKind(e.statusKey)} dot>{e.status}</Badge></td>
                     <td className="muted mono" style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{fmtDate(e.start)}</td>
-                    {data.isHrManager && <td className="tbl-num mono" style={{ fontWeight: 600 }}>{e.wage ? hbVND(e.wage) : '—'}</td>}
+                    {data.canSeeSalary && <td className="tbl-num mono" style={{ fontWeight: 600 }}>{e.wage ? hbVND(e.wage) : '—'}</td>}
                     <td><button className="icon-btn" onClick={(ev) => { ev.stopPropagation(); setSel(e); }}><Icon name="chevR" size={18} className="faint" /></button></td>
                   </tr>
                 ))}
@@ -176,7 +176,8 @@ export default function Employees({ search }) {
       {sel && <EmployeeDrawer emp={sel}
         onClose={() => { setSel(null); if (dirtyRef.current) { dirtyRef.current = false; reloadQuiet(); } }}
         onChanged={() => { dirtyRef.current = true; }}
-        isHr={data.isHr} isMgr={data.isHrManager} />}
+        canEdit={data.canEditEmp} canManageAccount={data.canManageAccount}
+        isMgr={data.isHrManager} canSeeSalary={data.canSeeSalary} />}
       {creating && (
         <EmployeeForm emp={null} isMgr={data.isHrManager}
           onClose={() => setCreating(false)}
