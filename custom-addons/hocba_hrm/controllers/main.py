@@ -1616,6 +1616,387 @@ def _dept_archive(env, dept_id, body):
     return _dept_payload(dept)
 
 
+def _years_between(start, end):
+    """Số năm tròn giữa 2 ngày; None nếu thiếu ngày hoặc start > end."""
+    if not start or not end or start > end:
+        return None
+    return end.year - start.year - (
+        (end.month, end.day) < (start.month, start.day))
+
+
+def _last_months(n, today):
+    """n cặp (year, month) gần nhất tính cả tháng hiện tại, tăng dần."""
+    y, m = today.year, today.month
+    out = []
+    for _ in range(n):
+        out.append((y, m))
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    return out[::-1]
+
+
+def _m_label(y, m):
+    return '%d/%d' % (m, y)
+
+
+def _dash_scope_emp_ids(env):
+    """Phạm vi NV cho tab Chấm công/Nghỉ phép: None = tất cả (HR/Admin);
+    [] = không có quyền; list id = giới hạn theo vai trò (trưởng phòng/giáo vụ)."""
+    dom = _emp_scope_domain(env)
+    if not dom:
+        return None
+    if dom == [('id', '=', 0)]:
+        return []
+    return env['hr.employee'].sudo().with_context(
+        active_test=False).search(dom).ids
+
+
+def _dashboard_stats(env):
+    """KPI + dữ liệu biểu đồ cho Dashboard (theo mẫu Lark HRM 6.1).
+    Phạm vi theo vai trò như danh sách NV (_emp_scope_domain); search với
+    active_test=False vì NV nghỉ việc bị archive nhưng vẫn phải đếm Offboard.
+    Spec: docs/superpowers/specs/SPEC_DASHBOARD_HR_OVERVIEW.md"""
+    today = fields.Date.today()
+    all_emps = env['hr.employee'].sudo().with_context(
+        active_test=False).search(_emp_scope_domain(env))
+    resigned = all_emps.filtered(
+        lambda e: e.x_employment_status == 'resigned')
+    working = all_emps.filtered(
+        lambda e: e.active and e.x_employment_status != 'resigned')
+
+    ages, seniorities = [], []
+    age_dist, sen_dist = {}, {}
+    for e in working:
+        age = _years_between(e.birthday, today)
+        if age is not None:
+            ages.append(age)
+            age_dist[age] = age_dist.get(age, 0) + 1
+        start = e.x_probation_start or (
+            e.create_date and e.create_date.date())
+        sen = _years_between(start, today)
+        if sen is not None:
+            seniorities.append(sen)
+            sen_dist[sen] = sen_dist.get(sen, 0) + 1
+
+    # Số NV lên chính thức theo tháng (mọi hồ sơ có mốc, kể cả đã nghỉ)
+    by_month = {}
+    for e in all_emps:
+        if e.x_official_date:
+            k = (e.x_official_date.year, e.x_official_date.month)
+            by_month[k] = by_month.get(k, 0) + 1
+
+    # Phân bổ phòng ban (NV đang làm)
+    dep_cnt = {}
+    for e in working:
+        nm = e.department_id.name or 'Chưa gán'
+        dep_cnt[nm] = dep_cnt.get(nm, 0) + 1
+    by_department = [{'dep': k, 'count': dep_cnt[k]}
+                     for k in sorted(dep_cnt, key=lambda k: -dep_cnt[k])]
+
+    # Tỷ lệ nghỉ việc 12 tháng: tử = đơn offboarding done trong tháng,
+    # mẫu = headcount cuối tháng (đã vào − đã nghỉ lũy kế, theo dữ liệu có ngày)
+    months = _last_months(12, today)
+    offs = env['hocba.offboarding'].sudo().search_read(
+        [('state', '=', 'done'), ('actual_leave_date', '!=', False),
+         ('employee_id', 'in', all_emps.ids)], ['actual_leave_date'])
+    left_by_m = {}
+    for o in offs:
+        d = o['actual_leave_date']
+        left_by_m[(d.year, d.month)] = left_by_m.get((d.year, d.month), 0) + 1
+    starts = [e.x_probation_start or (e.create_date and e.create_date.date())
+              for e in all_emps]
+    turnover = []
+    for (y, m) in months:
+        month_end = date(y, m, calendar.monthrange(y, m)[1])
+        joined = sum(1 for s in starts if s and s <= month_end)
+        left_cum = sum(c for k, c in left_by_m.items() if k <= (y, m))
+        headcount = joined - left_cum
+        n = left_by_m.get((y, m), 0)
+        turnover.append({
+            'label': _m_label(y, m), 'count': n,
+            'rate': round(n * 100.0 / headcount, 1) if headcount > 0 else 0.0,
+        })
+
+    # Cờ tab theo quyền — FE dựng thanh tab
+    user = env.user
+    is_hr = (user.has_group('base.group_system')
+             or user.has_group('hr.group_hr_user')
+             or user.has_group('hr.group_hr_manager'))
+    scoped = _emp_scope_domain(env) != [('id', '=', 0)]
+
+    return {
+        'tabs': {
+            'recruitment': is_hr,
+            'attendance': scoped,
+            'timeoff': scoped,
+            'payroll': user.has_group('hr.group_hr_manager'),
+        },
+        'byDepartment': by_department,
+        'turnoverByMonth': turnover,
+        'kpi': {
+            'total': len(all_emps),
+            'onboard': len(working),
+            'offboard': len(resigned),
+            'avgAge': round(sum(ages) / len(ages)) if ages else 0,
+            'avgSeniority': (round(sum(seniorities) / len(seniorities))
+                             if seniorities else 0),
+        },
+        'officialByMonth': [
+            {'label': '%d/%d' % (m, y), 'count': by_month[(y, m)]}
+            for (y, m) in sorted(by_month)],
+        'byAge': [{'age': a, 'count': age_dist[a]}
+                  for a in sorted(age_dist)],
+        'bySeniority': [{'years': s, 'count': sen_dist[s]}
+                        for s in sorted(sen_dist)],
+    }
+
+
+def _dashboard_recruitment(env):
+    """Tab Tuyển dụng: phễu chuyển đổi, time-to-hire, nguồn CV, vị trí mở.
+    Chỉ HR (route chặn) — dữ liệu tuyển dụng là toàn công ty.
+    Guard model: hocba_hrm không depends hocba_recruitments."""
+    if 'hr.applicant' not in env or 'hb.recruitment.request' not in env:
+        return {'funnel': [], 'timeToHire': {'avgDays': 0, 'hired': 0,
+                                             'totalCv': 0},
+                'bySource': [], 'openByDept': []}
+    Applicant = env['hr.applicant'].sudo().with_context(active_test=False)
+    hired_ids = set(env['hr.recruitment.stage'].sudo().search(
+        [('hired_stage', '=', True)]).ids)
+    apps = Applicant.search_read(
+        [], ['cv_filter_result', 'attendance_status', 'interview_result',
+             'stage_id', 'start_date', 'date_received', 'source_id',
+             'ctv_tuyen_dung'])
+    hired = [a for a in apps
+             if a['stage_id'] and a['stage_id'][0] in hired_ids]
+    funnel = [
+        {'stage': 'Nộp CV', 'count': len(apps)},
+        {'stage': 'Pass lọc CV', 'count': sum(
+            1 for a in apps if a['cv_filter_result'] == 'pass')},
+        {'stage': 'Tham gia PV', 'count': sum(
+            1 for a in apps if a['attendance_status'] == 'present')},
+        {'stage': 'Pass PV', 'count': sum(
+            1 for a in apps if a['interview_result'] == 'pass')},
+        {'stage': 'Nhận việc', 'count': len(hired)},
+    ]
+    waits = [(a['start_date'] - a['date_received']).days
+             for a in hired if a['start_date'] and a['date_received']
+             and a['start_date'] >= a['date_received']]
+    src_cnt = {}
+    for a in apps:
+        label = (a['source_id'][1] if a['source_id']
+                 else ('CTV giới thiệu' if a['ctv_tuyen_dung'] else 'Khác'))
+        src_cnt[label] = src_cnt.get(label, 0) + 1
+    top_src = sorted(src_cnt.items(), key=lambda kv: -kv[1])
+    by_source = [{'label': k, 'count': v} for k, v in top_src[:5]]
+    rest = sum(v for _, v in top_src[5:])
+    if rest:
+        by_source.append({'label': 'Khác', 'count': rest})
+    reqs = env['hb.recruitment.request'].sudo().search_read(
+        [('state', '=', 'recruiting')], ['department_id', 'qty_expected'])
+    open_cnt = {}
+    for r in reqs:
+        nm = r['department_id'][1] if r['department_id'] else 'Chưa gán'
+        d = open_cnt.setdefault(nm, {'dep': nm, 'requests': 0, 'qty': 0})
+        d['requests'] += 1
+        d['qty'] += r['qty_expected'] or 0
+    return {
+        'funnel': funnel,
+        'timeToHire': {
+            'avgDays': round(sum(waits) / len(waits)) if waits else 0,
+            'hired': len(hired),
+            'totalCv': len(apps),
+        },
+        'bySource': by_source,
+        'openByDept': sorted(open_cnt.values(), key=lambda d: -d['qty']),
+    }
+
+
+def _dashboard_attendance(env):
+    """Tab Chấm công: % đi muộn / về sớm theo tháng, top đi muộn (3 tháng),
+    giờ OT theo tháng phân theo mức hệ số. Scope NV theo vai trò."""
+    today = fields.Date.today()
+    months = _last_months(12, today)
+    first = date(months[0][0], months[0][1], 1)
+    emp_ids = _dash_scope_emp_ids(env)
+    dom = [('date', '>=', first)]
+    sdom = [('shift_type', '=', 'ot'), ('state', '=', 'approved'),
+            ('start', '>=', datetime.combine(first, datetime.min.time()))]
+    if emp_ids is not None:
+        dom.append(('employee_id', 'in', emp_ids))
+        sdom.append(('employee_id', 'in', emp_ids))
+    rows = env['hocba.attendance'].sudo().search_read(
+        dom, ['date', 'late_minutes', 'early_leave_minutes',
+              'employee_id', 'department_id'])
+    agg = {}
+    for r in rows:
+        k = (r['date'].year, r['date'].month)
+        a = agg.setdefault(k, {'total': 0, 'late': 0, 'early': 0})
+        a['total'] += 1
+        if (r['late_minutes'] or 0) > 0:
+            a['late'] += 1
+        if (r['early_leave_minutes'] or 0) > 0:
+            a['early'] += 1
+
+    def pct(part, total):
+        return round(part * 100.0 / total, 1) if total else 0.0
+
+    rate_by_month = []
+    for (y, m) in months:
+        a = agg.get((y, m), {'total': 0, 'late': 0, 'early': 0})
+        rate_by_month.append({
+            'label': _m_label(y, m), 'records': a['total'],
+            'latePct': pct(a['late'], a['total']),
+            'earlyPct': pct(a['early'], a['total']),
+        })
+    # Top đi muộn 3 tháng gần nhất
+    q_first = date(months[-3][0], months[-3][1], 1)
+    top = {}
+    for r in rows:
+        if r['date'] < q_first or (r['late_minutes'] or 0) <= 0 \
+                or not r['employee_id']:
+            continue
+        t = top.setdefault(r['employee_id'][0], {
+            'name': r['employee_id'][1],
+            'dep': r['department_id'][1] if r['department_id'] else 'Chưa gán',
+            'count': 0, 'minutes': 0})
+        t['count'] += 1
+        t['minutes'] += r['late_minutes']
+    top_late = sorted(top.values(),
+                      key=lambda t: (-t['count'], -t['minutes']))[:7]
+    # OT theo tháng × mức hệ số (giờ, gộp theo tháng UTC của ca)
+    shifts = env['hocba.work_shift'].sudo().search_read(
+        sdom, ['start', 'end', 'ot_level'])
+    ot = {}
+    for s in shifts:
+        if not (s['start'] and s['end']):
+            continue
+        k = (s['start'].year, s['start'].month)
+        h = max((s['end'] - s['start']).total_seconds() / 3600.0, 0)
+        d = ot.setdefault(k, {'100': 0.0, '150': 0.0, '300': 0.0})
+        d[s['ot_level'] or '100'] += h
+    ot_by_month = []
+    for (y, m) in months:
+        d = ot.get((y, m), {})
+        ot_by_month.append({
+            'label': _m_label(y, m),
+            'h100': round(d.get('100', 0.0), 1),
+            'h150': round(d.get('150', 0.0), 1),
+            'h300': round(d.get('300', 0.0), 1),
+        })
+    return {'rateByMonth': rate_by_month, 'topLate': top_late,
+            'otByMonth': ot_by_month}
+
+
+def _dashboard_timeoff(env):
+    """Tab Nghỉ phép: pie lý do, xu hướng ngày nghỉ theo tháng, quỹ phép tồn.
+    Chỉ đọc field cụ thể qua search_read (hr.leave có field lệch schema trên
+    một số DB — tránh SELECT toàn bộ cột). Scope NV theo vai trò."""
+    today = fields.Date.today()
+    months = _last_months(12, today)
+    if 'hr.leave' not in env:  # guard: DB không cài module nghỉ phép
+        return {'byType': [], 'remaining': 0, 'takenDays': 0,
+                'byMonth': [{'label': _m_label(y, m), 'days': 0}
+                            for (y, m) in months]}
+    first = date(months[0][0], months[0][1], 1)
+    emp_ids = _dash_scope_emp_ids(env)
+    scope = [] if emp_ids is None else [('employee_id', 'in', emp_ids)]
+    leaves = env['hr.leave'].sudo().search_read(
+        [('state', '=', 'validate'), ('request_date_from', '>=', first)]
+        + scope,
+        ['request_date_from', 'number_of_days', 'holiday_status_id'])
+    by_type, by_m = {}, {}
+    for lv in leaves:
+        days = lv['number_of_days'] or 0
+        nm = (lv['holiday_status_id'][1] if lv['holiday_status_id']
+              else 'Khác')
+        by_type[nm] = by_type.get(nm, 0) + days
+        d = lv['request_date_from']
+        if d:
+            k = (d.year, d.month)
+            by_m[k] = by_m.get(k, 0) + days
+    top_types = sorted(by_type.items(), key=lambda kv: -kv[1])
+    type_rows = [{'label': k, 'days': round(v, 1)} for k, v in top_types[:6]]
+    rest = sum(v for _, v in top_types[6:])
+    if rest:
+        type_rows.append({'label': 'Khác', 'days': round(rest, 1)})
+    allocs = env['hr.leave.allocation'].sudo().search_read(
+        [('state', '=', 'validate')] + scope, ['number_of_days'])
+    taken = env['hr.leave'].sudo().search_read(
+        [('state', '=', 'validate')] + scope, ['number_of_days'])
+    remaining = (sum(a['number_of_days'] or 0 for a in allocs)
+                 - sum(t['number_of_days'] or 0 for t in taken))
+    return {
+        'byType': type_rows,
+        'byMonth': [{'label': _m_label(y, m),
+                     'days': round(by_m.get((y, m), 0), 1)}
+                    for (y, m) in months],
+        'remaining': round(max(remaining, 0.0), 1),
+        'takenDays': round(sum(lv['number_of_days'] or 0 for lv in leaves), 1),
+    }
+
+
+def _dashboard_payroll(env):
+    """Tab Lương (chỉ HR Manager — route chặn): quỹ lương theo tháng,
+    chi phí theo phòng ban kỳ gần nhất, lương TB theo phân cấp."""
+    today = fields.Date.today()
+    months = _last_months(12, today)
+    first = date(months[0][0], months[0][1], 1)
+    slips = []
+    if 'hb.payslip' in env:  # guard: DB không cài hocba_payroll
+        slips = env['hb.payslip'].sudo().search_read(
+            [('date_from', '>=', first), ('state', '!=', 'cancel')],
+            ['date_from', 'net_amount', 'gross_amount', 'employee_id'])
+    fund = {}
+    for s in slips:
+        k = (s['date_from'].year, s['date_from'].month)
+        f = fund.setdefault(k, {'net': 0.0, 'gross': 0.0})
+        f['net'] += s['net_amount'] or 0
+        f['gross'] += s['gross_amount'] or 0
+    fund_by_month = [{'label': _m_label(y, m),
+                      'net': round(fund.get((y, m), {}).get('net', 0)),
+                      'gross': round(fund.get((y, m), {}).get('gross', 0))}
+                     for (y, m) in months]
+    # Chi phí theo phòng ban — kỳ gần nhất có net > 0 (bỏ batch nháp
+    # chưa tính lương, net = 0), fallback kỳ có gross
+    by_dept, last_label = [], ''
+    keys = ([k for k in fund if fund[k]['net'] > 0]
+            or [k for k in fund if fund[k]['gross'] > 0])
+    if keys:
+        last_k = max(keys)
+        last_label = _m_label(*last_k)
+        cur = [s for s in slips
+               if (s['date_from'].year, s['date_from'].month) == last_k
+               and s['employee_id']]
+        emps = env['hr.employee'].sudo().with_context(
+            active_test=False).browse({s['employee_id'][0] for s in cur})
+        dep_of = {e.id: e.department_id.name or 'Chưa gán' for e in emps}
+        dep_sum = {}
+        for s in cur:
+            nm = dep_of.get(s['employee_id'][0], 'Chưa gán')
+            dep_sum[nm] = dep_sum.get(nm, 0) + (s['net_amount'] or 0)
+        by_dept = [{'dep': k, 'net': round(v)} for k, v in
+                   sorted(dep_sum.items(), key=lambda kv: -kv[1])]
+    # Lương TB theo phân cấp (wage hợp đồng hiện tại của NV đang làm)
+    lvl_lbl = {'junior': 'Junior', 'middle': 'Middle', 'senior': 'Senior'}
+    buckets = {}
+    for e in env['hr.employee'].sudo().search(
+            [('x_employment_status', '!=', 'resigned')]):
+        v = e.version_id
+        wage = (v.wage if v and 'wage' in v._fields else 0) or 0
+        if wage <= 0:
+            continue
+        lbl = lvl_lbl.get(e.x_seniority_level, 'Chưa phân cấp')
+        b = buckets.setdefault(lbl, [0.0, 0])
+        b[0] += wage
+        b[1] += 1
+    order = ['Junior', 'Middle', 'Senior', 'Chưa phân cấp']
+    avg_by_level = [
+        {'label': k, 'avg': round(buckets[k][0] / buckets[k][1]),
+         'count': buckets[k][1]}
+        for k in order if k in buckets]
+    return {'fundByMonth': fund_by_month, 'byDept': by_dept,
+            'byDeptPeriod': last_label, 'avgByLevel': avg_by_level}
+
+
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
     'already_checked_in': 409,
@@ -2922,6 +3303,68 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': 'Ảnh không hợp lệ.'}, status=400)
         return request.make_json_response(self._me_payload(e.sudo()))
+
+    @http.route('/hocba-hrm/api/dashboard/stats', auth='user',
+                type='http', methods=['GET'])
+    def api_dashboard_stats(self, **kw):
+        """KPI + biểu đồ dashboard tổng quan nhân sự (mẫu Lark 6.1).
+        Dữ liệu tổng hợp (không lộ hồ sơ lẻ), phạm vi vẫn theo vai trò."""
+        if not SPA_ENABLED:
+            return request.make_json_response(
+                {'error': 'spa_disabled'}, status=410)
+        return request.make_json_response(_dashboard_stats(request.env))
+
+    @http.route('/hocba-hrm/api/dashboard/recruitment', auth='user',
+                type='http', methods=['GET'])
+    def api_dashboard_recruitment(self, **kw):
+        """Tab Tuyển dụng — dữ liệu toàn công ty nên chỉ HR/Admin."""
+        if not SPA_ENABLED:
+            return request.make_json_response(
+                {'error': 'spa_disabled'}, status=410)
+        is_hr, _ = self._hr_flags()
+        if not (is_hr or request.env.user.has_group('base.group_system')):
+            return request.make_json_response(
+                {'error': 'forbidden'}, status=403)
+        return request.make_json_response(
+            _dashboard_recruitment(request.env))
+
+    @http.route('/hocba-hrm/api/dashboard/attendance', auth='user',
+                type='http', methods=['GET'])
+    def api_dashboard_attendance(self, **kw):
+        """Tab Chấm công — HR thấy tất cả; trưởng phòng/giáo vụ theo scope."""
+        if not SPA_ENABLED:
+            return request.make_json_response(
+                {'error': 'spa_disabled'}, status=410)
+        if _dash_scope_emp_ids(request.env) == []:
+            return request.make_json_response(
+                {'error': 'forbidden'}, status=403)
+        return request.make_json_response(
+            _dashboard_attendance(request.env))
+
+    @http.route('/hocba-hrm/api/dashboard/timeoff', auth='user',
+                type='http', methods=['GET'])
+    def api_dashboard_timeoff(self, **kw):
+        """Tab Nghỉ phép — HR thấy tất cả; trưởng phòng/giáo vụ theo scope."""
+        if not SPA_ENABLED:
+            return request.make_json_response(
+                {'error': 'spa_disabled'}, status=410)
+        if _dash_scope_emp_ids(request.env) == []:
+            return request.make_json_response(
+                {'error': 'forbidden'}, status=403)
+        return request.make_json_response(_dashboard_timeoff(request.env))
+
+    @http.route('/hocba-hrm/api/dashboard/payroll', auth='user',
+                type='http', methods=['GET'])
+    def api_dashboard_payroll(self, **kw):
+        """Tab Lương — thông tin nhạy cảm, chỉ HR Manager/Admin."""
+        if not SPA_ENABLED:
+            return request.make_json_response(
+                {'error': 'spa_disabled'}, status=410)
+        _, is_mgr = self._hr_flags()
+        if not (is_mgr or request.env.user.has_group('base.group_system')):
+            return request.make_json_response(
+                {'error': 'forbidden'}, status=403)
+        return request.make_json_response(_dashboard_payroll(request.env))
 
     @http.route('/hocba-hrm/api/employees/cert-alerts', auth='user',
                 type='http', methods=['GET'])
