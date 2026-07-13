@@ -158,41 +158,92 @@ class TestGenerateFullDay(_LeaveAttMixin):
 @tagged('post_install', '-at_install', 'hocba_timeoff')
 class TestHalfDay(_LeaveAttMixin):
 
-    def test_half_day_paid_note_and_credit(self):
-        d = date(2026, 7, 15)  # Thứ 4
-        self._mk_leave(self.annual, d, d, half='am')  # nghỉ SÁNG có lương
-        # NV đi làm buổi chiều. Toán công (base _compute_work_metrics):
-        #   afternoon_credit = 0.5 khi check_out >= check_in + (std 8h - margin 2h)
-        #   = check_in + 6h -> cặp giờ phải cách nhau >= 6h mới ăn 0.5 chiều.
-        # morning_credit + late_minutes do nhánh override leave_half='am' ép
-        # (0.5 vì có lương, phạt trễ = 0) -> tổng công = 1.0.
-        rec = self.Att.sudo().create({
-            'employee_id': self.emp.id,
-            'check_in': datetime(2026, 7, 15, 7, 0, 0),      # ~14h VN
-            'check_out': datetime(2026, 7, 15, 13, 30, 0)})  # +6h30 -> đủ 0.5 chiều
-        self.Att._stamp_half_day_leave(rec)
-        self.assertEqual(rec.leave_half, 'am')
-        self.assertIn('nửa buổi sáng', (rec.notes or '').lower())
-        self.assertEqual(rec.work_credit, 1.0)
-        self.assertEqual(rec.late_minutes, 0)
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Ghim tz: _compute_work_metrics đọc giờ local qua tz của env user.
+        # Không ghim thì assertion late/credit đổi kết quả theo máy chạy test.
+        cls.env.user.tz = 'Asia/Ho_Chi_Minh'
 
-    def test_half_day_unpaid_credit(self):
-        d = date(2026, 7, 16)  # Thứ 5
+    def _mk_unpaid_half_type(self):
         # `hr.leave.request_unit_half` là compute store theo request_unit của
-        # LOẠI nghỉ -> loại "Nghỉ Không Lương" (request_unit='day') không thể
-        # tạo đơn nửa ngày. Hành vi cần test là STAMP không lương, nên dựng
-        # loại không lương hỗ trợ nửa ngày (rollback theo transaction).
-        unpaid_half = self.env['hr.leave.type'].sudo().create({
+        # LOẠI nghỉ -> loại seed "Nghỉ Không Lương" (request_unit='day') không
+        # thể tạo đơn nửa ngày. Dựng loại không lương hỗ trợ nửa ngày để test
+        # hành vi stamp/công (rollback theo transaction).
+        return self.env['hr.leave.type'].sudo().create({
             'name': 'Không Lương Nửa Ngày (test)', 'time_type': 'leave',
             'requires_allocation': False, 'leave_validation_type': 'hr',
             'unpaid': True, 'request_unit': 'half_day'})
-        self._mk_leave(unpaid_half, d, d, half='pm')  # nghỉ CHIỀU không lương
-        # NV đi làm buổi sáng (chưa check-out): base cho morning_credit = 0.5
-        # (in_hour <= morning_credit_cutoff 10.0), afternoon = 0 vì không check_out;
-        # nhánh override leave_half='pm' ép afternoon = 0 (không lương) -> tổng 0.5.
+
+    def test_half_day_paid_note_and_credit(self):
+        d = date(2026, 7, 15)  # Thứ 4
+        self._mk_leave(self.annual, d, d, half='am')  # nghỉ SÁNG có lương
+        # NV làm buổi chiều 14h00->17h30 VN (3.5h). Chuẩn CẢ ngày (base) sẽ cho:
+        # late 270' (14h > 9h30), afternoon 0 (3.5h < 6h) -> test này chứng minh
+        # nhánh override chấm buổi làm theo chuẩn NỬA ngày:
+        #   - late = 0 (buổi sáng nghỉ phép), morning = 0.5 (có lương)
+        #   - afternoon = 0.5 vì 3.5h >= std/2 - margin/2 = 4h - 1h = 3h
+        #   - expected_check_out = ci + std/2 = 18h VN -> early 30',
+        #     missing 240' - 210' = 30'
         rec = self.Att.sudo().create({
             'employee_id': self.emp.id,
-            'check_in': datetime(2026, 7, 16, 1, 0, 0)})  # ~8h VN sáng
+            'check_in': datetime(2026, 7, 15, 7, 0, 0),      # 14h00 VN
+            'check_out': datetime(2026, 7, 15, 10, 30, 0)})  # 17h30 VN
+        self.Att._stamp_half_day_leave(rec)
+        self.assertEqual(rec.leave_half, 'am')
+        self.assertIn('nửa buổi sáng', (rec.notes or '').lower())
+        self.assertEqual(rec.late_minutes, 0)
+        self.assertEqual(rec.morning_credit, 0.5)
+        self.assertEqual(rec.afternoon_credit, 0.5)
+        self.assertEqual(rec.work_credit, 1.0)
+        self.assertEqual(rec.early_leave_minutes, 30)
+        self.assertEqual(rec.missing_minutes, 30)
+
+    def test_half_day_unpaid_credit(self):
+        d = date(2026, 7, 16)  # Thứ 5
+        self._mk_leave(self._mk_unpaid_half_type(), d, d, half='pm')
+        # NV làm buổi sáng 8h00->12h00 VN rồi nghỉ CHIỀU không lương:
+        # base morning = 0.5 (8h <= cutoff 10h), nhánh 'pm' ép afternoon = 0
+        # (không lương) + xoá phạt về sớm/thiếu giờ (buổi chiều nghỉ phép).
+        rec = self.Att.sudo().create({
+            'employee_id': self.emp.id,
+            'check_in': datetime(2026, 7, 16, 1, 0, 0),    # 8h00 VN
+            'check_out': datetime(2026, 7, 16, 5, 0, 0)})  # 12h00 VN
         self.Att._stamp_half_day_leave(rec)
         self.assertEqual(rec.leave_half, 'pm')
+        self.assertEqual(rec.morning_credit, 0.5)
+        self.assertEqual(rec.afternoon_credit, 0.0)
         self.assertEqual(rec.work_credit, 0.5)
+        self.assertEqual(rec.early_leave_minutes, 0)
+        self.assertEqual(rec.missing_minutes, 0)
+
+    def test_half_day_unpaid_pm_forced_even_if_present(self):
+        d = date(2026, 7, 16)  # Thứ 5
+        self._mk_leave(self._mk_unpaid_half_type(), d, d, half='pm')
+        # NV có đơn nghỉ CHIỀU không lương nhưng thực tế ở lại 8h->17h VN
+        # (9h >= 6h: base sẽ cho afternoon 0.5). CHỦ ĐÍCH: buổi nghỉ tính theo
+        # ĐƠN đã duyệt, không theo hiện diện vật lý (dữ liệu nghỉ thắng hiện
+        # diện); nếu lệch thực tế thì HR đối soát thủ công.
+        rec = self.Att.sudo().create({
+            'employee_id': self.emp.id,
+            'check_in': datetime(2026, 7, 16, 1, 0, 0),     # 8h00 VN
+            'check_out': datetime(2026, 7, 16, 10, 0, 0)})  # 17h00 VN
+        self.Att._stamp_half_day_leave(rec)
+        self.assertEqual(rec.leave_half, 'pm')
+        self.assertEqual(rec.afternoon_credit, 0.0)
+        self.assertEqual(rec.work_credit, 0.5)
+
+    def test_retroactive_half_day_stamps_existing(self):
+        # NV đã chấm công TRƯỚC, đơn nửa ngày duyệt SAU -> bản ghi có sẵn
+        # phải được stamp qua _generate_leave_attendance (nhánh nửa ngày).
+        d = date(2026, 7, 17)  # Thứ 6
+        rec = self.Att.sudo().create({
+            'employee_id': self.emp.id,
+            'check_in': datetime(2026, 7, 17, 1, 0, 0),    # 8h00 VN
+            'check_out': datetime(2026, 7, 17, 5, 0, 0)})  # 12h00 VN
+        self._mk_leave(self.annual, d, d, half='pm')       # duyệt sau khi đã chấm
+        self.assertEqual(rec.leave_half, 'pm')
+        self.assertIn('nửa buổi chiều', (rec.notes or '').lower())
+        self.assertTrue(rec.leave_is_paid)
+        # sáng 0.5 làm thật + chiều 0.5 nghỉ có lương
+        self.assertEqual(rec.work_credit, 1.0)

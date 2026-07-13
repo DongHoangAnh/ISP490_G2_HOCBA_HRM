@@ -119,9 +119,27 @@ class HocbaAttendanceLeave(models.Model):
         local = tz.localize(datetime.combine(day, time(0)) + timedelta(hours=hours))
         return local.astimezone(pytz.utc).replace(tzinfo=None)
 
+    def _stamp_existing_for_half_day(self, leave):
+        """Đơn nửa ngày duyệt MUỘN (NV đã chấm công trước trong khoảng nghỉ):
+        stamp lại các bản ghi chấm công thật để miễn phạt/bù công."""
+        d0, d1 = self._leave_day_bounds(leave)
+        if not d0 or not d1:
+            return
+        recs = self.env['hocba.attendance'].sudo().search([
+            ('employee_id', '=', leave.employee_id.id),
+            ('date', '>=', d0), ('date', '<=', d1),
+            ('source', '=', 'checkin')])
+        for rec in recs:
+            rec._stamp_half_day_leave(rec)
+
     def _generate_leave_attendance(self, leave):
-        if not self._leave_blocks_attendance(leave):
-            return  # nửa ngày + "Nghỉ Buổi Dạy": không sinh bản ghi
+        teaching_off = self.env.ref(
+            'hocba_timeoff.hb_leave_type_teaching_off', raise_if_not_found=False)
+        if teaching_off and leave.holiday_status_id == teaching_off:
+            return  # nghỉ buổi dạy: GV vẫn đi làm, không đụng chấm công
+        if self._leave_is_half_day(leave):
+            self._stamp_existing_for_half_day(leave)
+            return  # nửa ngày: không sinh bản ghi, chỉ stamp bản ghi có sẵn
         d0, d1 = self._leave_day_bounds(leave)
         if not d0 or not d1:
             return
@@ -152,6 +170,9 @@ class HocbaAttendanceLeave(models.Model):
                  'source', 'leave_id', 'leave_is_paid', 'leave_half')
     def _compute_work_metrics(self):
         super()._compute_work_metrics()
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        std = policy.std_work_hours or 8.0
+        aft_margin = policy.afternoon_margin_hours or 2.0
         for rec in self:
             if rec.source == 'leave':
                 rec.late_minutes = 0
@@ -161,10 +182,32 @@ class HocbaAttendanceLeave(models.Model):
                 rec.afternoon_credit = 0.5 if rec.leave_is_paid else 0.0
                 rec.work_credit = rec.morning_credit + rec.afternoon_credit
             elif rec.leave_id and rec.leave_half:      # nửa ngày, có chấm công thật (Task 5)
+                ci, co = rec.check_in, rec.check_out
                 if rec.leave_half == 'am':
+                    # Nghỉ SÁNG: miễn phạt trễ, buổi sáng tính theo đơn;
+                    # buổi CHIỀU (buổi làm) chấm theo chuẩn NỬA ngày thay vì
+                    # công thức cả ngày của base (ngưỡng 6h là bất khả thi
+                    # với một buổi chiều ~4h).
                     rec.late_minutes = 0
                     rec.morning_credit = 0.5 if rec.leave_is_paid else 0.0
+                    if ci:
+                        rec.expected_check_out = ci + timedelta(hours=std / 2.0)
+                    if ci and co:
+                        worked_min = (co - ci).total_seconds() / 60.0
+                        rec.afternoon_credit = 0.5 if (co - ci) >= timedelta(
+                            hours=std / 2.0 - aft_margin / 2.0) else 0.0
+                        rec.early_leave_minutes = max(0, int(round(
+                            (rec.expected_check_out - co).total_seconds() / 60.0)))
+                        rec.missing_minutes = max(0, min(240, int(round(
+                            std / 2.0 * 60 - worked_min))))
+                    else:
+                        rec.afternoon_credit = 0.0
+                        rec.early_leave_minutes = 0
+                        rec.missing_minutes = 0
                 else:
+                    # Nghỉ CHIỀU: buổi sáng (buổi làm) đã đúng theo luật base
+                    # (đến trước cutoff là đủ 0.5); buổi chiều tính theo ĐƠN
+                    # (kể cả khi NV thực tế ở lại — HR đối soát nếu lệch).
                     rec.early_leave_minutes = 0
                     rec.missing_minutes = 0
                     rec.afternoon_credit = 0.5 if rec.leave_is_paid else 0.0
