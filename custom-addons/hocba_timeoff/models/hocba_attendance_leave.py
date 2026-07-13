@@ -32,13 +32,23 @@ class HocbaAttendanceLeave(models.Model):
                     and leave.request_date_from_period
                     and leave.request_date_from_period == leave.request_date_to_period)
 
+    def _leave_blocks_attendance(self, leave):
+        """Đơn nghỉ 'chiếm' cả ngày làm việc (chặn/ sinh chấm công).
+        Loại 'Nghỉ Buổi Dạy' (session-leave) KHÔNG tính: GV chỉ nghỉ buổi dạy,
+        vẫn đi làm — không chặn, không sinh bản ghi."""
+        teaching_off = self.env.ref(
+            'hocba_timeoff.hb_leave_type_teaching_off', raise_if_not_found=False)
+        if teaching_off and leave.holiday_status_id == teaching_off:
+            return False
+        return not self._leave_is_half_day(leave)
+
     def _approved_full_day_leave(self, employee, day):
         """Đơn nghỉ CẢ NGÀY đã duyệt phủ `day` (hoặc False)."""
         leaves = self.env['hr.leave'].sudo().search([
             ('employee_id', '=', employee.id), ('state', '=', 'validate')])
         for lv in leaves:
             d0, d1 = self._leave_day_bounds(lv)
-            if d0 and d1 and d0 <= day <= d1 and not self._leave_is_half_day(lv):
+            if d0 and d1 and d0 <= day <= d1 and self._leave_blocks_attendance(lv):
                 return lv
         return False
 

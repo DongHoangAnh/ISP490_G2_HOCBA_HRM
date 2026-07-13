@@ -96,3 +96,13 @@ class TestFullDayBlock(_LeaveAttMixin):
             self.Att._assert_check_allowed(self.emp, 'in')
         except UserError as ex:
             self.assertNotEqual(str(ex), 'on_approved_leave')
+
+    def test_teaching_off_does_not_block(self):
+        toff = self.env.ref('hocba_timeoff.hb_leave_type_teaching_off')
+        today = fields.Date.context_today(self.Att)
+        # tạo đơn nghỉ buổi dạy phủ hôm nay (request_unit='day' nhưng KHÔNG chặn)
+        self._mk_leave(toff, today, today)
+        try:
+            self.Att._assert_check_allowed(self.emp, 'in')
+        except UserError as ex:
+            self.assertNotEqual(str(ex), 'on_approved_leave')
