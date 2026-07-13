@@ -17,4 +17,5 @@ from . import hr_leave_withdraw
 from . import hb_timeoff_cron
 from . import hb_timeoff_leave_analysis
 from . import hb_timeoff_burnout_line
+from . import hocba_attendance_policy
 from . import hocba_attendance_leave
