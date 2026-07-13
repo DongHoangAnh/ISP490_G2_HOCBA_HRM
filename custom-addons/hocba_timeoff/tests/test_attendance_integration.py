@@ -106,3 +106,50 @@ class TestFullDayBlock(_LeaveAttMixin):
             self.Att._assert_check_allowed(self.emp, 'in')
         except UserError as ex:
             self.assertNotEqual(str(ex), 'on_approved_leave')
+
+
+@tagged('post_install', '-at_install', 'hocba_timeoff')
+class TestGenerateFullDay(_LeaveAttMixin):
+
+    def _records_for(self, leave):
+        return self.Att.sudo().search([('leave_id', '=', leave.id), ('source', '=', 'leave')])
+
+    def test_generate_paid_full_day(self):
+        d = date(2026, 7, 15)  # Thứ 4
+        lv = self._mk_leave(self.annual, d, d)
+        recs = self._records_for(lv)
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs.work_credit, 1.0)
+        self.assertTrue(recs.leave_is_paid)
+        self.assertEqual(recs.status_id.code, 'on_leave_paid')
+        self.assertEqual(recs.date, d)
+
+    def test_generate_unpaid_full_day(self):
+        d = date(2026, 7, 16)  # Thứ 5
+        lv = self._mk_leave(self.unpaid, d, d)
+        recs = self._records_for(lv)
+        self.assertEqual(recs.work_credit, 0.0)
+        self.assertFalse(recs.leave_is_paid)
+        self.assertEqual(recs.status_id.code, 'on_leave_unpaid')
+
+    def test_multiday_skips_weekend(self):
+        # 2026-07-17 (T6) -> 2026-07-20 (T2): bỏ T7 18, CN 19
+        lv = self._mk_leave(self.annual, date(2026, 7, 17), date(2026, 7, 20))
+        days = self._records_for(lv).mapped('date')
+        self.assertEqual(sorted(days), [date(2026, 7, 17), date(2026, 7, 20)])
+
+    def test_teaching_off_not_generated(self):
+        toff = self.env.ref('hocba_timeoff.hb_leave_type_teaching_off')
+        d = date(2026, 7, 15)
+        lv = self._mk_leave(toff, d, d)
+        self.assertFalse(self._records_for(lv))   # session-leave không sinh bản ghi
+
+    def test_retroactive_conflict_keeps_checkin(self):
+        d = date(2026, 7, 22)  # Thứ 4
+        real = self.Att.sudo().create({
+            'employee_id': self.emp.id,
+            'check_in': datetime(2026, 7, 22, 1, 0, 0)})  # ~8h VN
+        lv = self._mk_leave(self.annual, d, d)
+        self.assertEqual(real.source, 'checkin')          # không bị ghi đè
+        self.assertFalse(self._records_for(lv))           # không sinh thêm
+        self.assertIn('rà soát', (real.notes or '').lower())

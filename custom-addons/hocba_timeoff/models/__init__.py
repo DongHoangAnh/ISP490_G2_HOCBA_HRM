@@ -19,3 +19,4 @@ from . import hb_timeoff_leave_analysis
 from . import hb_timeoff_burnout_line
 from . import hocba_attendance_policy
 from . import hocba_attendance_leave
+from . import hr_leave_attendance_sync

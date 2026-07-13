@@ -2,7 +2,11 @@
 #   - phân loại nguồn bản ghi (chấm công thật / sinh từ đơn nghỉ)
 #   - chặn check-in ngày nghỉ cả ngày, sinh/gỡ bản ghi theo vòng đời đơn
 #   - ép công + trạng thái cho ngày nghỉ (có/không lương)
-from odoo import fields, models
+from datetime import datetime, time, timedelta
+
+import pytz
+
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 
@@ -66,3 +70,75 @@ class HocbaAttendanceLeave(models.Model):
     def _assert_shift_check_allowed(self, employee, kind):
         self._assert_not_on_full_day_leave(employee)
         return super()._assert_shift_check_allowed(employee, kind)
+
+    # ---- Sinh bản ghi cho nghỉ cả ngày ------------------------------------
+    def _is_working_day(self, day, policy):
+        return policy.is_workday(datetime.combine(day, time(0)))
+
+    def _leave_checkin_utc(self, employee, day, policy):
+        """check_in quy ước = day tại morning_start (giờ local NV) -> UTC naive."""
+        tz = pytz.timezone(employee.user_id.tz or self.env.user.tz or 'UTC')
+        hours = policy.morning_start or 8.0
+        local = tz.localize(datetime.combine(day, time(0)) + timedelta(hours=hours))
+        return local.astimezone(pytz.utc).replace(tzinfo=None)
+
+    def _generate_leave_attendance(self, leave):
+        if not self._leave_blocks_attendance(leave):
+            return  # nửa ngày + "Nghỉ Buổi Dạy": không sinh bản ghi
+        d0, d1 = self._leave_day_bounds(leave)
+        if not d0 or not d1:
+            return
+        Att = self.env['hocba.attendance'].sudo()
+        policy = self.env['hocba.attendance.policy'].sudo().get_policy()
+        is_paid = not leave.holiday_status_id.unpaid
+        emp = leave.employee_id
+        cur = d0
+        while cur <= d1:
+            if self._is_working_day(cur, policy):
+                exist = Att.search([('employee_id', '=', emp.id), ('date', '=', cur)], limit=1)
+                if exist:
+                    if exist.source == 'checkin':
+                        exist.write({'notes': (exist.notes or '')
+                            + '\n[Cảnh báo] Có đơn nghỉ cả ngày đã duyệt trùng ngày đã chấm công — cần HR rà soát.'})
+                else:
+                    Att.create({
+                        'employee_id': emp.id,
+                        'check_in': self._leave_checkin_utc(emp, cur, policy),
+                        'source': 'leave', 'leave_id': leave.id,
+                        'leave_is_paid': is_paid,
+                        'notes': leave.holiday_status_id.name,
+                    })
+            cur += timedelta(days=1)
+
+    # ---- Ép công + trạng thái cho bản ghi nghỉ ----------------------------
+    @api.depends('check_in', 'check_out',
+                 'source', 'leave_id', 'leave_is_paid', 'leave_half')
+    def _compute_work_metrics(self):
+        super()._compute_work_metrics()
+        for rec in self:
+            if rec.source == 'leave':
+                rec.late_minutes = 0
+                rec.early_leave_minutes = 0
+                rec.missing_minutes = 0
+                rec.morning_credit = 0.5 if rec.leave_is_paid else 0.0
+                rec.afternoon_credit = 0.5 if rec.leave_is_paid else 0.0
+                rec.work_credit = rec.morning_credit + rec.afternoon_credit
+            elif rec.leave_id and rec.leave_half:      # nửa ngày, có chấm công thật (Task 5)
+                if rec.leave_half == 'am':
+                    rec.late_minutes = 0
+                    rec.morning_credit = 0.5 if rec.leave_is_paid else 0.0
+                else:
+                    rec.early_leave_minutes = 0
+                    rec.missing_minutes = 0
+                    rec.afternoon_credit = 0.5 if rec.leave_is_paid else 0.0
+                rec.work_credit = rec.morning_credit + rec.afternoon_credit
+
+    @api.depends('check_in', 'source', 'leave_is_paid')
+    def _compute_status(self):
+        super()._compute_status()
+        Status = self.env['hocba.attendance.status']
+        paid = Status.search([('code', '=', 'on_leave_paid')], limit=1)
+        unpaid = Status.search([('code', '=', 'on_leave_unpaid')], limit=1)
+        for rec in self:
+            if rec.source == 'leave':
+                rec.status_id = paid if rec.leave_is_paid else unpaid
