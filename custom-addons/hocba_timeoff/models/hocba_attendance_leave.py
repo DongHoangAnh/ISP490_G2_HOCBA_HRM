@@ -84,27 +84,28 @@ class HocbaAttendanceLeave(models.Model):
                 return lv
         return False
 
-    def _stamp_half_day_leave(self, record):
+    def _stamp_half_day_leave(self):
         """Gắn thông tin nghỉ nửa ngày vào bản ghi chấm công thật (idempotent).
         Nhánh leave_half trong _compute_work_metrics sẽ miễn phạt + bù công
         đúng buổi nghỉ (0.5 nếu có lương)."""
-        if not record.date or record.source == 'leave':
-            return
-        lv = self._approved_half_day_leave(record.employee_id, record.date)
-        if not lv:
-            return
-        half = lv.request_date_from_period
-        note = self._HALF_LABEL.get(half, '')
-        vals = {'leave_id': lv.id, 'leave_half': half,
-                'leave_is_paid': not lv.holiday_status_id.unpaid}
-        if note and note not in (record.notes or ''):
-            vals['notes'] = ((record.notes + '\n') if record.notes else '') + note
-        record.write(vals)
+        for record in self:
+            if not record.date or record.source == 'leave':
+                continue
+            lv = self._approved_half_day_leave(record.employee_id, record.date)
+            if not lv:
+                continue
+            half = lv.request_date_from_period
+            note = self._HALF_LABEL.get(half, '')
+            vals = {'leave_id': lv.id, 'leave_half': half,
+                    'leave_is_paid': not lv.holiday_status_id.unpaid}
+            if note and note not in (record.notes or ''):
+                vals['notes'] = ((record.notes + '\n') if record.notes else '') + note
+            record.write(vals)
 
     def _do_check(self, payload, kind):
         res = super()._do_check(payload, kind)
         rec = self.browse(res['record_id'])
-        rec._stamp_half_day_leave(rec)
+        rec._stamp_half_day_leave()
         return res
 
     # ---- Sinh bản ghi cho nghỉ cả ngày ------------------------------------
@@ -129,8 +130,7 @@ class HocbaAttendanceLeave(models.Model):
             ('employee_id', '=', leave.employee_id.id),
             ('date', '>=', d0), ('date', '<=', d1),
             ('source', '=', 'checkin')])
-        for rec in recs:
-            rec._stamp_half_day_leave(rec)
+        recs._stamp_half_day_leave()
 
     def _generate_leave_attendance(self, leave):
         teaching_off = self.env.ref(
@@ -164,6 +164,21 @@ class HocbaAttendanceLeave(models.Model):
                         'notes': leave.holiday_status_id.name,
                     })
             cur += timedelta(days=1)
+
+    def _remove_leave_attendance(self, leave):
+        """Gỡ dấu vết chấm công của một đơn nghỉ (khi từ chối/rút):
+        bản ghi tự sinh -> xoá; bản ghi chấm công thật -> chỉ gỡ stamp."""
+        recs = self.env['hocba.attendance'].sudo().search([('leave_id', '=', leave.id)])
+        gen = recs.filtered(lambda r: r.source == 'leave')
+        real = recs - gen
+        gen.unlink()
+        for r in real:
+            notes = r.notes or ''
+            for lab in self._HALF_LABEL.values():
+                notes = notes.replace(lab, '')
+            r.write({'leave_id': False, 'leave_half': False,
+                     'leave_is_paid': False,
+                     'notes': notes.strip('\n') or False})
 
     # ---- Ép công + trạng thái cho bản ghi nghỉ ----------------------------
     @api.depends('check_in', 'check_out',

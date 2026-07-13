@@ -189,7 +189,7 @@ class TestHalfDay(_LeaveAttMixin):
             'employee_id': self.emp.id,
             'check_in': datetime(2026, 7, 15, 7, 0, 0),      # 14h00 VN
             'check_out': datetime(2026, 7, 15, 10, 30, 0)})  # 17h30 VN
-        self.Att._stamp_half_day_leave(rec)
+        rec._stamp_half_day_leave()
         self.assertEqual(rec.leave_half, 'am')
         self.assertIn('nửa buổi sáng', (rec.notes or '').lower())
         self.assertEqual(rec.late_minutes, 0)
@@ -209,7 +209,7 @@ class TestHalfDay(_LeaveAttMixin):
             'employee_id': self.emp.id,
             'check_in': datetime(2026, 7, 16, 1, 0, 0),    # 8h00 VN
             'check_out': datetime(2026, 7, 16, 5, 0, 0)})  # 12h00 VN
-        self.Att._stamp_half_day_leave(rec)
+        rec._stamp_half_day_leave()
         self.assertEqual(rec.leave_half, 'pm')
         self.assertEqual(rec.morning_credit, 0.5)
         self.assertEqual(rec.afternoon_credit, 0.0)
@@ -228,7 +228,7 @@ class TestHalfDay(_LeaveAttMixin):
             'employee_id': self.emp.id,
             'check_in': datetime(2026, 7, 16, 1, 0, 0),     # 8h00 VN
             'check_out': datetime(2026, 7, 16, 10, 0, 0)})  # 17h00 VN
-        self.Att._stamp_half_day_leave(rec)
+        rec._stamp_half_day_leave()
         self.assertEqual(rec.leave_half, 'pm')
         self.assertEqual(rec.afternoon_credit, 0.0)
         self.assertEqual(rec.work_credit, 0.5)
@@ -247,3 +247,31 @@ class TestHalfDay(_LeaveAttMixin):
         self.assertTrue(rec.leave_is_paid)
         # sáng 0.5 làm thật + chiều 0.5 nghỉ có lương
         self.assertEqual(rec.work_credit, 1.0)
+
+
+@tagged('post_install', '-at_install', 'hocba_timeoff')
+class TestReverseSync(_LeaveAttMixin):
+
+    def _leave_recs(self, lv):
+        return self.Att.sudo().search([('leave_id', '=', lv.id), ('source', '=', 'leave')])
+
+    def test_refuse_removes_generated(self):
+        d = date(2026, 7, 15)
+        lv = self._mk_leave(self.annual, d, d)
+        self.assertTrue(self._leave_recs(lv))
+        lv.sudo().action_refuse()
+        self.assertFalse(self._leave_recs(lv))
+
+    def test_refuse_keeps_real_checkin_unlinks(self):
+        d = date(2026, 7, 16)
+        lv = self._mk_leave(self.annual, d, d, half='pm')
+        real = self.Att.sudo().create({'employee_id': self.emp.id,
+            'check_in': datetime(2026, 7, 16, 1, 0, 0)})  # ~8h VN
+        real._stamp_half_day_leave()
+        self.assertEqual(real.leave_id, lv)
+        self.assertIn('nửa buổi chiều', (real.notes or ''))
+        lv.sudo().action_refuse()
+        self.assertTrue(real.exists())            # công thật giữ nguyên
+        self.assertFalse(real.leave_id)           # chỉ gỡ liên kết
+        self.assertFalse(real.leave_half)
+        self.assertNotIn('nửa buổi', (real.notes or ''))
