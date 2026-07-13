@@ -71,6 +71,42 @@ class HocbaAttendanceLeave(models.Model):
         self._assert_not_on_full_day_leave(employee)
         return super()._assert_shift_check_allowed(employee, kind)
 
+    # ---- Nghỉ nửa ngày: gắn vào chấm công thật (Task 5) --------------------
+    _HALF_LABEL = {'am': 'Nghỉ phép nửa buổi sáng', 'pm': 'Nghỉ phép nửa buổi chiều'}
+
+    def _approved_half_day_leave(self, employee, day):
+        """Đơn nghỉ NỬA NGÀY đã duyệt phủ `day` (hoặc False)."""
+        leaves = self.env['hr.leave'].sudo().search([
+            ('employee_id', '=', employee.id), ('state', '=', 'validate')])
+        for lv in leaves:
+            d0, d1 = self._leave_day_bounds(lv)
+            if d0 and d1 and d0 <= day <= d1 and self._leave_is_half_day(lv):
+                return lv
+        return False
+
+    def _stamp_half_day_leave(self, record):
+        """Gắn thông tin nghỉ nửa ngày vào bản ghi chấm công thật (idempotent).
+        Nhánh leave_half trong _compute_work_metrics sẽ miễn phạt + bù công
+        đúng buổi nghỉ (0.5 nếu có lương)."""
+        if not record.date or record.source == 'leave':
+            return
+        lv = self._approved_half_day_leave(record.employee_id, record.date)
+        if not lv:
+            return
+        half = lv.request_date_from_period
+        note = self._HALF_LABEL.get(half, '')
+        vals = {'leave_id': lv.id, 'leave_half': half,
+                'leave_is_paid': not lv.holiday_status_id.unpaid}
+        if note and note not in (record.notes or ''):
+            vals['notes'] = ((record.notes + '\n') if record.notes else '') + note
+        record.write(vals)
+
+    def _do_check(self, payload, kind):
+        res = super()._do_check(payload, kind)
+        rec = self.browse(res['record_id'])
+        rec._stamp_half_day_leave(rec)
+        return res
+
     # ---- Sinh bản ghi cho nghỉ cả ngày ------------------------------------
     def _is_working_day(self, day, policy):
         return policy.is_workday(datetime.combine(day, time(0)))
