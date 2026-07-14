@@ -24,3 +24,9 @@ access_hocba_offboarding_user,access.hocba.offboarding.user,model_hocba_offboard
 access_hocba_offboarding_hr,access.hocba.offboarding.hr,model_hocba_offboarding,hr.group_hr_user,1,1,1,0
 access_hocba_offboarding_manager,access.hocba.offboarding.manager,model_hocba_offboarding,hr.group_hr_manager,1,1,1,1
 access_hocba_offboarding_giaovu,access.hocba.offboarding.giaovu,model_hocba_offboarding,hocba_employees.group_hocba_giaovu,1,1,1,0
+access_hb_onb_template_user,access.hb.onb.template.user,model_hb_onboarding_template,hr.group_hr_user,1,0,0,0
+access_hb_onb_template_manager,access.hb.onb.template.manager,model_hb_onboarding_template,hr.group_hr_manager,1,1,1,1
+access_hb_onb_template_giaovu,access.hb.onb.template.giaovu,model_hb_onboarding_template,hocba_employees.group_hocba_giaovu,1,0,0,0
+access_hb_onb_template_step_user,access.hb.onb.template.step.user,model_hb_onboarding_template_step,hr.group_hr_user,1,0,0,0
+access_hb_onb_template_step_manager,access.hb.onb.template.step.manager,model_hb_onboarding_template_step,hr.group_hr_manager,1,1,1,1
+access_hb_onb_template_step_giaovu,access.hb.onb.template.step.giaovu,model_hb_onboarding_template_step,hocba_employees.group_hocba_giaovu,1,0,0,0

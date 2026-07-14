@@ -1,0 +1,215 @@
+from odoo import api, fields, models, _
+from odoo.exceptions import AccessError, ValidationError
+
+STATE_SEL = [
+    ('waiting', 'Chưa tới lượt'),
+    ('open', 'Đang chờ'),
+    ('done', 'Hoàn thành'),
+    ('skipped', 'Bỏ qua'),
+]
+RESULT_SEL = [('pass', 'Đạt'), ('extend', 'Gia hạn'), ('fail', 'Không đạt')]
+
+
+class HbOnboardingStep(models.Model):
+    """Bước nhận việc/thử việc trên TỪNG nhân viên — snapshot từ template
+    lúc gán (sửa template sau không ảnh hưởng NV đang chạy).
+    Spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md"""
+    _name = 'hb.onboarding.step'
+    _description = 'Bước nhận việc/thử việc của nhân viên (instance snapshot)'
+    _order = 'sequence, id'
+
+    employee_id = fields.Many2one(
+        'hr.employee', string='Nhân viên', required=True,
+        ondelete='cascade', index=True)
+    template_id = fields.Many2one(
+        'hb.onboarding.template', string='Từ template', ondelete='set null')
+    # --- snapshot từ template.step (không đọc lại template) ---
+    sequence = fields.Integer(default=10)
+    name = fields.Char(string='Tên bước', required=True)
+    step_type = fields.Selection(
+        [('task', 'Việc cần làm'), ('evaluation', 'Đánh giá')],
+        string='Loại bước', default='task', required=True)
+    pass_completes = fields.Boolean(string='Đạt → lên chính thức')
+    is_extension = fields.Boolean(string='Bước gia hạn')
+    auto_action = fields.Selection(
+        [('none', 'Không'), ('grant_assets', 'Tự cấp tài sản mặc định')],
+        string='Automation', default='none', required=True)
+    note = fields.Text(string='Hướng dẫn')
+    # --- runtime ---
+    due_date = fields.Date(string='Hạn')
+    state = fields.Selection(
+        STATE_SEL, string='Trạng thái', default='waiting',
+        required=True, index=True)
+    result = fields.Selection(RESULT_SEL, string='Kết quả')
+    extend_count = fields.Integer(string='Số lần gia hạn tại chỗ', default=0)
+    done_date = fields.Date(string='Ngày hoàn thành')
+    done_by_id = fields.Many2one('res.users', string='Người thực hiện')
+    result_note = fields.Text(string='Nhận xét')
+
+    # ------------------------------------------------------------------
+    # Điều hướng chuỗi
+    # ------------------------------------------------------------------
+    def _chain(self):
+        """Toàn bộ bước của NV, đúng thứ tự."""
+        self.ensure_one()
+        return self.employee_id.x_onboarding_step_ids.sorted(
+            lambda s: (s.sequence, s.id))
+
+    def _next_waiting(self):
+        """Bước 'waiting' đứng sau self gần nhất (rỗng nếu hết)."""
+        self.ensure_one()
+        chain = list(self._chain())
+        idx = chain.index(self)
+        for step in chain[idx + 1:]:
+            if step.state == 'waiting':
+                return step
+        return self.browse()
+
+    def _skip_auto(self):
+        """NV bật x_skip_auto_trigger → ghi kết quả nhưng bỏ side-effect."""
+        return self.employee_id.sudo().x_skip_auto_trigger
+
+    # ------------------------------------------------------------------
+    # Máy trạng thái
+    # ------------------------------------------------------------------
+    def _open(self):
+        """Mở bước; task có auto_action → chạy automation rồi tự done."""
+        self.ensure_one()
+        self.sudo().write({'state': 'open'})
+        if self.step_type == 'task' and self.auto_action == 'grant_assets':
+            if not self._skip_auto():
+                self.employee_id._hocba_grant_default_assets()
+            self.sudo().write({
+                'state': 'done',
+                'done_date': fields.Date.context_today(self),
+                'done_by_id': self.env.user.id,
+            })
+            self._advance()
+
+    def _advance(self):
+        """Sau khi self done/skipped: mở bước kế; skip bước gia hạn nếu self
+        không Gia hạn; hết chuỗi mà chưa official → chuông HR chờ quyết định."""
+        self.ensure_one()
+        nxt = self._next_waiting()
+        if not nxt:
+            emp = self.employee_id
+            if (emp.x_employment_status == 'probation'
+                    and not self._skip_auto()):
+                emp._hocba_notify_probation(
+                    'onboarding_chain_done', 'info',
+                    _('Hoàn tất quy trình nhận việc: %s') % emp.name,
+                    body=_('Mọi bước đã xong — chờ HR quyết định trạng '
+                           'thái nhân sự.'),
+                    dedup_key='onb_chain_done:%s' % emp.id)
+            return
+        if nxt.is_extension and self.result != 'extend':
+            nxt.sudo().write({'state': 'skipped'})
+            nxt._advance()
+        else:
+            nxt._open()
+
+    def _ensure_open(self, want_type):
+        self.ensure_one()
+        if self.state != 'open' or self.step_type != want_type:
+            raise ValidationError(_(
+                'Bước "%s" không ở trạng thái xử lý được.') % self.name)
+
+    def _check_can_act(self):
+        """HR Manager / quản lý trực tiếp / trưởng phòng ban NV; bước task cho
+        thêm Giáo vụ với giáo viên. Sau check, thao tác ghi chạy sudo."""
+        self.ensure_one()
+        if self.env.su:
+            return
+        user = self.env.user
+        emp = self.employee_id.sudo()
+        if user.has_group('hr.group_hr_manager'):
+            return
+        if emp.parent_id and emp.parent_id.user_id == user:
+            return
+        if emp._hocba_user_manages_dept(user):
+            return
+        if (self.step_type == 'task'
+                and user.has_group('hocba_employees.group_hocba_giaovu')
+                and emp.x_employee_type_id.code == 'teacher'):
+            return
+        raise AccessError(_(
+            'Bạn không có quyền xử lý bước nhận việc của nhân viên này.'))
+
+    def action_complete(self, note=None):
+        """Hoàn thành bước task (tay)."""
+        self.ensure_one()
+        self._check_can_act()
+        self._ensure_open('task')
+        uid = self.env.user.id
+        vals = {'state': 'done',
+                'done_date': fields.Date.context_today(self),
+                'done_by_id': uid}
+        if note:
+            vals['result_note'] = note
+        self.sudo().write(vals)
+        self.employee_id.sudo().message_post(body=_(
+            '✅ Bước nhận việc "%s" hoàn thành.') % self.name)
+        self._advance()
+
+    def action_evaluate(self, result, note=None, eval_date=None):
+        """Ghi kết quả bước evaluation: pass / extend / fail.
+
+        - pass + pass_completes → lên Chính thức, skip bước còn lại.
+        - pass thường → mở bước kế (bước gia hạn kế tiếp bị skip).
+        - extend: bước kế là is_extension → done + mở bước đó (cổng tháng-1
+          cũ); không thì giữ open + extend_count++ (tái đánh giá — cổng
+          tuần-2/tháng-2 cũ).
+        - fail → skip bước còn lại + khởi động offboarding (hành vi cũ)."""
+        self.ensure_one()
+        self._check_can_act()
+        self._ensure_open('evaluation')
+        if result not in ('pass', 'extend', 'fail'):
+            raise ValidationError(_('Kết quả không hợp lệ.'))
+        if result == 'fail' and not (note or '').strip():
+            raise ValidationError(_(
+                'Cần nhập nhận xét khi kết quả Không đạt.'))
+        today = fields.Date.context_today(self)
+        uid = self.env.user.id
+        done_vals = {'done_date': eval_date or today, 'done_by_id': uid}
+        if note:
+            done_vals['result_note'] = note
+        emp = self.employee_id
+
+        if result == 'extend':
+            nxt = self._next_waiting()
+            if nxt and nxt.is_extension:
+                # hành vi cổng tháng-1 cũ: done + mở bước gia hạn
+                self.sudo().write(dict(done_vals, state='done',
+                                       result='extend'))
+                self._advance()
+            else:
+                # hành vi cổng 2w/2m cũ: giữ open, hẹn tái đánh giá
+                self.sudo().write(dict(done_vals,
+                                       extend_count=self.extend_count + 1))
+            if not self._skip_auto():
+                emp._hocba_notify_probation(
+                    'probation_extend', 'warning',
+                    _('Gia hạn thử việc: %s') % emp.name,
+                    body=_('Bước "%s" gia hạn.') % self.name,
+                    include_employee=True)
+            emp.sudo().message_post(body=_(
+                '⏳ Bước "%s" GIA HẠN — tiếp tục thử việc.') % self.name)
+            return
+
+        self.sudo().write(dict(done_vals, state='done', result=result))
+        if result == 'fail':
+            self._chain().filtered(
+                lambda s: s.state in ('waiting', 'open')).sudo().write(
+                    {'state': 'skipped'})
+            if not self._skip_auto():
+                emp._hocba_start_offboarding(self.name)
+            return
+        # result == 'pass'
+        if self.pass_completes and not self._skip_auto():
+            self._chain().filtered(
+                lambda s: s.state == 'waiting').sudo().write(
+                    {'state': 'skipped'})
+            emp._hocba_make_official(self.name)
+            return
+        emp.sudo().message_post(body=_('✅ Bước "%s" ĐẠT.') % self.name)
+        self._advance()
