@@ -55,13 +55,14 @@ pattern `hocba.offboarding`); loại phương án Activity Plan Odoo (thiếu k�
 | `template_id` / `sequence` / `name` | | thứ tự tuyến tính |
 | `step_type` | Selection `task` / `evaluation` | task = checklist; evaluation = Đạt/Gia hạn/Không đạt |
 | `due_days` | Integer ≥ 0 | hạn = `x_probation_start` + N ngày; 0 = không hạn |
-| `pass_completes` | Boolean | chỉ evaluation: Đạt → lên chính thức, skip bước sau |
+| `pass_completes` | Boolean | chỉ evaluation: Đạt → lên chính thức, skip bước sau. Phải bật TƯỜNG MINH (thử giảng pass hiện KHÔNG lên chính thức → không có rule ngầm) |
 | `is_extension` | Boolean | chỉ evaluation: chỉ kích hoạt khi bước evaluation liền trước = Gia hạn |
+| `auto_action` | Selection `none`/`grant_assets`, default none | chỉ task: bước mở → chạy automation (`grant_assets` = `_hocba_grant_default_assets` F-006) rồi tự done |
 | `note` | Text | hướng dẫn người thực hiện |
 
-**Constraints template**: ≥ 1 bước; cờ chỉ hợp lệ trên `evaluation`;
-`is_extension` phải đứng **ngay sau** một bước `evaluation`; bước evaluation
-**cuối chuỗi** mặc nhiên xử như `pass_completes` (không bắt admin bật cờ).
+**Constraints template**: ≥ 1 bước; cờ evaluation chỉ hợp lệ trên
+`evaluation`, `auto_action` chỉ trên `task`; `is_extension` phải đứng
+**ngay sau** một bước `evaluation`.
 
 ### 3.3 `hb.onboarding.step` — instance trên từng NV (snapshot)
 
@@ -69,17 +70,16 @@ pattern `hocba.offboarding`); loại phương án Activity Plan Odoo (thiếu k�
 |---|---|---|
 | `employee_id` | M2o `hr.employee`, required, index, ondelete cascade | |
 | `template_id` | M2o | trace nguồn, KHÔNG đọc lại logic |
-| `sequence`, `name`, `step_type`, `pass_completes`, `is_extension` | snapshot | copy lúc gán |
+| `sequence`, `name`, `step_type`, `pass_completes`, `is_extension`, `auto_action` | snapshot | copy lúc gán |
 | `due_date` | Date | tính sẵn; HR sửa tay được từng ca |
 | `state` | Selection `waiting`/`open`/`done`/`skipped` | |
-| `result` | Selection `pass`/`extend`/`fail` | chỉ evaluation |
+| `result` | Selection `pass`/`fail` | chỉ evaluation, set khi done |
+| `extend_count` | Integer, default 0 | số lần "Gia hạn tái đánh giá" trên chính bước này |
 | `done_date`, `done_by_id` (res.users), `result_note` | | audit |
 
-**Constraints instance**: chỉ ghi `result`/hoàn thành khi `state='open'`;
-`fail` bắt buộc `result_note`; `done_date` trong [`x_probation_start`, hôm nay];
-`extend` chỉ hợp lệ khi **bước kế tiếp là `is_extension`** — không có (bước
-cuối, hoặc bước kế là task/evaluation thường) → ValidationError ("bước này
-chỉ Đạt/Không đạt"). FE cũng ẩn nút Gia hạn khi bước không cho phép.
+**Constraints instance**: chỉ ghi `result`/hoàn thành/gia hạn khi
+`state='open'`; `fail` bắt buộc `result_note`; `done_date` trong
+[`x_probation_start`, hôm nay].
 
 ### 3.4 Trên `hr.employee`
 
@@ -109,17 +109,30 @@ waiting ──(bước trước done/skipped)──▶ open ──(complete/eval
 ```
 
 - Bước đầu sinh ra `open`, còn lại `waiting`.
-- `task` hoàn thành: ghi `done_date` + `done_by_id`, mở bước kế.
-- `evaluation` ghi `result`:
-  - `pass` + `pass_completes` (hoặc là evaluation cuối) → set
+- Khi một bước chuyển sang `open`: nếu là `task` có `auto_action='grant_assets'`
+  → gọi `_hocba_grant_default_assets()` + tự `done` (mở tiếp bước sau) —
+  giữ nguyên F-006 (AUT-001 hiện cấp tài sản ngay khi tuần-2 Đạt).
+- `task` hoàn thành (tay): ghi `done_date` + `done_by_id`, mở bước kế.
+- `evaluation` — 3 nút hành động:
+  - **Đạt** → `done`, `result='pass'`. Nếu `pass_completes` → set
     `x_employment_status='official'`, `x_official_date=today` (context
     `hocba_gate_automation`), bước còn lại → `skipped`, ghi
     `hr.promotion.history` (source `probation`), chuông `probation_pass`.
-  - `pass` thường → mở bước kế; nếu bước kế `is_extension` → skip nó, mở tiếp.
-  - `extend` → chỉ hợp lệ khi bước kế là `is_extension` (xem constraint
-    instance 3.3) → mở bước đó; chuông `probation_extend`.
-  - `fail` → bước còn lại `skipped`, chuông `probation_fail`;
-    **KHÔNG tự offboard** — HR chủ động xử lý (giữ hành vi hiện tại).
+    Nếu không → mở bước kế; bước kế `is_extension` → skip nó, mở tiếp.
+  - **Gia hạn** → nếu bước kế là `is_extension`: bước này `done`, mở bước kế
+    (hành vi cổng tháng-1 cũ). Nếu KHÔNG: bước **giữ `open`**, tăng
+    `extend_count`, ghi note — tái đánh giá sau (hành vi cổng tuần-2/tháng-2
+    cũ "GIA HẠN — hẹn tái đánh giá"). Cả 2 nhánh: chuông `probation_extend`.
+  - **Không đạt** → `done`, `result='fail'`, bước còn lại `skipped`, gọi
+    `_hocba_start_offboarding(tên bước)` (giữ hành vi hiện tại: đơn
+    `hocba.offboarding` source `probation` state `hr_approved`, NV `exiting`,
+    chuông `probation_fail` — helper đã idempotent).
+- Chuỗi hoàn tất (mọi bước done/skipped) mà NV chưa `official` (vd luồng giáo
+  viên — thử giảng pass chỉ dẫn tới task "Ký HĐ thỉnh giảng") → chuông báo HR
+  "quy trình nhận việc hoàn tất, chờ quyết định" — KHÔNG tự đổi trạng thái.
+- Tôn trọng `x_skip_auto_trigger` (field sẵn có): bật → ghi kết quả bước
+  nhưng bỏ side-effect automation (official/offboarding/grant assets/chuông),
+  vẫn mở bước kế.
 
 ### 4.3 Quyền
 
@@ -173,10 +186,14 @@ waiting ──(bước trước done/skipped)──▶ open ──(complete/eval
 ## 7. Migration & seed
 
 1. Seed 2 template mặc định tái hiện luồng hiện tại (data XML `noupdate`):
-   - **Thử việc Giáo viên**: 1 bước "Thử giảng" (evaluation, `pass_completes`).
-   - **Thử việc NV văn phòng**: ĐG tuần-2 (evaluation, due 14) → Cấp thiết bị
-     (task) → ĐG tháng-1 (evaluation, due 30, `pass_completes`) → ĐG tháng-2
-     (evaluation, due 60, `is_extension`).
+   - **Thử việc Giáo viên** (khớp employee_type `teacher`): "Thử giảng"
+     (evaluation, KHÔNG `pass_completes` — pass hiện không lên chính thức) →
+     "Ký HĐ thỉnh giảng" (task) — thay activity nhắc HR hiện tại.
+   - **Thử việc NV văn phòng** (khớp position staff+manager, offline):
+     ĐG tuần-2 (evaluation, due 14) → Cấp thiết bị (task,
+     `auto_action='grant_assets'`) → ĐG tháng-1 (evaluation, due 30,
+     `pass_completes`) → ĐG tháng-2 (evaluation, due 60, `is_extension`,
+     `pass_completes`).
 2. Migration script (`hocba_employees/migrations/`): NV có `x_probation_start`
    hoặc kết quả cổng cũ (kể cả `official`) → sinh instance steps, map kết
    quả/ngày/evaluator cũ vào.
@@ -188,9 +205,10 @@ waiting ──(bước trước done/skipped)──▶ open ──(complete/eval
 - **Template**: constraints (extension sau evaluation, cờ chỉ evaluation,
   ≥1 bước), matching 3 tiêu chí + sequence, CSV position_types validate.
 - **Instance**: máy trạng thái đủ nhánh (pass thường / pass_completes /
-  extend / fail / skip extension), chặn ghi khi chưa `open`, chặn extend khi
-  bước kế không phải `is_extension`, fail bắt buộc note, quyền theo vai trò
-  (TP/GV/QL trực tiếp/user thường).
+  extend→bước gia hạn / extend→tái đánh giá tại chỗ / fail / skip extension /
+  auto_action grant_assets / chuỗi xong không official → chuông), chặn ghi
+  khi chưa `open`, fail bắt buộc note, quyền theo vai trò (TP/GV/QL trực
+  tiếp/user thường), tôn trọng `x_skip_auto_trigger`.
 - **Automation**: lên chính thức đúng AUT-001/002 cũ, promotion history,
   chuông + dedup, cron nhắc hạn, gán template tự động khi tạo NV thử việc.
 - **Migration**: dựng dữ liệu kiểu cũ → chạy script → so khớp từng bước.
@@ -199,7 +217,6 @@ waiting ──(bước trước done/skipped)──▶ open ──(complete/eval
 ## 9. Ngoài phạm vi (YAGNI)
 
 - Workflow engine điều kiện/graph; bước song song.
-- Tự động offboard khi fail.
 - Đồng bộ template mới cho NV đang chạy (chỉ snapshot; nút "re-sync" để sau
   nếu cần).
 - Thông báo email (chỉ chuông `hb.notification`).
