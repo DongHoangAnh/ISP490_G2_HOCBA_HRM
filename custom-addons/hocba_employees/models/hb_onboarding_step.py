@@ -50,9 +50,11 @@ class HbOnboardingStep(models.Model):
     # Điều hướng chuỗi
     # ------------------------------------------------------------------
     def _chain(self):
-        """Toàn bộ bước của NV, đúng thứ tự."""
+        """Toàn bộ bước của NV, đúng thứ tự. sudo: user thường/QL không đọc
+        được field ngoài whitelist public profile của hr.employee (Odoo 19);
+        quyền thao tác đã gác ở _check_can_act."""
         self.ensure_one()
-        return self.employee_id.x_onboarding_step_ids.sorted(
+        return self.employee_id.sudo().x_onboarding_step_ids.sorted(
             lambda s: (s.sequence, s.id))
 
     def _next_waiting(self):
@@ -78,7 +80,7 @@ class HbOnboardingStep(models.Model):
         self.sudo().write({'state': 'open'})
         if self.step_type == 'task' and self.auto_action == 'grant_assets':
             if not self._skip_auto():
-                self.employee_id._hocba_grant_default_assets()
+                self.employee_id.sudo()._hocba_grant_default_assets()
             self.sudo().write({
                 'state': 'done',
                 'done_date': fields.Date.context_today(self),
@@ -92,7 +94,7 @@ class HbOnboardingStep(models.Model):
         self.ensure_one()
         nxt = self._next_waiting()
         if not nxt:
-            emp = self.employee_id
+            emp = self.employee_id.sudo()
             if (emp.x_employment_status == 'probation'
                     and not self._skip_auto()):
                 emp._hocba_notify_probation(
@@ -173,7 +175,7 @@ class HbOnboardingStep(models.Model):
         done_vals = {'done_date': eval_date or today, 'done_by_id': uid}
         if note:
             done_vals['result_note'] = note
-        emp = self.employee_id
+        emp = self.employee_id.sudo()
 
         if result == 'extend':
             nxt = self._next_waiting()

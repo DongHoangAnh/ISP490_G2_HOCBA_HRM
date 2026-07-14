@@ -146,6 +146,12 @@ class HrEmployee(models.Model):
 
     # --- F-004: Dòng thời gian thử việc & 2 cổng đánh giá (Nhóm B) ---
     x_probation_start = fields.Date(string='Ngày bắt đầu thử việc', tracking=True)
+    # Quy trình nhận việc bước động (thay dần các field cổng cứng bên dưới —
+    # spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md)
+    x_onboarding_template_id = fields.Many2one(
+        'hb.onboarding.template', string='Quy trình nhận việc', tracking=True)
+    x_onboarding_step_ids = fields.One2many(
+        'hb.onboarding.step', 'employee_id', string='Các bước nhận việc')
     x_eval_2w_due = fields.Date(
         string='Hạn đánh giá tuần-2',
         compute='_compute_eval_dues', store=True, readonly=False,
@@ -474,6 +480,8 @@ class HrEmployee(models.Model):
             today = fields.Date.context_today(self)
             for emp in employees:
                 emp._hocba_log_promotion('join', today, _('Nhận việc'))
+        # NV thử việc có ngày bắt đầu → gán quy trình nhận việc bước động
+        employees._hocba_maybe_assign_onboarding()
         return employees
 
     # ------------------------------------------------------------------
@@ -659,6 +667,11 @@ class HrEmployee(models.Model):
                     emp._hocba_aut_001m()
                 if emp.x_eval_2m_result != old_2m and emp.x_eval_2m_result != 'draft':
                     emp._hocba_aut_002()
+        # NV chuyển sang thử việc / có ngày bắt đầu → gán quy trình bước động
+        if not self.env.context.get('hocba_onb_assigning') and any(
+                f in vals for f in ('x_employment_status',
+                                    'x_probation_start')):
+            self._hocba_maybe_assign_onboarding()
         return res
 
     def _hocba_user_manages_dept(self, user):
@@ -818,6 +831,61 @@ class HrEmployee(models.Model):
             staff, category='onboarding', kind=kind, level=level,
             title=title, body=body, target_view='employees',
             target_ref=self.id, dedup_key=dedup_key)
+
+    # ------------------------------------------------------------------
+    # Onboarding bước động — gán template (snapshot)
+    # Spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md
+    # ------------------------------------------------------------------
+    def _hocba_assign_onboarding(self, template=None):
+        """Sinh instance bước từ template (tự match nếu không truyền).
+        Không match → chuông cảnh báo HR, KHÔNG chặn lưu NV.
+        Đổi template giữa chừng: bỏ bước chưa chạy, giữ bước done/skipped
+        làm lịch sử, bước mới nối tiếp sau (offset sequence)."""
+        self.ensure_one()
+        tpl = template or self.env['hb.onboarding.template'].sudo(
+            )._match_for_employee(self)
+        if not tpl:
+            self._hocba_notify_probation(
+                'onboarding_no_template', 'warning',
+                _('Chưa có quy trình nhận việc phù hợp: %s') % self.name,
+                body=_('Tạo template khớp hoặc gán tay trong màn Cấu hình '
+                       'nhận việc.'),
+                dedup_key='onb_no_tpl:%s' % self.id)
+            return self.env['hb.onboarding.step']
+        Step = self.env['hb.onboarding.step'].sudo()
+        self.x_onboarding_step_ids.filtered(
+            lambda s: s.state in ('waiting', 'open')).sudo().unlink()
+        kept = self.x_onboarding_step_ids
+        base_seq = max(kept.mapped('sequence') or [0])
+        start = self.x_probation_start
+        steps = Step.create([{
+            'employee_id': self.id,
+            'template_id': tpl.id,
+            'sequence': base_seq + ts.sequence,
+            'name': ts.name,
+            'step_type': ts.step_type,
+            'pass_completes': ts.pass_completes,
+            'is_extension': ts.is_extension,
+            'auto_action': ts.auto_action,
+            'note': ts.note,
+            'due_date': (start + timedelta(days=ts.due_days)
+                         if start and ts.due_days else False),
+        } for ts in tpl.step_ids.sorted(lambda s: (s.sequence, s.id))])
+        self.sudo().with_context(hocba_onb_assigning=True).write(
+            {'x_onboarding_template_id': tpl.id})
+        if steps:
+            steps.sorted(lambda s: (s.sequence, s.id))[0]._open()
+        return steps
+
+    def _hocba_maybe_assign_onboarding(self):
+        """Gán tự động khi NV thử việc có ngày bắt đầu mà chưa có bước."""
+        if self.env.context.get('hocba_no_onb_assign'):
+            return
+        for emp in self:
+            if (emp.x_employment_status == 'probation'
+                    and emp.x_probation_start
+                    and not emp.x_onboarding_step_ids):
+                emp._hocba_assign_onboarding()
 
     def _hocba_notify_reminder(self, kind, level, title, body=None,
                                dedup_key=None, include_employee=True):

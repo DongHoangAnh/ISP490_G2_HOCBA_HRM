@@ -30,3 +30,7 @@ access_hb_onb_template_giaovu,access.hb.onb.template.giaovu,model_hb_onboarding_
 access_hb_onb_template_step_user,access.hb.onb.template.step.user,model_hb_onboarding_template_step,hr.group_hr_user,1,0,0,0
 access_hb_onb_template_step_manager,access.hb.onb.template.step.manager,model_hb_onboarding_template_step,hr.group_hr_manager,1,1,1,1
 access_hb_onb_template_step_giaovu,access.hb.onb.template.step.giaovu,model_hb_onboarding_template_step,hocba_employees.group_hocba_giaovu,1,0,0,0
+access_hb_onb_step_user,access.hb.onb.step.user,model_hb_onboarding_step,base.group_user,1,0,0,0
+access_hb_onb_step_hr,access.hb.onb.step.hr,model_hb_onboarding_step,hr.group_hr_user,1,1,1,0
+access_hb_onb_step_manager,access.hb.onb.step.manager,model_hb_onboarding_step,hr.group_hr_manager,1,1,1,1
+access_hb_onb_step_giaovu,access.hb.onb.step.giaovu,model_hb_onboarding_step,hocba_employees.group_hocba_giaovu,1,1,0,0

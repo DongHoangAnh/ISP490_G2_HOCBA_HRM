@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Seed 2 template mặc định tái hiện luồng thử việc hiện hành.
+     noupdate=1: admin sửa được trong app, upgrade không đè. -->
+<odoo noupdate="1">
+  <record id="onb_template_teacher" model="hb.onboarding.template">
+    <field name="name">Thử việc Giáo viên</field>
+    <field name="sequence">5</field>
+    <field name="apply_employee_type_ids"
+           eval="[(6, 0, [ref('hocba_employees.employee_type_teacher')])]"/>
+  </record>
+  <record id="onb_tpl_gv_step1" model="hb.onboarding.template.step">
+    <field name="template_id" ref="onb_template_teacher"/>
+    <field name="sequence">1</field>
+    <field name="name">Thử giảng</field>
+    <field name="step_type">evaluation</field>
+  </record>
+  <record id="onb_tpl_gv_step2" model="hb.onboarding.template.step">
+    <field name="template_id" ref="onb_template_teacher"/>
+    <field name="sequence">2</field>
+    <field name="name">Ký hợp đồng thỉnh giảng</field>
+    <field name="step_type">task</field>
+  </record>
+
+  <record id="onb_template_office" model="hb.onboarding.template">
+    <field name="name">Thử việc Nhân viên văn phòng</field>
+    <field name="sequence">10</field>
+    <field name="apply_position_types">staff,manager</field>
+    <field name="apply_work_form">offline</field>
+  </record>
+  <record id="onb_tpl_vp_step1" model="hb.onboarding.template.step">
+    <field name="template_id" ref="onb_template_office"/>
+    <field name="sequence">1</field>
+    <field name="name">Đánh giá tuần-2</field>
+    <field name="step_type">evaluation</field>
+    <field name="due_days">14</field>
+  </record>
+  <record id="onb_tpl_vp_step2" model="hb.onboarding.template.step">
+    <field name="template_id" ref="onb_template_office"/>
+    <field name="sequence">2</field>
+    <field name="name">Cấp thiết bị làm việc</field>
+    <field name="step_type">task</field>
+    <field name="auto_action">grant_assets</field>
+  </record>
+  <record id="onb_tpl_vp_step3" model="hb.onboarding.template.step">
+    <field name="template_id" ref="onb_template_office"/>
+    <field name="sequence">3</field>
+    <field name="name">Đánh giá tháng-1</field>
+    <field name="step_type">evaluation</field>
+    <field name="due_days">30</field>
+    <field name="pass_completes" eval="True"/>
+  </record>
+  <record id="onb_tpl_vp_step4" model="hb.onboarding.template.step">
+    <field name="template_id" ref="onb_template_office"/>
+    <field name="sequence">4</field>
+    <field name="name">Đánh giá tháng-2</field>
+    <field name="step_type">evaluation</field>
+    <field name="due_days">60</field>
+    <field name="is_extension" eval="True"/>
+    <field name="pass_completes" eval="True"/>
+  </record>
+</odoo>
