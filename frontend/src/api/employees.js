@@ -13,15 +13,8 @@ export const updateMe = (payload) => hbPost('/hocba-hrm/api/me', payload);
 /* Nhân viên tự cập nhật ảnh đại diện của mình (base64). */
 export const updateMyPhoto = (image) => hbPost('/hocba-hrm/api/me/photo', { image });
 
-/* Đánh giá cổng thử việc (F-004/005). gate: '2w'|'2m', result: 'pass'|'fail'.
-   Trả về hồ sơ chi tiết đã cập nhật (status có thể đổi sang official/exiting). */
-export const postGate = (id, payload) =>
-  hbPost(`/hocba-hrm/api/employee/${id}/gate`, payload);
-
-/* Đánh giá thử giảng (F-008) cho giảng viên Nhóm A. result: 'pass'|'fail'.
-   Trả về hồ sơ chi tiết đã cập nhật. */
-export const postTrial = (id, payload) =>
-  hbPost(`/hocba-hrm/api/employee/${id}/trial`, payload);
+/* (postGate/postTrial cũ đã gỡ — đánh giá thử việc chuyển sang bước động,
+   xem api/onboarding.js.) */
 
 /* Form Thêm/Sửa nhân viên (chỉ HR). */
 export const fetchFormMeta = () => hbGet('/hocba-hrm/api/form/meta');

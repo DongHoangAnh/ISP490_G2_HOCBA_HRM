@@ -1,7 +1,8 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
-import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations } from '../../api/employees';
+import { useState, useEffect } from 'react';
+import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations } from '../../api/employees';
+import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
@@ -15,7 +16,7 @@ import AccountForm from './AccountForm';
 import EvaluationForm from './EvaluationForm';
 import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
-import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
+import { fmtDate, hbVND, hbStatusKind, HB_CERT } from '../../utils/format';
 
 export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
   canEdit = isHr, canManageAccount = isHr, canSeeSalary = isMgr, initialTab = 'info' }) {
@@ -221,247 +222,10 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
   );
 }
 
-/* Nút đánh giá 1 cổng (chỉ HR Manager). Gọi API → BE chạy automation
-   (cấp thiết bị / lên chính thức / offboarding) → trả hồ sơ mới. */
-function GateAction({ empId, gate, onUpdated }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const [note, setNote] = useState('');
-  const submit = async (result) => {
-    setErr(null);
-    if ((result === 'pass' || result === 'fail') && !note.trim()) {
-      setErr('Cần nhập ghi chú đánh giá khi Đạt hoặc Không đạt.'); return;
-    }
-    if (result === 'fail' && !window.confirm(
-      'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding. Tiếp tục?')) return;
-    if (result === 'extend' && !window.confirm(
-      'Gia hạn sẽ kéo dài thử việc và hẹn tái đánh giá. Tiếp tục?')) return;
-    setBusy(true);
-    try {
-      const det = await postGate(empId, { gate, result, note: note.trim() });
-      onUpdated(det);
-    } catch (e) {
-      // 'forbidden' = thiếu quyền; còn lại hiện lý do thật từ server (sai
-      // trình tự / thiếu ngày thử việc / BR-010…).
-      setErr(e.code === 'forbidden'
-        ? 'Bạn không có quyền duyệt nhân viên này.'
-        : (e.message || 'Thao tác bị từ chối.'));
-    } finally { setBusy(false); }
-  };
-  return (
-    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 7 }}>
-        Đánh giá cổng
-      </div>
-      <input
-        value={note} onChange={(e) => setNote(e.target.value)}
-        placeholder="Ghi chú đánh giá (bắt buộc khi Đạt / Không đạt)"
-        style={{ width: '100%', marginBottom: 9, padding: '7px 10px', borderRadius: 9,
-          border: '1px solid var(--border-strong)', background: '#fff', fontSize: 13,
-          color: 'var(--ink)', outline: 'none', fontFamily: 'inherit' }} />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary btn-sm" disabled={busy}
-          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
-          onClick={() => submit('pass')}>
-          <Icon name="checkCircle" size={14} />Đạt
-        </button>
-        <button className="btn btn-ghost btn-sm" disabled={busy}
-          style={{ color: 'var(--gold-600)', borderColor: 'var(--gold-200)' }}
-          onClick={() => submit('extend')}>
-          <Icon name="clock" size={14} />Gia hạn
-        </button>
-        <button className="btn btn-ghost btn-sm" disabled={busy}
-          style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
-          onClick={() => submit('fail')}>
-          <Icon name="x" size={14} />Không đạt
-        </button>
-        {busy && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Đang lưu…</span>}
-      </div>
-      {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
-    </div>
-  );
-}
-
-/* Form chấm thử giảng (F-008) — HR nhập ngày/lớp/2 điểm/nhận xét rồi
-   chốt Đạt / Không đạt. Model áp ràng buộc (điểm 1–10, fail cần nhận xét). */
-function TrialAction({ empId, onUpdated }) {
-  const tinp = {
-    padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border-strong)',
-    background: '#fff', fontSize: 13, color: 'var(--ink)', outline: 'none',
-    fontFamily: 'inherit', width: '100%',
-  };
-  const [f, setF] = useState({
-    date: new Date().toISOString().slice(0, 10), cls: '', scoreMethod: '', scoreContent: '', note: '',
-  });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
-  const submit = async (result) => {
-    setErr(null);
-    if (result === 'fail' && !f.note.trim()) { setErr('Cần nhập nhận xét khi Không đạt.'); return; }
-    for (const s of [f.scoreMethod, f.scoreContent]) {
-      if (s !== '' && (Number(s) < 1 || Number(s) > 10)) { setErr('Điểm phải trong thang 1–10.'); return; }
-    }
-    setBusy(true);
-    try { onUpdated(await postTrial(empId, { ...f, result })); }
-    catch (e) { setErr(e.code === 'forbidden' ? 'Không có quyền chấm thử giảng.' : (e.message || 'Thao tác bị từ chối.')); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed var(--border)' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 9 }}>
-        Chấm thử giảng
-      </div>
-      <div className="grid-2" style={{ rowGap: 10, columnGap: 12, marginBottom: 10 }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span className="faint" style={{ fontSize: 11 }}>Ngày thử giảng</span>
-          <input type="date" style={tinp} value={f.date} onChange={set('date')} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span className="faint" style={{ fontSize: 11 }}>Lớp</span>
-          <input style={tinp} value={f.cls} onChange={set('cls')} placeholder="VD: HSK3-T2" /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span className="faint" style={{ fontSize: 11 }}>Điểm phương pháp (1–10)</span>
-          <input type="number" min="1" max="10" step="0.1" style={tinp} value={f.scoreMethod} onChange={set('scoreMethod')} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span className="faint" style={{ fontSize: 11 }}>Điểm chuyên môn (1–10)</span>
-          <input type="number" min="1" max="10" step="0.1" style={tinp} value={f.scoreContent} onChange={set('scoreContent')} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, gridColumn: '1 / -1' }}>
-          <span className="faint" style={{ fontSize: 11 }}>Nhận xét (bắt buộc nếu Không đạt)</span>
-          <input style={tinp} value={f.note} onChange={set('note')} /></label>
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn-primary btn-sm" disabled={busy}
-          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
-          onClick={() => submit('pass')}><Icon name="checkCircle" size={14} />Đạt</button>
-        <button className="btn btn-ghost btn-sm" disabled={busy}
-          style={{ color: 'var(--red-700)', borderColor: 'var(--red-100)' }}
-          onClick={() => submit('fail')}><Icon name="x" size={14} />Không đạt</button>
-        {busy && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Đang lưu…</span>}
-      </div>
-      {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
-    </div>
-  );
-}
-
-/* Timeline thử việc 5 điểm (Nhóm B) + thử giảng (Nhóm A) */
-export function ProbationTab({ det, isHr, isMgr, onUpdated }) {
-  const p = det.probation || {};
-  const gst = (r) => r === 'pass' ? 'done' : r === 'fail' ? 'fail' : r === 'extend' ? 'extend' : 'pending';
-  const gsub = (date, due) => date ? fmtDate(date) : (due ? 'hạn ' + fmtDate(due) : '');
-  const steps = [
-    ['Thử việc', p.start ? 'done' : 'pending', fmtDate(p.start)],
-    ['ĐG tuần-2', gst(p.d2wResult), gsub(p.d2wDate, p.d2wDue)],
-    ['Cấp thiết bị', p.equipDate ? 'done' : 'pending', p.equipDate ? fmtDate(p.equipDate) : ''],
-    ['ĐG tháng-1', gst(p.d1mResult), gsub(p.d1mDate, p.d1mDue)],
-    ['ĐG tháng-2', gst(p.d2mResult), gsub(p.d2mDate, p.d2mDue)],
-    ['Chính thức', p.officialDate ? 'done' : 'pending', p.officialDate ? fmtDate(p.officialDate) : ''],
-  ];
-  const col = (s) => s === 'done' ? 'var(--green)' : s === 'fail' ? 'var(--red-600)'
-    : s === 'extend' ? 'var(--gold-500)' : 'var(--border-strong)';
-  return (
-    <div>
-      {p.isGroupB ? (
-        <div>
-          <div className="card" style={{ padding: '20px 18px 14px', marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-              {steps.map(([lbl, st, sub], i) => (
-                <Fragment key={i}>
-                  {i > 0 && <div style={{ flex: 1, height: 3, background: col(st), margin: '7px 4px 0', borderRadius: 2, minWidth: 18 }}></div>}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 86 }}>
-                    <div style={{ width: 17, height: 17, borderRadius: '50%', background: col(st),
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 800 }}>
-                      {st === 'done' ? '✓' : st === 'fail' ? '✗' : st === 'extend' ? '↻' : i + 1}
-                    </div>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 6, textAlign: 'center' }}>{lbl}</div>
-                    {sub && <div className="faint" style={{ fontSize: 10.5, marginTop: 2, textAlign: 'center' }}>{sub}</div>}
-                  </div>
-                </Fragment>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div className="card" style={{ padding: 16 }}>
-              <div className="between" style={{ marginBottom: 10 }}>
-                <span style={{ fontWeight: 700, fontSize: 13 }}>Cổng tuần-2 · cấp thiết bị</span>
-                <Badge kind={HB_RESULT[p.d2wResult][1]} dot>{HB_RESULT[p.d2wResult][0]}</Badge>
-              </div>
-              <div className="grid-2">
-                <div className="kv"><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2wDue)}</div></div>
-                <div className="kv"><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2wDate)}</div></div>
-              </div>
-              <div className="kv" style={{ marginTop: 8 }}><div className="k">Ghi chú</div><div className="v">{p.d2wNote || '—'}</div></div>
-              {p.canEval && onUpdated && p.d2wResult === 'draft' && (
-                <GateAction empId={det.id} gate="2w" onUpdated={onUpdated} />
-              )}
-            </div>
-            <div className="card" style={{ padding: 16 }}>
-              <div className="between" style={{ marginBottom: 10 }}>
-                <span style={{ fontWeight: 700, fontSize: 13 }}>Cổng tháng-1 · có thể lên chính thức sớm</span>
-                <Badge kind={HB_RESULT[p.d1mResult][1]} dot>{HB_RESULT[p.d1mResult][0]}</Badge>
-              </div>
-              <div className="grid-2">
-                <div className="kv"><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d1mDue)}</div></div>
-                <div className="kv"><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d1mDate)}</div></div>
-              </div>
-              <div className="kv" style={{ marginTop: 8 }}><div className="k">Ghi chú</div><div className="v">{p.d1mNote || '—'}</div></div>
-              {p.d2wResult !== 'pass' ? (
-                <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>Mở sau khi cổng tuần-2 Đạt.</div>
-              ) : p.canEval && onUpdated && p.d1mResult === 'draft' && (
-                <GateAction empId={det.id} gate="1m" onUpdated={onUpdated} />
-              )}
-            </div>
-            <div className="card" style={{ padding: 16 }}>
-              <div className="between" style={{ marginBottom: 10 }}>
-                <span style={{ fontWeight: 700, fontSize: 13 }}>Cổng tháng-2 · lên chính thức</span>
-                <Badge kind={HB_RESULT[p.d2mResult][1]} dot>{HB_RESULT[p.d2mResult][0]}</Badge>
-              </div>
-              <div className="grid-2">
-                <div className="kv"><div className="k">Hạn đánh giá</div><div className="v mono">{fmtDate(p.d2mDue)}</div></div>
-                <div className="kv"><div className="k">Ngày đánh giá</div><div className="v mono">{fmtDate(p.d2mDate)}</div></div>
-              </div>
-              <div className="kv" style={{ marginTop: 8 }}><div className="k">Ghi chú</div><div className="v">{p.d2mNote || '—'}</div></div>
-              {p.d1mResult !== 'extend' ? (
-                <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>Chỉ mở khi cổng tháng-1 "Gia hạn".</div>
-              ) : p.canEval && onUpdated && p.d2mResult === 'draft' && (
-                <GateAction empId={det.id} gate="2m" onUpdated={onUpdated} />
-              )}
-            </div>
-          </div>
-          {p.officialDate && (
-            <div style={{ marginTop: 14, padding: '12px 16px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 13 }}>
-              Chính thức từ <b>{fmtDate(p.officialDate)}</b> · {p.officialMonths} tháng
-            </div>
-          )}
-        </div>
-      ) : !det.trial ? (
-        <EmptyState>Chưa xác định được luồng đánh giá cho nhân sự này. Hãy đặt
-          {' '}<b>Hình thức làm việc</b> (Online → thử giảng / Offline → thử việc 2 cổng)
-          {' '}và <b>Loại vị trí</b> trong hồ sơ; hoặc gán <b>Loại nhân sự = Giáo viên</b>
-          {' '}để dùng luồng thử giảng.</EmptyState>
-      ) : null}
-
-      {det.trial && (
-        <div style={{ marginTop: p.isGroupB ? 18 : 0 }}>
-          <div className="card" style={{ padding: 16 }}>
-            <div className="between" style={{ marginBottom: 12 }}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>Đánh giá thử giảng (Nhóm A — giảng viên)</span>
-              <Badge kind={HB_RESULT[det.trial.result][1]} dot>{HB_RESULT[det.trial.result][0]}</Badge>
-            </div>
-            <div className="grid-2" style={{ rowGap: 14 }}>
-              <div className="kv"><div className="k">Ngày thử giảng</div><div className="v mono">{fmtDate(det.trial.date)}</div></div>
-              <div className="kv"><div className="k">Lớp</div><div className="v">{det.trial.class || '—'}</div></div>
-              <div className="kv"><div className="k">Điểm phương pháp</div><div className="v mono">{det.trial.scoreMethod || '—'} / 10</div></div>
-              <div className="kv"><div className="k">Điểm chuyên môn</div><div className="v mono">{det.trial.scoreContent || '—'} / 10</div></div>
-            </div>
-            {det.trial.note && <div style={{ marginTop: 12, fontSize: 12.5 }} className="muted">{det.trial.note}</div>}
-            {det.trial.canEval && onUpdated && det.trial.result === 'draft' && (
-              <TrialAction empId={det.id} onUpdated={onUpdated} />
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+/* Tab Thử việc — quy trình bước động; giữ export ProbationTab để Profile
+   self-service tái dùng (không truyền onUpdated = chỉ xem). */
+export function ProbationTab({ det, isMgr, onUpdated }) {
+  return <OnboardingStepsPanel det={det} isMgr={isMgr} onUpdated={onUpdated} />;
 }
 
 export function AssetsTab({ det, editable, onUpdated }) {

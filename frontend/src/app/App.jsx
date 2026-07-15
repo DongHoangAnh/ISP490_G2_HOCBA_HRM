@@ -11,6 +11,7 @@ import Accounts from '../features/accounts/Accounts';
 import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
 import Offboarding from '../features/offboarding/Offboarding';
+import OnboardingConfig from '../features/onboarding/OnboardingConfig';
 import Payroll from '../features/payroll/Payroll';
 import { LoadingState, ErrorState } from '../components/states';
 import Login from '../features/auth/Login';
@@ -79,6 +80,7 @@ export default function App() {
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
         {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
+        {view === 'onboarding-config' && (me.isHrManager || me.isAdmin) && <OnboardingConfig />}
         {view === 'profile' && <Profile />}
       </div>
     </div>

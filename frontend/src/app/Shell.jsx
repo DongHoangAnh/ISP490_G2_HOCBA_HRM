@@ -21,6 +21,8 @@ const NAV = [
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
     { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
+    // Cấu hình quy trình nhận việc bước động — chỉ HR Manager/Admin
+    { id: 'onboarding-config', label: 'Cấu hình nhận việc', icon: 'settings', need: 'hrm' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
@@ -41,6 +43,7 @@ const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrU
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
   if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
+  if (need === 'hrm') return !!(me && (me.isHrManager || me.isAdmin));
   if (need === 'self') return !isRoleAccount(me);
   return true;
 };
@@ -72,6 +75,7 @@ export const PAGE_META = {
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
   departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },
+  'onboarding-config': { t: 'Cấu hình nhận việc', c: 'Quản lý nhân sự / Cấu hình quy trình' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
 };
 
