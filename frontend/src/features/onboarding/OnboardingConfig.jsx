@@ -12,6 +12,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import ModalHeader from '../../components/ModalHeader';
+import ConfirmModal from '../../components/ConfirmModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 
 const POSITION_TYPES = [
@@ -101,11 +102,10 @@ function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
     } catch (e) { setErr(e.message || 'Lưu thất bại.'); }
     finally { setBusy(false); }
   };
+  const [archiving, setArchiving] = useState(false);
   const archive = async () => {
-    if (!window.confirm('Lưu trữ quy trình này? NV đang chạy không bị ảnh hưởng (snapshot); quy trình sẽ không được gán mới.')) return;
-    setBusy(true);
     try { onSaved(await updateOnbTemplate(tpl.id, { active: false })); }
-    catch (e) { setErr(e.message || 'Lưu trữ thất bại.'); setBusy(false); }
+    catch (e) { setArchiving(false); setErr(e.message || 'Lưu trữ thất bại.'); throw e; }
   };
 
   return (
@@ -232,7 +232,8 @@ function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
         {err && <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--red-600)' }}>{err}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
           {!isNew && tpl.active !== false && (
-            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={archive}
+            <button className="btn btn-ghost btn-sm" disabled={busy}
+              onClick={() => setArchiving(true)}
               style={{ marginRight: 'auto', color: 'var(--red-700)' }}>
               <Icon name="trash" size={14} />Lưu trữ</button>
           )}
@@ -240,6 +241,13 @@ function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>
             {busy ? 'Đang lưu…' : 'Lưu quy trình'}</button>
         </div>
+        {archiving && (
+          <ConfirmModal title="Lưu trữ quy trình"
+            message="NV đang chạy không bị ảnh hưởng (snapshot); quy trình sẽ không được gán mới. Tiếp tục?"
+            confirmLabel="Lưu trữ"
+            onConfirm={archive}
+            onClose={() => setArchiving(false)} />
+        )}
       </div>
     </Modal>
   );

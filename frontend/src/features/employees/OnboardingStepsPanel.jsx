@@ -10,6 +10,7 @@ import {
 } from '../../api/onboarding';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
+import ConfirmModal from '../../components/ConfirmModal';
 import { EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 
@@ -36,33 +37,31 @@ const inp = {
   fontFamily: 'inherit',
 };
 
-/* Khối hành động cho bước đang mở (canAct). */
+/* Khối hành động cho bước đang mở (canAct). ConfirmModal thay
+   window.confirm (quy ước SPA từ đợt dọn timeoff). */
 function StepActions({ step, onDone }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const run = async (fn, confirmMsg) => {
-    setErr(null);
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
-    setBusy(true);
+  const [confirm, setConfirm] = useState(null); // 'extend' | 'fail' | null
+  const run = async (fn) => {
+    setErr(null); setBusy(true);
     try { onDone(await fn()); } catch (e) {
       setErr(e.code === 'forbidden'
         ? 'Bạn không có quyền xử lý bước này.'
         : (e.message || 'Thao tác bị từ chối.'));
+      throw e; // để ConfirmModal (nếu đang mở) hiện lỗi + giữ modal
     } finally { setBusy(false); }
   };
+  const doEvaluate = (result) =>
+    run(() => evaluateOnbStep(step.id, { result, note: note.trim() }));
   const evaluate = (result) => {
+    setErr(null);
     if (result === 'fail' && !note.trim()) {
       setErr('Cần nhập nhận xét khi Không đạt.'); return;
     }
-    run(
-      () => evaluateOnbStep(step.id, { result, note: note.trim() }),
-      result === 'fail'
-        ? 'Đánh dấu KHÔNG ĐẠT sẽ chuyển nhân viên sang offboarding. Tiếp tục?'
-        : result === 'extend'
-          ? 'Gia hạn sẽ kéo dài thử việc (mở bước gia hạn hoặc hẹn tái đánh giá). Tiếp tục?'
-          : null,
-    );
+    if (result === 'pass') { doEvaluate('pass').catch(() => {}); return; }
+    setConfirm(result);
   };
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
@@ -92,12 +91,22 @@ function StepActions({ step, onDone }) {
           <input value={note} onChange={(e) => setNote(e.target.value)}
             placeholder="Ghi chú (tuỳ chọn)" style={{ ...inp, flex: 1, minWidth: 180 }} />
           <button className="btn btn-primary btn-sm" disabled={busy}
-            onClick={() => run(() => completeOnbStep(step.id, { note: note.trim() }))}>
+            onClick={() => run(() => completeOnbStep(step.id, { note: note.trim() })).catch(() => {})}>
             <Icon name="checkCircle" size={14} />Hoàn thành</button>
           {busy && <span className="muted" style={{ fontSize: 12 }}>Đang lưu…</span>}
         </div>
       )}
       {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
+      {confirm && (
+        <ConfirmModal
+          title={confirm === 'fail' ? 'Xác nhận Không đạt' : 'Xác nhận Gia hạn'}
+          message={confirm === 'fail'
+            ? `Đánh dấu KHÔNG ĐẠT bước "${step.name}" sẽ chuyển nhân viên sang offboarding. Tiếp tục?`
+            : `Gia hạn bước "${step.name}" sẽ kéo dài thử việc (mở bước gia hạn hoặc hẹn tái đánh giá). Tiếp tục?`}
+          confirmLabel={confirm === 'fail' ? 'Không đạt' : 'Gia hạn'}
+          onConfirm={() => doEvaluate(confirm).then(() => setConfirm(null))}
+          onClose={() => setConfirm(null)} />
+      )}
     </div>
   );
 }
@@ -107,6 +116,7 @@ function DueEditor({ step, onDone }) {
   const [open, setOpen] = useState(false);
   const [val, setVal] = useState(step.dueDate || '');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
   if (!open) {
     return (
       <button className="icon-btn" title="Sửa hạn" onClick={() => setOpen(true)}>
@@ -115,17 +125,18 @@ function DueEditor({ step, onDone }) {
     );
   }
   const save = async () => {
-    setBusy(true);
+    setBusy(true); setErr(null);
     try { onDone(await setOnbStepDue(step.id, val || null)); setOpen(false); }
-    catch (e) { alert(e.message || 'Không sửa được hạn.'); }
+    catch (e) { setErr(e.message || 'Không sửa được hạn.'); }
     finally { setBusy(false); }
   };
   return (
-    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <input type="date" value={val} onChange={(e) => setVal(e.target.value)}
         style={{ ...inp, padding: '4px 8px', fontSize: 12 }} />
       <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>Lưu</button>
       <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>Huỷ</button>
+      {err && <span style={{ fontSize: 11.5, color: 'var(--red-600)' }}>{err}</span>}
     </span>
   );
 }
@@ -144,13 +155,16 @@ function TemplatePicker({ empId, currentId, onDone }) {
       setTpls(d.templates.filter((t) => t.active !== false));
     } catch (e) { setErr(e.message); }
   };
+  const [confirming, setConfirming] = useState(false);
   const apply = async () => {
-    if (!sel) return;
-    if (!window.confirm('Đổi quy trình sẽ bỏ các bước CHƯA làm và nối bước mới vào sau. Tiếp tục?')) return;
-    setBusy(true);
-    try { onDone(await assignOnbTemplate(empId, Number(sel))); setOpen(false); }
-    catch (e) { setErr(e.message || 'Không đổi được quy trình.'); }
-    finally { setBusy(false); }
+    try {
+      onDone(await assignOnbTemplate(empId, Number(sel)));
+      setConfirming(false); setOpen(false);
+    } catch (e) {
+      setConfirming(false);
+      setErr(e.message || 'Không đổi được quy trình.');
+      throw e;
+    } finally { setBusy(false); }
   };
   if (!open) {
     return (
@@ -171,11 +185,19 @@ function TemplatePicker({ empId, currentId, onDone }) {
               </option>
             ))}
           </select>
-          <button className="btn btn-primary btn-sm" disabled={busy || !sel} onClick={apply}>Áp dụng</button>
+          <button className="btn btn-primary btn-sm" disabled={busy || !sel}
+            onClick={() => setConfirming(true)}>Áp dụng</button>
         </>
       )}
       <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>Huỷ</button>
       {err && <span style={{ fontSize: 12, color: 'var(--red-600)' }}>{err}</span>}
+      {confirming && (
+        <ConfirmModal title="Đổi quy trình nhận việc"
+          message="Đổi quy trình sẽ bỏ các bước CHƯA làm và nối bước của quy trình mới vào sau. Bước đã hoàn thành giữ lại làm lịch sử. Tiếp tục?"
+          confirmLabel="Đổi quy trình"
+          onConfirm={apply}
+          onClose={() => setConfirming(false)} />
+      )}
     </span>
   );
 }
