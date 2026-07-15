@@ -246,6 +246,41 @@ class TestOnboardingEngine(TransactionCase):
         # KHÔNG tự lên official
         self.assertEqual(self.emp.x_employment_status, 'probation')
 
+    def test_seed_templates_exist(self):
+        gv = self.env.ref('hocba_employees.onb_template_teacher')
+        vp = self.env.ref('hocba_employees.onb_template_office')
+        self.assertEqual(len(gv.step_ids), 2)
+        self.assertEqual(len(vp.step_ids), 4)
+        steps = vp.step_ids.sorted(lambda s: (s.sequence, s.id))
+        self.assertEqual(steps.mapped('step_type'),
+                         ['evaluation', 'task', 'evaluation', 'evaluation'])
+        self.assertTrue(steps[2].pass_completes)
+        self.assertTrue(steps[3].is_extension and steps[3].pass_completes)
+        self.assertEqual(steps[1].auto_action, 'grant_assets')
+        # thử giảng KHÔNG pass_completes (pass hiện không lên chính thức)
+        gv_steps = gv.step_ids.sorted(lambda s: (s.sequence, s.id))
+        self.assertFalse(gv_steps[0].pass_completes)
+
+    def test_reassign_template_manual(self):
+        gv = self.env.ref('hocba_employees.onb_template_teacher')
+        emp = self.emp
+        self._steps()[0].action_evaluate('pass')
+        done_before = len(emp.x_onboarding_step_ids.filtered(
+            lambda s: s.state == 'done'))
+        emp._hocba_assign_onboarding(template=gv)
+        self.assertEqual(emp.x_onboarding_template_id, gv)
+        # bước done giữ lại làm lịch sử, bước mới nối vào sau
+        self.assertEqual(len(emp.x_onboarding_step_ids.filtered(
+            lambda s: s.state == 'done')), done_before)
+        news = emp.x_onboarding_step_ids.filtered(
+            lambda s: s.template_id == gv)
+        self.assertEqual(len(news), 2)
+        news = news.sorted(lambda s: (s.sequence, s.id))
+        self.assertEqual(news[0].state, 'open')
+        # sequence bước mới phải đứng sau bước cũ còn giữ
+        self.assertGreater(news[0].sequence, max(
+            (emp.x_onboarding_step_ids - news).mapped('sequence')))
+
     def test_permission_evaluate(self):
         stranger = self.env['res.users'].create({
             'name': 'Stranger', 'login': 'onb_stranger',
@@ -257,3 +292,69 @@ class TestOnboardingEngine(TransactionCase):
         s[0].with_user(self.mgr_user).action_evaluate('pass')
         self.assertEqual(self._steps()[0].result, 'pass')
         self.assertEqual(self._steps()[0].done_by_id, self.mgr_user)
+
+
+@tagged('post_install', '-at_install')
+class TestOnboardingMigration(TransactionCase):
+    """Map field cổng cứng cũ → bước động (migration 19.0.2.0.0)."""
+
+    def test_migrate_legacy_group_b(self):
+        start = fields.Date.today() - timedelta(days=40)
+        emp = self.env['hr.employee'].with_context(
+            hocba_no_onb_assign=True).create({
+                'name': 'Legacy B', 'x_position_type': 'staff',
+                'x_work_form': 'offline',
+                'x_employment_status': 'probation',
+                'x_probation_start': start})
+        # giả lập dữ liệu cũ: tuần-2 pass, thiết bị đã cấp, tháng-1 extend
+        emp.sudo().with_context(hocba_no_onb_assign=True).write({
+            'x_eval_2w_result': 'pass',
+            'x_eval_2w_date': start + timedelta(days=14),
+            'x_equip_grant_date': start + timedelta(days=15),
+            'x_eval_1m_result': 'extend',
+            'x_eval_1m_date': start + timedelta(days=30),
+        })
+        self.assertFalse(emp.x_onboarding_step_ids)
+        self.env['hr.employee']._hocba_migrate_legacy_gates()
+        s = emp.x_onboarding_step_ids.sorted(lambda x: (x.sequence, x.id))
+        self.assertEqual(len(s), 4)
+        self.assertEqual(
+            [(x.name, x.state) for x in s[:3]],
+            [('Đánh giá tuần-2', 'done'),
+             ('Cấp thiết bị làm việc', 'done'),
+             ('Đánh giá tháng-1', 'done')])
+        self.assertEqual(s[2].result, 'extend')
+        self.assertEqual(s[3].state, 'open')   # cổng tháng-2 đang chờ
+        # idempotent
+        self.env['hr.employee']._hocba_migrate_legacy_gates()
+        self.assertEqual(len(emp.x_onboarding_step_ids), 4)
+
+    def test_migrate_legacy_teacher_trial_pass(self):
+        t_teacher = self.env.ref('hocba_employees.employee_type_teacher')
+        emp = self.env['hr.employee'].with_context(
+            hocba_no_onb_assign=True).create({
+                'name': 'Legacy GV', 'x_employee_type_id': t_teacher.id,
+                'x_employment_status': 'probation',
+                'x_probation_start': fields.Date.today() - timedelta(days=9)})
+        emp.sudo().with_context(hocba_no_onb_assign=True).write({
+            'x_trial_lesson_result': 'pass',
+            'x_trial_lesson_date': fields.Date.today() - timedelta(days=2),
+            'x_trial_score_method': 8, 'x_trial_score_content': 9})
+        self.env['hr.employee']._hocba_migrate_legacy_gates()
+        s = emp.x_onboarding_step_ids.sorted(lambda x: (x.sequence, x.id))
+        self.assertEqual(len(s), 2)
+        self.assertEqual(s[0].result, 'pass')
+        self.assertIn('8', s[0].result_note)  # điểm cũ ghi vào nhận xét
+        self.assertEqual(s[1].state, 'open')  # Ký HĐ thỉnh giảng chờ
+
+    def test_migrate_fresh_probation_assigns_template(self):
+        # NV thử việc chưa có dữ liệu cổng cũ → migration gán template mới
+        emp = self.env['hr.employee'].with_context(
+            hocba_no_onb_assign=True).create({
+                'name': 'Fresh Prob', 'x_position_type': 'staff',
+                'x_work_form': 'offline',
+                'x_employment_status': 'probation',
+                'x_probation_start': fields.Date.today()})
+        self.assertFalse(emp.x_onboarding_step_ids)
+        self.env['hr.employee']._hocba_migrate_legacy_gates()
+        self.assertTrue(emp.x_onboarding_step_ids)

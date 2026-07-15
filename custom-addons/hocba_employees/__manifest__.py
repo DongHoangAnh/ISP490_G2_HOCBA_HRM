@@ -1,6 +1,6 @@
 {
     'name': 'HOCBA Employee Management',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Human Resources',
     'author': 'HOCBA Team',
     'license': 'LGPL-3',
@@ -25,6 +25,7 @@ Payroll, Recruitment.
         'data/ir_cron_data.xml',
         'data/hocba_asset_type_data.xml',
         'data/hocba_employee_type_data.xml',
+        'data/hb_onboarding_template_data.xml',
         'data/hr_skill_data.xml',
         'views/hr_employee_views.xml',
         'views/hr_employee_asset_views.xml',

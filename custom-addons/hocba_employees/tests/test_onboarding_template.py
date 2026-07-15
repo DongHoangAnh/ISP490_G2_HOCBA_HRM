@@ -64,11 +64,12 @@ class TestOnboardingTemplate(TransactionCase):
     def test_matching(self):
         Tpl = self.env['hb.onboarding.template']
         t_teacher = self.env.ref('hocba_employees.employee_type_teacher')
+        # sequence 1-2 để thắng chắc chắn 2 template seed (sequence 5/10)
         tpl_gv = self._tpl([{'name': 'Thử giảng', 'step_type': 'evaluation'}],
-                           name='TPL GV', sequence=5,
+                           name='TPL GV', sequence=1,
                            apply_employee_type_ids=[(6, 0, t_teacher.ids)])
         tpl_vp = self._tpl([{'name': 'ĐG', 'step_type': 'evaluation'}],
-                           name='TPL VP', sequence=10,
+                           name='TPL VP', sequence=2,
                            apply_position_types='staff,manager',
                            apply_work_form='offline')
         emp_gv = self.env['hr.employee'].create({
