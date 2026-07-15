@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_finance_root"
+              name="Tài chính"
+              sequence="45"
+              groups="hocba_finance.group_finance_user"/>
+
+    <menuitem id="menu_finance_vouchers"
+              name="Phiếu thu / chi"
+              parent="menu_finance_root"
+              action="action_hocba_fin_voucher"
+              sequence="10"/>
+
+    <menuitem id="menu_finance_reports"
+              name="Báo cáo"
+              parent="menu_finance_root"
+              action="action_hocba_fin_report"
+              sequence="20"/>
+
+    <menuitem id="menu_finance_config"
+              name="Cấu hình"
+              parent="menu_finance_root"
+              sequence="90"/>
+
+    <menuitem id="menu_finance_funds"
+              name="Quỹ tiền"
+              parent="menu_finance_config"
+              action="action_hocba_fund"
+              sequence="10"/>
+
+    <menuitem id="menu_finance_categories"
+              name="Mục thu/chi"
+              parent="menu_finance_config"
+              action="action_hocba_fin_category"
+              sequence="20"/>
+</odoo>

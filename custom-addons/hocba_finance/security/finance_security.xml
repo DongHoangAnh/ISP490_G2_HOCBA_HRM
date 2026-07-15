@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Nhóm Kế toán: tạo/duyệt/ghi sổ phiếu, quản lý quỹ & mục. -->
+    <record id="group_finance_user" model="res.groups">
+        <field name="name">Tài chính — Kế toán</field>
+        <field name="comment">Tạo/duyệt/ghi sổ phiếu thu-chi; quản lý quỹ &amp; danh mục.</field>
+    </record>
+
+    <!-- Nhóm Ban giám đốc: bao trùm Kế toán + xem tổng toàn công ty. -->
+    <record id="group_finance_manager" model="res.groups">
+        <field name="name">Tài chính — Ban giám đốc</field>
+        <field name="comment">Xem toàn bộ quỹ/phiếu/báo cáo toàn công ty.</field>
+        <field name="implied_ids" eval="[(4, ref('group_finance_user'))]"/>
+    </record>
+</odoo>

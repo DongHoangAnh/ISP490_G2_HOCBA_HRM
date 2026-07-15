@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="hocba_fin_category_list" model="ir.ui.view">
+        <field name="name">hocba.fin.category.list</field>
+        <field name="model">hocba.fin.category</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="code"/>
+                <field name="name"/>
+                <field name="category_type"/>
+                <field name="parent_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="hocba_fin_category_form" model="ir.ui.view">
+        <field name="name">hocba.fin.category.form</field>
+        <field name="model">hocba.fin.category</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="code"/>
+                        <field name="name"/>
+                        <field name="category_type"/>
+                        <field name="parent_id"
+                               domain="[('category_type', '=', category_type)]"/>
+                        <field name="active"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="hocba_fin_category_search" model="ir.ui.view">
+        <field name="name">hocba.fin.category.search</field>
+        <field name="model">hocba.fin.category</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="code"/>
+                <filter name="income" string="Thu" domain="[('category_type', '=', 'income')]"/>
+                <filter name="expense" string="Chi" domain="[('category_type', '=', 'expense')]"/>
+                <separator/>
+                <filter name="group_type" string="Loại"
+                        context="{'group_by': 'category_type'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hocba_fin_category" model="ir.actions.act_window">
+        <field name="name">Mục thu/chi</field>
+        <field name="res_model">hocba.fin.category</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

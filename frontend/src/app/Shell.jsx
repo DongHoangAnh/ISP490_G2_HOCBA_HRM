@@ -22,6 +22,9 @@ const NAV = [
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
     { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
   ]},
+  { sec: 'Tài chính', need: 'finance', items: [
+    { id: 'finance', label: 'Dòng tiền', icon: 'wallet', need: 'finance' },
+  ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
     // Nghỉ phép cá nhân của nhân viên/Trưởng phòng. Tài khoản vai trò thuần
@@ -41,6 +44,7 @@ const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrU
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
   if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
+  if (need === 'finance') return !!(me && me.isFinance);
   if (need === 'self') return !isRoleAccount(me);
   return true;
 };
@@ -69,6 +73,7 @@ export const PAGE_META = {
   timeoff: { t: 'Nghỉ phép', c: 'Cá nhân / Nghỉ phép' },
   offboarding: { t: 'Nghỉ việc', c: 'Nhân sự / Offboarding' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
+  finance: { t: 'Tài chính — Dòng tiền', c: 'Tài chính / Quản lý dòng tiền' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
   departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },

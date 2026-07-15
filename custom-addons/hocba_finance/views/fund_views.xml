@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="hocba_fund_list" model="ir.ui.view">
+        <field name="name">hocba.fund.list</field>
+        <field name="model">hocba.fund</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="code"/>
+                <field name="name"/>
+                <field name="department_id"/>
+                <field name="fund_type"/>
+                <field name="opening_balance" widget="monetary"/>
+                <field name="current_balance" widget="monetary"
+                       decoration-danger="current_balance &lt; 0"/>
+                <field name="currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="hocba_fund_form" model="ir.ui.view">
+        <field name="name">hocba.fund.form</field>
+        <field name="model">hocba.fund</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="Tên quỹ"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code"/>
+                            <field name="department_id"/>
+                            <field name="fund_type"/>
+                        </group>
+                        <group>
+                            <field name="opening_balance" widget="monetary"/>
+                            <field name="current_balance" widget="monetary"/>
+                            <field name="currency_id"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Phiếu đã ghi sổ">
+                            <field name="voucher_ids" nolabel="1" readonly="1"
+                                   domain="[('state', '=', 'posted')]">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="voucher_date"/>
+                                    <field name="voucher_type"/>
+                                    <field name="category_id"/>
+                                    <field name="amount" widget="monetary"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="hocba_fund_search" model="ir.ui.view">
+        <field name="name">hocba.fund.search</field>
+        <field name="model">hocba.fund</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="department_id"/>
+                <filter name="cash" string="Tiền mặt" domain="[('fund_type', '=', 'cash')]"/>
+                <filter name="bank" string="Ngân hàng" domain="[('fund_type', '=', 'bank')]"/>
+                <separator/>
+                <filter name="group_dept" string="Phòng ban"
+                        context="{'group_by': 'department_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hocba_fund" model="ir.actions.act_window">
+        <field name="name">Quỹ tiền</field>
+        <field name="res_model">hocba.fund</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
