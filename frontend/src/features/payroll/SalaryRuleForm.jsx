@@ -286,6 +286,76 @@ function FormulaSection({ form, set, ta, hint, taRef }) {
   );
 }
 
+/* ── SearchSelect: dropdown có ô tìm kiếm ────────────────── */
+function SearchSelect({ value, options, onChange, placeholder, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const current = options.find(([v]) => v === value);
+  const ql = q.trim().toLowerCase();
+  const filtered = ql
+    ? options.filter(([v, l]) => (l + ' ' + v).toLowerCase().includes(ql))
+    : options;
+
+  const box = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--border)', fontSize: 14, background: disabled ? 'var(--gray-50)' : '#fff',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    cursor: disabled ? 'not-allowed' : 'pointer', color: current ? 'var(--text)' : 'var(--muted)',
+  };
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative' }}>
+      <div style={box} onClick={() => { if (!disabled) { setOpen((o) => !o); setQ(''); } }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {current ? current[1] : (placeholder || '-- Chọn --')}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--muted)' }}>▾</span>
+      </div>
+      {open && !disabled && (
+        <div style={{
+          position: 'absolute', top: '105%', left: 0, right: 0, zIndex: 60,
+          background: '#fff', border: '1px solid var(--border)', borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,.12)', overflow: 'hidden',
+        }}>
+          <div style={{ padding: 8, borderBottom: '1px solid var(--border)' }}>
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Tìm nhanh..."
+              style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }} />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            {filtered.length === 0 && (
+              <div style={{ padding: '10px 12px', fontSize: 13, color: 'var(--muted)' }}>Không có kết quả</div>
+            )}
+            {filtered.map(([v, l]) => (
+              <div key={v} onClick={() => { onChange(v); setOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'baseline', gap: 8,
+                  padding: '8px 12px', fontSize: 13.5, cursor: 'pointer',
+                  background: v === value ? 'var(--red-50,#fef2f2)' : '#fff',
+                  fontWeight: v === value ? 600 : 400,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = v === value ? 'var(--red-50,#fef2f2)' : '#fff'; }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span>
+                <span style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--muted)', fontSize: 11, fontFamily: 'monospace' }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── LookupSection component ─────────────────────────────── */
 function LookupSection({ form, set, lookupSources }) {
   const sourceOptions = lookupSources
@@ -303,10 +373,6 @@ function LookupSection({ form, set, lookupSources }) {
     set('lookup_field', '');
   };
 
-  const sel = {
-    width: '100%', padding: '9px 12px', borderRadius: 8,
-    border: '1px solid var(--border)', fontSize: 14, background: '#fff',
-  };
   const hint = { fontSize: 12, color: 'var(--muted)', marginTop: 4 };
 
   return (
@@ -315,11 +381,9 @@ function LookupSection({ form, set, lookupSources }) {
         <label style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 5, display: 'block' }}>
           Nguồn dữ liệu
         </label>
-        <select style={sel} value={form.lookup_source} onChange={(e) => handleSourceChange(e.target.value)}>
-          <option value="">-- Chọn nguồn --</option>
-          {sourceOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <div style={hint}>Chọn bảng dữ liệu để tra cứu (VD: Chấm công)</div>
+        <SearchSelect value={form.lookup_source} options={sourceOptions}
+          onChange={handleSourceChange} placeholder="-- Chọn nguồn --" />
+        <div style={hint}>Chọn module/bảng dữ liệu để tra cứu — gõ để tìm nhanh.</div>
       </div>
 
       {form.lookup_source && (
@@ -327,12 +391,11 @@ function LookupSection({ form, set, lookupSources }) {
           <label style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 5, display: 'block' }}>
             Trường tra cứu
           </label>
-          <select style={sel} value={form.lookup_field} onChange={(e) => set('lookup_field', e.target.value)}>
-            <option value="">-- Chọn trường --</option>
-            {fieldOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          <SearchSelect value={form.lookup_field} options={fieldOptions}
+            onChange={(v) => set('lookup_field', v)} placeholder="-- Chọn trường --" />
           <div style={hint}>
-            Giá trị của trường này sẽ được tổng hợp (sum) cho nhân viên trong kỳ lương
+            Trường số của model đã chọn — gõ để tìm nhanh. Nguồn theo kỳ (có ngày) sẽ
+            tổng hợp trong kỳ lương; nguồn không có ngày lấy giá trị hiện tại.
           </div>
         </div>
       )}
