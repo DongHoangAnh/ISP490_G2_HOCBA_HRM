@@ -15,3 +15,5 @@ from . import test_department
 from . import test_teaching_days
 
 from . import test_offboarding_api
+from . import test_dashboard_stats
+from . import test_permissions_tpgv

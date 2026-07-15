@@ -17,7 +17,8 @@ import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_RESULT, HB_CERT } from '../../utils/format';
 
-export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr, initialTab = 'info' }) {
+export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
+  canEdit = isHr, canManageAccount = isHr, canSeeSalary = isMgr, initialTab = 'info' }) {
   const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
@@ -35,7 +36,7 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr, i
     ['assets', det ? `Tài sản (${det.assets.length})` : 'Tài sản'],
     ['promo', det ? `Thăng tiến (${det.promotions.length})` : 'Thăng tiến'],
   ];
-  if (isHr) tabs.push(['account', 'Tài khoản']);
+  if (canManageAccount) tabs.push(['account', 'Tài khoản']);
 
   return (
     <Modal onClose={onClose} lg>
@@ -53,7 +54,7 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr, i
           </div>
         </div>
         <div className="modal-x" style={{ display: 'flex', gap: 8 }}>
-          {isHr && det && (
+          {canEdit && det && (
             <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
               <Icon name="edit" size={15} />Chỉnh sửa</button>
           )}
@@ -72,11 +73,11 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr, i
       <div style={{ padding: '22px 24px', maxHeight: 'min(72vh, calc(100vh - 210px))', overflowY: 'auto' }}>
         {derr && <EmptyState>Không tải được hồ sơ ({derr}).</EmptyState>}
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
-        {det && tab === 'info' && <InfoTab det={det} isHr={isHr} isMgr={isMgr} editable={isHr} onUpdated={update} />}
-        {det && tab === 'probation' && <ProbationTab det={det} isHr={isHr} isMgr={isMgr} onUpdated={update} />}
-        {det && tab === 'assets' && <AssetsTab det={det} editable={isHr} onUpdated={update} />}
+        {det && tab === 'info' && <InfoTab det={det} isHr={canEdit} isMgr={canSeeSalary} editable={canEdit} onUpdated={update} />}
+        {det && tab === 'probation' && <ProbationTab det={det} isHr={canEdit} isMgr={isMgr} onUpdated={update} />}
+        {det && tab === 'assets' && <AssetsTab det={det} editable={canEdit} onUpdated={update} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update} />}
-        {det && tab === 'account' && isHr && <AccountTab det={det} emp={emp} onUpdated={update} />}
+        {det && tab === 'account' && canManageAccount && <AccountTab det={det} emp={emp} onUpdated={update} />}
       </div>
 
       {editing && det && (
@@ -151,7 +152,7 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
                     <td className="mono">{fmtDate(d.from)}</td>
                     <td className="mono">{d.to ? fmtDate(d.to) : '—'}</td>
                     {depEditable && (
-                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
                         <button className="icon-btn" title="Sửa" onClick={() => setDepForm(d)}><Icon name="edit" size={15} className="faint" /></button>
                         <button className="icon-btn" title="Xoá" onClick={() => delDep(d)}><Icon name="trash" size={15} className="faint" /></button>
                       </td>
@@ -197,7 +198,7 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
                         ) : (c.verified ? <Badge kind="green">Đã xác minh</Badge> : <Badge kind="gray">Chưa</Badge>)}
                       </td>
                       {editable && (
-                        <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
                           <button className="icon-btn" title="Sửa" onClick={() => setCertForm(c)}><Icon name="edit" size={15} className="faint" /></button>
                           <button className="icon-btn" title="Xoá" onClick={() => delCert(c)}><Icon name="trash" size={15} className="faint" /></button>
                         </td>
@@ -491,7 +492,7 @@ export function AssetsTab({ det, editable, onUpdated }) {
                 <td><Badge kind={kind(a.state)} dot>{a.stateLabel}</Badge></td>
                 <td className="mono">{a.returnDate ? fmtDate(a.returnDate) : '—'}</td>
                 {canAct && (
-                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
                     {a.state === 'assigned' ? (
                       <>
                         <button className="btn btn-ghost btn-sm" title="Thu hồi" onClick={() => setForm({ mode: 'return', asset: a })}>Thu hồi</button>

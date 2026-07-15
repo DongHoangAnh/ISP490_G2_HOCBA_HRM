@@ -3,7 +3,7 @@
    chỉ HR. dep=null là thêm mới. Owner: Tân.
    ============================================================ */
 import { useState, useEffect } from 'react';
-import { fetchFormMeta, createDependent, updateDependent } from '../../api/employees';
+import { fetchDependentMeta, createDependent, updateDependent } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 
@@ -33,7 +33,7 @@ export default function DependentForm({ empId, dep, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  useEffect(() => { fetchFormMeta().then((m) => setRels(m.relationship || [])).catch(() => {}); }, []);
+  useEffect(() => { fetchDependentMeta().then((m) => setRels(m.relationship || [])).catch(() => {}); }, []);
 
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
