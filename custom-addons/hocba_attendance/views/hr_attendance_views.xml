@@ -65,7 +65,12 @@
                     <field name="check_in"/>
                     <field name="check_out"/>
                     <field name="working_hours" sum="working_hours"/>
-                    <field name="status_code"/>
+                    <field name="status_code" column_invisible="1"/>
+                    <field name="status_id" widget="badge"
+                           decoration-success="status_code == 'on_time'"
+                           decoration-danger="status_code == 'late'"
+                           decoration-info="status_code == 'on_leave_paid'"
+                           decoration-muted="status_code == 'on_leave_unpaid'"/>
                     <field name="needs_review" widget="boolean_toggle" optional="show"/>
                     <field name="face_suspect" optional="hide"/>
                     <field name="out_of_zone" optional="hide"/>
@@ -87,6 +92,8 @@
                     <filter name="filter_today" string="Today" domain="[('date', '=', context_today())]"/>
                     <filter name="filter_on_time" string="On Time" domain="[('status_code', '=', 'on_time')]"/>
                     <filter name="filter_late" string="Late" domain="[('status_code', '=', 'late')]"/>
+                    <filter name="filter_on_leave_paid" string="Nghỉ phép (có lương)" domain="[('status_code', '=', 'on_leave_paid')]"/>
+                    <filter name="filter_on_leave_unpaid" string="Nghỉ không lương" domain="[('status_code', '=', 'on_leave_unpaid')]"/>
                     <separator/>
                     <filter name="filter_needs_review" string="Cần xem xét"
                             domain="[('needs_review', '=', True)]"/>
