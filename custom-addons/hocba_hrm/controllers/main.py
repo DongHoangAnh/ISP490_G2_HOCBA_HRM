@@ -1618,6 +1618,7 @@ def _dept_archive(env, dept_id, body):
 
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
+    'on_approved_leave': 403,
     'already_checked_in': 409,
     'not_checked_in': 409,
     'already_checked_out': 409,
