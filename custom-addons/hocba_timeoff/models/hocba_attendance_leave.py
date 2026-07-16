@@ -109,6 +109,9 @@ class HocbaAttendanceLeave(models.Model):
         return res
 
     # ---- Sinh bản ghi cho nghỉ cả ngày ------------------------------------
+    _CONFLICT_NOTE = ('[Cảnh báo] Có đơn nghỉ cả ngày đã duyệt trùng ngày '
+                      'đã chấm công — cần HR rà soát.')
+
     def _is_working_day(self, day, policy):
         return policy.is_workday(datetime.combine(day, time(0)))
 
@@ -154,7 +157,7 @@ class HocbaAttendanceLeave(models.Model):
                 if exist:
                     if exist.source == 'checkin' and 'rà soát' not in (exist.notes or ''):
                         exist.write({'notes': (exist.notes or '')
-                            + '\n[Cảnh báo] Có đơn nghỉ cả ngày đã duyệt trùng ngày đã chấm công — cần HR rà soát.'})
+                            + '\n' + self._CONFLICT_NOTE})
                 else:
                     Att.create({
                         'employee_id': emp.id,
@@ -179,6 +182,20 @@ class HocbaAttendanceLeave(models.Model):
             r.write({'leave_id': False, 'leave_half': False,
                      'leave_is_paid': False,
                      'notes': notes.strip('\n') or False})
+        # Note cảnh báo trùng (đơn CẢ ngày duyệt sau khi đã chấm công) được
+        # append vào bản ghi thật mà KHÔNG set leave_id -> gỡ theo khoảng ngày.
+        # An toàn: Odoo chặn đơn nghỉ duyệt chồng ngày cùng NV, nên note trong
+        # khoảng này chỉ có thể thuộc về CHÍNH đơn đang gỡ.
+        d0, d1 = self._leave_day_bounds(leave)
+        if d0 and d1:
+            warned = self.env['hocba.attendance'].sudo().search([
+                ('employee_id', '=', leave.employee_id.id),
+                ('date', '>=', d0), ('date', '<=', d1),
+                ('source', '=', 'checkin'),
+                ('notes', 'like', self._CONFLICT_NOTE)])
+            for r in warned:
+                notes = (r.notes or '').replace(self._CONFLICT_NOTE, '')
+                r.write({'notes': notes.strip('\n') or False})
 
     # ---- Ép công + trạng thái cho bản ghi nghỉ ----------------------------
     @api.depends('check_in', 'check_out',

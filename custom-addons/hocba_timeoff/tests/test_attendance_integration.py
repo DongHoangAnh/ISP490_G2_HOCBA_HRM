@@ -274,4 +274,20 @@ class TestReverseSync(_LeaveAttMixin):
         self.assertTrue(real.exists())            # công thật giữ nguyên
         self.assertFalse(real.leave_id)           # chỉ gỡ liên kết
         self.assertFalse(real.leave_half)
+        self.assertFalse(real.leave_is_paid)
         self.assertNotIn('nửa buổi', (real.notes or ''))
+
+    def test_refuse_clears_conflict_warning_note(self):
+        # Đơn CẢ ngày duyệt SAU khi đã chấm công -> note cảnh báo trùng được
+        # append vào bản ghi thật (không set leave_id). Từ chối/rút đơn phải
+        # gỡ note đó — không để cảnh báo mồ côi của đơn đã hủy.
+        d = date(2026, 7, 22)  # Thứ 4
+        real = self.Att.sudo().create({
+            'employee_id': self.emp.id,
+            'check_in': datetime(2026, 7, 22, 1, 0, 0)})  # ~8h VN
+        lv = self._mk_leave(self.annual, d, d)
+        self.assertIn('rà soát', (real.notes or ''))      # cảnh báo đã gắn
+        lv.sudo().action_refuse()
+        self.assertTrue(real.exists())
+        self.assertEqual(real.source, 'checkin')
+        self.assertNotIn('rà soát', (real.notes or ''))
