@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 
 from odoo import fields
 from odoo.exceptions import UserError
@@ -123,6 +123,12 @@ class TestGenerateFullDay(_LeaveAttMixin):
         self.assertTrue(recs.leave_is_paid)
         self.assertEqual(recs.status_id.code, 'on_leave_paid')
         self.assertEqual(recs.date, d)
+        # check_in quy ước = ngày đó lúc morning_start (emp không gắn user_id
+        # -> tz='UTC' nên giờ local == giờ UTC lưu trong DB).
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        expected_ci = datetime.combine(d, time(0)) + timedelta(
+            hours=policy.morning_start or 8.0)
+        self.assertEqual(recs.check_in, expected_ci)
 
     def test_generate_unpaid_full_day(self):
         d = date(2026, 7, 16)  # Thứ 5
@@ -259,6 +265,19 @@ class TestReverseSync(_LeaveAttMixin):
         d = date(2026, 7, 15)
         lv = self._mk_leave(self.annual, d, d)
         self.assertTrue(self._leave_recs(lv))
+        lv.sudo().action_refuse()
+        self.assertFalse(self._leave_recs(lv))
+
+    def test_withdraw_removes_generated(self):
+        # Luồng RÚT đơn (Phase 7): chủ đơn xin rút đơn đã duyệt -> người duyệt
+        # approve, controller withdraw/decide đặt x_withdraw_state='pending' rồi
+        # gọi action_refuse() (main.py: api_request_withdraw_decide). Test riêng
+        # để nếu ai đổi luồng rút không còn gọi action_refuse thì đỏ ngay —
+        # điểm dễ lệch lương (spec Edge case 3).
+        d = date(2026, 7, 15)
+        lv = self._mk_leave(self.annual, d, d)
+        self.assertTrue(self._leave_recs(lv))
+        lv.sudo().write({'x_withdraw_state': 'pending'})
         lv.sudo().action_refuse()
         self.assertFalse(self._leave_recs(lv))
 

@@ -210,6 +210,7 @@ class HocbaAttendanceLeave(models.Model):
                 rec.late_minutes = 0
                 rec.early_leave_minutes = 0
                 rec.missing_minutes = 0
+                rec.expected_check_out = False   # bản ghi nghỉ không ai check-out
                 rec.morning_credit = 0.5 if rec.leave_is_paid else 0.0
                 rec.afternoon_credit = 0.5 if rec.leave_is_paid else 0.0
                 rec.work_credit = rec.morning_credit + rec.afternoon_credit
