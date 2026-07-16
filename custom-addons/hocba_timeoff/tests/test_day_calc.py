@@ -45,13 +45,18 @@ class TestTimeoffDayCalc(TransactionCase):
 
     # ---------- Cấu hình loại nghỉ ----------
     def test_leave_types_support_half_day(self):
-        """Annual/Sick/Personal/Compensatory bật half_day; Unpaid giữ 'day'."""
+        """Annual/Sick/Personal/Compensatory/Unpaid/Emergency bật half_day;
+        Thai Sản/Buổi Dạy giữ 'day'."""
         for xmlid in ('hb_leave_type_annual', 'hb_leave_type_sick',
-                      'hb_leave_type_personal', 'hb_leave_type_compensatory'):
+                      'hb_leave_type_personal', 'hb_leave_type_compensatory',
+                      'hb_leave_type_unpaid', 'hb_leave_type_emergency'):
             lt = self.env.ref('hocba_timeoff.%s' % xmlid)
             self.assertEqual(lt.request_unit, 'half_day',
                              '%s phải hỗ trợ nửa ngày' % xmlid)
-        self.assertEqual(self.unpaid.request_unit, 'day')
+        for xmlid in ('hb_leave_type_maternity', 'hb_leave_type_teaching_off'):
+            lt = self.env.ref('hocba_timeoff.%s' % xmlid)
+            self.assertEqual(lt.request_unit, 'day',
+                             '%s giữ nguyên nghỉ cả ngày' % xmlid)
 
     # ---------- Helper _period_request_vals ----------
     def test_period_vals_only_for_half_day_type(self):
@@ -62,8 +67,9 @@ class TestTimeoffDayCalc(TransactionCase):
             'request_date_from_period': 'am',
             'request_date_to_period': 'am',
         })
-        # Loại 'day' → không áp dụng nửa ngày.
-        self.assertEqual(_period_request_vals(self.unpaid, '2026-07-06', 'am'), {})
+        # Loại 'day' (Thai Sản) → không áp dụng nửa ngày.
+        maternity = self.env.ref('hocba_timeoff.hb_leave_type_maternity')
+        self.assertEqual(_period_request_vals(maternity, '2026-07-06', 'am'), {})
         # period rỗng / sai → cả ngày như cũ.
         self.assertEqual(_period_request_vals(self.annual, '2026-07-06', ''), {})
         self.assertEqual(_period_request_vals(self.annual, '2026-07-06', 'xx'), {})

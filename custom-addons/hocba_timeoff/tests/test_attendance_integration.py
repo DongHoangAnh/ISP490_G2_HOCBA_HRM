@@ -47,6 +47,11 @@ class _LeaveAttMixin(TransactionCase):
             vals.update({'request_unit_half': True,
                          'request_date_from_period': half,
                          'request_date_to_period': half})
+        else:
+            # Cả ngày: ép am→pm (loại request_unit='half_day' như Phép Năm/Không
+            # Lương sẽ mặc định nửa ngày nếu không set period rõ ràng).
+            vals.update({'request_date_from_period': 'am',
+                         'request_date_to_period': 'pm'})
         lv = self.Leave.sudo().create(vals)
         if validate:
             lv.sudo().action_approve()
