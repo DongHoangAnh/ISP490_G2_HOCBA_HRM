@@ -1686,21 +1686,12 @@ class HocBaTimeoff(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not emp or leave.employee_id.id != emp.id:
             return request.make_json_response({'error': 'forbidden'}, status=403)
-        # Chỉ rút được đơn còn chờ duyệt. (Đơn đã duyệt phải qua wizard hủy
-        # của Odoo — ngoài phạm vi self-service ở SPA.)
-        if leave.state not in PENDING_STATES:
-            return request.make_json_response(
-                {'error': 'rejected',
-                 'message': 'Chỉ rút được đơn đang chờ duyệt.'}, status=403)
-        # Báo các GV thay (đơn chờ duyệt: lịch chưa đổi nên chỉ cần báo hủy).
-        for r in leave.teaching_resolution_ids.filtered(
-                lambda x: x.resolution == 'substitute'
-                and x.state in ('pending', 'accepted')):
-            leave._notify_sub_cancelled(r)
-        # Rút đơn = unlink (không sudo) để model áp đủ ràng buộc/quyền của chủ đơn.
+        # Rút đơn (self-service): model kiểm chủ đơn + trạng thái chờ duyệt rồi
+        # xoá dưới sudo. Dùng sudo vì chặn core "không xoá đơn quá khứ" khiến
+        # NV không rút được đơn ĐÃ QUÁ HẠN mà chưa được duyệt.
         # Lưu ý: hr.leave.action_cancel() chỉ mở wizard, không hủy trực tiếp.
         try:
-            request.env['hr.leave'].browse(leave_id).unlink()
+            leave.action_timeoff_self_cancel(emp)
         except (AccessError, ValidationError, UserError) as ex:
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=403)

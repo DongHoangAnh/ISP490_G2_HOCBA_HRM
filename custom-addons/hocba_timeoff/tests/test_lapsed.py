@@ -8,6 +8,7 @@
 from datetime import date, datetime, time, timedelta
 
 from odoo import fields
+from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
@@ -321,3 +322,34 @@ class TestTimeoffLapsed(TransactionCase):
         # Chạy lần 2 → không báo thêm.
         Cron._cron_notify_lapsed_approvals()
         self.assertEqual(len(self._notifs_of(self.mgr_a_user, kind='lapsed')), 1)
+
+    # ----- Rút đơn self-service: đơn ĐÃ QUÁ HẠN chưa duyệt -----
+    def test_self_cancel_past_pending_leave(self):
+        """Đơn đã quá hạn còn chờ duyệt: chủ đơn vẫn rút được. Chặn core
+        `_unlink_if_correct_states` cấm NV xoá đơn trong quá khứ → phải xoá
+        dưới sudo (action_timeoff_self_cancel)."""
+        days = self._past_working_days(1)
+        leave = self._mk_leave(self.emp_a, days[0], days[0])
+        self.assertEqual(leave.state, 'confirm')
+        # NV thường không được unlink trực tiếp đơn quá khứ (tái hiện bug gốc).
+        with self.assertRaises(UserError):
+            leave.with_user(self.user_a).unlink()
+        # Method self-service (sudo unlink) rút được.
+        leave.sudo().action_timeoff_self_cancel(self.emp_a)
+        self.assertFalse(leave.exists())
+
+    def test_self_cancel_rejects_non_owner(self):
+        """Chỉ chủ đơn mới rút được."""
+        days = self._past_working_days(1)
+        leave = self._mk_leave(self.emp_a, days[0], days[0])
+        with self.assertRaises(AccessError):
+            leave.sudo().action_timeoff_self_cancel(self.emp_b)
+        self.assertTrue(leave.exists())
+
+    def test_self_cancel_rejects_non_pending(self):
+        """Đơn không còn chờ duyệt (đã từ chối/duyệt) → không rút kiểu này."""
+        days = self._past_working_days(2)
+        leave = self._mk_leave(self.emp_a, days[0], days[1])
+        leave.sudo().action_refuse()
+        with self.assertRaises(UserError):
+            leave.sudo().action_timeoff_self_cancel(self.emp_a)
