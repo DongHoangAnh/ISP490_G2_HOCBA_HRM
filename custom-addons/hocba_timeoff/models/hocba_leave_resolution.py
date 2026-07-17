@@ -36,11 +36,11 @@ class HocbaLeaveSessionResolution(models.Model):
     state = fields.Selection(
         [('pending', 'Chờ GV thay đồng ý'),
          ('accepted', 'Đã chốt'),
-         ('declined', 'GV thay từ chối'),
-         ('returned', 'GV thay đã trả lại')],
+         ('declined', 'GV thay từ chối')],
         string='Trạng thái', required=True, index=True,
-        help="'class_off' chốt ngay; 'substitute' chờ GV thay đồng ý; "
-             "'returned' = đã trả lại buổi sau khi nhận.",
+        help="'class_off' chốt ngay; 'substitute' chờ GV thay đồng ý. "
+             "GV thay bận sau khi đã nhận thì tự xử lý tiến (hủy lớp / nhờ GV "
+             "khác), KHÔNG trả lại buổi cho GV cũ.",
     )
     decided_at = fields.Datetime(string='Thời điểm phản hồi', copy=False)
     decline_reason = fields.Char(string='Lý do từ chối', copy=False)

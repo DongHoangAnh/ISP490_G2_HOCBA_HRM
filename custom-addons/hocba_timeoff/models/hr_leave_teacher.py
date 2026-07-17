@@ -66,10 +66,9 @@ class HrLeave(models.Model):
         if not was_applied:
             return
         for r in self.teaching_resolution_ids:
-            # Resolution đã ở trạng thái cuối (đã trả / GV thay từ chối) thì buổi
-            # đã được pop/đổi chủ từ trước — bỏ qua để không chặn nhầm khi đơn
-            # bị từ chối lúc trả buổi (buổi có thể đã gắn source sang đơn dưới).
-            if r.state in ('returned', 'declined'):
+            # GV thay từ chối TRƯỚC khi nhận (declined) → buổi chưa từng đổi chủ
+            # theo dòng này, bỏ qua để không pop nhầm.
+            if r.state == 'declined':
                 continue
             session = r.session_id
             if session.source_leave_id and session.source_leave_id.id != self.id:

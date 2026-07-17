@@ -867,9 +867,6 @@ def _substitution_rows(env, employee):
             'endTime': s.end_time or '',
             'state': r.state,
             'isOwner': s.employee_id.id == employee.id,
-            'canReturn': (r.state == 'accepted'
-                          and s.employee_id.id == employee.id
-                          and s.source_leave_id.id == r.leave_id.id),
         })
     return rows
 
@@ -892,46 +889,35 @@ def _decide_substitution(env, res_id, employee, accept, reason=''):
     return r
 
 
-def _notify_substitute_returned(env, resolution):
-    """Báo người giao (chủ liền trước) khi chủ hiện tại trả lại buổi dạy thay."""
-    giver_user = resolution.leave_id.employee_id.sudo().user_id
-    if not giver_user:
-        return
-    _push_notification(
-        env, giver_user, resolution.leave_id, 'sub_returned',
-        'Giáo viên thay đã trả lại buổi',
-        '%s đã trả lại buổi %s — vui lòng xử lý lại lịch dạy.' % (
-            resolution.substitute_id.sudo().name,
-            resolution.session_id.display_name))
+def _sessions_requestable_error(env, employee, session_ids):
+    """Kiểm buổi dạy có được đưa vào đơn nghỉ-theo-buổi MỚI của `employee` không.
 
+    Trả `(sessions, None)` nếu hợp lệ, hoặc `(None, (error_code, message))` nếu không.
 
-def _return_substitution(env, res_id, employee):
-    """Chủ hiện tại trả lại buổi đã nhận. Trả record hoặc False.
-
-    False khi: không tồn tại / không phải GV thay của mình / chưa 'accepted' /
-    không phải đỉnh stack (đã giao tiếp xuống dưới)."""
-    r = env['hocba.leave.session.resolution'].sudo().browse(res_id)
-    if not r.exists() or r.resolution != 'substitute' or r.state != 'accepted':
-        return False
-    if r.substitute_id.id != (employee.id if employee else 0):
-        return False
-    session = r.session_id
-    # Chỉ trả được khi đang là đỉnh stack (chưa giao tiếp xuống dưới).
-    if session.source_leave_id.id != r.leave_id.id:
-        return False
-    session._pop_handover(r)
-    r.write({'state': 'returned', 'decided_at': fields.Datetime.now()})
-    _notify_substitute_returned(env, r)
-    # Trả buổi → chủ liền trước phải dạy lại. Nếu đơn của họ không còn buổi nào
-    # đang hiệu lực (mọi resolution đã 'returned'/'declined') thì từ chối luôn đơn
-    # đó: hiển thị "Từ chối" và giải phóng buổi để xin nghỉ lại. Đơn còn buổi khác
-    # đang hiệu lực (class_off / nhờ dạy thay) thì giữ nguyên — chỉ buổi vừa trả
-    # được giải phóng (resolution 'returned' không còn chặn ở guard tạo đơn).
-    leave = r.leave_id
-    if leave.state == 'validate' and not leave.teaching_resolution_ids.filtered(
-            lambda x: x.state in ('pending', 'accepted')):
-        leave.action_refuse()
-    return r
+    Mô hình "không trả lại": chủ hiện tại của buổi (kể cả buổi đã nhận dạy thay,
+    `state='substituted'`) tự xử lý tiến — hủy lớp hoặc nhờ GV khác. Vì vậy buổi
+    hợp lệ khi `s.employee_id == employee` VÀ `s.state in ('planned','substituted')`.
+    Chặn-trùng bỏ qua "mắt xích đang sở hữu" (`session.source_leave_id` — đơn đã đưa
+    buổi cho employee): đó là link trước của chuỗi, không phải trùng."""
+    Session = env['hocba.teaching.session'].sudo()
+    Res = env['hocba.leave.session.resolution'].sudo()
+    sessions = Session.browse(session_ids)
+    for s in sessions:
+        if (not s.exists() or s.employee_id.id != (employee.id if employee else 0)
+                or s.state not in ('planned', 'substituted')):
+            return None, ('invalid_session',
+                          'Buổi dạy không hợp lệ hoặc đã được xử lý.')
+        dup_dom = [
+            ('session_id', '=', s.id),
+            ('leave_id.state', 'in', ['confirm', 'validate1', 'validate']),
+            ('state', 'in', ['pending', 'accepted']),
+        ]
+        if s.source_leave_id:
+            dup_dom.append(('leave_id', '!=', s.source_leave_id.id))
+        if Res.search(dup_dom, limit=1):
+            return None, ('session_already_requested',
+                          'Có buổi dạy bạn đã gửi đơn nghỉ trước đó.')
+    return sessions, None
 
 
 # ---------------------------------------------------------------------------
@@ -981,7 +967,7 @@ def _leave_span_label(leave):
 
 _KIND_LEVEL = {
     'pending': 'warning', 'withdraw_pending': 'warning',
-    'sub_request': 'warning', 'sub_returned': 'warning',
+    'sub_request': 'warning',
     'approved': 'success', 'sub_accepted': 'success', 'withdraw_approved': 'success',
     'refused': 'danger', 'sub_declined': 'danger', 'sub_cancelled': 'danger',
     'withdraw_refused': 'danger', 'lapsed': 'danger',
@@ -1450,21 +1436,6 @@ class HocBaTimeoff(http.Controller):
         return request.make_json_response(
             {'items': _substitution_rows(request.env, emp)})
 
-    @http.route('/hocba-hrm/api/timeoff/substitutions/<int:res_id>/return',
-                auth='user', type='http', methods=['POST'], csrf=False)
-    def api_substitution_return(self, res_id, **kw):
-        emp = request.env.user.employee_id
-        if not emp:
-            return request.make_json_response({'error': 'no_employee'}, status=403)
-        r = _return_substitution(request.env, res_id, emp)
-        if not r:
-            return request.make_json_response(
-                {'error': 'cannot_return',
-                 'message': 'Không thể trả buổi này (đã giao tiếp cho GV khác '
-                            'hoặc không hợp lệ).'}, status=400)
-        return request.make_json_response(
-            {'items': _substitution_rows(request.env, emp)})
-
     def _create_teaching_session_leave(self, emp, payload):
         """Chế độ A — GV nghỉ theo BUỔI dạy. resolutions xác định ĐÚNG tập buổi
         nghỉ; KHÔNG dò/ép phủ hết buổi trong khoảng (khác luồng nghỉ dài ngày).
@@ -1487,29 +1458,13 @@ class HocBaTimeoff(http.Controller):
         if not sess_ids:
             return request.make_json_response({'error': 'no_sessions'}, status=400)
 
-        Session = request.env['hocba.teaching.session'].sudo()
-        sessions = Session.browse(sess_ids)
-        for s in sessions:
-            if (not s.exists() or s.employee_id.id != emp.id
-                    or s.state != 'planned'):
-                return request.make_json_response(
-                    {'error': 'invalid_session',
-                     'message': 'Buổi dạy không hợp lệ hoặc đã được xử lý.'},
-                    status=400)
-
-        # Chặn đặt 1 buổi vào 2 đơn còn hiệu lực. Chỉ resolution đang hiệu lực
-        # (pending/accepted) mới chặn — resolution đã 'returned'/'declined' coi
-        # như buổi đã được giải phóng, GV xin nghỉ lại được.
-        dup = request.env['hocba.leave.session.resolution'].sudo().search([
-            ('session_id', 'in', sessions.ids),
-            ('leave_id.state', 'in', ['confirm', 'validate1', 'validate']),
-            ('state', 'in', ['pending', 'accepted']),
-        ], limit=1)
-        if dup:
+        # Chủ hiện tại của buổi (kể cả buổi đã nhận dạy thay 'substituted') được
+        # tạo đơn mới để tự xử lý tiến (hủy lớp / nhờ GV khác) — mô hình không trả
+        # lại. Guard + chặn-trùng gói trong helper để test gọi trực tiếp.
+        sessions, err = _sessions_requestable_error(request.env, emp, sess_ids)
+        if err:
             return request.make_json_response(
-                {'error': 'session_already_requested',
-                 'message': 'Có buổi dạy bạn đã gửi đơn nghỉ trước đó.'},
-                status=400)
+                {'error': err[0], 'message': err[1]}, status=400)
 
         dates = sessions.mapped('session_date')
         vals = {

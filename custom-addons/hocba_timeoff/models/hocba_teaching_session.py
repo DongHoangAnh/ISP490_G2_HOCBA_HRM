@@ -75,9 +75,12 @@ class HocbaTeachingSession(models.Model):
         """Gỡ 1 lần bàn giao: đưa buổi về chủ liền trước (= leave.employee_id của
         `resolution`), tính lại đỉnh stack từ lần bàn giao kế dưới (substitute đã
         accepted, đơn đang validate, substitute_id = chủ liền trước). Hết → về
-        original_employee_id / 'planned'. KHÔNG tự đổi resolution.state — caller
-        quyết ('returned' khi trả; để nguyên khi đơn bị refuse vì leave.state đã
-        khác 'validate' nên tự loại khỏi tập bàn giao hiệu lực)."""
+        original_employee_id / 'planned'. KHÔNG tự đổi resolution.state.
+
+        Chỉ dùng cho revert khi CHÍNH CHỦ rút/từ chối đơn của mình (action_refuse
+        → _revert_teaching_changes): lúc đó leave.state đã khác 'validate' nên
+        resolution tự loại khỏi tập bàn giao hiệu lực. KHÔNG có đường "GV thay trả
+        lại buổi" — GV thay bận thì tự xử lý tiến (hủy lớp / nhờ GV khác)."""
         self.ensure_one()
         prev_owner = resolution.leave_id.employee_id
         below = self.env['hocba.leave.session.resolution'].sudo().search([

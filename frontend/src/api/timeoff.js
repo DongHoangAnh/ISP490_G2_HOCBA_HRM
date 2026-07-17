@@ -36,10 +36,6 @@ export const fetchSubstitutions = () =>
 export const decideSubstitution = (id, accept, reason) =>
   hbPost(`/hocba-hrm/api/timeoff/substitutions/${id}/decide`, { accept, reason });
 
-/* GV thay trả lại buổi đã nhận (về lại GV liền trước). → { items: [...] }. */
-export const returnSubstitution = (id) =>
-  hbPost(`/hocba-hrm/api/timeoff/substitutions/${id}/return`, {});
-
 /* Chủ đơn hủy đơn còn chờ duyệt → trả payload overview mới. */
 export const cancelRequest = (id) =>
   hbPost(`/hocba-hrm/api/timeoff/request/${id}/cancel`, {});

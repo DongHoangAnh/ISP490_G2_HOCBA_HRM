@@ -62,12 +62,10 @@ export default function TimeOff({ search, focus }) {
 
   // Bấm 1 thông báo ở chuông → tới đúng nơi xử lý:
   //  - yêu cầu/hủy dạy thay (sub_request, sub_cancelled) → tab "Yêu cầu dạy thay";
-  //  - GV thay trả buổi (sub_returned) → tab "Của tôi" để người giao xử lý lại;
   //  - còn lại → mở modal "Lịch sử xử lý" của đơn.
   useEffect(() => {
     if (!focus) return;
     if (focus.kind === 'sub_request' || focus.kind === 'sub_cancelled') setTab('substitutions');
-    else if (focus.kind === 'sub_returned') setTab('me');
     else if (focus.requestId) setHistoryReq(focus.requestId);
   }, [focus]);
 
