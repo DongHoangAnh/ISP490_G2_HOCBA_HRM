@@ -103,6 +103,9 @@ class TestNotifyApiHelpers(TransactionCase):
         self.assertEqual({i['title'] for i in res['items']}, {'A', 'B'})
         self.assertIn('targetView', res['items'][0])
         self.assertIn('createdAt', res['items'][0])
+        # createdAt phải là ISO-8601 UTC kèm 'Z' để FE không hiểu nhầm là giờ
+        # local (bug "vừa xong" → "7 giờ trước" theo offset VN).
+        self.assertTrue(res['items'][0]['createdAt'].endswith('Z'))
 
     def test_mark_read_own(self):
         env1 = self.env(user=self.u1)
