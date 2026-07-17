@@ -25,6 +25,7 @@ export const postTrial = (id, payload) =>
 
 /* Form Thêm/Sửa nhân viên (chỉ HR). */
 export const fetchFormMeta = () => hbGet('/hocba-hrm/api/form/meta');
+export const fetchDependentMeta = () => hbGet('/hocba-hrm/api/dependent/meta');
 
 /* Người phụ thuộc (F-003) — CRUD inline, chỉ HR. Mỗi thao tác trả hồ sơ mới. */
 export const createDependent = (empId, payload) =>

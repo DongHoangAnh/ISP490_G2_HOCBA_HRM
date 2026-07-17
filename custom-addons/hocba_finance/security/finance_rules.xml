@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Nhân viên thường: chỉ thấy phiếu do chính mình tạo. -->
+    <record id="fin_voucher_rule_own" model="ir.rule">
+        <field name="name">Phiếu: nhân viên chỉ thấy phiếu mình tạo</field>
+        <field name="model_id" ref="model_hocba_fin_voucher"/>
+        <field name="domain_force">[('create_uid', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <!-- Kế toán & BGĐ: thấy tất cả phiếu (rule group được OR với rule 'own'). -->
+    <record id="fin_voucher_rule_all" model="ir.rule">
+        <field name="name">Phiếu: Kế toán/BGĐ thấy tất cả</field>
+        <field name="model_id" ref="model_hocba_fin_voucher"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_finance_user')), (4, ref('group_finance_manager'))]"/>
+    </record>
+</odoo>

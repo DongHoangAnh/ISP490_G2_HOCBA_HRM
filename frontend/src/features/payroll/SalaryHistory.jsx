@@ -5,6 +5,7 @@ import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
+import { downloadXlsx, sumFormula } from '../../utils/xlsx';
 import { monthOptions, yearOptions, currentMonth, currentYear } from './util';
 
 /* ── localStorage ── */
@@ -98,8 +99,29 @@ function HistoryDetail({ emp, columns, onClose }) {
   );
 }
 
-/* ── Column config modal ── */
-function CfgModal({ dataCols, cfg, onApply, onClose }) {
+/* Màu mặc định khi bật tick (người dùng đổi được): nền tiêu đề xanh nhạt,
+   nền giá trị vàng nhạt — giống mẫu bảng lương in cho sếp. */
+const DEF_HEADER_FILL = '#BDD7EE';
+const DEF_VALUE_FILL = '#FFF2CC';
+
+/* Ô chọn màu 1 cột: tick bật/tắt + hộp màu. Tắt tick = để trắng bình thường. */
+function ColorTick({ on, color, onToggle, onColor, title }) {
+  return (
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <input type="checkbox" checked={on} onChange={onToggle}
+        style={{ width: 14, height: 14, accentColor: '#2563eb', cursor: 'pointer' }} />
+      <input type="color" value={color} disabled={!on} onChange={(e) => onColor(e.target.value)}
+        style={{
+          width: 24, height: 18, padding: 0, border: '1px solid #d1d5db', borderRadius: 4,
+          background: on ? undefined : '#fff', opacity: on ? 1 : 0.35,
+          cursor: on ? 'pointer' : 'not-allowed',
+        }} />
+    </span>
+  );
+}
+
+/* ── Column config modal (hiển thị + thứ tự + màu in) ── */
+function CfgModal({ dataCols, baseCols, cfg, onApply, onClose }) {
   const [vis, setVis] = useState(() => {
     const s = cfg.visible || {};
     return Object.fromEntries(dataCols.map((c) => [c.code, s[c.code] !== false]));
@@ -111,36 +133,120 @@ function CfgModal({ dataCols, cfg, onApply, onClose }) {
     all.forEach((c) => { if (!merged.includes(c)) merged.push(c); });
     return merged;
   });
+  const [hFill, setHFill] = useState(() => ({ ...(cfg.headerFill || {}) }));
+  const [vFill, setVFill] = useState(() => ({ ...(cfg.valueFill || {}) }));
   const allOn = dataCols.length > 0 && dataCols.every((c) => vis[c.code]);
   const flipAll = () => { const on = !allOn; setVis(Object.fromEntries(dataCols.map((c) => [c.code, on]))); };
-  const drag = useRef(null);
+  const [dragCode, setDragCode] = useState(null);
   const nameOf = {};
   dataCols.forEach((c) => { nameOf[c.code] = c.name; });
+
+  /* Reorder LIVE theo mã cột (không theo index tĩnh → không lệch sau re-render).
+     Chèn trước/sau hàng đang hover theo điểm giữa (midpoint) và bù dịch khi bỏ
+     phần tử → mượt, không dao động. VD: cột #5 kéo lên #2 thì #2,3,4 → #3,4,5. */
+  const reorderOver = (e, overCode) => {
+    e.preventDefault();
+    if (dragCode == null || dragCode === overCode) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const after = (e.clientY - rect.top) > rect.height / 2;
+    setOrd((prev) => {
+      const from = prev.indexOf(dragCode);
+      let to = prev.indexOf(overCode);
+      if (from < 0 || to < 0) return prev;
+      if (after) to += 1;      // thả vào nửa dưới → chèn sau hàng hover
+      if (from < to) to -= 1;  // bù chỗ trống khi phần tử bị lấy ra ở trên
+      if (to === from) return prev;
+      const next = [...prev];
+      next.splice(from, 1);
+      next.splice(to, 0, dragCode);
+      return next;
+    });
+  };
+
+  const toggleFill = (setter, key, def) => setter((m) => {
+    const n = { ...m }; if (n[key]) delete n[key]; else n[key] = def; return n;
+  });
+  const setFill = (setter, key, val) => setter((m) => ({ ...m, [key]: val }));
+
+  /* 2 ô chọn màu (nền tiêu đề + nền giá trị) cho một cột theo khoá `key`. */
+  const colorCtl = (key) => (
+    <>
+      <ColorTick title="Màu nền tiêu đề cột khi in"
+        on={!!hFill[key]} color={hFill[key] || DEF_HEADER_FILL}
+        onToggle={() => toggleFill(setHFill, key, DEF_HEADER_FILL)}
+        onColor={(v) => setFill(setHFill, key, v)} />
+      <ColorTick title="Màu nền giá trị (các ô số) khi in"
+        on={!!vFill[key]} color={vFill[key] || DEF_VALUE_FILL}
+        onToggle={() => toggleFill(setVFill, key, DEF_VALUE_FILL)}
+        onColor={(v) => setFill(setVFill, key, v)} />
+    </>
+  );
+
+  const rowSt = { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 24px', borderBottom: '1px solid #f3f4f6', fontSize: 13 };
+  const nameSt = { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 
   return (
     <Modal onClose={onClose}>
       <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border,#e5e7eb)' }}>
-        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Tuỳ chỉnh cột hiển thị</h2>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Tuỳ chỉnh cột & màu in</h2>
+        <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--muted,#6b7280)' }}>
+          Mỗi cột có 2 ô màu: <b>nền tiêu đề</b> và <b>nền giá trị</b> khi xuất/in Excel.
+          Bỏ tick = để trắng bình thường.
+        </p>
       </div>
-      <div style={{ maxHeight: '58vh', overflowY: 'auto' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 24px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: 'var(--gray-50,#f9fafb)', fontSize: 13.5 }}>
+
+      {/* Chú thích 2 cột màu */}
+      <div style={{ ...rowSt, background: 'var(--gray-50,#f9fafb)', color: 'var(--muted,#6b7280)', fontSize: 11.5, fontWeight: 600 }}>
+        <span style={{ width: 15 }} />
+        <span style={nameSt}>Cột</span>
+        <span style={{ width: 42, textAlign: 'center' }}>Tiêu đề</span>
+        <span style={{ width: 42, textAlign: 'center' }}>Giá trị</span>
+        <span style={{ width: 15 }} />
+      </div>
+
+      <div style={{ maxHeight: '54vh', overflowY: 'auto' }}>
+        {/* Cột cố định (STT, Mã NV, Họ tên, Chức vụ, Phòng ban) — chỉ chỉnh màu */}
+        {baseCols.map((b) => (
+          <div key={b.key} style={rowSt}>
+            <span style={{ width: 15 }} />
+            <span style={nameSt}>{b.label}</span>
+            {colorCtl(b.key)}
+            <span style={{ width: 15 }} />
+          </div>
+        ))}
+
+        {/* Nhóm cột dữ liệu — bật/tắt hiển thị + kéo thả thứ tự + màu */}
+        <label style={{ ...rowSt, cursor: 'pointer', background: 'var(--gray-50,#f9fafb)', fontSize: 13.5 }}>
           <input type="checkbox" checked={allOn} onChange={flipAll} style={{ width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer' }} />
-          <span style={{ fontWeight: 600 }}>Tất cả cột</span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{dataCols.filter((c) => vis[c.code]).length}/{dataCols.length}</span>
+          <span style={{ ...nameSt, fontWeight: 600 }}>Tất cả cột dữ liệu</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{dataCols.filter((c) => vis[c.code]).length}/{dataCols.length}</span>
+          <span style={{ width: 15 }} />
         </label>
-        {ord.map((code, i) => (
-          <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 24px', borderBottom: '1px solid #f3f4f6', fontSize: 13 }}
-            draggable onDragStart={() => { drag.current = i; }} onDragOver={(e) => e.preventDefault()}
-            onDrop={() => { if (drag.current == null || drag.current === i) return; setOrd((p) => { const n = [...p]; const [it] = n.splice(drag.current, 1); n.splice(i, 0, it); return n; }); drag.current = null; }}>
+        {ord.map((code) => (
+          <div key={code}
+            style={{
+              ...rowSt,
+              opacity: dragCode === code ? 0.45 : 1,
+              background: dragCode === code ? 'var(--gray-50,#f9fafb)' : undefined,
+              transition: 'background .12s',
+            }}
+            onDragOver={(e) => reorderOver(e, code)}
+            onDrop={(e) => e.preventDefault()}>
             <input type="checkbox" checked={vis[code] !== false} onChange={() => setVis((v) => ({ ...v, [code]: !v[code] }))} style={{ width: 15, height: 15, accentColor: '#2563eb', cursor: 'pointer' }} />
-            <span style={{ flex: 1 }}>{nameOf[code] || code}</span>
-            <span style={{ cursor: 'grab', color: '#bbb', fontSize: 15, userSelect: 'none' }}>&#9776;</span>
+            <span style={nameSt}>{nameOf[code] || code}</span>
+            {colorCtl(code)}
+            <span
+              draggable
+              onDragStart={(e) => { setDragCode(code); e.dataTransfer.effectAllowed = 'move'; }}
+              onDragEnd={() => setDragCode(null)}
+              title="Kéo để đổi thứ tự"
+              style={{ cursor: 'grab', color: '#9ca3af', fontSize: 16, userSelect: 'none', width: 18, textAlign: 'center', touchAction: 'none' }}>&#9776;</span>
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 24px', borderTop: '1px solid var(--border)' }}>
         <button className="btn btn-ghost" onClick={onClose}>Huỷ</button>
-        <button className="btn btn-primary" onClick={() => { onApply({ visible: vis, order: ord }); onClose(); }}>Áp dụng</button>
+        <button className="btn btn-primary" onClick={() => { onApply({ visible: vis, order: ord, headerFill: hFill, valueFill: vFill }); onClose(); }}>Áp dụng</button>
       </div>
     </Modal>
   );
@@ -159,7 +265,6 @@ export default function SalaryHistory() {
   const [localSearch, setLocalSearch] = useState('');
   const [periodOpen, setPeriodOpen] = useState(false);
   const periodRef = useRef(null);
-  const resizeRef = useRef(null);
 
   const applyCfg = useCallback((c) => { setCfg(c); saveCfg(c); }, []);
 
@@ -177,27 +282,34 @@ export default function SalaryHistory() {
   };
   useEffect(load, [month, year]);
 
-  /* ── column resize ── */
+  /* ── column resize (mượt) ──
+     Trong lúc kéo CHỈ ghi thẳng width vào <th> qua DOM (rAF-throttle) → không
+     setState → KHÔNG re-render cả bảng → không giật. table-layout:fixed nên chỉ
+     cần set <th> là cả cột giãn theo. Commit vào React state 1 LẦN khi thả. */
   const startResize = useCallback((colKey, initW, e) => {
     e.preventDefault();
     const handle = e.currentTarget;
+    const th = handle.closest('th');
     handle.classList.add('rh-active');
     const startX = e.clientX;
-    resizeRef.current = { colKey, initW, startX };
+    let latestW = initW;
+    let rafId = 0;
+    const apply = () => {
+      rafId = 0;
+      if (th) { const w = latestW + 'px'; th.style.width = w; th.style.minWidth = w; th.style.maxWidth = w; }
+    };
     const onMove = (ev) => {
-      if (!resizeRef.current) return;
-      const delta = ev.clientX - resizeRef.current.startX;
-      const newW = Math.max(40, resizeRef.current.initW + delta);
-      setColWidths((prev) => ({ ...prev, [colKey]: newW }));
+      latestW = Math.max(40, initW + (ev.clientX - startX));
+      if (!rafId) rafId = requestAnimationFrame(apply);
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      if (rafId) cancelAnimationFrame(rafId);
       handle.classList.remove('rh-active');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      setColWidths((prev) => { saveWidths(prev); return prev; });
-      resizeRef.current = null;
+      setColWidths((prev) => { const next = { ...prev, [colKey]: latestW }; saveWidths(next); return next; });
     };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
@@ -248,6 +360,27 @@ export default function SalaryHistory() {
 
   const P = { padding: '10px 14px', fontSize: 13.5, whiteSpace: 'nowrap', lineHeight: '20px', overflow: 'hidden', textOverflow: 'ellipsis' };
   const dataDefW = 110;
+
+  const exportExcel = () => {
+    const headers = [...BASE.map((b) => b.label), ...visCols.map((c) => c.name)];
+    const body = emps.map((emp, idx) => [
+      idx + 1, emp.code || '', emp.name || '', emp.job_title || '', emp.department || '',
+      ...visCols.map((c) => (emp.amounts[c.code] != null ? emp.amounts[c.code] : '')),
+    ]);
+    // Hàng Tổng: dùng công thức SUM để Excel tự cộng (dữ liệu ở các hàng 2..N+1),
+    // giúp đối chiếu số trên web với kết quả Excel tính. Cột dữ liệu bắt đầu ở
+    // chỉ số 5 (sau 5 cột cố định STT/Mã NV/Họ tên/Chức vụ/Phòng ban).
+    const firstRow = 2, lastRow = emps.length + 1;
+    const totalRow = ['', '', 'Tổng', '', '',
+      ...visCols.map((_, j) => sumFormula(5 + j, firstRow, lastRow))];
+    body.push(totalRow);
+    // Màu in theo cấu hình từng cột: [...cột cố định, ...cột dữ liệu hiển thị].
+    const hf = cfg.headerFill || {}, vf = cfg.valueFill || {};
+    const exportKeys = [...BASE.map((b) => b.key), ...visCols.map((c) => c.code)];
+    const colStyles = exportKeys.map((k) => ({ headerFill: hf[k] || null, valueFill: vf[k] || null }));
+    downloadXlsx(`lich-su-luong-T${month}-${year}.xlsx`, `Lịch sử lương T${month}-${year}`,
+      headers, body, { colStyles, lastRowIsTotal: true });
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -318,6 +451,20 @@ export default function SalaryHistory() {
         </>}
 
         <div style={{ flex: 1 }} />
+
+        <button onClick={exportExcel} disabled={!data || emps.length === 0}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
+            border: '1px solid var(--border,#d1d5db)', background: '#fff',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            color: emps.length === 0 ? '#9ca3af' : '#15803d',
+            cursor: emps.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: emps.length === 0 ? 0.6 : 1,
+          }}>
+          <Icon name="download" size={13} />
+          Xuất Excel
+        </button>
 
         <button onClick={() => setCfgOpen(true)}
           style={{
@@ -453,7 +600,7 @@ export default function SalaryHistory() {
       </div>
 
       {cfgOpen && allCols.length > 0 && (
-        <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
+        <CfgModal dataCols={allCols} baseCols={BASE} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
       {detailEmp && <HistoryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} />}
     </div>

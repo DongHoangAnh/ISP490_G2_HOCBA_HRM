@@ -1303,19 +1303,14 @@ class PayrollAPI(http.Controller):
     @http.route('/hocba-hrm/api/payroll/lookup-sources', type='http', auth='user',
                 methods=['GET'], csrf=False)
     def list_lookup_sources(self, **kw):
-        """Return available lookup sources and their fields for the frontend."""
+        """Return available lookup sources and their fields for the frontend.
+
+        Gồm nguồn curated (Chấm công…) + MỌI model có liên kết hr.employee, mỗi
+        model kèm các trường số. FE hiển thị dropdown có tìm kiếm cho nguồn/trường.
+        """
         try:
-            from odoo.addons.hocba_payroll.models.payslip import LOOKUP_SOURCES
-            data = {}
-            for key, src in LOOKUP_SOURCES.items():
-                data[key] = {
-                    'label': src['label'],
-                    'fields': {
-                        fname: {'label': fdef['label'], 'agg': fdef.get('agg', 'sum')}
-                        for fname, fdef in src['fields'].items()
-                    },
-                }
-            return _success_response(data)
+            from odoo.addons.hocba_payroll.models.payslip import list_lookup_sources
+            return _success_response(list_lookup_sources(request.env))
         except Exception as e:
             _logger.exception('list_lookup_sources error')
             return _error_response(str(e), status=500)
@@ -1926,8 +1921,11 @@ class PayrollAPI(http.Controller):
                         ('employee_id', '=', emp.id),
                     ], order='id desc', limit=1)
 
-                # Base salary from contract, fallback to 5,700,000
-                base = (contract.wage if contract else 0) or 5_700_000
+                # Lương cơ bản: ưu tiên hr.version.wage (đúng nguồn form Nhân viên
+                # hiển thị/HR chỉnh), fallback hb.contract.wage, rồi mặc định.
+                ver = emp.version_id
+                base = ((ver.wage if ver and 'wage' in ver._fields else 0)
+                        or (contract.wage if contract else 0) or 5_700_000)
 
                 # Randomize work days slightly for realism
                 nctt_options = [STANDARD_DAYS, STANDARD_DAYS,

@@ -1,5 +1,5 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig, resetPayslipConfirm } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
@@ -53,9 +53,31 @@ function CfgModal({ dataCols, cfg, onApply, onClose }) {
     setVis(Object.fromEntries(dataCols.map((c) => [c.code, on])));
   };
 
-  const drag = useRef(null);
+  const [dragCode, setDragCode] = useState(null);
   const nameOf = {};
   dataCols.forEach((c) => { nameOf[c.code] = c.name; });
+
+  /* Reorder LIVE theo mã cột (không theo index tĩnh → không lệch sau re-render).
+     Chèn trước/sau hàng hover theo điểm giữa (midpoint) + bù dịch khi bỏ phần tử
+     → mượt, không dao động. VD: cột #5 kéo lên #2 thì #2,3,4 → #3,4,5. */
+  const reorderOver = (e, overCode) => {
+    e.preventDefault();
+    if (dragCode == null || dragCode === overCode) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const after = (e.clientY - rect.top) > rect.height / 2;
+    setOrd((prev) => {
+      const from = prev.indexOf(dragCode);
+      let to = prev.indexOf(overCode);
+      if (from < 0 || to < 0) return prev;
+      if (after) to += 1;
+      if (from < to) to -= 1;
+      if (to === from) return prev;
+      const next = [...prev];
+      next.splice(from, 1);
+      next.splice(to, 0, dragCode);
+      return next;
+    });
+  };
 
   return (
     <Modal onClose={onClose}>
@@ -83,19 +105,25 @@ function CfgModal({ dataCols, cfg, onApply, onClose }) {
           </label>
         ))}
         <div style={MS.section}>Cot du lieu</div>
-        {ord.map((code, i) => (
-          <div key={code} style={{ ...MS.row, cursor: 'default' }}
-            draggable onDragStart={() => { drag.current = i; }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (drag.current == null || drag.current === i) return;
-              setOrd((p) => { const n = [...p]; const [it] = n.splice(drag.current, 1); n.splice(i, 0, it); return n; });
-              drag.current = null;
-            }}>
+        {ord.map((code) => (
+          <div key={code}
+            style={{
+              ...MS.row, cursor: 'default',
+              opacity: dragCode === code ? 0.45 : 1,
+              background: dragCode === code ? 'var(--gray-50,#f9fafb)' : undefined,
+              transition: 'background .12s',
+            }}
+            onDragOver={(e) => reorderOver(e, code)}
+            onDrop={(e) => e.preventDefault()}>
             <input type="checkbox" checked={vis[code] !== false} style={MS.chk}
               onChange={() => setVis((v) => ({ ...v, [code]: !v[code] }))} />
             <span style={{ flex: 1, fontSize: 13 }}>{nameOf[code] || code}</span>
-            <span style={{ cursor: 'grab', color: '#bbb', fontSize: 15, userSelect: 'none' }}>&#9776;</span>
+            <span
+              draggable
+              onDragStart={(e) => { setDragCode(code); e.dataTransfer.effectAllowed = 'move'; }}
+              onDragEnd={() => setDragCode(null)}
+              title="Kéo để đổi thứ tự"
+              style={{ cursor: 'grab', color: '#9ca3af', fontSize: 16, userSelect: 'none', width: 18, textAlign: 'center', touchAction: 'none' }}>&#9776;</span>
           </div>
         ))}
       </div>
@@ -315,33 +343,38 @@ export default function BatchList({ search }) {
   const [saving, setSaving] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [confirmFilter, setConfirmFilter] = useState('');
-  const resizeRef = useRef(null);
-
   const load = () => { setErr(null); setData(null); setChecked({}); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, [month, year]);
   const applyCfg = useCallback((c) => { setCfg(c); saveCfg(c); }, []);
 
-  /* ── column resize ── */
+  /* ── column resize (mượt) ──
+     Trong lúc kéo CHỈ ghi thẳng width vào <th> qua DOM (rAF-throttle) → không
+     setState → KHÔNG re-render cả bảng → không giật. table-layout:fixed nên chỉ
+     cần set <th> là cả cột giãn theo. Commit vào React state 1 LẦN khi thả. */
   const startResize = useCallback((colKey, initW, e) => {
     e.preventDefault();
     const handle = e.currentTarget;
+    const th = handle.closest('th');
     handle.classList.add('rh-active');
     const startX = e.clientX;
-    resizeRef.current = { colKey, initW, startX };
+    let latestW = initW;
+    let rafId = 0;
+    const apply = () => {
+      rafId = 0;
+      if (th) { const w = latestW + 'px'; th.style.width = w; th.style.minWidth = w; th.style.maxWidth = w; }
+    };
     const onMove = (ev) => {
-      if (!resizeRef.current) return;
-      const delta = ev.clientX - resizeRef.current.startX;
-      const newW = Math.max(40, resizeRef.current.initW + delta);
-      setColWidths((prev) => ({ ...prev, [colKey]: newW }));
+      latestW = Math.max(40, initW + (ev.clientX - startX));
+      if (!rafId) rafId = requestAnimationFrame(apply);
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      if (rafId) cancelAnimationFrame(rafId);
       handle.classList.remove('rh-active');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      setColWidths((prev) => { saveWidths(prev); return prev; });
-      resizeRef.current = null;
+      setColWidths((prev) => { const next = { ...prev, [colKey]: latestW }; saveWidths(next); return next; });
     };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
