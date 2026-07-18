@@ -78,6 +78,27 @@ class HbOnboardingTemplate(models.Model):
                 return tpl
         return self.browse()
 
+    @api.model
+    def action_assign_pending(self):
+        """Gán quy trình cho mọi NV thử việc CHƯA có bước (tạo trước khi
+        template phù hợp tồn tại). Trả bộ đếm cho FE báo kết quả:
+        assigned / noMatch (không khớp template nào) / noStart (thiếu ngày
+        bắt đầu thử việc — không tính được hạn)."""
+        pending = self.env['hr.employee'].sudo().search([
+            ('x_employment_status', '=', 'probation'),
+            ('x_onboarding_step_ids', '=', False)])
+        assigned = no_match = no_start = 0
+        for emp in pending:
+            if not emp.x_probation_start:
+                no_start += 1
+                continue
+            if emp._hocba_assign_onboarding():
+                assigned += 1
+            else:
+                no_match += 1
+        return {'assigned': assigned, 'noMatch': no_match,
+                'noStart': no_start}
+
 
 class HbOnboardingTemplateStep(models.Model):
     _name = 'hb.onboarding.template.step'

@@ -2567,6 +2567,18 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(self._onb_tpl_json(tpl))
 
+    @http.route('/hocba-hrm/api/onboarding/templates/assign-pending',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_assign_pending(self, **kw):
+        """Gán quy trình cho mọi NV thử việc chưa có bước (tạo template
+        xong bấm 1 nút thay vì vào từng hồ sơ gán tay)."""
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        res = request.env['hb.onboarding.template'].sudo(
+            ).action_assign_pending()
+        return request.make_json_response(res)
+
     # ------------------------------------------------------------------
     # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
     # trả về hồ sơ đã cập nhật để FE refresh tab Thông tin.

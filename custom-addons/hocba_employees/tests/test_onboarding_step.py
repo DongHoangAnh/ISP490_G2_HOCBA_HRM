@@ -82,6 +82,28 @@ class TestOnboardingAssign(TransactionCase):
                            x_social_insurance_no='0117788990')
         self.assertFalse(emp.x_onboarding_step_ids)
 
+    def test_assign_pending_bulk(self):
+        # NV probation tạo TRƯỚC khi có template phù hợp → không có bước
+        emp = self._mk_emp(x_position_type='freelancer',
+                           x_work_form='online')
+        emp_nostart = self._mk_emp(x_position_type='freelancer',
+                                   x_work_form='online',
+                                   x_probation_start=False)
+        self.assertFalse(emp.x_onboarding_step_ids)
+        # admin tạo template khớp SAU đó rồi bấm "Gán NV đang chờ"
+        self.env['hb.onboarding.template'].create({
+            'name': 'TPL FL', 'apply_position_types': 'freelancer',
+            'sequence': 2,
+            'step_ids': [(0, 0, {'name': 'B1', 'step_type': 'task',
+                                 'sequence': 1})]})
+        res = self.env['hb.onboarding.template'].action_assign_pending()
+        self.assertEqual(len(emp.x_onboarding_step_ids), 1)
+        self.assertEqual(emp.x_onboarding_step_ids.state, 'open')
+        self.assertGreaterEqual(res['assigned'], 1)
+        # thiếu ngày bắt đầu → không gán, đếm riêng để FE báo
+        self.assertFalse(emp_nostart.x_onboarding_step_ids)
+        self.assertGreaterEqual(res['noStart'], 1)
+
 
 @tagged('post_install', '-at_install')
 class TestOnboardingEngine(TransactionCase):

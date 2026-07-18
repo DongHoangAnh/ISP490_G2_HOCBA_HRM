@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import useFetch from '../../hooks/useFetch';
 import {
-  fetchOnbTemplates, createOnbTemplate, updateOnbTemplate,
+  fetchOnbTemplates, createOnbTemplate, updateOnbTemplate, assignPendingOnb,
 } from '../../api/onboarding';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
@@ -45,8 +45,23 @@ function applyLabel(t, employeeTypes) {
   return parts.length ? parts.join(' · ') : 'Mọi nhân sự';
 }
 
-/* Drawer sửa/tạo template: form tiêu chí + bảng bước (thêm/xoá/di chuyển). */
-function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
+/* Hai quy trình có thể cùng khớp 1 NV không (giao phạm vi ≠ rỗng)?
+   Tiêu chí bỏ trống = khớp mọi giá trị → luôn giao trên trục đó. */
+function scopeOverlaps(a, b) {
+  const pos = (t) => (t.applyPositionTypes || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const pA = pos(a); const pB = pos(b);
+  if (pA.length && pB.length && !pA.some((v) => pB.includes(v))) return false;
+  const wA = a.applyWorkForm || 'any'; const wB = b.applyWorkForm || 'any';
+  if (wA !== 'any' && wB !== 'any' && wA !== wB) return false;
+  const eA = a.applyEmployeeTypeIds || []; const eB = b.applyEmployeeTypeIds || [];
+  if (eA.length && eB.length && !eA.some((v) => eB.includes(v))) return false;
+  return true;
+}
+
+/* Drawer sửa/tạo template: form tiêu chí + bảng bước (thêm/xoá/di chuyển).
+   others = các template active khác → cảnh báo trùng phạm vi + ai thắng. */
+function TemplateEditor({ tpl, employeeTypes, others, onClose, onSaved }) {
   const isNew = !tpl.id;
   const [f, setF] = useState({
     name: tpl.name || '',
@@ -107,6 +122,20 @@ function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
     try { onSaved(await updateOnbTemplate(tpl.id, { active: false })); }
     catch (e) { setArchiving(false); setErr(e.message || 'Lưu trữ thất bại.'); throw e; }
   };
+  const restore = async () => {
+    setErr(null); setBusy(true);
+    try { onSaved(await updateOnbTemplate(tpl.id, { active: true })); }
+    catch (e) { setErr(e.message || 'Khôi phục thất bại.'); setBusy(false); }
+  };
+
+  // Cảnh báo sống: quy trình nào trùng đối tượng + với số ưu tiên hiện tại
+  // thì bên nào thắng — trả lời tại chỗ "chọn số dựa vào đâu".
+  const mySeq = Number(f.sequence) || 10;
+  const clashes = (others || []).filter((t) => scopeOverlaps({
+    applyPositionTypes: f.applyPositionTypes.join(','),
+    applyWorkForm: f.applyWorkForm,
+    applyEmployeeTypeIds: f.applyEmployeeTypeIds,
+  }, t));
 
   return (
     <Modal onClose={onClose} lg>
@@ -121,11 +150,47 @@ function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
               placeholder="VD: Thử việc Nhân viên kinh doanh" />
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="faint" style={{ fontSize: 11 }}>Ưu tiên (khớp nhiều → số nhỏ thắng)</span>
+            <span className="faint" style={{ fontSize: 11 }}>Ưu tiên khi trùng (số nhỏ thắng)</span>
             <input type="number" style={inp} value={f.sequence}
               onChange={(e) => set('sequence', e.target.value)} />
+            <span className="faint" style={{ fontSize: 11, lineHeight: 1.55 }}>
+              Chỉ dùng đến khi 1 NV khớp nhiều quy trình cùng lúc — khi đó hệ
+              thống lấy quy trình có số <b>nhỏ hơn</b>. Mẹo chọn: quy trình
+              chuyên biệt (tiêu chí hẹp) đặt số nhỏ (1–5), quy trình chung
+              đặt số lớn (10+). Không trùng ai thì số này không có tác dụng.
+            </span>
           </label>
         </div>
+
+        {clashes.length > 0 && (
+          <div style={{ padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginBottom: 14, fontSize: 12.5, display: 'grid', gap: 5 }}>
+            <b style={{ fontSize: 12 }}>
+              ⚠ Trùng đối tượng với {clashes.length} quy trình đang dùng — NV
+              khớp cả hai sẽ theo bên có số ưu tiên nhỏ hơn:
+            </b>
+            {clashes.map((t) => {
+              const win = mySeq < t.sequence ? 'this'
+                : mySeq > t.sequence ? 'other' : 'tie';
+              return (
+                <div key={t.id}>
+                  • <b>{t.name}</b> (ưu tiên {t.sequence}):{' '}
+                  {win === 'this' && (
+                    <>quy trình đang sửa <b>thắng</b> ({mySeq} &lt; {t.sequence})</>
+                  )}
+                  {win === 'other' && (
+                    <>bên kia <b>thắng</b> ({t.sequence} &lt; {mySeq}) — muốn
+                      quy trình này được chọn, đặt số nhỏ hơn {t.sequence}</>
+                  )}
+                  {win === 'tie' && (
+                    <span style={{ color: 'var(--red-600)', fontWeight: 600 }}>
+                      cùng số {mySeq} — kết quả khó đoán, nên đặt hai số khác nhau
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="card" style={{ padding: 14, marginBottom: 14 }}>
           <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 10 }}>
@@ -237,6 +302,12 @@ function TemplateEditor({ tpl, employeeTypes, onClose, onSaved }) {
               style={{ marginRight: 'auto', color: 'var(--red-700)' }}>
               <Icon name="trash" size={14} />Lưu trữ</button>
           )}
+          {!isNew && tpl.active === false && (
+            <button className="btn btn-ghost btn-sm" disabled={busy}
+              onClick={restore}
+              style={{ marginRight: 'auto', color: 'var(--green)' }}>
+              <Icon name="rotateCcw" size={14} />Khôi phục</button>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Huỷ</button>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>
             {busy ? 'Đang lưu…' : 'Lưu quy trình'}</button>
@@ -257,11 +328,24 @@ export default function OnboardingConfig() {
   const { data, err, loading, reload } = useFetch(
     fetchOnbTemplates, [], 'onboarding:templates');
   const [editing, setEditing] = useState(null); // null | {} (mới) | template
+  const [assigning, setAssigning] = useState(false);
+  const [assignMsg, setAssignMsg] = useState(null);
 
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <LoadingState label="Đang tải cấu hình nhận việc…" />;
 
   const templates = data.templates || [];
+  const assignPending = async () => {
+    setAssigning(true); setAssignMsg(null);
+    try {
+      const r = await assignPendingOnb();
+      const parts = [`Đã gán quy trình cho ${r.assigned} nhân viên`];
+      if (r.noMatch) parts.push(`${r.noMatch} không khớp quy trình nào`);
+      if (r.noStart) parts.push(`${r.noStart} thiếu ngày bắt đầu thử việc`);
+      setAssignMsg(parts.join(' · ') + '.');
+    } catch (e) { setAssignMsg(e.message || 'Gán thất bại.'); }
+    finally { setAssigning(false); }
+  };
   return (
     <div className="content fade-in">
       <div className="page-head">
@@ -269,9 +353,21 @@ export default function OnboardingConfig() {
           <h1>Cấu hình nhận việc</h1>
           <p>Định nghĩa các bước thử việc theo từng nhóm nhân sự — sửa template chỉ áp dụng cho nhân viên gán mới (snapshot)</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing({})}>
-          <Icon name="plus" size={16} />Thêm quy trình</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost" disabled={assigning}
+            title="Gán quy trình cho các NV thử việc chưa có bước (vd tạo trước khi có template phù hợp)"
+            onClick={assignPending}>
+            <Icon name="users" size={16} />
+            {assigning ? 'Đang gán…' : 'Gán NV đang chờ'}</button>
+          <button className="btn btn-primary" onClick={() => setEditing({})}>
+            <Icon name="plus" size={16} />Thêm quy trình</button>
+        </div>
       </div>
+      {assignMsg && (
+        <div style={{ marginBottom: 14, padding: '9px 13px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5 }}>
+          {assignMsg}
+        </div>
+      )}
 
       {!templates.length && <EmptyState>Chưa có quy trình nào.</EmptyState>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
@@ -280,9 +376,26 @@ export default function OnboardingConfig() {
             onClick={() => setEditing(t)}>
             <div className="between" style={{ marginBottom: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</span>
-              {t.active === false
-                ? <Badge kind="gray">Đã lưu trữ</Badge>
-                : <Badge kind="green" dot>Đang dùng</Badge>}
+              <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                <button type="button" title="Nhân bản thành quy trình mới"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditing({
+                      name: `${t.name} (bản sao)`,
+                      sequence: t.sequence,
+                      applyPositionTypes: t.applyPositionTypes,
+                      applyWorkForm: t.applyWorkForm,
+                      applyEmployeeTypeIds: t.applyEmployeeTypeIds,
+                      steps: t.steps.map(({ id, ...s }) => ({ ...s })),
+                    });
+                  }}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, display: 'inline-flex', color: 'var(--faint)' }}>
+                  <Icon name="copy" size={14} />
+                </button>
+                {t.active === false
+                  ? <Badge kind="gray">Đã lưu trữ</Badge>
+                  : <Badge kind="green" dot>Đang dùng</Badge>}
+              </span>
             </div>
             <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
               Áp dụng: {applyLabel(t, data.employeeTypes)} · ưu tiên {t.sequence}
@@ -308,6 +421,8 @@ export default function OnboardingConfig() {
 
       {editing !== null && (
         <TemplateEditor tpl={editing} employeeTypes={data.employeeTypes}
+          others={templates.filter(
+            (x) => x.active !== false && x.id !== editing.id)}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); reload(); }} />
       )}
