@@ -119,8 +119,12 @@ function DueEditor({ step, onDone }) {
   const [err, setErr] = useState(null);
   if (!open) {
     return (
-      <button className="icon-btn" title="Sửa hạn" onClick={() => setOpen(true)}>
-        <Icon name="edit" size={14} className="faint" />
+      <button type="button" title="Sửa hạn" onClick={() => setOpen(true)}
+        style={{
+          border: 'none', background: 'none', cursor: 'pointer', padding: 0,
+          display: 'inline-flex', verticalAlign: 'middle', color: 'var(--faint)',
+        }}>
+        <Icon name="edit" size={13} />
       </button>
     );
   }
