@@ -1,4 +1,6 @@
 import calendar
+import hashlib
+import re
 from datetime import date, datetime, timedelta
 
 from psycopg2 import IntegrityError
@@ -2030,6 +2032,7 @@ def _dashboard_payroll(env):
 
 _CHECK_ERR_STATUS = {
     'not_workday': 403,
+    'on_approved_leave': 403,
     'already_checked_in': 409,
     'not_checked_in': 409,
     'already_checked_out': 409,
@@ -2049,6 +2052,7 @@ class HocBaHRM(http.Controller):
         try:
             with file_open('hocba_hrm/static/spa/index.html', 'r') as f:
                 html = f.read()
+            html = self._bust_asset_cache(html)
         except (FileNotFoundError, OSError):
             html = ('<h3 style="font-family:sans-serif">SPA chưa được build.</h3>'
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
@@ -2057,6 +2061,28 @@ class HocBaHRM(http.Controller):
         resp = Response(html, content_type='text/html; charset=utf-8')
         resp.headers['Cache-Control'] = 'no-store'
         return resp
+
+    @staticmethod
+    def _bust_asset_cache(html):
+        """Chèn ?v=<hash nội dung> vào URL asset SPA trong index.html.
+
+        Vite build với tên file cố định (assets/index.js, assets/index.css) để
+        không sinh bundle mới mỗi lần build → tránh conflict git ở static/spa.
+        Bù lại, tên cố định khiến trình duyệt cache bản cũ; ta thêm query
+        ?v=<md5 8 ký tự của chính file> để bust cache khi nội dung đổi.
+        """
+        def repl(m):
+            url = m.group(1)
+            rel = url.split('/hocba_hrm/', 1)[1]  # static/spa/assets/index.js
+            try:
+                with file_open('hocba_hrm/' + rel, 'rb') as af:
+                    digest = hashlib.md5(af.read()).hexdigest()[:8]
+            except (FileNotFoundError, OSError):
+                return m.group(0)
+            return m.group(0).replace(url, '%s?v=%s' % (url, digest))
+
+        return re.sub(r'(?:src|href)="(/hocba_hrm/static/spa/assets/[^"?]+)"',
+                      repl, html)
 
     # ------------------------------------------------------------------
     # JSON API cho SPA — dữ liệu thật từ hocba_employees.
@@ -3442,6 +3468,14 @@ class HocBaHRM(http.Controller):
         is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
         is_manager = _is_dept_manager(request.env, emp)
         can_manage = _user_can_manage(request.env)
+        # Vai trò Tài chính (module hocba_finance có thể chưa cài → guard).
+        def _has_group_safe(xmlid):
+            try:
+                return user.has_group(xmlid)
+            except Exception:  # noqa: BLE001 - group/module chưa tồn tại
+                return False
+        is_finance = _has_group_safe('hocba_finance.group_finance_user')
+        is_finance_mgr = _has_group_safe('hocba_finance.group_finance_manager')
         roles = []
         if is_admin:
             roles.append('Admin')
@@ -3453,6 +3487,10 @@ class HocBaHRM(http.Controller):
             roles.append('Giáo vụ')
         if is_manager:
             roles.append('Quản lý')
+        if is_finance_mgr:
+            roles.append('Giám đốc Tài chính')
+        elif is_finance:
+            roles.append('Kế toán')
         if not roles:
             roles.append('Nhân viên')
         return {
@@ -3466,6 +3504,8 @@ class HocBaHRM(http.Controller):
             'isHrUser': is_hr_user,
             'isGiaovu': is_giaovu,
             'isManager': is_manager,
+            'isFinance': is_finance,
+            'isFinanceManager': is_finance_mgr,
             'canManage': can_manage,
             'canEditEmp': _cap_edit_emp(request.env),
             'canSeeSalary': _cap_see_salary(request.env),

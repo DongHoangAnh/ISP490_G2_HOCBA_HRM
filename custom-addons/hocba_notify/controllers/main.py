@@ -1,9 +1,13 @@
-from odoo import fields, http
+from odoo import http
 from odoo.http import request
 
 
 def _d(dt):
-    return fields.Datetime.to_string(dt) if dt else None
+    # create_date của Odoo là datetime naive-UTC. Trả ISO-8601 kèm hậu tố 'Z'
+    # để FE (new Date(...)) hiểu ĐÚNG là UTC; nếu trả "YYYY-MM-DD HH:MM:SS"
+    # (không tz) trình duyệt sẽ coi là giờ local → lệch đúng offset (VN +7h,
+    # thông báo "vừa xong" hiển thị "7 giờ trước").
+    return dt.isoformat() + 'Z' if dt else None
 
 
 def _notif_row(rec):

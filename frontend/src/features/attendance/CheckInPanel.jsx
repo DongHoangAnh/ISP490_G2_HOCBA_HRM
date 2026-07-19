@@ -56,6 +56,7 @@ export default function CheckInPanel({ me, onChanged }) {
         already_checked_out: 'Bạn đã check-out hôm nay rồi.',
         no_shift_today: 'Chưa có ca được duyệt hôm nay.',
         outside_shift_window: 'Ngoài cửa sổ check-in của ca (±15 phút).',
+        on_approved_leave: 'Bạn đang trong kỳ nghỉ phép đã duyệt — không thể chấm công hôm nay.',
       };
       setMsg({ kind: 'err', text: M[e.code] || ('Điểm danh thất bại (' + e.message + ').') });
     } finally { setBusy(false); }

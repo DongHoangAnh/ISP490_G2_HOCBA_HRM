@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_fin_voucher_income" model="ir.sequence">
+            <field name="name">Phiếu thu Học Bá</field>
+            <field name="code">hocba.fin.voucher.income</field>
+            <field name="prefix">PT/%(year)s/</field>
+            <field name="padding">4</field>
+            <field name="number_next">1</field>
+        </record>
+        <record id="seq_fin_voucher_expense" model="ir.sequence">
+            <field name="name">Phiếu chi Học Bá</field>
+            <field name="code">hocba.fin.voucher.expense</field>
+            <field name="prefix">PC/%(year)s/</field>
+            <field name="padding">4</field>
+            <field name="number_next">1</field>
+        </record>
+    </data>
+</odoo>

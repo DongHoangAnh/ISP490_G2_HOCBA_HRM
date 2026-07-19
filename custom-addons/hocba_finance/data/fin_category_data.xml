@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- ═══ Mục THU (income) — theo sơ đồ luồng tài chính ═══ -->
+        <record id="cat_income_sales" model="hocba.fin.category">
+            <field name="code">DT_BANHANG</field>
+            <field name="name">Thu từ doanh thu bán hàng</field>
+            <field name="category_type">income</field>
+        </record>
+        <record id="cat_income_reserve" model="hocba.fin.category">
+            <field name="code">THU_BAOLUU</field>
+            <field name="name">Thu từ bảo lưu</field>
+            <field name="category_type">income</field>
+        </record>
+        <record id="cat_income_financial" model="hocba.fin.category">
+            <field name="code">THU_TAICHINH</field>
+            <field name="name">Thu từ hoạt động tài chính</field>
+            <field name="category_type">income</field>
+        </record>
+        <record id="cat_income_capital" model="hocba.fin.category">
+            <field name="code">THU_GOPVON</field>
+            <field name="name">Thu từ góp vốn</field>
+            <field name="category_type">income</field>
+        </record>
+        <record id="cat_income_other" model="hocba.fin.category">
+            <field name="code">THU_KHAC</field>
+            <field name="name">Thu khác</field>
+            <field name="category_type">income</field>
+        </record>
+
+        <!-- ═══ Mục CHI (expense) — theo cột "Mục (lý do chi)" ═══ -->
+        <record id="cat_expense_salary" model="hocba.fin.category">
+            <field name="code">TRA_LUONG</field>
+            <field name="name">Trả lương</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_bonus" model="hocba.fin.category">
+            <field name="code">KHEN_THUONG</field>
+            <field name="name">Khen thưởng</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_outsource" model="hocba.fin.category">
+            <field name="code">OUTSOURCE</field>
+            <field name="name">Outsource</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_asset" model="hocba.fin.category">
+            <field name="code">CSVC</field>
+            <field name="name">Mua cơ sở vật chất</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_ads" model="hocba.fin.category">
+            <field name="code">ADS</field>
+            <field name="name">Chạy ads</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_booking" model="hocba.fin.category">
+            <field name="code">BOOKING</field>
+            <field name="name">Booking</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_book_contract" model="hocba.fin.category">
+            <field name="code">SACH_HD</field>
+            <field name="name">Gửi sách/Hợp đồng</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_phone" model="hocba.fin.category">
+            <field name="code">DIENTHOAI</field>
+            <field name="name">Phí cước điện thoại</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_rent" model="hocba.fin.category">
+            <field name="code">TIENNHA</field>
+            <field name="name">Tiền nhà</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_utility" model="hocba.fin.category">
+            <field name="code">DIENNUOC</field>
+            <field name="name">Tiền điện nước</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_office" model="hocba.fin.category">
+            <field name="code">SINHHOAT_VP</field>
+            <field name="name">Phí sinh hoạt văn phòng</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_internet" model="hocba.fin.category">
+            <field name="code">INTERNET</field>
+            <field name="name">Internet</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_travel" model="hocba.fin.category">
+            <field name="code">LIENHOAN</field>
+            <field name="name">Phí liên hoan/du lịch</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_insurance" model="hocba.fin.category">
+            <field name="code">BHXH</field>
+            <field name="name">Bảo hiểm xã hội</field>
+            <field name="category_type">expense</field>
+        </record>
+        <record id="cat_expense_other" model="hocba.fin.category">
+            <field name="code">CHI_KHAC</field>
+            <field name="name">Chi khác</field>
+            <field name="category_type">expense</field>
+        </record>
+    </data>
+</odoo>

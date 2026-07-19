@@ -12,3 +12,4 @@ from . import test_handover_chain
 from . import test_lapsed
 from . import test_burnout
 from . import test_approvals_domain
+from . import test_attendance_integration

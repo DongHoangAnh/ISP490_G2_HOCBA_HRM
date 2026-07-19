@@ -79,28 +79,24 @@ class HbSalaryRule(models.Model):
     # ── Lookup helpers ───────────────────────────────────────────
     @api.model
     def _get_lookup_source_options(self):
-        from .payslip import LOOKUP_SOURCES
-        return [(key, src['label']) for key, src in LOOKUP_SOURCES.items()]
+        # Nhóm nghiệp vụ trong catalog (Nhân sự, Chấm công, …).
+        from .payslip import LOOKUP_CATALOG
+        return [(cat['key'], cat['label']) for cat in LOOKUP_CATALOG]
 
     @api.constrains('amount_type', 'lookup_source', 'lookup_field')
     def _check_lookup_fields(self):
-        from .payslip import LOOKUP_SOURCES
+        # Kiểm tra (nhóm, field) tồn tại trong catalog lookup.
+        from .payslip import _lookup_field_def
         for rec in self:
             if rec.amount_type != 'lookup':
                 continue
             if not rec.lookup_source:
                 raise ValidationError(
                     _('Rule "%s": phải chọn nguồn dữ liệu cho loại tra cứu.', rec.name))
-            if rec.lookup_source not in LOOKUP_SOURCES:
+            if not _lookup_field_def(rec.lookup_source, rec.lookup_field):
                 raise ValidationError(
-                    _('Nguồn dữ liệu "%s" không hợp lệ.', rec.lookup_source))
-            src = LOOKUP_SOURCES[rec.lookup_source]
-            if not rec.lookup_field or rec.lookup_field not in src['fields']:
-                valid = ', '.join(src['fields'].keys())
-                raise ValidationError(
-                    _('Trường "%s" không tồn tại trong nguồn "%s". '
-                      'Các trường hợp lệ: %s',
-                      rec.lookup_field, rec.lookup_source, valid))
+                    _('Nguồn/trường tra cứu không hợp lệ (%s / %s).',
+                      rec.lookup_source, rec.lookup_field or '—'))
 
     # ── Formula helper actions ─────────────────────────────────
     def action_insert_formula_func(self):

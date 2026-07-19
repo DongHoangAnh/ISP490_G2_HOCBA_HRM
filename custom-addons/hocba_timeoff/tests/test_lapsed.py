@@ -8,6 +8,7 @@
 from datetime import date, datetime, time, timedelta
 
 from odoo import fields
+from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
@@ -321,3 +322,43 @@ class TestTimeoffLapsed(TransactionCase):
         # Chạy lần 2 → không báo thêm.
         Cron._cron_notify_lapsed_approvals()
         self.assertEqual(len(self._notifs_of(self.mgr_a_user, kind='lapsed')), 1)
+
+    # ----- Rút đơn self-service: đơn ĐÃ QUÁ HẠN chưa duyệt -----
+    def _cancel_as(self, leave, user):
+        """Mô phỏng ĐÚNG ngữ cảnh controller api_request_cancel: base env =
+        user thường (không đặc quyền) rồi sudo().browse. Phải chạy đúng vậy —
+        nếu test dưới env admin sẽ false-positive vì admin có group Time Off,
+        che mất chặn core `_unlink_if_correct_states`."""
+        emp = user.employee_id
+        lv = self.env(user=user.id)['hr.leave'].sudo().browse(leave.id)
+        lv.action_timeoff_self_cancel(emp)
+
+    def test_self_cancel_past_pending_leave(self):
+        """Đơn đã quá hạn còn chờ duyệt: chủ đơn (NV thường) vẫn rút được.
+        Chặn core cấm NV xoá đơn quá khứ → method phải unlink với env.user =
+        SUPERUSER (with_user), KHÔNG phải .sudo() (sudo giữ nguyên env.user)."""
+        days = self._past_working_days(1)
+        leave = self._mk_leave(self.emp_a, days[0], days[0])
+        self.assertEqual(leave.state, 'confirm')
+        # NV thường không được unlink trực tiếp đơn quá khứ (tái hiện bug gốc).
+        with self.assertRaises(UserError):
+            leave.with_user(self.user_a).unlink()
+        # Method self-service (chạy dưới env NV thường) vẫn rút được.
+        self._cancel_as(leave, self.user_a)
+        self.assertFalse(leave.exists())
+
+    def test_self_cancel_rejects_non_owner(self):
+        """Chỉ chủ đơn mới rút được (user_b không phải chủ đơn của emp_a)."""
+        days = self._past_working_days(1)
+        leave = self._mk_leave(self.emp_a, days[0], days[0])
+        with self.assertRaises(AccessError):
+            self._cancel_as(leave, self.user_b)
+        self.assertTrue(leave.exists())
+
+    def test_self_cancel_rejects_non_pending(self):
+        """Đơn không còn chờ duyệt (đã từ chối/duyệt) → không rút kiểu này."""
+        days = self._past_working_days(2)
+        leave = self._mk_leave(self.emp_a, days[0], days[1])
+        leave.sudo().action_refuse()
+        with self.assertRaises(UserError):
+            self._cancel_as(leave, self.user_a)

@@ -5,16 +5,14 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import ModalHeader from '../../components/ModalHeader';
-import ConfirmModal from '../../components/ConfirmModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchSubstitutions, decideSubstitution, returnSubstitution } from '../../api/timeoff';
+import { fetchSubstitutions, decideSubstitution } from '../../api/timeoff';
 
 const STATE_META = {
   pending: { kind: 'amber', label: 'Chờ phản hồi' },
   accepted: { kind: 'green', label: 'Đã đồng ý' },
   declined: { kind: 'red', label: 'Đã từ chối' },
-  returned: { kind: 'gray', label: 'Đã trả lại' },
 };
 
 export default function SubstitutionsPanel({ onChanged }) {
@@ -23,7 +21,6 @@ export default function SubstitutionsPanel({ onChanged }) {
   const [busy, setBusy] = useState(null); // id đang đồng ý
   const [actionErr, setActionErr] = useState(null); // lỗi khi Đồng ý (hiện banner trong card)
   const [declining, setDeclining] = useState(null); // yêu cầu đang mở modal từ chối
-  const [returning, setReturning] = useState(null); // yêu cầu đang chờ xác nhận trả buổi
 
   const load = useCallback(() => {
     setErr(null);
@@ -86,11 +83,6 @@ export default function SubstitutionsPanel({ onChanged }) {
                           onClick={() => setDeclining(r)}>Từ chối</button>
                       </div>
                     )}
-                    {r.canReturn && (
-                      <button className="btn btn-ghost btn-sm" disabled={busy === r.id}
-                        onClick={() => setReturning(r)}>
-                        <Icon name="rotateCcw" size={14} />Trả buổi</button>
-                    )}
                   </td>
                 </tr>
               );
@@ -104,15 +96,6 @@ export default function SubstitutionsPanel({ onChanged }) {
         <DeclineModal req={declining}
           onClose={() => setDeclining(null)}
           onDone={(d) => { setDeclining(null); setItems(d.items || []); onChanged && onChanged(); }} />
-      )}
-
-      {returning && (
-        <ConfirmModal title="Trả lại buổi dạy thay" confirmLabel="Trả buổi" icon="rotateCcw"
-          message={`Trả lại buổi ${returning.className || '—'} ngày ${fmtDate(returning.date)}? Buổi sẽ về lại giáo viên đã nhờ bạn.`}
-          onClose={() => setReturning(null)}
-          onConfirm={() => returnSubstitution(returning.id).then((d) => {
-            setReturning(null); setItems(d.items || []); onChanged && onChanged();
-          })} />
       )}
     </div>
   );
