@@ -3,10 +3,11 @@
    quy trình thử việc bước động. Owner: Tân.
    Spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md
    ============================================================ */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import useFetch from '../../hooks/useFetch';
 import {
   fetchOnbTemplates, createOnbTemplate, updateOnbTemplate, assignPendingOnb,
+  reorderOnbTemplates,
 } from '../../api/onboarding';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
@@ -60,12 +61,13 @@ function scopeOverlaps(a, b) {
 }
 
 /* Drawer sửa/tạo template: form tiêu chí + bảng bước (thêm/xoá/di chuyển).
-   others = các template active khác → cảnh báo trùng phạm vi + ai thắng. */
-function TemplateEditor({ tpl, employeeTypes, others, onClose, onSaved }) {
+   activeList = danh sách quy trình đang dùng THEO THỨ TỰ; myIndex = vị trí
+   của template đang sửa trong đó (mới/lưu trữ = cuối) → cảnh báo trùng
+   phạm vi nói theo "đứng trên/đứng dưới", không còn con số. */
+function TemplateEditor({ tpl, employeeTypes, activeList, myIndex, onClose, onSaved }) {
   const isNew = !tpl.id;
   const [f, setF] = useState({
     name: tpl.name || '',
-    sequence: tpl.sequence ?? 10,
     applyPositionTypes: (tpl.applyPositionTypes || '')
       .split(',').map((s) => s.trim()).filter(Boolean),
     applyWorkForm: tpl.applyWorkForm || 'any',
@@ -96,7 +98,6 @@ function TemplateEditor({ tpl, employeeTypes, others, onClose, onSaved }) {
     if (f.steps.some((s) => !s.name.trim())) { setErr('Mỗi bước cần có tên.'); return; }
     const payload = {
       name: f.name.trim(),
-      sequence: Number(f.sequence) || 10,
       applyPositionTypes: f.applyPositionTypes.join(','),
       applyWorkForm: f.applyWorkForm,
       applyEmployeeTypeIds: f.applyEmployeeTypeIds,
@@ -128,14 +129,16 @@ function TemplateEditor({ tpl, employeeTypes, others, onClose, onSaved }) {
     catch (e) { setErr(e.message || 'Khôi phục thất bại.'); setBusy(false); }
   };
 
-  // Cảnh báo sống: quy trình nào trùng đối tượng + với số ưu tiên hiện tại
-  // thì bên nào thắng — trả lời tại chỗ "chọn số dựa vào đâu".
-  const mySeq = Number(f.sequence) || 10;
-  const clashes = (others || []).filter((t) => scopeOverlaps({
-    applyPositionTypes: f.applyPositionTypes.join(','),
-    applyWorkForm: f.applyWorkForm,
-    applyEmployeeTypeIds: f.applyEmployeeTypeIds,
-  }, t));
+  // Cảnh báo sống theo VỊ TRÍ trong danh sách: quy trình trùng đối tượng
+  // đứng trên hay dưới quy trình này → bên nào thắng. Ẩn với template đã
+  // lưu trữ (không tham gia matching).
+  const clashes = tpl.active === false ? [] : (activeList || [])
+    .map((t, idx) => ({ ...t, idx }))
+    .filter((t) => t.id !== tpl.id && scopeOverlaps({
+      applyPositionTypes: f.applyPositionTypes.join(','),
+      applyWorkForm: f.applyWorkForm,
+      applyEmployeeTypeIds: f.applyEmployeeTypeIds,
+    }, t));
 
   return (
     <Modal onClose={onClose} lg>
@@ -143,52 +146,33 @@ function TemplateEditor({ tpl, employeeTypes, others, onClose, onSaved }) {
         title={isNew ? 'Thêm quy trình nhận việc' : `Sửa: ${tpl.name}`}
         sub="Sửa template chỉ ảnh hưởng nhân viên gán MỚI — NV đang chạy giữ nguyên lộ trình (snapshot)." />
       <div style={{ padding: '18px 24px', maxHeight: 'min(70vh, calc(100vh - 220px))', overflowY: 'auto' }}>
-        <div className="grid-2" style={{ rowGap: 12, columnGap: 14, marginBottom: 14 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="faint" style={{ fontSize: 11 }}>Tên quy trình *</span>
-            <input style={inp} value={f.name} onChange={(e) => set('name', e.target.value)}
-              placeholder="VD: Thử việc Nhân viên kinh doanh" />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="faint" style={{ fontSize: 11 }}>Ưu tiên khi trùng (số nhỏ thắng)</span>
-            <input type="number" style={inp} value={f.sequence}
-              onChange={(e) => set('sequence', e.target.value)} />
-            <span className="faint" style={{ fontSize: 11, lineHeight: 1.55 }}>
-              Chỉ dùng đến khi 1 NV khớp nhiều quy trình cùng lúc — khi đó hệ
-              thống lấy quy trình có số <b>nhỏ hơn</b>. Mẹo chọn: quy trình
-              chuyên biệt (tiêu chí hẹp) đặt số nhỏ (1–5), quy trình chung
-              đặt số lớn (10+). Không trùng ai thì số này không có tác dụng.
-            </span>
-          </label>
-        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+          <span className="faint" style={{ fontSize: 11 }}>Tên quy trình *</span>
+          <input style={inp} value={f.name} onChange={(e) => set('name', e.target.value)}
+            placeholder="VD: Thử việc Nhân viên kinh doanh" />
+        </label>
 
         {clashes.length > 0 && (
           <div style={{ padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginBottom: 14, fontSize: 12.5, display: 'grid', gap: 5 }}>
             <b style={{ fontSize: 12 }}>
               ⚠ Trùng đối tượng với {clashes.length} quy trình đang dùng — NV
-              khớp cả hai sẽ theo bên có số ưu tiên nhỏ hơn:
+              khớp cả hai sẽ vào quy trình đứng TRÊN trong danh sách:
             </b>
-            {clashes.map((t) => {
-              const win = mySeq < t.sequence ? 'this'
-                : mySeq > t.sequence ? 'other' : 'tie';
-              return (
-                <div key={t.id}>
-                  • <b>{t.name}</b> (ưu tiên {t.sequence}):{' '}
-                  {win === 'this' && (
-                    <>quy trình đang sửa <b>thắng</b> ({mySeq} &lt; {t.sequence})</>
-                  )}
-                  {win === 'other' && (
-                    <>bên kia <b>thắng</b> ({t.sequence} &lt; {mySeq}) — muốn
-                      quy trình này được chọn, đặt số nhỏ hơn {t.sequence}</>
-                  )}
-                  {win === 'tie' && (
-                    <span style={{ color: 'var(--red-600)', fontWeight: 600 }}>
-                      cùng số {mySeq} — kết quả khó đoán, nên đặt hai số khác nhau
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {clashes.map((t) => (
+              <div key={t.id}>
+                • <b>{t.name}</b> (vị trí #{t.idx + 1}):{' '}
+                {myIndex < t.idx ? (
+                  <>quy trình này đứng trên → <b>thắng</b></>
+                ) : isNew ? (
+                  <>đứng trên → <b>thắng</b>. Quy trình mới sẽ vào cuối danh
+                    sách; sau khi lưu, kéo lên trên "{t.name}" nếu muốn
+                    ngược lại.</>
+                ) : (
+                  <>đứng trên → <b>thắng</b>. Kéo quy trình này lên trên
+                    "{t.name}" ngoài danh sách nếu muốn ngược lại.</>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
@@ -330,11 +314,19 @@ export default function OnboardingConfig() {
   const [editing, setEditing] = useState(null); // null | {} (mới) | template
   const [assigning, setAssigning] = useState(false);
   const [assignMsg, setAssignMsg] = useState(null);
+  const [reordering, setReordering] = useState(false);
+  const [dragIdx, setDragIdx] = useState(null);   // thẻ đang kéo
+  const [overIdx, setOverIdx] = useState(null);   // thẻ đang bị kéo đè lên
+  const dragDone = useRef(false); // chặn click mở editor ngay sau khi thả
 
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <LoadingState label="Đang tải cấu hình nhận việc…" />;
 
   const templates = data.templates || [];
+  // Danh sách đang dùng đã đúng thứ tự từ backend (_order = sequence, id):
+  // thứ tự này = thứ tự giành quyền khi 1 NV khớp nhiều quy trình.
+  const active = templates.filter((t) => t.active !== false);
+  const archived = templates.filter((t) => t.active === false);
   const assignPending = async () => {
     setAssigning(true); setAssignMsg(null);
     try {
@@ -346,12 +338,78 @@ export default function OnboardingConfig() {
     } catch (e) { setAssignMsg(e.message || 'Gán thất bại.'); }
     finally { setAssigning(false); }
   };
+  // ---- kéo-thả / ▲▼ đổi thứ tự (lưu ngay, sequence ghi 10,20,30…) ----
+  const doReorder = async (ids) => {
+    setReordering(true);
+    try { await reorderOnbTemplates(ids); await reload(); }
+    catch (e) { setAssignMsg(e.message || 'Đổi thứ tự thất bại.'); }
+    finally { setReordering(false); }
+  };
+  const moveTpl = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= active.length) return;
+    const ids = active.map((t) => t.id);
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    doReorder(ids);
+  };
+  const dropOn = (i) => {
+    if (dragIdx === null || dragIdx === i) return;
+    const ids = active.map((t) => t.id);
+    const [moved] = ids.splice(dragIdx, 1);
+    ids.splice(i, 0, moved);
+    doReorder(ids);
+  };
+  const copyOf = (t) => ({
+    name: `${t.name} (bản sao)`,
+    applyPositionTypes: t.applyPositionTypes,
+    applyWorkForm: t.applyWorkForm,
+    applyEmployeeTypeIds: t.applyEmployeeTypeIds,
+    steps: (t.steps || []).map(({ id, ...s }) => ({ ...s })),
+  });
+  // Thân thẻ dùng chung cho danh sách đang dùng + mục lưu trữ
+  const cardBody = (t) => (
+    <>
+      <div className="between" style={{ marginBottom: 6 }}>
+        <span style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</span>
+        <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+          <button type="button" title="Nhân bản thành quy trình mới (vào cuối danh sách)"
+            onClick={(e) => { e.stopPropagation(); setEditing(copyOf(t)); }}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, display: 'inline-flex', color: 'var(--faint)' }}>
+            <Icon name="copy" size={14} />
+          </button>
+          {t.active === false
+            ? <Badge kind="gray">Đã lưu trữ</Badge>
+            : <Badge kind="green" dot>Đang dùng</Badge>}
+        </span>
+      </div>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        Áp dụng: {applyLabel(t, data.employeeTypes)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {t.steps.map((s, i) => (
+          <div key={s.id || i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
+            <span className="mono faint" style={{ width: 16, textAlign: 'center' }}>{i + 1}</span>
+            <span style={{ flex: 1 }}>{s.name}</span>
+            <span className="faint" style={{ fontSize: 11 }}>
+              {s.stepType === 'evaluation' ? 'ĐG' : 'Việc'}
+              {s.dueDays ? ` · +${s.dueDays}ng` : ''}
+              {s.passCompletes ? ' · ✓chính thức' : ''}
+              {s.isExtension ? ' · ↻gia hạn' : ''}
+              {s.autoAction === 'grant_assets' ? ' · ⚙tài sản' : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
   return (
     <div className="content fade-in">
       <div className="page-head">
         <div>
           <h1>Cấu hình nhận việc</h1>
-          <p>Định nghĩa các bước thử việc theo từng nhóm nhân sự — sửa template chỉ áp dụng cho nhân viên gán mới (snapshot)</p>
+          <p>Nhân viên mới được dò <b>từ trên xuống</b> — khớp quy trình nào trước thì
+            vào quy trình đó. Kéo thẻ (hoặc bấm ▲▼) để đổi thứ tự; sửa template chỉ
+            áp dụng cho lượt gán mới (snapshot)</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" disabled={assigning}
@@ -369,60 +427,71 @@ export default function OnboardingConfig() {
         </div>
       )}
 
-      {!templates.length && <EmptyState>Chưa có quy trình nào.</EmptyState>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
-        {templates.map((t) => (
-          <div key={t.id} className="card" style={{ padding: 16, cursor: 'pointer', opacity: t.active === false ? 0.55 : 1 }}
-            onClick={() => setEditing(t)}>
-            <div className="between" style={{ marginBottom: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</span>
-              <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" title="Nhân bản thành quy trình mới"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditing({
-                      name: `${t.name} (bản sao)`,
-                      sequence: t.sequence,
-                      applyPositionTypes: t.applyPositionTypes,
-                      applyWorkForm: t.applyWorkForm,
-                      applyEmployeeTypeIds: t.applyEmployeeTypeIds,
-                      steps: t.steps.map(({ id, ...s }) => ({ ...s })),
-                    });
-                  }}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, display: 'inline-flex', color: 'var(--faint)' }}>
-                  <Icon name="copy" size={14} />
-                </button>
-                {t.active === false
-                  ? <Badge kind="gray">Đã lưu trữ</Badge>
-                  : <Badge kind="green" dot>Đang dùng</Badge>}
+      {!active.length && <EmptyState>Chưa có quy trình nào đang dùng.</EmptyState>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 760 }}>
+        {active.map((t, i) => (
+          <div key={t.id} className="card" draggable={!reordering}
+            onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(t.id)); setDragIdx(i); }}
+            onDragOver={(e) => { e.preventDefault(); if (overIdx !== i) setOverIdx(i); }}
+            onDrop={(e) => { e.preventDefault(); dropOn(i); dragDone.current = true; }}
+            onDragEnd={() => {
+              setDragIdx(null); setOverIdx(null);
+              setTimeout(() => { dragDone.current = false; }, 0);
+            }}
+            onClick={() => { if (dragDone.current) return; setEditing(t); }}
+            style={{
+              padding: '14px 16px', cursor: 'pointer', display: 'flex', gap: 14,
+              outline: overIdx === i && dragIdx !== null && dragIdx !== i
+                ? '2px dashed var(--red-600)' : 'none',
+              opacity: dragIdx === i ? 0.5 : 1,
+            }}>
+            {/* Rail thứ tự: vị trí + ▲▼ (thứ tự = quyền ưu tiên khi trùng) */}
+            <div onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'grab' }}>
+              <span title="Vị trí dò — trên thắng dưới" className="mono"
+                style={{ fontWeight: 800, fontSize: 15, color: 'var(--red-600)' }}>
+                #{i + 1}
               </span>
+              <button type="button" title="Đưa lên" disabled={reordering || i === 0}
+                onClick={() => moveTpl(i, -1)}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: i === 0 ? 'var(--border-strong)' : 'var(--muted)' }}>
+                <Icon name="arrowUp" size={15} />
+              </button>
+              <button type="button" title="Đưa xuống" disabled={reordering || i === active.length - 1}
+                onClick={() => moveTpl(i, 1)}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: i === active.length - 1 ? 'var(--border-strong)' : 'var(--muted)' }}>
+                <Icon name="arrowDown" size={15} />
+              </button>
             </div>
-            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
-              Áp dụng: {applyLabel(t, data.employeeTypes)} · ưu tiên {t.sequence}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {t.steps.map((s, i) => (
-                <div key={s.id || i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
-                  <span className="mono faint" style={{ width: 16, textAlign: 'center' }}>{i + 1}</span>
-                  <span style={{ flex: 1 }}>{s.name}</span>
-                  <span className="faint" style={{ fontSize: 11 }}>
-                    {s.stepType === 'evaluation' ? 'ĐG' : 'Việc'}
-                    {s.dueDays ? ` · +${s.dueDays}ng` : ''}
-                    {s.passCompletes ? ' · ✓chính thức' : ''}
-                    {s.isExtension ? ' · ↻gia hạn' : ''}
-                    {s.autoAction === 'grant_assets' ? ' · ⚙tài sản' : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>{cardBody(t)}</div>
           </div>
         ))}
       </div>
 
+      {archived.length > 0 && (
+        <>
+          <div className="muted" style={{ fontWeight: 700, fontSize: 12.5, margin: '22px 0 10px' }}>
+            Đã lưu trữ ({archived.length}) — không được gán cho nhân viên mới
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+            {archived.map((t) => (
+              <div key={t.id} className="card"
+                style={{ padding: 16, cursor: 'pointer', opacity: 0.55 }}
+                onClick={() => setEditing(t)}>
+                {cardBody(t)}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {editing !== null && (
         <TemplateEditor tpl={editing} employeeTypes={data.employeeTypes}
-          others={templates.filter(
-            (x) => x.active !== false && x.id !== editing.id)}
+          activeList={active}
+          myIndex={(() => {
+            const i = active.findIndex((x) => x.id === editing.id);
+            return i === -1 ? active.length : i; // mới/lưu trữ = cuối
+          })()}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); reload(); }} />
       )}

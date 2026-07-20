@@ -106,6 +106,56 @@ class TestOnboardingAssign(TransactionCase):
 
 
 @tagged('post_install', '-at_install')
+class TestOnboardingReorder(TransactionCase):
+    """Kéo-thả thứ tự quy trình — spec 2026-07-20-onboarding-priority-reorder:
+    thứ tự danh sách = thứ tự giành quyền; sequence chỉ còn là chi tiết nội bộ."""
+
+    def setUp(self):
+        super().setUp()
+        Tpl = self.env['hb.onboarding.template']
+        step = [(0, 0, {'name': 'B1', 'step_type': 'task', 'sequence': 1})]
+        self.ta = Tpl.create({'name': 'RE-A', 'sequence': 1,
+                              'apply_position_types': 'ctv',
+                              'step_ids': step})
+        self.tb = Tpl.create({'name': 'RE-B', 'sequence': 2,
+                              'apply_position_types': 'ctv',
+                              'step_ids': [(0, 0, {'name': 'B1b',
+                                                   'step_type': 'task',
+                                                   'sequence': 1})]})
+
+    def _mk_ctv(self):
+        return self.env['hr.employee'].create({
+            'name': 'NV CTV reorder', 'x_position_type': 'ctv',
+            'x_employment_status': 'probation',
+            'x_probation_start': fields.Date.today()})
+
+    def test_reorder_writes_ascending_and_changes_matching(self):
+        # trước: A đứng trên (1 < 2) → NV CTV vào A
+        self.assertEqual(self.ta._match_for_employee(self._mk_ctv()), self.ta)
+        # kéo B lên trên A
+        self.env['hb.onboarding.template'].action_reorder(
+            [self.tb.id, self.ta.id])
+        self.assertLess(self.tb.sequence, self.ta.sequence)
+        # NV mới giờ vào B
+        self.assertEqual(self.ta._match_for_employee(self._mk_ctv()), self.tb)
+
+    def test_reorder_invalid_id_raises(self):
+        with self.assertRaises(ValidationError):
+            self.env['hb.onboarding.template'].action_reorder(
+                [self.ta.id, 99999999])
+
+    def test_create_without_sequence_goes_bottom(self):
+        tpl = self.env['hb.onboarding.template'].create({
+            'name': 'RE-C cuối danh sách',
+            'apply_position_types': 'ctv',
+            'step_ids': [(0, 0, {'name': 'B1c', 'step_type': 'task',
+                                 'sequence': 1})]})
+        others = self.env['hb.onboarding.template'].search(
+            [('id', '!=', tpl.id)])
+        self.assertGreater(tpl.sequence, max(others.mapped('sequence')))
+
+
+@tagged('post_install', '-at_install')
 class TestOnboardingEngine(TransactionCase):
     """Máy trạng thái: complete task, auto_action, evaluate đủ nhánh."""
 

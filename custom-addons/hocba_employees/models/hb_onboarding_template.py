@@ -31,6 +31,22 @@ class HbOnboardingTemplate(models.Model):
     step_ids = fields.One2many(
         'hb.onboarding.template.step', 'template_id', string='Các bước')
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Template mới không truyền sequence → vào CUỐI danh sách (max+10)
+        — mặc định an toàn: không cướp quyền quy trình cũ, muốn thắng thì
+        kéo lên (spec 2026-07-20-onboarding-priority-reorder)."""
+        bottom = None
+        for vals in vals_list:
+            if 'sequence' not in vals:
+                if bottom is None:
+                    cur = self.sudo().with_context(
+                        active_test=False).search([]).mapped('sequence')
+                    bottom = max(cur) if cur else 0
+                bottom += 10
+                vals['sequence'] = bottom
+        return super().create(vals_list)
+
     @api.constrains('step_ids')
     def _check_has_steps(self):
         for tpl in self:
@@ -77,6 +93,20 @@ class HbOnboardingTemplate(models.Model):
             if tpl._matches(emp):
                 return tpl
         return self.browse()
+
+    @api.model
+    def action_reorder(self, ordered_ids):
+        """Ghi lại sequence theo thứ tự danh sách người dùng kéo-thả
+        (trên → dưới = 10, 20, 30…). Thứ tự này quyết định quy trình nào
+        giành quyền khi 1 NV khớp nhiều quy trình."""
+        templates = self.browse(ordered_ids)
+        missing = set(ordered_ids) - set(templates.exists().ids)
+        if missing:
+            raise ValidationError(_(
+                'Quy trình không tồn tại: %s') % ', '.join(map(str, missing)))
+        for pos, tpl_id in enumerate(ordered_ids):
+            self.browse(tpl_id).write({'sequence': (pos + 1) * 10})
+        return True
 
     @api.model
     def action_assign_pending(self):

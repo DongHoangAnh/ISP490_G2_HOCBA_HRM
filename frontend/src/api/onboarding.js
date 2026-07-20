@@ -10,6 +10,8 @@ export const updateOnbTemplate = (id, payload) =>
   hbPost(`/hocba-hrm/api/onboarding/templates/${id}`, payload);
 export const assignPendingOnb = () =>
   hbPost('/hocba-hrm/api/onboarding/templates/assign-pending', {});
+export const reorderOnbTemplates = (ids) =>
+  hbPost('/hocba-hrm/api/onboarding/templates/reorder', { ids });
 
 /* Vận hành bước — mỗi call trả item NV đã refresh (steps + progress). */
 export const completeOnbStep = (stepId, payload = {}) =>

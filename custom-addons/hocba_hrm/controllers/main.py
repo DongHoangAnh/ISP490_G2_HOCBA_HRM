@@ -2541,17 +2541,20 @@ class HocBaHRM(http.Controller):
                                   for t in emp_types],
             })
         payload = request.get_json_data()
+        vals = {
+            'name': (payload.get('name') or '').strip(),
+            'apply_position_types':
+                (payload.get('applyPositionTypes') or '').strip() or False,
+            'apply_work_form': payload.get('applyWorkForm') or 'any',
+            'apply_employee_type_ids':
+                [(6, 0, payload.get('applyEmployeeTypeIds') or [])],
+            'step_ids': self._onb_step_vals(payload.get('steps') or []),
+        }
+        # Không truyền sequence → model tự xếp CUỐI danh sách (max+10)
+        if payload.get('sequence') is not None:
+            vals['sequence'] = int(payload['sequence'])
         try:
-            tpl = Tpl.create({
-                'name': (payload.get('name') or '').strip(),
-                'sequence': int(payload.get('sequence') or 10),
-                'apply_position_types':
-                    (payload.get('applyPositionTypes') or '').strip() or False,
-                'apply_work_form': payload.get('applyWorkForm') or 'any',
-                'apply_employee_type_ids':
-                    [(6, 0, payload.get('applyEmployeeTypeIds') or [])],
-                'step_ids': self._onb_step_vals(payload.get('steps') or []),
-            })
+            tpl = Tpl.create(vals)
         except (ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -2592,6 +2595,24 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(self._onb_tpl_json(tpl))
+
+    @http.route('/hocba-hrm/api/onboarding/templates/reorder',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_reorder(self, **kw):
+        """Kéo-thả thứ tự quy trình: nhận danh sách id theo thứ tự mới
+        (trên → dưới), ghi lại sequence. Thứ tự = quyền ưu tiên khi trùng."""
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        ids = request.get_json_data().get('ids') or []
+        try:
+            request.env['hb.onboarding.template'].sudo().action_reorder(
+                [int(i) for i in ids])
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True})
 
     @http.route('/hocba-hrm/api/onboarding/templates/assign-pending',
                 auth='user', type='http', methods=['POST'], csrf=False)
