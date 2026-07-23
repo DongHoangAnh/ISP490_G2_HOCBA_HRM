@@ -13,3 +13,4 @@ from . import test_lapsed
 from . import test_burnout
 from . import test_approvals_domain
 from . import test_attendance_integration
+from . import test_admin_config
