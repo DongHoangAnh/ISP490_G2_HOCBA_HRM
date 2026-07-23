@@ -175,13 +175,12 @@ def _scoped_departments(env, scope):
 
 
 def _hb_leave_type_ids(env):
-    """ID các loại nghỉ Học Bá (theo xml_id, bỏ qua loại thiếu)."""
-    ids = []
-    for xmlid in HB_LEAVE_TYPE_XMLIDS:
-        rec = env.ref('hocba_timeoff.%s' % xmlid, raise_if_not_found=False)
-        if rec:
-            ids.append(rec.id)
-    return ids
+    """ID các loại nghỉ Học Bá — lọc theo cờ DB x_hb_managed (thay cho lọc
+    cứng theo xml_id): loại admin tạo mới tự xuất hiện, loại tắt (active=False)
+    tự ẩn khỏi SPA. HB_LEAVE_TYPE_XMLIDS giữ lại làm tài liệu danh sách 8 loại
+    chuẩn; không còn dùng để lọc (migration seed cờ bằng danh sách riêng)."""
+    return env['hr.leave.type'].sudo().search(
+        [('x_hb_managed', '=', True)], order='id').ids
 
 
 def _teaching_off_type_id(env):
