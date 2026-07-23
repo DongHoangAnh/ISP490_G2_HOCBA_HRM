@@ -18,6 +18,75 @@ HB_XMLIDS = (
 @tagged('post_install', '-at_install')
 class TestAdminConfigLeaveTypes(TransactionCase):
 
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin', 'login': 'cfg_admin',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+        self.hr_mgr_user = self.env['res.users'].create({
+            'name': 'Cfg HRM', 'login': 'cfg_hrm',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+
+    def _admin_env(self):
+        return self.env(user=self.admin_user)
+
+    def test_is_admin_gate(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _is_admin
+        self.assertTrue(_is_admin(self._admin_env()))
+        self.assertFalse(_is_admin(self.env(user=self.hr_mgr_user)))
+
+    def test_list_returns_eight_managed(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_leave_types
+        rows = _config_list_leave_types(self._admin_env())
+        self.assertEqual(len(rows), len(HB_XMLIDS))
+        annual = next(r for r in rows
+                      if r['id'] == self.env.ref('hocba_timeoff.hb_leave_type_annual').id)
+        self.assertTrue(annual['requiresAllocation'])
+        self.assertEqual(annual['requestUnit'], 'half_day')
+
+    def test_create_leave_type_appears(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        env = self._admin_env()
+        row = _config_save_leave_type(env, {
+            'name': 'Nghỉ Thử Nghiệm', 'requiresAllocation': False,
+            'unpaid': False, 'validationType': 'hr', 'requestUnit': 'day',
+            'supportDocument': False, 'isEmergency': False, 'color': 5})
+        self.assertTrue(row['id'])
+        lt = self.env['hr.leave.type'].browse(row['id'])
+        self.assertTrue(lt.x_hb_managed)
+        self.assertIn(row['id'], _hb_leave_type_ids(self.env))
+
+    def test_update_leave_type_writes(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        env = self._admin_env()
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        row = _config_save_leave_type(env, {
+            'id': annual.id, 'name': 'Phép Năm (đã sửa)',
+            'requiresAllocation': True, 'unpaid': False,
+            'validationType': 'both', 'requestUnit': 'half_day',
+            'supportDocument': False, 'isEmergency': False, 'color': 10})
+        self.assertEqual(row['name'], 'Phép Năm (đã sửa)')
+        self.assertEqual(row['validationType'], 'both')
+        self.assertEqual(annual.leave_validation_type, 'both')
+
+    def test_toggle_archives_and_hides(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_leave_type, _config_toggle_leave_type)
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        env = self._admin_env()
+        row = _config_save_leave_type(env, {
+            'name': 'Nghỉ Tạm', 'requiresAllocation': False, 'unpaid': False,
+            'validationType': 'hr', 'requestUnit': 'day',
+            'supportDocument': False, 'isEmergency': False, 'color': 3})
+        _config_toggle_leave_type(env, row['id'], False)
+        self.assertNotIn(row['id'], _hb_leave_type_ids(self.env))
+
+    def test_save_empty_name_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(self._admin_env(), {'name': '   '})
+
     def test_seeded_types_are_managed(self):
         for xmlid in HB_XMLIDS:
             lt = self.env.ref('hocba_timeoff.%s' % xmlid)
