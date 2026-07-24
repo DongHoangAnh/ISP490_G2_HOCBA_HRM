@@ -11,6 +11,7 @@ from odoo.http import request
 
 VALIDATION_TYPES = ('no_validation', 'hr', 'manager', 'both')
 REQUEST_UNITS = ('day', 'half_day')  # Học Bá không dùng 'hour'
+ALLOCATION_MODES = ('accrual', 'fixed', 'none')
 
 
 def _is_admin(env):
@@ -40,6 +41,13 @@ def _config_list_leave_types(env):
              .with_context(active_test=False)
              .search([('x_hb_managed', '=', True)], order='active desc, id'))
     return [_leave_type_row(env, lt) for lt in types]
+
+
+def _coerce_int(value, label):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValidationError('%s không hợp lệ.' % label)
 
 
 def _normalize_leave_type_vals(vals):
@@ -121,6 +129,83 @@ def _config_toggle_leave_type(env, rec_id, active):
     return _leave_type_row(env, lt)
 
 
+def _policy_row(env, rule):
+    labels = dict(rule._fields['employment_type'].selection)
+    return {
+        'id': rule.id,
+        'name': rule.name or '',
+        'employmentType': rule.employment_type,
+        'employmentLabel': labels.get(rule.employment_type, rule.employment_type),
+        'leaveTypeIds': rule.leave_type_ids.ids,
+        'allocationMode': rule.allocation_mode,
+        'accrualPlanId': rule.accrual_plan_id.id or False,
+        'annualDays': rule.annual_days,
+        'notes': rule.notes or '',
+        'employeeCount': rule.employee_count,
+    }
+
+
+def _config_list_policies(env):
+    rules = env['hb.timeoff.policy.rule'].sudo().search([], order='employment_type')
+    managed = (env['hr.leave.type'].sudo()
+               .search([('x_hb_managed', '=', True)], order='id'))
+    plans = env['hr.leave.accrual.plan'].sudo().search([], order='name')
+    return {
+        'policies': [_policy_row(env, r) for r in rules],
+        'leaveTypeChoices': [{'id': t.id, 'name': t.name} for t in managed],
+        'accrualPlanChoices': [{'id': p.id, 'name': p.name} for p in plans],
+        'allocationModes': [
+            {'value': 'accrual', 'label': 'Tích lũy tự động'},
+            {'value': 'fixed', 'label': 'Phân bổ cố định'},
+            {'value': 'none', 'label': 'Không phân bổ'},
+        ],
+    }
+
+
+def _config_save_policy(env, vals):
+    rec_id = vals.get('id')
+    if not rec_id:
+        raise ValidationError(
+            'Thiếu id chính sách — chỉ được sửa 6 chính sách có sẵn.')
+    rule = env['hb.timeoff.policy.rule'].sudo().browse(
+        _coerce_int(rec_id, 'ID chính sách'))
+    if not rule.exists():
+        raise ValidationError('Chính sách không tồn tại.')
+    name = (vals.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Tên chính sách không được để trống.')
+    mode = vals.get('allocationMode') or 'none'
+    if mode not in ALLOCATION_MODES:
+        raise ValidationError('Chế độ phân bổ không hợp lệ.')
+    try:
+        annual = float(vals.get('annualDays') or 0)
+    except (TypeError, ValueError):
+        raise ValidationError('Số ngày phép năm không hợp lệ.')
+    if annual < 0:
+        raise ValidationError('Số ngày phép năm không được âm.')
+    req_ids = [_coerce_int(x, 'Loại nghỉ') for x in (vals.get('leaveTypeIds') or [])]
+    managed_ids = set(env['hr.leave.type'].sudo()
+                      .search([('x_hb_managed', '=', True), ('id', 'in', req_ids)]).ids)
+    valid_ids = [i for i in req_ids if i in managed_ids]
+    plan_id = vals.get('accrualPlanId')
+    plan_final = False
+    if plan_id:
+        pid = _coerce_int(plan_id, 'Kế hoạch tích lũy')
+        if not env['hr.leave.accrual.plan'].sudo().browse(pid).exists():
+            raise ValidationError('Kế hoạch tích lũy không tồn tại.')
+        plan_final = pid
+    # employment_type CỐ Ý không cho sửa (khoá UNIQUE, ánh xạ loại NV).
+    rule.write({
+        'name': name,
+        'allocation_mode': mode,
+        'annual_days': annual,
+        'notes': vals.get('notes') or False,
+        'leave_type_ids': [(6, 0, valid_ids)],
+        'accrual_plan_id': plan_final,
+    })
+    return _policy_row(env, rule)
+
+
 class HocBaTimeoffConfig(http.Controller):
 
     def _guard(self):
@@ -166,3 +251,25 @@ class HocBaTimeoffConfig(http.Controller):
             return request.make_json_response(
                 {'error': 'invalid', 'message': str(e)}, status=400)
         return request.make_json_response({'leaveType': row})
+
+    @http.route('/hocba-hrm/api/timeoff/config/policies',
+                auth='user', type='http', methods=['GET'])
+    def policies(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        return request.make_json_response(_config_list_policies(request.env))
+
+    @http.route('/hocba-hrm/api/timeoff/config/policies/save',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def policy_save(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        payload = request.get_json_data() or {}
+        try:
+            row = _config_save_policy(request.env, payload)
+        except (UserError, ValidationError) as e:
+            return request.make_json_response(
+                {'error': 'invalid', 'message': str(e)}, status=400)
+        return request.make_json_response({'policy': row})

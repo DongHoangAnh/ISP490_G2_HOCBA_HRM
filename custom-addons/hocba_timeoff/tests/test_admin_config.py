@@ -163,3 +163,104 @@ class TestAdminConfigLeaveTypes(TransactionCase):
         # Bật lại Annual bây giờ phải bị chặn (sẽ thành 2 loại allocation active).
         with self.assertRaises(ValidationError):
             _config_toggle_leave_type(self._admin_env(), annual.id, True)
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigPolicies(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin P2', 'login': 'cfg_admin_p2',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+
+    def _env(self):
+        return self.env(user=self.admin_user)
+
+    def test_list_returns_six_policies_with_choices(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_policies
+        data = _config_list_policies(self._env())
+        self.assertEqual(len(data['policies']), 6)
+        ft = next(p for p in data['policies'] if p['employmentType'] == 'fulltime')
+        self.assertEqual(ft['annualDays'], 12)
+        self.assertEqual(ft['employmentLabel'], 'Nhân viên Toàn thời gian')
+        self.assertTrue(data['leaveTypeChoices'])
+        annual_id = self.env.ref('hocba_timeoff.hb_leave_type_annual').id
+        self.assertIn(annual_id, [c['id'] for c in data['leaveTypeChoices']])
+        ft_plan = self.env.ref('hocba_timeoff.hb_accrual_plan_annual_fulltime').id
+        self.assertIn(ft_plan, [c['id'] for c in data['accrualPlanChoices']])
+
+    def test_update_policy_writes(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        env = self._env()
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        sick_id = self.env.ref('hocba_timeoff.hb_leave_type_sick').id
+        row = _config_save_policy(env, {
+            'id': rule.id, 'name': 'CS Toàn thời gian (sửa)',
+            'allocationMode': 'fixed', 'annualDays': 15,
+            'accrualPlanId': False, 'notes': 'ghi chú mới',
+            'leaveTypeIds': [sick_id]})
+        self.assertEqual(row['annualDays'], 15)
+        self.assertEqual(row['allocationMode'], 'fixed')
+        self.assertEqual(rule.name, 'CS Toàn thời gian (sửa)')
+        self.assertEqual(rule.leave_type_ids.ids, [sick_id])
+
+    def test_employment_type_immutable(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        env = self._env()
+        rule = self.env.ref('hocba_timeoff.hb_policy_ta')
+        _config_save_policy(env, {
+            'id': rule.id, 'name': rule.name, 'employmentType': 'fulltime',
+            'allocationMode': rule.allocation_mode, 'annualDays': rule.annual_days,
+            'leaveTypeIds': rule.leave_type_ids.ids})
+        self.assertEqual(rule.employment_type, 'ta')
+
+    def test_negative_annual_days_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': rule.id, 'name': 'x', 'allocationMode': 'none',
+                'annualDays': -1, 'leaveTypeIds': []})
+
+    def test_save_without_id_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'name': 'mới', 'allocationMode': 'none', 'annualDays': 0})
+
+    def test_bad_allocation_mode_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': rule.id, 'name': 'x', 'allocationMode': 'weird',
+                'annualDays': 0, 'leaveTypeIds': []})
+
+    def test_bad_id_type_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': 'abc', 'name': 'x', 'allocationMode': 'none',
+                'annualDays': 0, 'leaveTypeIds': []})
+
+    def test_bad_accrual_plan_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': rule.id, 'name': 'x', 'allocationMode': 'accrual',
+                'annualDays': 0, 'accrualPlanId': 99999999, 'leaveTypeIds': []})
+
+    def test_nonmanaged_leave_type_dropped(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        env = self._env()
+        rule = self.env.ref('hocba_timeoff.hb_policy_ta')
+        managed_id = self.env.ref('hocba_timeoff.hb_leave_type_annual').id
+        bad = self.env['hr.leave.type'].search(
+            [('x_hb_managed', '=', False)], limit=1)
+        self.assertTrue(bad, 'cần ít nhất 1 loại nghỉ non-managed để test')
+        row = _config_save_policy(env, {
+            'id': rule.id, 'name': rule.name, 'allocationMode': 'none',
+            'annualDays': 0, 'leaveTypeIds': [managed_id, bad.id]})
+        self.assertEqual(row['leaveTypeIds'], [managed_id])  # bad id bị loại
