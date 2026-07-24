@@ -15,3 +15,10 @@ export const saveLeaveType = (payload) =>
 /* Bật/tắt (archive) một loại nghỉ. → { leaveType: {...} } */
 export const toggleLeaveType = (id, active) =>
   hbPost(`${BASE}/leave-types/toggle-active`, { id, active });
+
+/* Chính sách theo loại NV (6 bản, chỉ sửa). → { policies, leaveTypeChoices, accrualPlanChoices, allocationModes } */
+export const fetchPolicies = () => hbGet(`${BASE}/policies`);
+
+/* Cập nhật 1 chính sách. → { policy: {...} }
+   payload: { id, name, leaveTypeIds:[...], allocationMode, accrualPlanId, annualDays, notes } */
+export const savePolicy = (payload) => hbPost(`${BASE}/policies/save`, payload);
