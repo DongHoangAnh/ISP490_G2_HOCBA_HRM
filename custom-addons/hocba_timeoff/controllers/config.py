@@ -92,6 +92,29 @@ def _assert_unique_flag(env, field, rec_id, is_active):
             'tính này — hãy tắt ở loại đó trước.' % (label, conflict.name))
 
 
+# Field mà Odoo core khoá sửa khi loại nghỉ đã phát sinh đơn (đổi sẽ tính lại
+# thời lượng/quỹ của các đơn cũ → ValidationError). Dùng để dịch lỗi cho dễ hiểu.
+_LEAVE_TYPE_LOCKED_FIELDS = ('request_unit', 'requires_allocation')
+
+
+def _write_leave_type_changes(lt, changes):
+    """Ghi thay đổi rồi flush TRONG savepoint để ràng buộc của Odoo core nổ ngay
+    tại đây (route bắt được → 400 sạch thay vì 422); savepoint cuộn lại phần ghi
+    dở nếu lỗi nên không commit nửa vời. Nếu lỗi dính field bị khoá thì trả thông
+    điệp tiếng Việt rõ ràng."""
+    try:
+        with lt.env.cr.savepoint():
+            lt.write(changes)
+            lt.env.cr.flush()
+    except (UserError, ValidationError) as e:
+        if set(_LEAVE_TYPE_LOCKED_FIELDS) & set(changes):
+            raise ValidationError(
+                'Loại nghỉ "%s" đã phát sinh đơn nghỉ nên Odoo không cho đổi '
+                '"đơn vị nghỉ" hoặc "trừ vào quỹ". Hãy tạo một loại nghỉ mới, '
+                'hoặc huỷ/từ chối các đơn liên quan trước khi đổi.' % lt.name)
+        raise
+
+
 def _config_save_leave_type(env, vals):
     write_vals = _normalize_leave_type_vals(vals)
     Model = env['hr.leave.type'].sudo()
@@ -105,7 +128,14 @@ def _config_save_leave_type(env, vals):
             _assert_unique_flag(env, 'requires_allocation', lt.id, is_active)
         if write_vals['unpaid']:
             _assert_unique_flag(env, 'unpaid', lt.id, is_active)
-        lt.write(write_vals)
+        # CHỈ ghi field thực sự đổi. Odoo core khoá sửa request_unit /
+        # requires_allocation của loại nghỉ ĐÃ phát sinh đơn — và ràng buộc này
+        # nổ ngay cả khi ghi lại giá trị CŨ, lại nổ lúc flush (SAU try/except của
+        # route) nên khách nhận HTTP 422 khó hiểu. Ghi nguyên cả dict sẽ "chạm"
+        # các field đó dù người dùng chỉ đổi bậc duyệt/tên/màu → chặn oan.
+        changes = {k: v for k, v in write_vals.items() if lt[k] != v}
+        if changes:
+            _write_leave_type_changes(lt, changes)
     else:
         write_vals['x_hb_managed'] = True
         if write_vals['requires_allocation']:

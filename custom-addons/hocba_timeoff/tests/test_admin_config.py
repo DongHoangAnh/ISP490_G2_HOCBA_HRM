@@ -164,6 +164,61 @@ class TestAdminConfigLeaveTypes(TransactionCase):
         with self.assertRaises(ValidationError):
             _config_toggle_leave_type(self._admin_env(), annual.id, True)
 
+    # ---- Regression: sửa loại nghỉ ĐÃ có đơn duyệt (bug HTTP 422) ----
+    def _used_leave_type(self):
+        """Loại nghỉ 'Nghỉ Ốm' (seeded, request_unit='half_day') kèm MỘT đơn nghỉ
+        đã duyệt (state='validate'). Mẫu: tests/test_burnout._approved_leave."""
+        lt = self.env.ref('hocba_timeoff.hb_leave_type_sick')
+        dept = self.env['hr.department'].create({'name': 'Phòng Test LT'})
+        emp = self.env['hr.employee'].create({
+            'name': 'NV Test LT', 'department_id': dept.id,
+            'x_employment_status': 'official', 'identification_id': '990000000123',
+            'x_pit_code': '0000000123', 'x_social_insurance_no': '9900000001'})
+        leave = self.env['hr.leave'].create({
+            'name': 'Đơn test LT', 'employee_id': emp.id,
+            'holiday_status_id': lt.id,
+            'request_date_from': '2026-08-03', 'request_date_to': '2026-08-03',
+            'request_date_from_period': 'am', 'request_date_to_period': 'pm'})
+        leave.sudo().action_approve()
+        if leave.state != 'validate':
+            leave.sudo()._action_validate()
+        self.assertEqual(leave.state, 'validate')
+        return lt, leave
+
+    def _payload(self, lt, **override):
+        base = {
+            'id': lt.id, 'name': lt.name,
+            'requiresAllocation': lt.requires_allocation, 'unpaid': lt.unpaid,
+            'validationType': lt.leave_validation_type,
+            'requestUnit': lt.request_unit,
+            'supportDocument': lt.support_document,
+            'isEmergency': lt.x_is_emergency_type, 'color': lt.color}
+        base.update(override)
+        return base
+
+    def test_change_validation_only_on_used_type_ok(self):
+        """Đổi RIÊNG bậc duyệt của loại nghỉ đã có đơn duyệt phải THÀNH CÔNG.
+        Trước fix: controller ghi cả request_unit (dù không đổi) → Odoo core khoá
+        → ràng buộc nổ lúc flush → HTTP 422."""
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        lt, _leave = self._used_leave_type()
+        self.assertNotEqual(lt.leave_validation_type, 'both')
+        row = _config_save_leave_type(
+            self._admin_env(), self._payload(lt, validationType='both'))
+        self.env.flush_all()  # buộc mọi ràng buộc flush ngay như cuối request thật
+        self.assertEqual(row['validationType'], 'both')
+        self.assertEqual(lt.leave_validation_type, 'both')
+        self.assertEqual(lt.request_unit, 'half_day')  # KHÔNG bị đụng
+
+    def test_change_request_unit_on_used_type_raises_clean(self):
+        """Đổi đơn vị nghỉ của loại đã có đơn duyệt → ValidationError (route trả
+        400), KHÔNG để rơi thành 422."""
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        lt, _leave = self._used_leave_type()
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(
+                self._admin_env(), self._payload(lt, requestUnit='day'))
+
 
 @tagged('post_install', '-at_install')
 class TestAdminConfigPolicies(TransactionCase):
