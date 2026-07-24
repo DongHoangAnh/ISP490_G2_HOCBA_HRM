@@ -12,6 +12,7 @@ from odoo.http import request
 VALIDATION_TYPES = ('no_validation', 'hr', 'manager', 'both')
 REQUEST_UNITS = ('day', 'half_day')  # Học Bá không dùng 'hour'
 ALLOCATION_MODES = ('accrual', 'fixed', 'none')
+ACCRUAL_FREQUENCIES = ('daily', 'monthly')  # SPA chỉ hỗ trợ 2 tần suất này
 
 
 def _is_admin(env):
@@ -307,6 +308,165 @@ def _config_delete_holiday(env, rec_id):
     return {'ok': True, 'id': hid}
 
 
+def _accrual_level_row(lv):
+    return {
+        'id': lv.id,
+        'sequence': lv.sequence,
+        'addedValue': lv.added_value,
+        'addedValueType': lv.added_value_type,
+        'frequency': lv.frequency,
+        'startType': lv.start_type,
+        'startCount': lv.start_count,
+        'milestoneDate': lv.milestone_date,
+        'capAccruedTime': bool(lv.cap_accrued_time),
+        'maximumLeave': lv.maximum_leave,
+        'actionWithUnusedAccruals': lv.action_with_unused_accruals,
+        'carryoverOptions': lv.carryover_options,
+        'postponeMaxDays': lv.postpone_max_days,
+    }
+
+
+def _accrual_plan_row(env, plan):
+    return {
+        'id': plan.id,
+        'name': plan.name or '',
+        'active': bool(plan.active),
+        'timeOffTypeId': plan.time_off_type_id.id or False,
+        'timeOffTypeName': plan.time_off_type_id.name or '',
+        'accruedGainTime': plan.accrued_gain_time,
+        'canBeCarryover': bool(plan.can_be_carryover),
+        'carryoverMonth': plan.carryover_month or '',
+        'carryoverDay': plan.carryover_day or '',
+        'employeesCount': plan.employees_count,
+        'levels': [_accrual_level_row(l) for l in plan.level_ids.sorted('sequence')],
+    }
+
+
+def _accrual_field_options(env):
+    Plan = env['hr.leave.accrual.plan']
+    Level = env['hr.leave.accrual.level']
+
+    def opts(model, fname, only=None):
+        sel = dict(model._fields[fname].selection)
+        return [{'value': k, 'label': v} for k, v in sel.items()
+                if only is None or k in only]
+
+    return {
+        'accruedGainTime': opts(Plan, 'accrued_gain_time'),
+        'frequency': opts(Level, 'frequency', only=ACCRUAL_FREQUENCIES),
+        'startType': opts(Level, 'start_type'),
+        'milestoneDate': opts(Level, 'milestone_date'),
+        'addedValueType': opts(Level, 'added_value_type'),
+        'carryoverMonth': opts(Plan, 'carryover_month'),
+        'actionWithUnusedAccruals': opts(Level, 'action_with_unused_accruals'),
+        'carryoverOptions': opts(Level, 'carryover_options'),
+    }
+
+
+def _config_list_accrual_plans(env):
+    plans = env['hr.leave.accrual.plan'].sudo().search([], order='name')
+    managed = env['hr.leave.type'].sudo().search(
+        [('x_hb_managed', '=', True)], order='id')
+    return {
+        'plans': [_accrual_plan_row(env, p) for p in plans],
+        'leaveTypeChoices': [{'id': t.id, 'name': t.name} for t in managed],
+        'fieldOptions': _accrual_field_options(env),
+    }
+
+
+def _accrual_level_vals(lv):
+    freq = lv.get('frequency') or 'monthly'
+    if freq not in ACCRUAL_FREQUENCIES:
+        raise ValidationError(
+            'Tần suất tích lũy không hỗ trợ trong SPA (chỉ Hằng ngày / Hàng '
+            'tháng). Dùng backend Odoo cho tần suất khác.')
+    try:
+        added = float(lv.get('addedValue') or 0)
+    except (TypeError, ValueError):
+        raise ValidationError('Giá trị tích lũy không hợp lệ.')
+    if added <= 0:
+        raise ValidationError('Giá trị tích lũy phải lớn hơn 0.')
+    vals = {
+        'added_value': added,
+        'added_value_type': lv.get('addedValueType') or 'day',
+        'frequency': freq,
+        'start_type': lv.get('startType') or 'day',
+        'start_count': _coerce_int(lv.get('startCount') or 0, 'Mốc bắt đầu'),
+        'milestone_date': lv.get('milestoneDate') or 'creation',
+        'cap_accrued_time': bool(lv.get('capAccruedTime')),
+        'action_with_unused_accruals': lv.get('actionWithUnusedAccruals') or 'lost',
+        'carryover_options': lv.get('carryoverOptions') or 'unlimited',
+    }
+    if vals['cap_accrued_time']:
+        try:
+            vals['maximum_leave'] = float(lv.get('maximumLeave') or 0)
+        except (TypeError, ValueError):
+            raise ValidationError('Trần tích lũy không hợp lệ.')
+    if vals['carryover_options'] == 'limited':
+        vals['postpone_max_days'] = _coerce_int(
+            lv.get('postponeMaxDays') or 0, 'Số ngày tối đa chuyển')
+    return vals
+
+
+def _config_save_accrual_plan(env, vals):
+    name = (vals.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Tên kế hoạch không được để trống.')
+    type_id = vals.get('timeOffTypeId')
+    type_final = False
+    if type_id:
+        tid = _coerce_int(type_id, 'Loại nghỉ')
+        if not env['hr.leave.type'].sudo().browse(tid).exists():
+            raise ValidationError('Loại nghỉ không tồn tại.')
+        type_final = tid
+    plan_vals = {
+        'name': name,
+        'time_off_type_id': type_final,
+        'accrued_gain_time': vals.get('accruedGainTime') or 'start',
+        'can_be_carryover': bool(vals.get('canBeCarryover')),
+    }
+    if plan_vals['can_be_carryover']:
+        plan_vals['carryover_date'] = 'other'
+        if vals.get('carryoverMonth'):
+            plan_vals['carryover_month'] = str(vals['carryoverMonth'])
+        if vals.get('carryoverDay'):
+            plan_vals['carryover_day'] = str(vals['carryoverDay'])
+    levels = vals.get('levels') or []
+    if not levels:
+        raise ValidationError('Cần ít nhất một mốc tích lũy.')
+    # Thay TOÀN BỘ level: xoá cũ rồi tạo mới theo payload.
+    level_cmds = [(5, 0, 0)]
+    for lv in levels:
+        level_cmds.append((0, 0, _accrual_level_vals(lv)))
+    plan_vals['level_ids'] = level_cmds
+    Plan = env['hr.leave.accrual.plan'].sudo()
+    rec_id = vals.get('id')
+    if rec_id:
+        plan = Plan.browse(_coerce_int(rec_id, 'ID kế hoạch'))
+        if not plan.exists():
+            raise ValidationError('Kế hoạch không tồn tại.')
+        plan.write(plan_vals)
+    else:
+        plan = Plan.create(plan_vals)
+    return _accrual_plan_row(env, plan)
+
+
+def _config_delete_accrual_plan(env, rec_id):
+    plan = env['hr.leave.accrual.plan'].sudo().browse(_coerce_int(rec_id, 'ID kế hoạch'))
+    if not plan.exists():
+        raise ValidationError('Kế hoạch không tồn tại.')
+    if plan.allocation_ids:
+        raise ValidationError(
+            'Không thể xoá: kế hoạch đang gắn với allocation của nhân viên.')
+    if env['hb.timeoff.policy.rule'].sudo().search_count(
+            [('accrual_plan_id', '=', plan.id)]):
+        raise ValidationError(
+            'Không thể xoá: kế hoạch đang gắn với chính sách nghỉ phép.')
+    pid = plan.id
+    plan.unlink()
+    return {'ok': True, 'id': pid}
+
+
 class HocBaTimeoffConfig(http.Controller):
 
     def _guard(self):
@@ -411,6 +571,43 @@ class HocBaTimeoffConfig(http.Controller):
         payload = request.get_json_data() or {}
         try:
             _config_delete_holiday(request.env, payload.get('id'))
+        except (UserError, ValidationError) as e:
+            return request.make_json_response(
+                {'error': 'invalid', 'message': str(e)}, status=400)
+        return request.make_json_response({'ok': True})
+
+    @http.route('/hocba-hrm/api/timeoff/config/accrual-plans',
+                auth='user', type='http', methods=['GET'])
+    def accrual_plans(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        return request.make_json_response(
+            _config_list_accrual_plans(request.env))
+
+    @http.route('/hocba-hrm/api/timeoff/config/accrual-plans/save',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def accrual_plan_save(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        payload = request.get_json_data() or {}
+        try:
+            row = _config_save_accrual_plan(request.env, payload)
+        except (UserError, ValidationError) as e:
+            return request.make_json_response(
+                {'error': 'invalid', 'message': str(e)}, status=400)
+        return request.make_json_response({'plan': row})
+
+    @http.route('/hocba-hrm/api/timeoff/config/accrual-plans/delete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def accrual_plan_delete(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        payload = request.get_json_data() or {}
+        try:
+            _config_delete_accrual_plan(request.env, payload.get('id'))
         except (UserError, ValidationError) as e:
             return request.make_json_response(
                 {'error': 'invalid', 'message': str(e)}, status=400)

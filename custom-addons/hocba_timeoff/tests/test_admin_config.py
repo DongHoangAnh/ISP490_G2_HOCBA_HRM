@@ -361,3 +361,135 @@ class TestAdminConfigHolidays(TransactionCase):
         from odoo.addons.hocba_timeoff.controllers.config import _config_delete_holiday
         with self.assertRaises(ValidationError):
             _config_delete_holiday(self._env(), 999999999)
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigAccrual(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin P4', 'login': 'cfg_admin_p4',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+        self.annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+
+    def _env(self):
+        return self.env(user=self.admin_user)
+
+    def _level(self, **kw):
+        base = {'sequence': 10, 'addedValue': 1, 'addedValueType': 'day',
+                'frequency': 'monthly', 'startType': 'day', 'startCount': 0,
+                'milestoneDate': 'creation', 'capAccruedTime': True,
+                'maximumLeave': 12, 'actionWithUnusedAccruals': 'all',
+                'carryoverOptions': 'limited', 'postponeMaxDays': 5}
+        base.update(kw)
+        return base
+
+    def test_list_returns_seeded_plans(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_accrual_plans
+        data = _config_list_accrual_plans(self._env())
+        names = [p['name'] for p in data['plans']]
+        self.assertIn('Phép Năm — Nhân Viên Toàn Thời Gian', names)
+        self.assertTrue(data['leaveTypeChoices'])
+
+    def test_field_options_frequency_curated(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_accrual_plans
+        data = _config_list_accrual_plans(self._env())
+        freq_vals = {o['value'] for o in data['fieldOptions']['frequency']}
+        self.assertEqual(freq_vals, {'daily', 'monthly'})
+
+    def test_create_plan_with_level(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        row = _config_save_accrual_plan(self._env(), {
+            'name': 'Plan Thử', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': True,
+            'carryoverMonth': '3', 'carryoverDay': '31',
+            'levels': [self._level(addedValue=0.5, maximumLeave=6)]})
+        plan = self.env['hr.leave.accrual.plan'].browse(row['id'])
+        self.assertEqual(len(plan.level_ids), 1)
+        self.assertEqual(plan.level_ids.added_value, 0.5)
+        self.assertEqual(plan.level_ids.frequency, 'monthly')
+
+    def test_update_replaces_levels(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        env = self._env()
+        row = _config_save_accrual_plan(env, {
+            'name': 'Plan Sửa', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': False,
+            'levels': [self._level(addedValue=1)]})
+        row2 = _config_save_accrual_plan(env, {
+            'id': row['id'], 'name': 'Plan Sửa', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': False,
+            'levels': [self._level(addedValue=2), self._level(sequence=20, addedValue=3)]})
+        plan = self.env['hr.leave.accrual.plan'].browse(row2['id'])
+        self.assertEqual(len(plan.level_ids), 2)
+        self.assertEqual(sorted(plan.level_ids.mapped('added_value')), [2.0, 3.0])
+
+    def test_delete_used_plan_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_delete_accrual_plan
+        used = self.env.ref('hocba_timeoff.hb_accrual_plan_annual_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_delete_accrual_plan(self._env(), used.id)
+
+    def test_delete_unused_plan_ok(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_accrual_plan, _config_delete_accrual_plan)
+        env = self._env()
+        row = _config_save_accrual_plan(env, {
+            'name': 'Plan Bỏ', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': False,
+            'levels': [self._level()]})
+        _config_delete_accrual_plan(env, row['id'])
+        self.assertFalse(self.env['hr.leave.accrual.plan'].browse(row['id']).exists())
+
+    def test_bad_frequency_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level(frequency='weekly')]})
+
+    def test_non_positive_added_value_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level(addedValue=0)]})
+
+    def test_name_required_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': '  ', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level()]})
+
+    def test_bad_type_id_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': 999999999,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level()]})
+
+    def test_bad_id_type_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'id': 'abc', 'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level()]})
+
+    def test_empty_levels_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False, 'levels': []})
+
+    def test_delete_nonexistent_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_delete_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_delete_accrual_plan(self._env(), 999999999)
