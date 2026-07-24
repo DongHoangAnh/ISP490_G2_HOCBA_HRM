@@ -1,4 +1,5 @@
-from odoo import models, fields
+from odoo import models, fields, api, _
+from odoo.exceptions import ValidationError
 
 
 class HrEmployeeAsset(models.Model):
@@ -28,5 +29,37 @@ class HrEmployeeAsset(models.Model):
     # Odoo 19: _sql_constraints không còn được hỗ trợ → models.Constraint
     _asset_code_uniq = models.Constraint(
         'unique (asset_code)',
-        'Mã tài sản này đã được gán cho nhân viên khác!',
+        'Mã tài sản này đang có trong danh sách — '
+        'gỡ dòng của người đang giữ trước khi cấp lại.',
     )
+
+    def _check_asset_code_free(self, codes, keep=None):
+        """Chặn trùng mã TRƯỚC khi INSERT/UPDATE chạm SQL constraint.
+
+        Không dùng @api.constrains được: SQL unique bắn psycopg2.IntegrityError
+        ngay tại câu INSERT, tức TRƯỚC khi ORM chạy constrains, mà controller
+        SPA chỉ bắt (AccessError, ValidationError, UserError) → route http trả
+        500 thay vì báo lỗi inline. SQL constraint vẫn giữ vai trò chốt chặn
+        cuối ở tầng DB.
+        """
+        codes = [c for c in codes if c]
+        if not codes:
+            return
+        domain = [('asset_code', 'in', codes)]
+        if keep:
+            domain.append(('id', 'not in', keep.ids))
+        dup = self.search(domain, limit=1)
+        if dup:
+            raise ValidationError(_(
+                'Mã tài sản "%s" đang có trong danh sách — '
+                'gỡ dòng của người đang giữ trước khi cấp lại.') % dup.asset_code)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        self._check_asset_code_free([v.get('asset_code') for v in vals_list])
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if vals.get('asset_code'):
+            self._check_asset_code_free([vals['asset_code']], keep=self)
+        return super().write(vals)

@@ -37,6 +37,7 @@
                             <field name="expected_leave_date"/>
                             <field name="actual_leave_date"/>
                             <field name="asset_count"/>
+                            <field name="asset_codes"/>
                         </group>
                     </group>
                     <group string="Duyệt">
