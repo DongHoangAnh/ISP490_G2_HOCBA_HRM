@@ -1,15 +1,16 @@
-/* Trung tâm Cấu hình Time Off (chỉ Admin). Tab "Loại nghỉ" + "Chính sách" + "Ngày lễ".
-   Tab Tích lũy sẽ bổ sung ở phase sau. */
+/* Trung tâm Cấu hình Time Off (chỉ Admin).
+   Tab "Loại nghỉ" + "Chính sách" + "Ngày lễ" + "Tích lũy". */
 import { useState } from 'react';
 import LeaveTypesTab from './LeaveTypesTab';
 import PoliciesTab from './PoliciesTab';
 import HolidaysTab from './HolidaysTab';
+import AccrualTab from './AccrualTab';
 
 const TABS = [
   { id: 'types', label: 'Loại nghỉ' },
   { id: 'policies', label: 'Chính sách' },
   { id: 'holidays', label: 'Ngày lễ' },
-  { id: 'accrual', label: 'Tích lũy', disabled: true },
+  { id: 'accrual', label: 'Tích lũy' },
 ];
 
 export default function TimeoffConfig() {
@@ -30,6 +31,7 @@ export default function TimeoffConfig() {
       {tab === 'types' && <LeaveTypesTab />}
       {tab === 'policies' && <PoliciesTab />}
       {tab === 'holidays' && <HolidaysTab />}
+      {tab === 'accrual' && <AccrualTab />}
     </div>
   );
 }

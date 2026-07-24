@@ -33,3 +33,16 @@ export const saveHoliday = (payload) => hbPost(`${BASE}/holidays/save`, payload)
 
 /* Xoá ngày lễ (cả 2 model). → { ok: true } */
 export const deleteHoliday = (id) => hbPost(`${BASE}/holidays/delete`, { id });
+
+/* Kế hoạch tích lũy. → { plans:[...], leaveTypeChoices:[...], fieldOptions:{...} } */
+export const fetchAccrualPlans = () => hbGet(`${BASE}/accrual-plans`);
+
+/* Tạo/sửa plan + level (thay toàn bộ level). → { plan: {...} }
+   payload: { id?, name, timeOffTypeId, accruedGainTime, canBeCarryover,
+              carryoverMonth?, carryoverDay?, levels:[{...}] } */
+export const saveAccrualPlan = (payload) =>
+  hbPost(`${BASE}/accrual-plans/save`, payload);
+
+/* Xoá plan (chặn nếu đang dùng). → { ok: true } */
+export const deleteAccrualPlan = (id) =>
+  hbPost(`${BASE}/accrual-plans/delete`, { id });
