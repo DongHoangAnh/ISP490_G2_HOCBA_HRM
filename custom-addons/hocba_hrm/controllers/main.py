@@ -2137,7 +2137,7 @@ class HocBaHRM(http.Controller):
             'status': sel(Emp, 'x_employment_status'),
             'work_form': sel(Emp, 'x_work_form'),
             'position': sel(Emp, 'x_position_type'),
-            'asset_state': sel(env['hr.employee.asset'], 'state'),
+            'asset_condition': sel(env['hr.employee.asset'], 'condition_in'),
             'relationship': sel(env['hr.employee.dependent'], 'relationship'),
         }
 
@@ -2276,9 +2276,8 @@ class HocBaHRM(http.Controller):
             'type': a.asset_type_id.name or '',
             'code': a.asset_code or '',
             'grant': _d(a.grant_date),
-            'state': a.state,
-            'stateLabel': labels['asset_state'].get(a.state, a.state),
-            'returnDate': _d(a.return_date),
+            'conditionLabel': labels['asset_condition'].get(
+                a.condition_in, a.condition_in or ''),
         } for a in e.x_asset_ids.sorted('grant_date')]
 
         # --- Thăng tiến (F-007) ---
@@ -2711,7 +2710,7 @@ class HocBaHRM(http.Controller):
 
     # ------------------------------------------------------------------
     # Tài sản (F-006) — cấp / thu hồi / chuyển giao inline trong SPA (HR).
-    # KHÔNG xoá (model chặn unlink); state đổi qua action của model.
+    # KHÔNG có vòng đời: thu hồi = xoá dòng, bàn giao = xoá + cấp lại.
     # ------------------------------------------------------------------
     def _conv_id(self, v):
         return int(v) if v not in ('', None, False) else False
@@ -2740,47 +2739,18 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
 
-    @http.route('/hocba-hrm/api/asset/<int:asset_id>/return', auth='user',
+    @http.route('/hocba-hrm/api/asset/<int:asset_id>/delete', auth='user',
                 type='http', methods=['POST'], csrf=False)
-    def api_asset_return(self, asset_id, **kw):
+    def api_asset_delete(self, asset_id, **kw):
+        """Gỡ tài sản khỏi hồ sơ (thu hồi/bàn giao = sửa danh sách)."""
         a = request.env['hr.employee.asset'].sudo().browse(asset_id)
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
-        if not self._can_edit_emp_record(a.employee_id):
-            return request.make_json_response({'error': 'forbidden'}, status=403)
         e = a.employee_id
-        payload = request.get_json_data() or {}
-        try:
-            a.write({
-                'return_date': payload.get('returnDate') or fields.Date.context_today(a),
-                'condition_out_note': (payload.get('note') or '').strip(),
-            })
-            a.action_mark_returned()
-        except (AccessError, ValidationError, UserError) as ex:
-            request.env.cr.rollback()
-            return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self._detail_response(e)
-
-    @http.route('/hocba-hrm/api/asset/<int:asset_id>/transfer', auth='user',
-                type='http', methods=['POST'], csrf=False)
-    def api_asset_transfer(self, asset_id, **kw):
-        a = request.env['hr.employee.asset'].sudo().browse(asset_id)
-        if not a.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-        if not self._can_edit_emp_record(a.employee_id):
+        if not self._can_edit_emp_record(e):
             return request.make_json_response({'error': 'forbidden'}, status=403)
-        e = a.employee_id
-        payload = request.get_json_data() or {}
-        target = self._conv_id(payload.get('transferTo'))
-        if not target:
-            return request.make_json_response({'error': 'bad_request'}, status=400)
         try:
-            a.write({
-                'transferred_to': target,
-                'return_date': payload.get('returnDate') or fields.Date.context_today(a),
-            })
-            a.action_mark_transferred()
+            a.unlink()
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -2823,7 +2793,8 @@ class HocBaHRM(http.Controller):
             'expectedLeaveDate': rec.expected_leave_date
                 and str(rec.expected_leave_date) or '',
             'state': rec.state, 'stateLabel': label, 'stateKind': kind,
-            'assetPending': rec.asset_pending_count,
+            'assetCount': rec.asset_count,
+            'assetCodes': rec.asset_codes or '',
             'mgrApprovedBy': rec.mgr_approved_by.name or '',
             'hrApprovedBy': rec.hr_approved_by.name or '',
             'canMgrApprove': rec.state == 'submitted' and manages,
