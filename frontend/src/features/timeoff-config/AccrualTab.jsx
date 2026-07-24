@@ -129,7 +129,7 @@ export default function AccrualTab() {
       </div>
 
       <div className="card">
-        <div className="tbl-wrap">
+        <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -147,7 +147,7 @@ export default function AccrualTab() {
                   <td>{p.timeOffTypeName || '—'}</td>
                   <td className="mono" style={{ width: '1%', whiteSpace: 'nowrap' }}>{p.levels.length}</td>
                   <td className="mono" style={{ width: '1%', whiteSpace: 'nowrap' }}>{p.employeesCount}</td>
-                  <td style={{ width: '1%', whiteSpace: 'nowrap' }}>
+                  <td style={{ display: 'flex', gap: 6, width: '1%', whiteSpace: 'nowrap' }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => { setSaveErr(null); setEditing({ ...p, levels: p.levels.map((l) => ({ ...l })) }); }}>
                       <Icon name="edit" size={14} />Sửa</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => onDelete(p)}>

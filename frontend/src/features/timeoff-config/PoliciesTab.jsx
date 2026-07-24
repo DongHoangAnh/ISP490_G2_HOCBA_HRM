@@ -33,7 +33,8 @@ function Check({ checked, onChange, children }) {
 
 export default function PoliciesTab() {
   const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
+  const [err, setErr] = useState(null);        // lỗi tải danh sách → ErrorState toàn trang
+  const [saveErr, setSaveErr] = useState(null); // lỗi lưu trong modal → chỉ hiện inline
   const [editing, setEditing] = useState(null); // object hoặc null
   const [saving, setSaving] = useState(false);
 
@@ -44,6 +45,8 @@ export default function PoliciesTab() {
       .catch((e) => setErr(e.message));
   };
   useEffect(load, []);
+
+  const closeModal = () => { setEditing(null); setSaveErr(null); };
 
   const allocLabel = (mode) => {
     const m = (data?.allocationModes || []).find((x) => x.value === mode);
@@ -62,7 +65,7 @@ export default function PoliciesTab() {
 
   const onSave = async () => {
     setSaving(true);
-    setErr(null);
+    setSaveErr(null);
     try {
       await savePolicy({
         id: editing.id,
@@ -73,16 +76,16 @@ export default function PoliciesTab() {
         annualDays: editing.annualDays,
         notes: editing.notes,
       });
-      setEditing(null);
+      closeModal();
       load();
     } catch (e) {
-      setErr(e.message);
+      setSaveErr(e.message);
     } finally {
       setSaving(false);
     }
   };
 
-  if (err && !editing) return <ErrorState message={err} onRetry={load} />;
+  if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải chính sách…" />;
 
   const rows = data.policies;
@@ -97,7 +100,7 @@ export default function PoliciesTab() {
       </div>
 
       <div className="card">
-        <div className="tbl-wrap">
+        <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -120,7 +123,7 @@ export default function PoliciesTab() {
                   <td className="mono" style={{ width: '1%', whiteSpace: 'nowrap' }}>{r.leaveTypeIds.length}</td>
                   <td className="mono" style={{ width: '1%', whiteSpace: 'nowrap' }}>{r.employeeCount}</td>
                   <td style={{ width: '1%', whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setErr(null); setEditing({ ...r, leaveTypeIds: [...r.leaveTypeIds] }); }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setSaveErr(null); setEditing({ ...r, leaveTypeIds: [...r.leaveTypeIds] }); }}>
                       <Icon name="edit" size={14} />Sửa</button>
                   </td>
                 </tr>
@@ -132,7 +135,7 @@ export default function PoliciesTab() {
       </div>
 
       {editing && (
-        <Modal onClose={() => !saving && setEditing(null)}>
+        <Modal onClose={() => !saving && closeModal()}>
           <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
             <div style={{ width: 44, height: 44, borderRadius: 11, background: 'var(--red-600)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
               <Icon name="edit" size={20} />
@@ -141,7 +144,7 @@ export default function PoliciesTab() {
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Sửa chính sách</h2>
               <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--muted)' }}>{editing.employmentLabel}</p>
             </div>
-            <button className="icon-btn" onClick={() => !saving && setEditing(null)}><Icon name="x" size={20} /></button>
+            <button className="icon-btn" onClick={() => !saving && closeModal()}><Icon name="x" size={20} /></button>
           </div>
 
           <div style={{ padding: '20px 24px' }}>
@@ -192,13 +195,13 @@ export default function PoliciesTab() {
               </Field>
             </div>
 
-            {err && (
-              <div style={{ marginTop: 14, padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>{err}</div>
+            {saveErr && (
+              <div style={{ marginTop: 14, padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>{saveErr}</div>
             )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
-            <button className="btn btn-ghost" disabled={saving} onClick={() => setEditing(null)}>Huỷ</button>
+            <button className="btn btn-ghost" disabled={saving} onClick={closeModal}>Huỷ</button>
             <button className="btn btn-primary" disabled={saving} onClick={onSave}>
               <Icon name="checkCircle" size={16} />{saving ? 'Đang lưu…' : 'Lưu'}
             </button>

@@ -100,7 +100,7 @@ export default function HolidaysTab() {
       </div>
 
       <div className="card">
-        <div className="tbl-wrap">
+        <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -116,7 +116,7 @@ export default function HolidaysTab() {
                   <td><div className="nm">{h.name}</div></td>
                   <td>{h.startDate}</td>
                   <td>{h.endDate}</td>
-                  <td style={{ width: '1%', whiteSpace: 'nowrap' }}>
+                  <td style={{ display: 'flex', gap: 6, width: '1%', whiteSpace: 'nowrap' }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => { setSaveErr(null); setEditing({ ...h }); }}>
                       <Icon name="edit" size={14} />Sửa</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => onDelete(h)}>
