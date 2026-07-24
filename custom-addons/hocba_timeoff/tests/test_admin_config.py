@@ -119,3 +119,47 @@ class TestAdminConfigLeaveTypes(TransactionCase):
         self.assertIn(annual.id, _hb_leave_type_ids(self.env))
         annual.active = False
         self.assertNotIn(annual.id, _hb_leave_type_ids(self.env))
+
+    def test_second_allocation_type_rejected(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        # Nghỉ Phép Năm (seed) đã có requires_allocation=True và đang active.
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(self._admin_env(), {
+                'name': 'Quỹ Phép Thứ Hai', 'requiresAllocation': True,
+                'unpaid': False, 'validationType': 'hr', 'requestUnit': 'day',
+                'supportDocument': False, 'isEmergency': False, 'color': 1})
+
+    def test_second_unpaid_type_rejected(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        # Nghỉ Không Lương (seed) đã có unpaid=True và đang active.
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(self._admin_env(), {
+                'name': 'Không Lương Thứ Hai', 'requiresAllocation': False,
+                'unpaid': True, 'validationType': 'hr', 'requestUnit': 'day',
+                'supportDocument': False, 'isEmergency': False, 'color': 1})
+
+    def test_edit_allocation_type_keeps_itself(self):
+        # Sửa chính loại Phép Năm mà vẫn giữ requires_allocation=True phải OK
+        # (không tự xung đột với chính nó).
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        row = _config_save_leave_type(self._admin_env(), {
+            'id': annual.id, 'name': 'Nghỉ Phép Năm', 'requiresAllocation': True,
+            'unpaid': False, 'validationType': 'hr', 'requestUnit': 'half_day',
+            'supportDocument': False, 'isEmergency': False, 'color': 10})
+        self.assertTrue(row['requiresAllocation'])
+
+    def test_allocation_flag_ok_when_existing_archived(self):
+        # Nếu loại giữ cờ đang TẮT thì được phép tạo loại allocation mới đang bật.
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_leave_type, _config_toggle_leave_type)
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        _config_toggle_leave_type(self._admin_env(), annual.id, False)  # archive Annual
+        row = _config_save_leave_type(self._admin_env(), {
+            'name': 'Quỹ Phép Mới', 'requiresAllocation': True, 'unpaid': False,
+            'validationType': 'hr', 'requestUnit': 'day',
+            'supportDocument': False, 'isEmergency': False, 'color': 2})
+        self.assertTrue(row['requiresAllocation'])
+        # Bật lại Annual bây giờ phải bị chặn (sẽ thành 2 loại allocation active).
+        with self.assertRaises(ValidationError):
+            _config_toggle_leave_type(self._admin_env(), annual.id, True)
