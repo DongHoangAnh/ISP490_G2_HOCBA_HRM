@@ -22,3 +22,14 @@ export const fetchPolicies = () => hbGet(`${BASE}/policies`);
 /* Cập nhật 1 chính sách. → { policy: {...} }
    payload: { id, name, leaveTypeIds:[...], allocationMode, accrualPlanId, annualDays, notes } */
 export const savePolicy = (payload) => hbPost(`${BASE}/policies/save`, payload);
+
+/* Ngày lễ theo năm. → { year, holidays:[{id,name,startDate,endDate,color}], years:[...] } */
+export const fetchHolidays = (year) =>
+  hbGet(`${BASE}/holidays${year ? `?year=${year}` : ''}`);
+
+/* Tạo/sửa ngày lễ (ghi đồng bộ 2 model). → { holiday: {...} }
+   payload: { id?, name, startDate, endDate, color } */
+export const saveHoliday = (payload) => hbPost(`${BASE}/holidays/save`, payload);
+
+/* Xoá ngày lễ (cả 2 model). → { ok: true } */
+export const deleteHoliday = (id) => hbPost(`${BASE}/holidays/delete`, { id });
