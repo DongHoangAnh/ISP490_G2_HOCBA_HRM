@@ -79,8 +79,8 @@ class TestOffboardingModel(TransactionCase):
         self.assertFalse(user.active)
         self.assertEqual(rec.actual_leave_date, fields.Date.today())
 
-    def test_done_blocked_when_asset_assigned(self):
-        from odoo.exceptions import ValidationError
+    def test_done_allowed_when_asset_assigned(self):
+        # F-006 rút gọn: còn tài sản KHÔNG chặn hoàn tất, chỉ hiển thị.
         atype = self.env['hocba.asset.type'].create({
             'name': 'Laptop Off', 'code': 'LAPOFF'})
         self.env['hr.employee.asset'].create({
@@ -92,9 +92,10 @@ class TestOffboardingModel(TransactionCase):
         })
         rec = self._make()
         self._advance_to_hr_approved(rec)
-        with self.assertRaises(ValidationError):
-            rec.sudo().action_done()
-        self.assertEqual(rec.state, 'hr_approved')
+        self.assertEqual(rec.asset_count, 1)
+        self.assertEqual(rec.asset_codes, 'LAPOFF-1')
+        rec.sudo().action_done()
+        self.assertEqual(rec.state, 'done')
 
     def test_refuse_after_mgr_restores_status(self):
         rec = self._make()

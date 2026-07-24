@@ -1,37 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
-        <!-- Tài sản: form với nút Thu hồi / Chuyển giao -->
+        <!-- Tài sản: danh sách phẳng "ai đang giữ gì" (F-006 rút gọn) -->
         <record id="hr_employee_asset_form" model="ir.ui.view">
             <field name="name">hr.employee.asset.form</field>
             <field name="model">hr.employee.asset</field>
             <field name="arch" type="xml">
                 <form>
-                    <header>
-                        <button name="action_mark_returned" type="object"
-                                string="Thu hồi" class="btn-primary"
-                                invisible="state != 'assigned'"/>
-                        <button name="action_mark_transferred" type="object"
-                                string="Chuyển giao" class="btn-secondary"
-                                invisible="state != 'assigned'"
-                                confirm="Chuyển giao sẽ tạo bản ghi mới cho người nhận. Tiếp tục?"/>
-                        <field name="state" widget="statusbar"
-                               statusbar_visible="assigned,returned,transferred"/>
-                    </header>
                     <sheet>
                         <group>
-                            <group string="Cấp phát">
-                                <field name="employee_id"/>
-                                <field name="asset_type_id"/>
-                                <field name="asset_code"/>
-                                <field name="grant_date"/>
-                                <field name="condition_in"/>
-                            </group>
-                            <group string="Thu hồi / Chuyển giao">
-                                <field name="return_date" readonly="state == 'assigned' and not transferred_to"/>
-                                <field name="transferred_to" invisible="state == 'returned'"/>
-                                <field name="condition_out_note"/>
-                            </group>
+                            <field name="employee_id"/>
+                            <field name="asset_type_id"/>
+                            <field name="asset_code"/>
+                            <field name="grant_date"/>
+                            <field name="condition_in"/>
                         </group>
                     </sheet>
                 </form>
@@ -42,15 +24,12 @@
             <field name="name">hr.employee.asset.list</field>
             <field name="model">hr.employee.asset</field>
             <field name="arch" type="xml">
-                <list decoration-success="state == 'assigned'"
-                      decoration-muted="state != 'assigned'">
+                <list>
                     <field name="asset_code"/>
                     <field name="asset_type_id"/>
                     <field name="employee_id"/>
                     <field name="grant_date"/>
-                    <field name="state"/>
-                    <field name="return_date" optional="show"/>
-                    <field name="transferred_to" optional="hide"/>
+                    <field name="condition_in" optional="show"/>
                 </list>
             </field>
         </record>
@@ -63,12 +42,9 @@
                     <field name="asset_code"/>
                     <field name="employee_id"/>
                     <field name="asset_type_id"/>
-                    <filter name="assigned" string="Đang giữ" domain="[('state', '=', 'assigned')]"/>
-                    <filter name="returned" string="Đã thu hồi" domain="[('state', '=', 'returned')]"/>
                     <group>
                         <filter name="group_employee" string="Nhân viên" context="{'group_by': 'employee_id'}"/>
                         <filter name="group_type" string="Loại tài sản" context="{'group_by': 'asset_type_id'}"/>
-                        <filter name="group_state" string="Trạng thái" context="{'group_by': 'state'}"/>
                     </group>
                 </search>
             </field>
@@ -95,7 +71,6 @@
             <field name="res_model">hr.employee.asset</field>
             <field name="view_mode">list,form</field>
             <field name="search_view_id" ref="hr_employee_asset_search"/>
-            <field name="context">{'search_default_assigned': 1}</field>
         </record>
         <record id="hocba_asset_type_action" model="ir.actions.act_window">
             <field name="name">Loại tài sản</field>

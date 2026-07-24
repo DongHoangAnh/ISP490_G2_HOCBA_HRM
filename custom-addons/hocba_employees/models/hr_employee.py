@@ -240,12 +240,11 @@ class HrEmployee(models.Model):
         'Mã nhân sự phải là duy nhất!',
     )
 
-    @api.depends('x_asset_ids.state')
+    @api.depends('x_asset_ids')
     def _compute_asset_count(self):
-        # BR-052: chỉ đếm tài sản đang giữ
+        # F-006 rút gọn: mọi dòng tài sản đều là "đang giữ".
         for emp in self:
-            emp.x_asset_count = len(emp.x_asset_ids.filtered(
-                lambda a: a.state == 'assigned'))
+            emp.x_asset_count = len(emp.x_asset_ids)
 
     @api.depends('x_promotion_ids')
     def _compute_promotion_count(self):
@@ -545,16 +544,6 @@ class HrEmployee(models.Model):
     # F-005: Tự động hóa cổng (AUT-001 / AUT-002) — chạy khi result đổi
     # ------------------------------------------------------------------
     def write(self, vals):
-        # F-006: chặn Archive khi còn tài sản chưa thu hồi/chuyển giao
-        if vals.get('active') is False:
-            for emp in self:
-                pending = emp.x_asset_ids.filtered(lambda a: a.state == 'assigned')
-                if pending:
-                    raise ValidationError(_(
-                        'Không thể lưu trữ "%(emp)s" — còn %(n)d tài sản chưa thu hồi: '
-                        '%(codes)s') % {
-                            'emp': emp.name, 'n': len(pending),
-                            'codes': ', '.join(pending.mapped('asset_code'))})
         # F-001: không sửa tay probation→official ngoài automation (trừ HR Manager)
         if vals.get('x_employment_status') == 'official' \
                 and not self.env.context.get('hocba_gate_automation') \
@@ -643,13 +632,11 @@ class HrEmployee(models.Model):
         for atype in defaults:
             has = Asset.search_count([
                 ('employee_id', '=', self.id),
-                ('asset_type_id', '=', atype.id),
-                ('state', '=', 'assigned')])
+                ('asset_type_id', '=', atype.id)])
             if has:
                 continue
             code = '%s-%s' % (atype.code, self.x_employee_code or self.id)
-            if Asset.search_count([('asset_code', '=', code),
-                                   ('state', '=', 'assigned')]):
+            if Asset.search_count([('asset_code', '=', code)]):
                 continue
             Asset.create({
                 'employee_id': self.id,
