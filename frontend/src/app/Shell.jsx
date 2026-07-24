@@ -25,6 +25,9 @@ const NAV = [
   { sec: 'Tài chính', need: 'finance', items: [
     { id: 'finance', label: 'Dòng tiền', icon: 'wallet', need: 'finance' },
   ]},
+  { sec: 'Hệ thống', need: 'admin', items: [
+    { id: 'timeoffConfig', label: 'Cấu hình nghỉ phép', icon: 'settings', need: 'admin' },
+  ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
     // Nghỉ phép cá nhân của nhân viên/Trưởng phòng. Tài khoản vai trò thuần
@@ -44,6 +47,7 @@ const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrU
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
   if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
+  if (need === 'admin') return !!(me && me.isAdmin);
   if (need === 'finance') return !!(me && me.isFinance);
   if (need === 'self') return !isRoleAccount(me);
   return true;
@@ -78,6 +82,7 @@ export const PAGE_META = {
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
   departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
+  timeoffConfig: { t: 'Cấu hình nghỉ phép', c: 'Hệ thống / Time Off' },
 };
 
 export function Sidebar({ view, setView, me }) {
