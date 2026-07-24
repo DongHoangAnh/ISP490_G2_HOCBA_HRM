@@ -5,7 +5,7 @@
 # quyền (theo gotcha self-service của dự án). Hàm cấp module để test gọi trực
 # tiếp với env(user=...). Owner: Nhật Anh.
 # ============================================================
-from odoo import http
+from odoo import fields, http
 from odoo.exceptions import UserError, ValidationError
 from odoo.http import request
 
@@ -206,6 +206,107 @@ def _config_save_policy(env, vals):
     return _policy_row(env, rule)
 
 
+def _holiday_row(mday):
+    return {
+        'id': mday.id,
+        'name': mday.name or '',
+        'startDate': str(mday.start_date),
+        'endDate': str(mday.end_date),
+        'color': mday.color or 0,
+    }
+
+
+def _twin_calendar_leaves(env, start_date):
+    """Bản resource.calendar.leaves 'twin' của ngày lễ — khớp theo NGÀY bắt đầu
+    (ngày lễ Học Bá không chồng lấn nên đủ định danh). start_date: date."""
+    day_start = fields.Datetime.to_datetime('%s 00:00:00' % start_date)
+    day_end = fields.Datetime.to_datetime('%s 23:59:59' % start_date)
+    return env['resource.calendar.leaves'].sudo().search([
+        ('calendar_id', '=', False),
+        ('resource_id', '=', False),
+        ('time_type', '=', 'leave'),
+        ('date_from', '>=', day_start),
+        ('date_from', '<=', day_end),
+    ])
+
+
+def _calendar_leave_vals(name, start_date, end_date):
+    return {
+        'name': name,
+        'date_from': fields.Datetime.to_datetime('%s 00:00:00' % start_date),
+        'date_to': fields.Datetime.to_datetime('%s 23:59:59' % end_date),
+        'time_type': 'leave',
+        'calendar_id': False,
+        'resource_id': False,
+    }
+
+
+def _validate_holiday_vals(vals):
+    name = (vals.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Tên ngày lễ không được để trống.')
+    try:
+        start = fields.Date.to_date(vals.get('startDate'))
+        end = fields.Date.to_date(vals.get('endDate'))
+    except (ValueError, TypeError):
+        raise ValidationError('Ngày không hợp lệ.')
+    if not start or not end:
+        raise ValidationError('Thiếu ngày bắt đầu/kết thúc.')
+    if end < start:
+        raise ValidationError('Ngày kết thúc phải >= ngày bắt đầu.')
+    return name, start, end
+
+
+def _config_list_holidays(env, year):
+    year = int(year)
+    MDay = env['hr.leave.mandatory.day'].sudo()
+    days = MDay.search([
+        ('start_date', '>=', '%d-01-01' % year),
+        ('start_date', '<=', '%d-12-31' % year),
+    ], order='start_date')
+    years = sorted({d.start_date.year for d in MDay.search([]) if d.start_date})
+    return {
+        'year': year,
+        'holidays': [_holiday_row(d) for d in days],
+        'years': years,
+    }
+
+
+def _config_save_holiday(env, vals):
+    name, start, end = _validate_holiday_vals(vals)
+    color = _coerce_int(vals.get('color') or 1, 'Màu')
+    MDay = env['hr.leave.mandatory.day'].sudo()
+    Cal = env['resource.calendar.leaves'].sudo()
+    rec_id = vals.get('id')
+    if rec_id:
+        mday = MDay.browse(_coerce_int(rec_id, 'ID ngày lễ'))
+        if not mday.exists():
+            raise ValidationError('Ngày lễ không tồn tại.')
+        twin = _twin_calendar_leaves(env, mday.start_date)  # theo ngày CŨ
+        mday.write({'name': name, 'start_date': start,
+                    'end_date': end, 'color': color})
+        if twin:
+            twin.write(_calendar_leave_vals(name, start, end))
+        else:
+            Cal.create(_calendar_leave_vals(name, start, end))
+    else:
+        mday = MDay.create({'name': name, 'start_date': start,
+                            'end_date': end, 'color': color})
+        Cal.create(_calendar_leave_vals(name, start, end))
+    return _holiday_row(mday)
+
+
+def _config_delete_holiday(env, rec_id):
+    MDay = env['hr.leave.mandatory.day'].sudo()
+    hid = _coerce_int(rec_id, 'ID ngày lễ')
+    mday = MDay.browse(hid)
+    if not mday.exists():
+        raise ValidationError('Ngày lễ không tồn tại.')
+    _twin_calendar_leaves(env, mday.start_date).unlink()
+    mday.unlink()
+    return {'ok': True, 'id': hid}
+
+
 class HocBaTimeoffConfig(http.Controller):
 
     def _guard(self):
@@ -273,3 +374,44 @@ class HocBaTimeoffConfig(http.Controller):
             return request.make_json_response(
                 {'error': 'invalid', 'message': str(e)}, status=400)
         return request.make_json_response({'policy': row})
+
+    @http.route('/hocba-hrm/api/timeoff/config/holidays',
+                auth='user', type='http', methods=['GET'])
+    def holidays(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        try:
+            year = int(kw.get('year') or fields.Date.today().year)
+        except (TypeError, ValueError):
+            year = fields.Date.today().year
+        return request.make_json_response(
+            _config_list_holidays(request.env, year))
+
+    @http.route('/hocba-hrm/api/timeoff/config/holidays/save',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def holiday_save(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        payload = request.get_json_data() or {}
+        try:
+            row = _config_save_holiday(request.env, payload)
+        except (UserError, ValidationError) as e:
+            return request.make_json_response(
+                {'error': 'invalid', 'message': str(e)}, status=400)
+        return request.make_json_response({'holiday': row})
+
+    @http.route('/hocba-hrm/api/timeoff/config/holidays/delete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def holiday_delete(self, **kw):
+        block = self._guard()
+        if block:
+            return block
+        payload = request.get_json_data() or {}
+        try:
+            _config_delete_holiday(request.env, payload.get('id'))
+        except (UserError, ValidationError) as e:
+            return request.make_json_response(
+                {'error': 'invalid', 'message': str(e)}, status=400)
+        return request.make_json_response({'ok': True})

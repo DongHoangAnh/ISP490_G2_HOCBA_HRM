@@ -264,3 +264,100 @@ class TestAdminConfigPolicies(TransactionCase):
             'id': rule.id, 'name': rule.name, 'allocationMode': 'none',
             'annualDays': 0, 'leaveTypeIds': [managed_id, bad.id]})
         self.assertEqual(row['leaveTypeIds'], [managed_id])  # bad id bị loại
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigHolidays(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin P3', 'login': 'cfg_admin_p3',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+
+    def _env(self):
+        return self.env(user=self.admin_user)
+
+    def _count_twin(self, start):
+        from odoo import fields
+        return self.env['resource.calendar.leaves'].search_count([
+            ('calendar_id', '=', False), ('resource_id', '=', False),
+            ('time_type', '=', 'leave'),
+            ('date_from', '>=', fields.Datetime.to_datetime('%s 00:00:00' % start)),
+            ('date_from', '<=', fields.Datetime.to_datetime('%s 23:59:59' % start)),
+        ])
+
+    def test_create_writes_both_models(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        row = _config_save_holiday(self._env(), {
+            'name': 'Ngày lễ thử', 'startDate': '2027-05-19',
+            'endDate': '2027-05-19', 'color': 3})
+        mday = self.env['hr.leave.mandatory.day'].browse(row['id'])
+        self.assertTrue(mday.exists())
+        self.assertEqual(str(mday.start_date), '2027-05-19')
+        self.assertEqual(self._count_twin('2027-05-19'), 1)
+
+    def test_list_by_year_filters(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_holiday, _config_list_holidays)
+        env = self._env()
+        _config_save_holiday(env, {'name': 'Lễ 2028', 'startDate': '2028-03-10',
+                                    'endDate': '2028-03-10', 'color': 1})
+        data = _config_list_holidays(env, 2028)
+        names = [h['name'] for h in data['holidays']]
+        self.assertIn('Lễ 2028', names)
+        data_other = _config_list_holidays(env, 2029)
+        self.assertNotIn('Lễ 2028', [h['name'] for h in data_other['holidays']])
+
+    def test_update_syncs_both(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        env = self._env()
+        row = _config_save_holiday(env, {'name': 'Lễ cũ', 'startDate': '2027-07-01',
+                                         'endDate': '2027-07-01', 'color': 2})
+        row2 = _config_save_holiday(env, {'id': row['id'], 'name': 'Lễ mới',
+                                          'startDate': '2027-07-02',
+                                          'endDate': '2027-07-03', 'color': 5})
+        mday = self.env['hr.leave.mandatory.day'].browse(row2['id'])
+        self.assertEqual(mday.name, 'Lễ mới')
+        self.assertEqual(str(mday.end_date), '2027-07-03')
+        self.assertEqual(self._count_twin('2027-07-02'), 1)
+        self.assertEqual(self._count_twin('2027-07-01'), 0)  # twin đã dời ngày
+
+    def test_delete_removes_both(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_holiday, _config_delete_holiday)
+        env = self._env()
+        row = _config_save_holiday(env, {'name': 'Lễ xoá', 'startDate': '2027-09-09',
+                                         'endDate': '2027-09-09', 'color': 1})
+        _config_delete_holiday(env, row['id'])
+        self.assertFalse(self.env['hr.leave.mandatory.day'].browse(row['id']).exists())
+        self.assertEqual(self._count_twin('2027-09-09'), 0)
+
+    def test_end_before_start_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'name': 'x', 'startDate': '2027-05-10',
+                                               'endDate': '2027-05-09'})
+
+    def test_name_required_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'name': '  ', 'startDate': '2027-05-10',
+                                               'endDate': '2027-05-10'})
+
+    def test_bad_color_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'name': 'x', 'startDate': '2027-05-10',
+                                               'endDate': '2027-05-10', 'color': 'blue'})
+
+    def test_bad_id_type_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'id': 'abc', 'name': 'x',
+                                               'startDate': '2027-05-10', 'endDate': '2027-05-10'})
+
+    def test_delete_nonexistent_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_delete_holiday
+        with self.assertRaises(ValidationError):
+            _config_delete_holiday(self._env(), 999999999)
