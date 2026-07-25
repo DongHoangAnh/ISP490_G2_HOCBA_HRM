@@ -74,8 +74,8 @@ export default function TimeOff({ search, focus }) {
 
   // Tách luồng cá nhân / quản lý theo phân quyền:
   //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
-  //    KHÔNG có tab "Đơn nghỉ phép" (luồng quản lý thuần).
-  //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Đơn nghỉ phép" + "Lịch".
+  //    KHÔNG có tab "Đơn của tôi" (luồng quản lý thuần).
+  //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Đơn của tôi" + "Lịch".
   const tabs = [];
   if (data.isOfficer) {
     tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
@@ -84,7 +84,7 @@ export default function TimeOff({ search, focus }) {
               ['approved', 'Đơn đã duyệt'],
               ['balances', 'Quỹ phép']);
   } else {
-    tabs.push(['summary', 'Tổng hợp'], ['me', 'Đơn nghỉ phép'], ['calendar', 'Lịch']);
+    tabs.push(['summary', 'Tổng hợp'], ['me', 'Đơn của tôi'], ['calendar', 'Lịch']);
   }
   // Giáo viên (mọi vai trò) có thêm tab xử lý yêu cầu dạy thay gửi tới mình.
   if (data.employee && data.employee.isTeacher) {
@@ -208,7 +208,7 @@ export default function TimeOff({ search, focus }) {
   );
 }
 
-/* ---- Tab "Đơn nghỉ phép": số dư phép + danh sách đơn ---- */
+/* ---- Tab "Đơn của tôi": số dư phép + danh sách đơn ---- */
 const MY_SORT_FIELDS = [
   { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
   { key: 'createdAt', label: 'Ngày tạo', type: 'date' },
@@ -331,7 +331,7 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
   );
 }
 
-/* Modal chi tiết 1 đơn nghỉ (mở khi bấm vào dòng ở tab "Đơn nghỉ phép").
+/* Modal chi tiết 1 đơn nghỉ (mở khi bấm vào dòng ở tab "Đơn của tôi").
    GV xem được đơn xin nghỉ những buổi dạy nào + cách xử lý từng buổi. */
 const RES_STATE_LABEL = {
   pending: 'Chờ GV thay đồng ý', accepted: 'Đã chốt',
