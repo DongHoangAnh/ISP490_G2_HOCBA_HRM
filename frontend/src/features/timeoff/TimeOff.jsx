@@ -74,8 +74,8 @@ export default function TimeOff({ search, focus }) {
 
   // Tách luồng cá nhân / quản lý theo phân quyền:
   //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
-  //    KHÔNG có tab "Của tôi" (luồng quản lý thuần).
-  //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Của tôi" + "Lịch".
+  //    KHÔNG có tab "Đơn nghỉ phép" (luồng quản lý thuần).
+  //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Đơn nghỉ phép" + "Lịch".
   const tabs = [];
   if (data.isOfficer) {
     tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
@@ -84,7 +84,7 @@ export default function TimeOff({ search, focus }) {
               ['approved', 'Đơn đã duyệt'],
               ['balances', 'Quỹ phép']);
   } else {
-    tabs.push(['summary', 'Tổng hợp'], ['me', 'Của tôi'], ['calendar', 'Lịch']);
+    tabs.push(['summary', 'Tổng hợp'], ['me', 'Đơn nghỉ phép'], ['calendar', 'Lịch']);
   }
   // Giáo viên (mọi vai trò) có thêm tab xử lý yêu cầu dạy thay gửi tới mình.
   if (data.employee && data.employee.isTeacher) {
@@ -98,7 +98,6 @@ export default function TimeOff({ search, focus }) {
       <div className="page-head">
         <div>
           <h1>Nghỉ phép</h1>
-          <p>Số dư phép, đơn nghỉ &amp; phê duyệt · dữ liệu trực tiếp từ Odoo</p>
         </div>
         <div className="actions">
           {data.isHrManager && (
@@ -209,7 +208,7 @@ export default function TimeOff({ search, focus }) {
   );
 }
 
-/* ---- Tab "Của tôi": số dư phép + danh sách đơn ---- */
+/* ---- Tab "Đơn nghỉ phép": số dư phép + danh sách đơn ---- */
 const MY_SORT_FIELDS = [
   { key: 'leaveType', label: 'Loại nghỉ', type: 'text' },
   { key: 'createdAt', label: 'Ngày tạo', type: 'date' },
@@ -332,7 +331,7 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
   );
 }
 
-/* Modal chi tiết 1 đơn nghỉ (mở khi bấm vào dòng ở tab "Của tôi").
+/* Modal chi tiết 1 đơn nghỉ (mở khi bấm vào dòng ở tab "Đơn nghỉ phép").
    GV xem được đơn xin nghỉ những buổi dạy nào + cách xử lý từng buổi. */
 const RES_STATE_LABEL = {
   pending: 'Chờ GV thay đồng ý', accepted: 'Đã chốt',
