@@ -9,5 +9,8 @@ class HocbaAttendancePolicy(models.Model):
     def is_workday(self, dt_local):
         if super().is_workday(dt_local):
             return True
+        # Hàm gốc chỉ dùng .weekday() nên nhận CẢ date lẫn datetime — giữ đúng
+        # hợp đồng đó, đừng thu hẹp về datetime (hocba_hrm truyền date thuần).
+        day = dt_local.date() if hasattr(dt_local, 'date') else dt_local
         return bool(self.env['hb.work.day'].sudo().search_count(
-            [('date', '=', dt_local.date())]))
+            [('date', '=', day)]))

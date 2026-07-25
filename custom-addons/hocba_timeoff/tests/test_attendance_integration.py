@@ -74,16 +74,34 @@ class TestAttendanceIntegrationBase(TransactionCase):
 
 @tagged('post_install', '-at_install', 'hocba_timeoff')
 class TestIsWorkdayExtra(TransactionCase):
+    """Ngày phải là TƯƠNG LAI: hb.work.day chỉ cho tạo ngày chưa đến
+    (xem test_work_day_lock) nên fixture tính động từ hôm nay, không hard-code."""
+
+    def _next_saturday(self, weeks=1):
+        today = fields.Date.context_today(self.env['hb.work.day'])
+        # weekday(): T7 = 5. Lấy Thứ 7 của tuần sau -> luôn > hôm nay.
+        return today + timedelta(days=(5 - today.weekday()) % 7 + 7 * weeks)
 
     def test_extra_workday_counts_as_workday(self):
         policy = self.env['hocba.attendance.policy'].get_policy()
-        # 2026-07-18 là Thứ 7 (cuối tuần) -> mặc định không phải ngày làm
-        sat = datetime(2026, 7, 18, 8, 0, 0)
-        self.assertFalse(policy.is_workday(sat))
-        self.env['hb.work.day'].create({'date': date(2026, 7, 18), 'name': 'Làm bù'})
-        self.assertTrue(policy.is_workday(sat))
+        sat = self._next_saturday()                   # Thứ 7 -> không phải ngày làm
+        self.assertFalse(policy.is_workday(datetime.combine(sat, time(8))))
+        self.env['hb.work.day'].create({'date': sat, 'name': 'Làm bù'})
+        self.assertTrue(policy.is_workday(datetime.combine(sat, time(8))))
         # Thứ 7 khác chưa đánh dấu vẫn False
-        self.assertFalse(policy.is_workday(datetime(2026, 7, 25, 8, 0, 0)))
+        other_sat = self._next_saturday(weeks=2)
+        self.assertFalse(policy.is_workday(datetime.combine(other_sat, time(8))))
+
+    def test_accepts_plain_date(self):
+        """Hàm gốc nhận cả date lẫn datetime (chỉ dùng .weekday()) — override
+        không được thu hẹp. hocba_hrm truyền date thuần (fields.Date.from_string)
+        ở bảng chấm công theo ngày cho HR/trưởng phòng."""
+        policy = self.env['hocba.attendance.policy'].get_policy()
+        sat = self._next_saturday()                   # Thứ 7
+        self.assertFalse(policy.is_workday(sat))      # trước 07-13 chỗ này nổ AttributeError
+        self.env['hb.work.day'].create({'date': sat, 'name': 'Làm bù'})
+        self.assertTrue(policy.is_workday(sat))
+        self.assertTrue(policy.is_workday(sat + timedelta(days=2)))  # Thứ 2 thường
 
 
 @tagged('post_install', '-at_install', 'hocba_timeoff')
