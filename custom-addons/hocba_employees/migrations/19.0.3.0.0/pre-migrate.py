@@ -25,7 +25,7 @@ def migrate(cr, version):
     # Khử trùng mã còn sót (dữ liệu bẩn) — giữ dòng cấp gần nhất, tức người
     # đang thực sự giữ. Liệt kê trước khi xoá: dữ liệu không khôi phục được.
     cr.execute("""
-        SELECT a.asset_code, a.employee_id
+        SELECT DISTINCT a.asset_code, a.employee_id
           FROM hr_employee_asset a, hr_employee_asset b
          WHERE a.asset_code = b.asset_code
            AND (a.grant_date, a.id) < (b.grant_date, b.id)

@@ -45,6 +45,12 @@ class HrEmployeeAsset(models.Model):
         codes = [c for c in codes if c]
         if not codes:
             return
+        # Trùng ngay trong cùng một lô (import CSV, mass-edit): search() không
+        # thấy vì các dòng này chưa/đang cùng được ghi.
+        if len(codes) != len(set(codes)):
+            dup_code = next(c for c in codes if codes.count(c) > 1)
+            raise ValidationError(_(
+                'Mã tài sản "%s" bị lặp trong cùng một lần cấp phát.') % dup_code)
         domain = [('asset_code', 'in', codes)]
         if keep:
             domain.append(('id', 'not in', keep.ids))
@@ -61,5 +67,10 @@ class HrEmployeeAsset(models.Model):
 
     def write(self, vals):
         if vals.get('asset_code'):
+            # Ghi cùng một mã lên nhiều dòng thì tự nó đã trùng nhau.
+            if len(self) > 1:
+                raise ValidationError(_(
+                    'Không thể gán mã "%s" cho %d dòng tài sản cùng lúc — '
+                    'mỗi mã chỉ thuộc về một người.') % (vals['asset_code'], len(self)))
             self._check_asset_code_free([vals['asset_code']], keep=self)
         return super().write(vals)

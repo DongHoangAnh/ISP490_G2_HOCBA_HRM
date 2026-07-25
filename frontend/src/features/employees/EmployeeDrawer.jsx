@@ -236,7 +236,9 @@ export function AssetsTab({ det, editable, onUpdated }) {
   const remove = async (a) => {
     if (!window.confirm(`Gỡ tài sản ${a.code} khỏi hồ sơ ${det.name}?`)) return;
     setBusy(a.id);
-    try { onUpdated(await deleteAsset(a.id)); } finally { setBusy(0); }
+    try { onUpdated(await deleteAsset(a.id)); }
+    catch (e) { alert(e.message); }
+    finally { setBusy(0); }
   };
 
   return (

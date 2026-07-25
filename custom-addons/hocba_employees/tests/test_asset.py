@@ -49,6 +49,28 @@ class TestEmployeeAssetSimple(TransactionCase):
                 self._grant(self.emp2, 'LAPTST-DUP')
                 self.env.flush_all()
 
+    def test_asset_code_unique_within_batch(self):
+        # Import CSV / tạo hàng loạt: 2 dòng cùng mã trong MỘT lệnh create.
+        # search() không thấy vì cả hai chưa nằm trong DB.
+        vals = [{
+            'employee_id': emp.id,
+            'asset_type_id': self.atype.id,
+            'asset_code': 'LAPTST-BATCH',
+            'grant_date': fields.Date.today(),
+        } for emp in (self.emp, self.emp2)]
+        with mute_logger('odoo.sql_db'), self.assertRaises(ValidationError):
+            with self.cr.savepoint():
+                self.env['hr.employee.asset'].create(vals)
+                self.env.flush_all()
+
+    def test_asset_code_same_on_many_rows_rejected(self):
+        # Mass-edit trên list view backend: gán một mã cho nhiều dòng.
+        rows = self._grant(self.emp, 'LAPTST-M1') + self._grant(self.emp2, 'LAPTST-M2')
+        with mute_logger('odoo.sql_db'), self.assertRaises(ValidationError):
+            with self.cr.savepoint():
+                rows.write({'asset_code': 'LAPTST-MERGED'})
+                self.env.flush_all()
+
     def test_grant_before_week2_gate_allowed(self):
         # Ràng buộc "ngày cấp >= mốc tuần-2" đã bị bỏ.
         self.emp.sudo().x_eval_2w_date = fields.Date.today()
