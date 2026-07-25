@@ -1,6 +1,7 @@
 /* ============================================================
-   Màn Nhập việc (Onboarding) — theo dõi NV thử việc qua 2 cổng
-   (F-004/005) + thử giảng (F-008). Owner: Tân.
+   Màn Nhập việc (Onboarding) — theo dõi NV thử việc qua QUY TRÌNH
+   BƯỚC ĐỘNG (hb.onboarding.step, admin config được). Owner: Tân.
+   Spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md
    ============================================================ */
 import { useState, useEffect, useRef } from 'react';
 import { fetchOnboarding } from '../../api/employees';
@@ -8,45 +9,54 @@ import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
-import { fmtDate, HB_RESULT } from '../../utils/format';
+import { fmtDate } from '../../utils/format';
 import EmployeeDrawer from './EmployeeDrawer';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
-/* Suy ra giai đoạn hiện tại + hạn kế tiếp từ trạng thái 2 cổng / thử giảng */
-function phaseOf(o) {
-  if (o.isGroupB) {
-    if (o.g1Result === 'fail' || o.g1mResult === 'fail' || o.g2Result === 'fail')
-      return { key: 'fail', label: 'Không đạt thử việc', due: null };
-    if (o.officialDate) return { key: 'done', label: 'Đã lên chính thức', due: null };
-    if (o.g1Result !== 'pass') return { key: 'gate1', label: 'Chờ cổng tuần-2', due: o.g1Due };
-    if (!o.equipDate) return { key: 'equip', label: 'Chờ cấp thiết bị', due: null };
-    if (o.g1mResult === 'draft') return { key: 'gateMid', label: 'Chờ cổng tháng-1', due: o.g1mDue };
-    if (o.g2Result !== 'pass') return { key: 'gate2', label: 'Chờ cổng tháng-2', due: o.g2Due };
-    return { key: 'done', label: 'Đã qua các cổng', due: null };
-  }
-  if (o.trialResult === 'pass') return { key: 'done', label: 'Thử giảng đạt', due: null };
-  if (o.trialResult === 'fail') return { key: 'fail', label: 'Thử giảng không đạt', due: o.trialDate };
-  return { key: 'trial', label: 'Chờ thử giảng', due: o.trialDate };
+/* Trạng thái tổng của 1 NV suy từ danh sách bước động. */
+function overallOf(o) {
+  if (!o.steps || !o.steps.length)
+    return { key: 'none', label: 'Chưa có quy trình' };
+  if (o.steps.some((s) => s.result === 'fail'))
+    return { key: 'fail', label: 'Không đạt thử việc' };
+  if (o.steps.every((s) => s.state === 'done' || s.state === 'skipped'))
+    return { key: 'done', label: 'Hoàn tất quy trình' };
+  return { key: 'run', label: 'Đang thử việc' };
 }
-const isOverdue = (ph) => ph.due && ph.due < TODAY && !['done'].includes(ph.key);
-const phaseKind = (ph) => (ph.key === 'done' ? 'green' : ph.key === 'fail' ? 'red' : 'amber');
+const overallKind = { done: 'green', fail: 'red', run: 'amber', none: 'gray' };
+const isOverdue = (o) =>
+  o.current && o.current.dueDate && o.current.dueDate < TODAY;
 
-/* Ô trạng thái 1 cổng: badge kết quả + hạn (đỏ nếu quá hạn mà chưa đạt) */
-function GateCell({ result, due, date }) {
-  if (!due && !date && result === 'draft') return <span className="faint">—</span>;
-  const [lbl, kind] = HB_RESULT[result] || HB_RESULT.draft;
-  const overdue = due && due < TODAY && result === 'draft';
+/* Ô "bước hiện tại": tên + loại + hạn (đỏ nếu quá hạn). */
+function CurrentStepCell({ o }) {
+  const c = o.current;
+  if (!c) return <span className="faint">—</span>;
+  const late = isOverdue(o);
   return (
     <div>
-      <Badge kind={kind} dot>{lbl}</Badge>
-      {date ? (
-        <div className="mono muted" style={{ fontSize: 11.5, marginTop: 3 }}>{fmtDate(date)}</div>
-      ) : due ? (
-        <div className="mono" style={{ fontSize: 11.5, marginTop: 3, color: overdue ? 'var(--red-600)' : 'var(--muted)' }}>
-          hạn {fmtDate(due)}{overdue && ' ⚠'}
-        </div>
-      ) : null}
+      <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+        {c.name}
+        {c.extendCount > 0 && <span style={{ color: 'var(--gold-600)' }}> ↻×{c.extendCount}</span>}
+      </div>
+      <div className="mono" style={{ fontSize: 11.5, marginTop: 2, color: late ? 'var(--red-600)' : 'var(--muted)' }}>
+        {c.stepType === 'evaluation' ? 'Đánh giá' : 'Việc cần làm'}
+        {c.dueDate ? ` · hạn ${fmtDate(c.dueDate)}` : ''}{late && ' ⚠'}
+      </div>
+    </div>
+  );
+}
+
+/* Thanh tiến độ nhỏ trong bảng. */
+function ProgressCell({ o }) {
+  const { done, total } = o.progress || { done: 0, total: 0 };
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  return (
+    <div style={{ minWidth: 110 }}>
+      <div className="mono" style={{ fontSize: 12 }}>{done}/{total} bước</div>
+      <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-2)', marginTop: 4, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: pct === 100 ? 'var(--green)' : 'var(--gold-500)' }} />
+      </div>
     </div>
   );
 }
@@ -55,8 +65,8 @@ export default function Onboarding({ search }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
-  // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi đánh giá cổng/thử
-  // giảng (đổi dữ liệu) mới refresh ngầm.
+  // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi thao tác bước (đổi
+  // dữ liệu) mới refresh ngầm.
   const dirtyRef = useRef(false);
 
   const load = () => {
@@ -80,16 +90,16 @@ export default function Onboarding({ search }) {
       || (o.depName || '').toLowerCase().includes(q);
   });
 
-  const waitG1 = items.filter((o) => o.isGroupB && o.g1Result === 'draft').length;
-  const waitMid = items.filter((o) => o.isGroupB && o.g1Result === 'pass' && o.g1mResult === 'draft').length;
-  const waitG2 = items.filter((o) => o.isGroupB && o.g1mResult === 'extend' && o.g2Result === 'draft').length;
-  const overdue = items.filter((o) => isOverdue(phaseOf(o))).length;
+  const running = items.filter((o) => overallOf(o).key === 'run').length;
+  const waitingEval = items.filter((o) =>
+    o.current && o.current.stepType === 'evaluation').length;
+  const overdue = items.filter(isOverdue).length;
 
   const stats = [
     { ico: 'users', col: 'var(--blue)', bg: 'var(--blue-bg)', val: items.length, lbl: 'Đang thử việc' },
-    { ico: 'checkCircle', col: 'var(--gold-600)', bg: 'var(--gold-50)', val: waitG1, lbl: 'Chờ cổng tuần-2' },
-    { ico: 'award', col: 'var(--teal)', bg: 'var(--teal-bg)', val: waitMid + waitG2, lbl: 'Chờ cổng tháng-1/2' },
-    { ico: 'bell', col: 'var(--red-600)', bg: 'var(--red-50)', val: overdue, lbl: 'Quá hạn đánh giá' },
+    { ico: 'checkCircle', col: 'var(--teal)', bg: 'var(--teal-bg)', val: running, lbl: 'Đang chạy quy trình' },
+    { ico: 'award', col: 'var(--gold-600)', bg: 'var(--gold-50)', val: waitingEval, lbl: 'Chờ đánh giá' },
+    { ico: 'bell', col: 'var(--red-600)', bg: 'var(--red-50)', val: overdue, lbl: 'Quá hạn bước' },
   ];
 
   return (
@@ -97,7 +107,7 @@ export default function Onboarding({ search }) {
       <div className="page-head">
         <div>
           <h1>Nhận việc</h1>
-          <p>Thử việc 3 mốc (tuần-2 → cấp thiết bị → tháng-1 → tháng-2) · có thể Gia hạn · thử giảng cho giảng viên</p>
+          <p>Theo dõi nhân viên thử việc theo quy trình bước động — admin cấu hình được trong màn Cấu hình nhận việc</p>
         </div>
       </div>
 
@@ -119,12 +129,12 @@ export default function Onboarding({ search }) {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>Nhân viên</th><th>Nhóm</th><th>Ngày bắt đầu</th>
-              <th>Cổng tuần-2</th><th>Cổng tháng-1</th><th>Cổng tháng-2</th><th>Thử giảng</th><th>Giai đoạn</th>
+              <th>Nhân viên</th><th>Phòng ban</th><th>Ngày bắt đầu</th>
+              <th>Quy trình</th><th>Tiến độ</th><th>Bước hiện tại</th><th>Trạng thái</th>
             </tr></thead>
             <tbody>
               {filtered.map((o) => {
-                const ph = phaseOf(o);
+                const ov = overallOf(o);
                 return (
                   <tr key={o.id} onClick={() => setSel(o)}>
                     <td>
@@ -136,15 +146,16 @@ export default function Onboarding({ search }) {
                         </div>
                       </div>
                     </td>
-                    <td><Badge kind={o.isGroupB ? 'teal' : 'blue'}>{o.isGroupB ? 'B · Offline' : 'A · Giảng viên'}</Badge></td>
+                    <td className="muted">{o.depName}</td>
                     <td className="muted mono">{fmtDate(o.start)}</td>
-                    <td>{o.isGroupB ? <GateCell result={o.g1Result} due={o.g1Due} date={o.g1Date} /> : <span className="faint">—</span>}</td>
-                    <td>{o.isGroupB ? <GateCell result={o.g1mResult} due={o.g1mDue} date={o.g1mDate} /> : <span className="faint">—</span>}</td>
-                    <td>{o.isGroupB ? <GateCell result={o.g2Result} due={o.g2Due} date={o.g2Date} /> : <span className="faint">—</span>}</td>
-                    <td>{!o.isGroupB ? <GateCell result={o.trialResult} due={o.trialDate} date={o.trialResult !== 'draft' ? o.trialDate : null} /> : <span className="faint">—</span>}</td>
+                    <td className="muted" style={{ fontSize: 12.5 }}>{o.templateName || '—'}</td>
+                    <td><ProgressCell o={o} /></td>
+                    <td><CurrentStepCell o={o} /></td>
                     <td>
-                      <Badge kind={phaseKind(ph)} dot>{ph.label}</Badge>
-                      {isOverdue(ph) && <div style={{ fontSize: 11, color: 'var(--red-600)', fontWeight: 700, marginTop: 3 }}>⚠ quá hạn</div>}
+                      <Badge kind={overallKind[ov.key]} dot>{ov.label}</Badge>
+                      {isOverdue(o) && ov.key === 'run' && (
+                        <div style={{ fontSize: 11, color: 'var(--red-600)', fontWeight: 700, marginTop: 3 }}>⚠ quá hạn</div>
+                      )}
                     </td>
                   </tr>
                 );

@@ -110,10 +110,16 @@ Bấm **+ Thêm nhân viên** (góc phải). Form gồm 3 khối: *Thông tin c�
 
 ## 2. Module NHẬN VIỆC — vai trò HR Manager
 
-> Hai luồng thử việc:
-> - **Nhóm B (Offline)** — 3 cổng: **tuần-2** → cấp thiết bị → **tháng-1** → **tháng-2** → chính thức. Cổng tháng-1 có thể chọn **Gia hạn**.
-> - **Nhóm A (Giảng viên/Online)** — **thử giảng** (Đạt / Không đạt).
-> Luồng suy ra từ **Hình thức làm việc** (Offline→B, Online→A) + **Loại vị trí** + Tình trạng **Thử việc**.
+> Từ 2026-07-15, thử việc chạy theo **quy trình BƯỚC ĐỘNG** admin cấu hình
+> được (màn **Cấu hình nhận việc**). Hệ thống seed sẵn 2 quy trình tái hiện
+> luồng cũ:
+> - **Thử việc Nhân viên văn phòng** (khớp staff/manager + Offline):
+>   ĐG tuần-2 → Cấp thiết bị (tự động) → ĐG tháng-1 (*Đạt → chính thức*) →
+>   ĐG tháng-2 (*bước gia hạn — chỉ mở khi tháng-1 "Gia hạn"*).
+> - **Thử việc Giáo viên** (khớp loại nhân sự Giáo viên): Thử giảng →
+>   Ký hợp đồng thỉnh giảng.
+> NV thử việc có **Ngày bắt đầu thử việc** sẽ được gán quy trình khớp tự
+> động (snapshot — sửa template sau không ảnh hưởng NV đang chạy).
 
 ### 2.1 Tạo sẵn dữ liệu để test (dùng lại form Thêm nhân viên ở §1.3)
 
@@ -144,37 +150,55 @@ Bấm **+ Thêm nhân viên** (góc phải). Form gồm 3 khối: *Thông tin c�
 
 > Sau khi tạo 2 NV trên, vào **Nhận việc** — cả hai phải xuất hiện đúng nhóm.
 
+> Lưu ý mẫu C: để khớp quy trình Giáo viên, đặt **Loại nhân sự = Giáo viên**
+> trong hồ sơ (không chỉ Hình thức = Online).
+
 ### 2.2 Bảng theo dõi
 
 | # | Thao tác | ✅ Mong đợi |
 |---|---|---|
-| 2.2.1 | Vào **Nhận việc** | 4 ô thống kê: *Đang thử việc · Chờ cổng tuần-2 · Chờ cổng tháng-1/2 · Quá hạn đánh giá* |
-| 2.2.2 | Xem bảng | Cột: Nhân viên · Nhóm (A/B) · Ngày bắt đầu · Cổng tuần-2 · tháng-1 · tháng-2 · Thử giảng · Giai đoạn |
-| 2.2.3 | NV mẫu B | Gắn nhãn **B · Offline**; cổng tuần-2 hiện badge + **hạn** |
-| 2.2.4 | NV mẫu C | Gắn nhãn **A · Giảng viên**; cột Thử giảng hiện badge |
-| 2.2.5 | Cổng quá hạn (hạn < hôm nay, chưa đạt) | Hạn hiển thị **đỏ + ⚠**; ô "Quá hạn đánh giá" đếm tăng; cột Giai đoạn hiện "⚠ quá hạn" |
+| 2.2.1 | Vào **Nhận việc** | 4 ô thống kê: *Đang thử việc · Đang chạy quy trình · Chờ đánh giá · Quá hạn bước* |
+| 2.2.2 | Xem bảng | Cột: Nhân viên · Phòng ban · Ngày bắt đầu · Quy trình · Tiến độ (n/m bước + thanh %) · Bước hiện tại · Trạng thái |
+| 2.2.3 | NV mẫu B | Cột Quy trình = "Thử việc Nhân viên văn phòng"; Bước hiện tại = "Đánh giá tuần-2" kèm **hạn** |
+| 2.2.4 | NV mẫu C (đã gán Loại nhân sự Giáo viên) | Quy trình = "Thử việc Giáo viên"; Bước hiện tại = "Thử giảng" |
+| 2.2.5 | Bước quá hạn (hạn < hôm nay, đang mở) | Hạn hiển thị **đỏ + ⚠**; ô "Quá hạn bước" đếm tăng; cột Trạng thái thêm "⚠ quá hạn" |
 
-### 2.3 Đánh giá cổng — Nhóm B (NV mẫu B)
-
-| # | Thao tác | ✅ Mong đợi |
-|---|---|---|
-| 2.3.1 | Bấm dòng NV mẫu B | Drawer mở thẳng tab **Thử việc**, có thanh 6 mốc tiến trình |
-| 2.3.2 | Thẻ **Cổng tuần-2** → bấm nút đánh giá **Đạt** | Badge → "Đạt"; mốc "Cấp thiết bị" mở; **Cổng tháng-1** mở nút đánh giá |
-| 2.3.3 | Trước khi tuần-2 đạt, xem Cổng tháng-1 | Hiện dòng "Mở sau khi cổng tuần-2 Đạt" (khoá) |
-| 2.3.4 | Cổng **tháng-1** → chọn **Gia hạn** | **Cổng tháng-2** mới mở nút đánh giá |
-| 2.3.5 | Cổng **tháng-2** → **Đạt** | Mốc "Chính thức" xanh; hiện "Chính thức từ <ngày> · N tháng" |
-| 2.3.6 | (Thử nhánh khác) Bất kỳ cổng chọn **Không đạt** | Cột Giai đoạn → "Không đạt thử việc" (đỏ) |
-| 2.3.7 | Đóng drawer | Bảng Nhận việc cập nhật số liệu |
-
-> 📋 Khi đánh giá cổng có ô **Ghi chú** — dữ liệu mẫu: `"Đạt yêu cầu, tinh thần học hỏi tốt."` / hoặc `"Chưa đạt KPI onboarding tuần 2."`
-
-### 2.4 Đánh giá thử giảng — Nhóm A (NV mẫu C)
+### 2.3 Thao tác bước — NV mẫu B (quy trình văn phòng)
 
 | # | Thao tác | ✅ Mong đợi |
 |---|---|---|
-| 2.4.1 | Bấm dòng NV mẫu C → tab **Thử việc** | Thẻ "Đánh giá thử giảng (Nhóm A — giảng viên)": ngày, lớp, điểm phương pháp/chuyên môn |
-| 2.4.2 | Chấm **Đạt** *(mẫu: điểm PP 8.5, CM 9.0, ghi chú "Phát âm chuẩn, quản lớp tốt")* | Cột Giai đoạn → "Thử giảng đạt" (xanh) |
-| 2.4.3 | (NV khác) Chấm **Không đạt** | Giai đoạn → "Thử giảng không đạt" (đỏ) |
+| 2.3.1 | Bấm dòng NV mẫu B | Drawer mở thẳng tab **Thử việc**: header quy trình + thanh tiến độ + danh sách bước dọc |
+| 2.3.2 | Bước **Đánh giá tuần-2** → **Đạt** | Bước done ✓; bước "Cấp thiết bị làm việc" **tự hoàn thành** (automation cấp tài sản mặc định); bước "Đánh giá tháng-1" chuyển **Đang chờ** |
+| 2.3.3 | Bước chưa tới lượt | KHÔNG có nút thao tác (badge "Chưa tới lượt") |
+| 2.3.4 | ĐG tháng-1 → **Gia hạn** | Bước done "Gia hạn"; bước **Đánh giá tháng-2** (bước gia hạn) mở |
+| 2.3.5 | ĐG tháng-2 → **Đạt** | NV lên **Chính thức** (badge drawer đổi); các bước sau (nếu có) bị bỏ qua; hiện "Chính thức từ <ngày>" |
+| 2.3.6 | (NV khác) ĐG tuần-2 → **Gia hạn** | Bước **giữ nguyên Đang chờ** + nhãn "đã gia hạn ×1" (tái đánh giá tại chỗ — vì bước kế không phải bước gia hạn) |
+| 2.3.7 | (NV khác) bước bất kỳ → **Không đạt** (bắt buộc nhập nhận xét) | NV chuyển `exiting` + tự tạo đơn Nghỉ việc (source thử việc); các bước còn lại "Bỏ qua"; Trạng thái bảng → "Không đạt thử việc" |
+| 2.3.8 | HR Manager: nút ✎ cạnh hạn của bước đang mở | Sửa được hạn (date picker) |
+| 2.3.9 | HR Manager: nút **Đổi quy trình** trên header | Chọn template khác → bước chưa làm bị thay bằng chuỗi mới, bước đã xong giữ lịch sử |
+| 2.3.10 | Đóng drawer | Bảng Nhận việc cập nhật tiến độ |
+
+> 📋 Ô **Nhận xét** — mẫu: `"Đạt yêu cầu, tinh thần học hỏi tốt."` / `"Chưa đạt KPI onboarding tuần 2."`
+
+### 2.4 NV mẫu C (quy trình Giáo viên)
+
+| # | Thao tác | ✅ Mong đợi |
+|---|---|---|
+| 2.4.1 | Drawer NV mẫu C → tab Thử việc | 2 bước: "Thử giảng" (Đánh giá, đang chờ) → "Ký hợp đồng thỉnh giảng" (Việc cần làm) |
+| 2.4.2 | Thử giảng → **Đạt** *(nhận xét mẫu: "PP 8.5/10; CM 9/10 — phát âm chuẩn, quản lớp tốt")* | Bước done; "Ký hợp đồng thỉnh giảng" mở; NV **VẪN thử việc** (thử giảng đạt không tự lên chính thức) |
+| 2.4.3 | Hoàn thành "Ký hợp đồng thỉnh giảng" | Chuỗi xong; chuông 🔔 báo HR "Hoàn tất quy trình nhận việc — chờ quyết định" |
+| 2.4.4 | (NV khác) Thử giảng → **Không đạt** | Như 2.3.7 (offboarding) |
+
+### 2.5 Màn CẤU HÌNH NHẬN VIỆC (chỉ HR Manager/Admin)
+
+| # | Thao tác | ✅ Mong đợi |
+|---|---|---|
+| 2.5.1 | Menu **Cấu hình nhận việc** | Chỉ HR Manager/Admin thấy menu; thấy ≥2 card quy trình seed với danh sách bước |
+| 2.5.2 | **Thêm quy trình** → đặt tên, tick tiêu chí, thêm 2-3 bước (kéo ↑↓, chọn loại, hạn +N ngày, cờ) → Lưu | Card mới xuất hiện; NV thử việc tạo MỚI khớp tiêu chí sẽ nhận quy trình này |
+| 2.5.3 | Bước "Bước gia hạn" đặt ngay sau bước Việc cần làm → Lưu | Bị chặn với thông báo lỗi ("phải đứng ngay sau một bước Đánh giá") |
+| 2.5.4 | Sửa template đang có NV chạy giữa chừng | NV đó **không đổi** lộ trình (snapshot) — kiểm tra lại drawer NV |
+| 2.5.5 | **Lưu trữ** một quy trình | Card mờ đi "Đã lưu trữ"; không được gán mới nữa |
+| 2.5.6 | Đăng nhập `test_giaovu` / `test_truongphong` | KHÔNG thấy menu Cấu hình nhận việc; gọi thẳng API templates trả 403 |
 
 ---
 

@@ -2126,18 +2126,6 @@ class HocBaHRM(http.Controller):
                     and e.department_id.id
                     in self._managed_department_ids(user.employee_id))
 
-    def _can_eval_trial(self, e):
-        """Ai được chấm thử giảng (F-008): HR (mọi NV) hoặc Giáo vụ với giáo
-        viên trong phạm vi của họ (giáo vụ là người quản lý giáo viên)."""
-        user = request.env.user
-        if (user.has_group('base.group_system')
-                or user.has_group('hr.group_hr_user')
-                or user.has_group('hr.group_hr_manager')):
-            return True
-        if user.has_group('hocba_employees.group_hocba_giaovu'):
-            return self._emp_in_scope(e)  # phạm vi giáo vụ = giáo viên
-        return False
-
     def _labels(self):
         env = request.env
         Emp = env['hr.employee']
@@ -2279,46 +2267,8 @@ class HocBaHRM(http.Controller):
                 'bankAccountNo': e.x_bank_account_no or '',
             })
 
-        # --- Thử việc 2 cổng (F-004/005) — Nhóm B ---
-        # Giáo viên (loại nhân sự = teacher) luôn đi luồng thử giảng (Nhóm A),
-        # kể cả offline → loại khỏi Nhóm B để không hiện cổng thử việc nhầm.
-        is_teacher = e.x_employee_type_id.code == 'teacher'
-        data['probation'] = {
-            'isGroupB': (e.x_position_type in ('staff', 'manager')
-                         and e.x_work_form == 'offline'
-                         and not is_teacher),
-            'canEval': self._can_eval_emp(e),
-            'start': _d(e.x_probation_start),
-            'd2wDue': _d(e.x_eval_2w_due),
-            'd2wResult': e.x_eval_2w_result or 'draft',
-            'd2wDate': _d(e.x_eval_2w_date),
-            'd2wNote': e.x_eval_2w_note or '',
-            'equipDate': _d(e.x_equip_grant_date),
-            'd1mDue': _d(e.x_eval_1m_due),
-            'd1mResult': e.x_eval_1m_result or 'draft',
-            'd1mDate': _d(e.x_eval_1m_date),
-            'd1mNote': e.x_eval_1m_note or '',
-            'd2mDue': _d(e.x_eval_2m_due),
-            'd2mResult': e.x_eval_2m_result or 'draft',
-            'd2mDate': _d(e.x_eval_2m_date),
-            'd2mNote': e.x_eval_2m_note or '',
-            'officialDate': _d(e.x_official_date),
-            'officialMonths': round(e.x_official_months or 0, 1),
-        }
-
-        # --- Thử giảng (F-008) — Nhóm A ---
-        if (e.x_work_form == 'online'
-                or e.x_employment_status in ('parttime', 'ctv', 'advisor')
-                or is_teacher):
-            data['trial'] = {
-                'date': _d(e.x_trial_lesson_date),
-                'class': e.x_trial_lesson_class or '',
-                'scoreMethod': e.x_trial_score_method or 0,
-                'scoreContent': e.x_trial_score_content or 0,
-                'result': e.x_trial_lesson_result or 'draft',
-                'note': e.x_trial_lesson_note or '',
-                'canEval': self._can_eval_trial(e),
-            }
+        # --- Quy trình nhận việc bước động (thay 2 cổng + thử giảng cứng) ---
+        data['onboarding'] = self._onb_emp_item(e)
 
         # --- Tài sản (F-006) ---
         data['assets'] = [{
@@ -2388,97 +2338,293 @@ class HocBaHRM(http.Controller):
                                   _cap_see_salary(request.env),
                                   _cap_manage_account(request.env)))
 
-    @http.route('/hocba-hrm/api/employee/<int:emp_id>/gate', auth='user',
-                type='http', methods=['POST'], csrf=False)
-    def api_employee_gate(self, emp_id, **kw):
-        """Đánh giá cổng thử việc (F-004/005) từ SPA: ghi kết quả tuần-2/tháng-2.
-        Kiểm phạm vi TRONG CODE (HR Manager / quản lý trực tiếp / trưởng phòng
-        ban) RỒI mới sudo ghi — nhờ vậy Quản lý không có nhóm HR vẫn duyệt được
-        nhưng CHỈ nhân viên thuộc phòng ban mình. Chạy automation AUT-001/002."""
-        if not SPA_ENABLED:
-            return request.make_json_response({'error': 'spa_disabled'}, status=410)
-        e = request.env['hr.employee'].sudo().browse(emp_id)
-        if not e.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-        # Gác cổng tại controller: chỉ người có thẩm quyền với NV này mới được duyệt
-        if not self._can_eval_emp(e):
-            return request.make_json_response(
-                {'error': 'forbidden',
-                 'message': 'Bạn không có quyền duyệt nhân viên này.'}, status=403)
-
-        payload = request.get_json_data()
-        gate = payload.get('gate')
-        result = payload.get('result')
-        note = (payload.get('note') or '').strip()
-        if gate not in ('2w', '1m', '2m') or result not in ('pass', 'fail', 'extend'):
-            return request.make_json_response({'error': 'bad_request'}, status=400)
-
-        today = fields.Date.context_today(request.env.user)
-        vals = {
-            'x_eval_%s_result' % gate: result,
-            'x_eval_%s_date' % gate: today,
-            'x_eval_%s_evaluator_id' % gate: request.env.user.id,
+    # ------------------------------------------------------------------
+    # Quy trình nhận việc BƯỚC ĐỘNG (hb.onboarding.step) — thay route
+    # /gate + /trial cũ. Kiểm phạm vi tại controller rồi with_user gọi
+    # action model (model tự check + sudo ghi bên trong).
+    # Spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md
+    # ------------------------------------------------------------------
+    def _onb_emp_item(self, e):
+        """Payload 1 NV cho màn Onboarding + tab Thử việc (bước động)."""
+        can_eval = self._can_eval_emp(e)
+        user = request.env.user
+        is_gv_teacher = (
+            user.has_group('hocba_employees.group_hocba_giaovu')
+            and e.x_employee_type_id.code == 'teacher')
+        steps = []
+        done = total = 0
+        current = None
+        for s in e.x_onboarding_step_ids.sorted(
+                lambda x: (x.sequence, x.id)):
+            total += 1
+            if s.state in ('done', 'skipped'):
+                done += 1
+            can_act = (s.state == 'open') and (
+                can_eval or (s.step_type == 'task' and is_gv_teacher))
+            item = {
+                'id': s.id, 'name': s.name, 'stepType': s.step_type,
+                'state': s.state, 'result': s.result or '',
+                'extendCount': s.extend_count,
+                'dueDate': _d(s.due_date), 'doneDate': _d(s.done_date),
+                'doneBy': s.done_by_id.name or '',
+                'note': s.note or '', 'resultNote': s.result_note or '',
+                'passCompletes': s.pass_completes,
+                'isExtension': s.is_extension,
+                'canAct': can_act,
+            }
+            if s.state == 'open' and current is None:
+                current = item
+            steps.append(item)
+        return {
+            'id': e.id, 'code': e.x_employee_code or '—', 'name': e.name,
+            'depName': e.department_id.name or 'Chưa gán',
+            'jobTitle': e.job_id.name or '—',
+            'hasImg': bool(e.image_1920),
+            'start': _d(e.x_probation_start),
+            'officialDate': _d(e.x_official_date),
+            'templateId': e.x_onboarding_template_id.id or 0,
+            'templateName': e.x_onboarding_template_id.name or '',
+            'steps': steps,
+            'progress': {'done': done, 'total': total},
+            'current': current,
+            'canEval': can_eval,
         }
-        if note:
-            vals['x_eval_%s_note' % gate] = note
-        # Đã kiểm phạm vi ở trên → sudo để Quản lý không-HR vẫn ghi được; chỉ
-        # ghi đúng các field cổng (vals), không mở rộng field khác.
-        try:
-            e.sudo().write(vals)
-        except (AccessError, ValidationError, UserError) as ex:
-            request.env.cr.rollback()
-            # Từ chối nghiệp vụ (sai trình tự / thiếu ngày thử việc / BR-010…):
-            # trả 422 + lý do thật để FE hiển thị; 403 chỉ dành cho thiếu quyền.
-            return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=422)
 
-        # Trả hồ sơ đã cập nhật (đọc sudo để dựng đầy đủ theo quyền hiện tại)
-        is_hr, is_mgr = self._hr_flags()
+    def _onb_get_step(self, step_id):
+        step = request.env['hb.onboarding.step'].sudo().browse(step_id)
+        if not step.exists():
+            return None, request.make_json_response(
+                {'error': 'not_found'}, status=404)
+        return step, None
+
+    def _onb_can_act(self, step):
+        e = step.employee_id
+        if self._can_eval_emp(e):
+            return True
+        user = request.env.user
+        return (step.step_type == 'task'
+                and user.has_group('hocba_employees.group_hocba_giaovu')
+                and e.x_employee_type_id.code == 'teacher')
+
+    def _onb_step_response(self, step):
         return request.make_json_response(
-            self._employee_detail(e.sudo(), self._labels(),
-                                  _cap_edit_emp(request.env), is_mgr,
-                                  _cap_see_salary(request.env),
-                                  _cap_manage_account(request.env)))
+            self._onb_emp_item(step.employee_id.sudo()))
 
-    @http.route('/hocba-hrm/api/employee/<int:emp_id>/trial', auth='user',
-                type='http', methods=['POST'], csrf=False)
-    def api_employee_trial(self, emp_id, **kw):
-        """Đánh giá thử giảng (F-008) cho giảng viên Nhóm A từ SPA: ghi ngày,
-        lớp, 2 điểm, kết quả, nhận xét. Quyền: HR (mọi NV) hoặc Giáo vụ (giáo
-        viên trong phạm vi). Kiểm phạm vi RỒI sudo ghi; model vẫn áp ràng buộc
-        (điểm 1–10, ngày ≤ hôm nay, fail cần nhận xét) qua @api.constrains."""
-        e = request.env['hr.employee'].sudo().browse(emp_id)
-        if not e.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-        if not self._can_eval_trial(e):
+    @http.route('/hocba-hrm/api/onboarding/steps/<int:step_id>/complete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_step_complete(self, step_id, **kw):
+        step, err = self._onb_get_step(step_id)
+        if err:
+            return err
+        if not self._onb_can_act(step):
             return request.make_json_response(
                 {'error': 'forbidden',
-                 'message': 'Bạn không có quyền chấm thử giảng nhân viên này.'},
-                status=403)
-
+                 'message': 'Bạn không có quyền xử lý bước này.'}, status=403)
         payload = request.get_json_data()
-        result = payload.get('result')
-        if result not in ('pass', 'fail'):
-            return request.make_json_response({'error': 'bad_request'}, status=400)
-
-        def num(v):
-            return float(v) if v not in ('', None) else 0.0
-        vals = {
-            'x_trial_lesson_date': payload.get('date')
-            or fields.Date.context_today(request.env.user),
-            'x_trial_lesson_class': (payload.get('cls') or '').strip(),
-            'x_trial_score_method': num(payload.get('scoreMethod')),
-            'x_trial_score_content': num(payload.get('scoreContent')),
-            'x_trial_lesson_note': (payload.get('note') or '').strip(),
-            'x_trial_lesson_result': result,
-        }
         try:
-            e.sudo().write(vals)
+            step.with_user(request.env.user).action_complete(
+                note=(payload.get('note') or '').strip() or None)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=422)
-        return self._detail_response(e)
+        return self._onb_step_response(step)
+
+    @http.route('/hocba-hrm/api/onboarding/steps/<int:step_id>/evaluate',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_step_evaluate(self, step_id, **kw):
+        step, err = self._onb_get_step(step_id)
+        if err:
+            return err
+        if not self._can_eval_emp(step.employee_id):
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Bạn không có quyền đánh giá nhân viên này.'},
+                status=403)
+        payload = request.get_json_data()
+        result = payload.get('result')
+        if result not in ('pass', 'extend', 'fail'):
+            return request.make_json_response({'error': 'bad_request'},
+                                              status=400)
+        try:
+            step.with_user(request.env.user).action_evaluate(
+                result, note=(payload.get('note') or '').strip() or None,
+                eval_date=payload.get('date') or None)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=422)
+        return self._onb_step_response(step)
+
+    @http.route('/hocba-hrm/api/onboarding/steps/<int:step_id>/due',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_step_due(self, step_id, **kw):
+        # Sửa hạn tay từng ca: chỉ HR Manager
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        step, err = self._onb_get_step(step_id)
+        if err:
+            return err
+        payload = request.get_json_data()
+        step.write({'due_date': payload.get('dueDate') or False})
+        return self._onb_step_response(step)
+
+    @http.route('/hocba-hrm/api/employees/<int:emp_id>/onboarding/assign',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_assign(self, emp_id, **kw):
+        # Gán/đổi quy trình tay: chỉ HR Manager
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'},
+                                              status=404)
+        payload = request.get_json_data()
+        tpl = request.env['hb.onboarding.template'].sudo().browse(
+            int(payload.get('templateId') or 0))
+        if not tpl.exists():
+            return request.make_json_response({'error': 'bad_request'},
+                                              status=400)
+        e._hocba_assign_onboarding(template=tpl)
+        return request.make_json_response(self._onb_emp_item(e))
+
+    # ---- Cấu hình template (chỉ HR Manager) ---------------------------
+    def _onb_tpl_json(self, tpl):
+        return {
+            'id': tpl.id, 'name': tpl.name, 'sequence': tpl.sequence,
+            'active': tpl.active,
+            'applyPositionTypes': tpl.apply_position_types or '',
+            'applyWorkForm': tpl.apply_work_form,
+            'applyEmployeeTypeIds': tpl.apply_employee_type_ids.ids,
+            'steps': [{
+                'id': s.id, 'sequence': s.sequence, 'name': s.name,
+                'stepType': s.step_type, 'dueDays': s.due_days,
+                'passCompletes': s.pass_completes,
+                'isExtension': s.is_extension,
+                'autoAction': s.auto_action, 'note': s.note or '',
+            } for s in tpl.step_ids.sorted(lambda x: (x.sequence, x.id))],
+        }
+
+    def _onb_step_vals(self, payload_steps):
+        # FE gửi mảng steps theo thứ tự → replace-all (snapshot nên NV đang
+        # chạy không ảnh hưởng)
+        return [(0, 0, {
+            'sequence': i + 1,
+            'name': (s.get('name') or '').strip(),
+            'step_type': s.get('stepType') or 'task',
+            'due_days': int(s.get('dueDays') or 0),
+            'pass_completes': bool(s.get('passCompletes')),
+            'is_extension': bool(s.get('isExtension')),
+            'auto_action': s.get('autoAction') or 'none',
+            'note': (s.get('note') or '').strip() or False,
+        }) for i, s in enumerate(payload_steps)]
+
+    @http.route('/hocba-hrm/api/onboarding/templates', auth='user',
+                type='http', methods=['GET', 'POST'], csrf=False)
+    def api_onb_templates(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'},
+                                              status=410)
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        Tpl = request.env['hb.onboarding.template'].sudo()
+        if request.httprequest.method == 'GET':
+            emp_types = request.env['hocba.employee.type'].sudo().search([])
+            return request.make_json_response({
+                'templates': [
+                    self._onb_tpl_json(t) for t in
+                    Tpl.with_context(active_test=False).search([])],
+                'employeeTypes': [{'id': t.id, 'name': t.name}
+                                  for t in emp_types],
+            })
+        payload = request.get_json_data()
+        vals = {
+            'name': (payload.get('name') or '').strip(),
+            'apply_position_types':
+                (payload.get('applyPositionTypes') or '').strip() or False,
+            'apply_work_form': payload.get('applyWorkForm') or 'any',
+            'apply_employee_type_ids':
+                [(6, 0, payload.get('applyEmployeeTypeIds') or [])],
+            'step_ids': self._onb_step_vals(payload.get('steps') or []),
+        }
+        # Không truyền sequence → model tự xếp CUỐI danh sách (max+10)
+        if payload.get('sequence') is not None:
+            vals['sequence'] = int(payload['sequence'])
+        try:
+            tpl = Tpl.create(vals)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._onb_tpl_json(tpl))
+
+    @http.route('/hocba-hrm/api/onboarding/templates/<int:tpl_id>',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_template_update(self, tpl_id, **kw):
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        tpl = request.env['hb.onboarding.template'].sudo().with_context(
+            active_test=False).browse(tpl_id)
+        if not tpl.exists():
+            return request.make_json_response({'error': 'not_found'},
+                                              status=404)
+        payload = request.get_json_data()
+        vals = {}
+        for key, field in (('name', 'name'), ('sequence', 'sequence'),
+                           ('applyWorkForm', 'apply_work_form'),
+                           ('active', 'active')):
+            if key in payload:
+                vals[field] = payload[key]
+        if 'applyPositionTypes' in payload:
+            vals['apply_position_types'] = \
+                (payload['applyPositionTypes'] or '').strip() or False
+        if 'applyEmployeeTypeIds' in payload:
+            vals['apply_employee_type_ids'] = \
+                [(6, 0, payload['applyEmployeeTypeIds'] or [])]
+        if 'steps' in payload:
+            vals['step_ids'] = [(5, 0, 0)] + self._onb_step_vals(
+                payload['steps'] or [])
+        try:
+            tpl.write(vals)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._onb_tpl_json(tpl))
+
+    @http.route('/hocba-hrm/api/onboarding/templates/reorder',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_reorder(self, **kw):
+        """Kéo-thả thứ tự quy trình: nhận danh sách id theo thứ tự mới
+        (trên → dưới), ghi lại sequence. Thứ tự = quyền ưu tiên khi trùng."""
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        ids = request.get_json_data().get('ids') or []
+        try:
+            request.env['hb.onboarding.template'].sudo().action_reorder(
+                [int(i) for i in ids])
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True})
+
+    @http.route('/hocba-hrm/api/onboarding/templates/assign-pending',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_assign_pending(self, **kw):
+        """Gán quy trình cho mọi NV thử việc chưa có bước (tạo template
+        xong bấm 1 nút thay vì vào từng hồ sơ gán tay)."""
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        res = request.env['hb.onboarding.template'].sudo(
+            ).action_assign_pending()
+        return request.make_json_response(res)
 
     # ------------------------------------------------------------------
     # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
@@ -3560,9 +3706,9 @@ class HocBaHRM(http.Controller):
     @http.route('/hocba-hrm/api/employees/onboarding', auth='user',
                 type='http', methods=['GET'])
     def api_onboarding(self, **kw):
-        """Bảng theo dõi nhập việc: nhân viên đang thử việc + tình trạng 2 cổng
-        (F-004/005) và thử giảng (F-008). Dữ liệu cổng không nhạy cảm → trả cho
-        mọi user đăng nhập; FE tự suy ra phase/quá hạn từ ngày trả về."""
+        """Bảng theo dõi nhập việc: NV đang thử việc + các BƯỚC ĐỘNG của
+        quy trình nhận việc (hb.onboarding.step). FE suy tiến độ/quá hạn
+        từ steps + current trả về."""
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         is_hr, is_mgr = self._hr_flags()
@@ -3571,38 +3717,9 @@ class HocBaHRM(http.Controller):
         emps = request.env['hr.employee'].sudo().search(
             [('x_employment_status', '=', 'probation')] + self._emp_scope_domain(),
             order='x_probation_start desc, id')
-        items = []
-        for e in emps:
-            items.append({
-                'id': e.id,
-                'code': e.x_employee_code or '—',
-                'name': e.name,
-                'depName': e.department_id.name or 'Chưa gán',
-                'jobTitle': e.job_id.name or '—',
-                'hasImg': bool(e.image_1920),
-                'start': _d(e.x_probation_start),
-                'isGroupB': (e.x_position_type in ('staff', 'manager')
-                             and e.x_work_form == 'offline'),
-                # Cổng tuần-2 (cấp thiết bị)
-                'g1Due': _d(e.x_eval_2w_due),
-                'g1Result': e.x_eval_2w_result or 'draft',
-                'g1Date': _d(e.x_eval_2w_date),
-                'equipDate': _d(e.x_equip_grant_date),
-                # Cổng tháng-1 (có thể lên chính thức sớm)
-                'g1mDue': _d(e.x_eval_1m_due),
-                'g1mResult': e.x_eval_1m_result or 'draft',
-                'g1mDate': _d(e.x_eval_1m_date),
-                # Cổng tháng-2 (lên chính thức)
-                'g2Due': _d(e.x_eval_2m_due),
-                'officialDate': _d(e.x_official_date),
-                'g2Result': e.x_eval_2m_result or 'draft',
-                'g2Date': _d(e.x_eval_2m_date),
-                # Thử giảng (Nhóm A)
-                'trialDate': _d(e.x_trial_lesson_date),
-                'trialResult': e.x_trial_lesson_result or 'draft',
-            })
         return request.make_json_response({
-            'isHr': is_hr, 'isHrManager': is_mgr, 'items': items})
+            'isHr': is_hr, 'isHrManager': is_mgr,
+            'items': [self._onb_emp_item(e) for e in emps]})
 
     # ------------------------------------------------------------------
     # JSON API Chấm công (Attendance) — owner FE: Hoàng Anh.

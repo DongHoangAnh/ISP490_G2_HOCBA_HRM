@@ -7,7 +7,7 @@ from odoo.tests import tagged
 
 @tagged('post_install', '-at_install')
 class TestProbationNotify(TransactionCase):
-    """Cron nhắc đánh giá + kết quả cổng thử việc phát chuông onboarding."""
+    """Cron nhắc hạn + kết quả bước nhận việc động phát chuông onboarding."""
 
     def setUp(self):
         super().setUp()
@@ -19,22 +19,34 @@ class TestProbationNotify(TransactionCase):
             'user_id': self.mgr_user.id})
         self.emp_user = self.env['res.users'].create({
             'name': 'PEmp', 'login': 'pn_emp', 'group_ids': gu})
-        # BR-010: chính thức cần CCCD 12 số + MST + BHXH — khai sẵn để cổng
-        # pass lên 'official' không vướng ValidationError.
+        # BR-010: chính thức cần CCCD 12 số + MST + BHXH — khai sẵn để bước
+        # pass_completes lên 'official' không vướng ValidationError.
+        # staff + offline → khớp seed 'Thử việc Nhân viên văn phòng'
+        # (ĐG tuần-2 due +14 → start hôm nay-13 → hạn ngày mai, trong cửa sổ nhắc).
         self.emp = self.env['hr.employee'].create({
             'name': 'Probation Emp', 'identification_id': '017777770002',
             'parent_id': self.mgr_emp.id, 'user_id': self.emp_user.id,
+            'x_position_type': 'staff', 'x_work_form': 'offline',
             'x_employment_status': 'probation',
             'x_pit_code': '8017777702', 'x_social_insurance_no': '0117777702',
             'x_probation_start': fields.Date.today() - timedelta(days=13)})
+
+    def _steps(self):
+        return self.emp.x_onboarding_step_ids.sorted(
+            lambda s: (s.sequence, s.id))
 
     def _notifs(self, kind):
         return self.env['hb.notification'].sudo().search([
             ('category', '=', 'onboarding'), ('kind', '=', kind),
             ('target_ref', '=', self.emp.id)])
 
+    def test_seed_template_assigned(self):
+        self.assertEqual(
+            self.emp.x_onboarding_template_id,
+            self.env.ref('hocba_employees.onb_template_office'))
+        self.assertEqual(len(self._steps()), 4)
+
     def test_cron_reminder_notifies_manager_with_dedup(self):
-        # due 2w = start + 14 ngày → nằm trong cửa sổ nhắc (<= today+2)
         Emp = self.env['hr.employee']
         Emp._cron_probation_eval_reminders()
         first = self._notifs('probation_eval').filtered(
@@ -48,9 +60,9 @@ class TestProbationNotify(TransactionCase):
             lambda n: n.recipient_id == self.mgr_user)
         self.assertEqual(len(again), 1)
 
-    def test_gate_fail_notifies(self):
-        # Cổng tuần-2 KHÔNG ĐẠT → offboarding + chuông danger cho QL + NV
-        self.emp.sudo().write({'x_eval_2w_result': 'fail'})
+    def test_step_fail_notifies(self):
+        # Bước tuần-2 KHÔNG ĐẠT → offboarding + chuông danger cho QL + NV
+        self._steps()[0].action_evaluate('fail', note='Không đạt')
         self.assertEqual(self.emp.x_employment_status, 'exiting')
         notifs = self._notifs('probation_fail')
         self.assertTrue(notifs)
@@ -58,16 +70,15 @@ class TestProbationNotify(TransactionCase):
         recipients = notifs.mapped('recipient_id')
         self.assertIn(self.mgr_user, recipients)
         self.assertIn(self.emp_user, recipients)
-        # Re-fire cổng khác khi đã exiting → offboarding idempotent, không
-        # bắn thêm chuông fail
+        # Re-fire khi đã exiting → offboarding idempotent, không thêm chuông
         before = len(notifs)
         self.emp._hocba_start_offboarding('tháng-1')
         self.assertEqual(len(self._notifs('probation_fail')), before)
 
-    def test_gate_pass_notifies(self):
-        # Tuần-2 Đạt rồi tháng-1 Đạt → Chính thức sớm + chuông success
-        self.emp.sudo().write({'x_eval_2w_result': 'pass'})
-        self.emp.sudo().write({'x_eval_1m_result': 'pass'})
+    def test_step_pass_notifies(self):
+        # Tuần-2 Đạt (thiết bị auto) rồi tháng-1 Đạt → Chính thức + success
+        self._steps()[0].action_evaluate('pass')
+        self._steps()[2].action_evaluate('pass')
         self.assertEqual(self.emp.x_employment_status, 'official')
         notifs = self._notifs('probation_pass')
         self.assertTrue(notifs)
@@ -81,10 +92,11 @@ class TestProbationNotify(TransactionCase):
         self.assertEqual(emp_n.target_view, 'profile')
         self.assertEqual(mgr_n.target_view, 'employees')
 
-    def test_gate_extend_notifies(self):
-        # Tuần-2 Đạt rồi tháng-1 Gia hạn → chuông warning cho QL + NV
-        self.emp.sudo().write({'x_eval_2w_result': 'pass'})
-        self.emp.sudo().write({'x_eval_1m_result': 'extend'})
+    def test_step_extend_notifies(self):
+        # Tuần-2 Đạt rồi tháng-1 Gia hạn (→ mở tháng-2) → warning QL + NV
+        self._steps()[0].action_evaluate('pass')
+        self._steps()[2].action_evaluate('extend')
+        self.assertEqual(self._steps()[3].state, 'open')
         notifs = self._notifs('probation_extend')
         self.assertTrue(notifs)
         self.assertTrue(all(n.level == 'warning' for n in notifs))

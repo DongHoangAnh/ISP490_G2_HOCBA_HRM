@@ -146,6 +146,12 @@ class HrEmployee(models.Model):
 
     # --- F-004: Dòng thời gian thử việc & 2 cổng đánh giá (Nhóm B) ---
     x_probation_start = fields.Date(string='Ngày bắt đầu thử việc', tracking=True)
+    # Quy trình nhận việc bước động (thay dần các field cổng cứng bên dưới —
+    # spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md)
+    x_onboarding_template_id = fields.Many2one(
+        'hb.onboarding.template', string='Quy trình nhận việc', tracking=True)
+    x_onboarding_step_ids = fields.One2many(
+        'hb.onboarding.step', 'employee_id', string='Các bước nhận việc')
     x_eval_2w_due = fields.Date(
         string='Hạn đánh giá tuần-2',
         compute='_compute_eval_dues', store=True, readonly=False,
@@ -336,37 +342,36 @@ class HrEmployee(models.Model):
     TIMELINE_COLORS = {'done': '#28a745', 'fail': '#C8102E',
                        'extend': '#E8A33D', 'pending': '#ced4da'}
 
-    @api.depends('x_probation_start', 'x_eval_2w_result', 'x_eval_2w_date',
-                 'x_eval_2w_due', 'x_equip_grant_date', 'x_eval_1m_result',
-                 'x_eval_1m_date', 'x_eval_1m_due', 'x_eval_2m_result',
-                 'x_eval_2m_date', 'x_eval_2m_due', 'x_official_date')
+    @api.depends('x_probation_start', 'x_official_date',
+                 'x_onboarding_step_ids.state', 'x_onboarding_step_ids.result',
+                 'x_onboarding_step_ids.done_date', 'x_onboarding_step_ids.due_date')
     def _compute_probation_timeline_html(self):
-        # F-001: mini-timeline theo wireframe (server-rendered, không JS)
+        # F-001: mini-timeline (server-rendered, không JS) — render từ các
+        # bước động hb.onboarding.step; bước skipped ẩn khỏi timeline.
         def fmt(d):
             return d.strftime('%d/%m/%Y') if d else ''
 
         for emp in self:
-            def gate_state(result):
-                return {'pass': 'done', 'fail': 'fail',
-                        'extend': 'extend'}.get(result, 'pending')
-
-            steps = [
-                (_('Thử việc'), 'done' if emp.x_probation_start else 'pending',
-                 fmt(emp.x_probation_start)),
-                (_('ĐG tuần-2'), gate_state(emp.x_eval_2w_result),
-                 fmt(emp.x_eval_2w_date) or (
-                     emp.x_eval_2w_due and _('hạn %s') % fmt(emp.x_eval_2w_due) or '')),
-                (_('Cấp thiết bị'), 'done' if emp.x_equip_grant_date else 'pending',
-                 fmt(emp.x_equip_grant_date)),
-                (_('ĐG tháng-1'), gate_state(emp.x_eval_1m_result),
-                 fmt(emp.x_eval_1m_date) or (
-                     emp.x_eval_1m_due and _('hạn %s') % fmt(emp.x_eval_1m_due) or '')),
-                (_('ĐG tháng-2'), gate_state(emp.x_eval_2m_result),
-                 fmt(emp.x_eval_2m_date) or (
-                     emp.x_eval_2m_due and _('hạn %s') % fmt(emp.x_eval_2m_due) or '')),
-                (_('Chính thức'), 'done' if emp.x_official_date else 'pending',
-                 fmt(emp.x_official_date)),
-            ]
+            marks = {'pass': 'done', 'fail': 'fail', 'extend': 'extend'}
+            steps = [(_('Thử việc'),
+                      'done' if emp.x_probation_start else 'pending',
+                      fmt(emp.x_probation_start))]
+            for s in emp.x_onboarding_step_ids.sorted(
+                    lambda x: (x.sequence, x.id)):
+                if s.state == 'skipped':
+                    continue
+                if s.state == 'done':
+                    st = marks.get(s.result, 'done')
+                elif s.extend_count:
+                    st = 'extend'    # đang open nhưng đã gia hạn tại chỗ
+                else:
+                    st = 'pending'
+                sub = fmt(s.done_date) or (
+                    s.due_date and _('hạn %s') % fmt(s.due_date) or '')
+                steps.append((s.name, st, sub))
+            steps.append((_('Chính thức'),
+                          'done' if emp.x_official_date else 'pending',
+                          fmt(emp.x_official_date)))
             parts = []
             for i, (label, state, sub) in enumerate(steps):
                 if i:
@@ -474,6 +479,8 @@ class HrEmployee(models.Model):
             today = fields.Date.context_today(self)
             for emp in employees:
                 emp._hocba_log_promotion('join', today, _('Nhận việc'))
+        # NV thử việc có ngày bắt đầu → gán quy trình nhận việc bước động
+        employees._hocba_maybe_assign_onboarding()
         return employees
 
     # ------------------------------------------------------------------
@@ -503,14 +510,10 @@ class HrEmployee(models.Model):
         return True
 
     # ------------------------------------------------------------------
-    # F-004: Dòng thời gian thử việc — compute & constraints
+    # F-004 (legacy): field cổng cứng x_eval_* chỉ còn là cột lịch sử —
+    # constraint/automation đã chuyển sang hb.onboarding.step (bước động).
+    # Compute due giữ lại vô hại cho dữ liệu cũ.
     # ------------------------------------------------------------------
-    GATE_RESULT_FIELDS = ('x_eval_2w_result', 'x_eval_1m_result', 'x_eval_2m_result')
-    GATE_EDIT_FIELDS = GATE_RESULT_FIELDS + (
-        'x_eval_2w_date', 'x_eval_2w_note', 'x_eval_2w_evaluator_id',
-        'x_eval_1m_date', 'x_eval_1m_note', 'x_eval_1m_evaluator_id',
-        'x_eval_2m_date', 'x_eval_2m_note', 'x_eval_2m_evaluator_id')
-
     @api.depends('x_probation_start')
     def _compute_eval_dues(self):
         for emp in self:
@@ -522,50 +525,6 @@ class HrEmployee(models.Model):
                 emp.x_eval_2w_due = False
                 emp.x_eval_1m_due = False
                 emp.x_eval_2m_due = False
-
-    @api.constrains('x_probation_start', 'x_eval_2w_due', 'x_eval_1m_due', 'x_eval_2m_due')
-    def _check_eval_due_ranges(self):
-        for emp in self:
-            start = emp.x_probation_start
-            if not start:
-                continue
-            if emp.x_eval_2w_due and not (
-                    start + timedelta(days=7) <= emp.x_eval_2w_due <= start + timedelta(days=21)):
-                raise ValidationError(_(
-                    'Hạn đánh giá tuần-2 phải trong khoảng 7–21 ngày kể từ ngày thử việc.'))
-            if emp.x_eval_1m_due and not (
-                    start + timedelta(days=21) <= emp.x_eval_1m_due <= start + timedelta(days=45)):
-                raise ValidationError(_(
-                    'Hạn đánh giá tháng-1 phải trong khoảng 21–45 ngày kể từ ngày thử việc.'))
-            if emp.x_eval_2m_due and not (
-                    start + timedelta(days=30) <= emp.x_eval_2m_due <= start + timedelta(days=120)):
-                raise ValidationError(_(
-                    'Hạn đánh giá tháng-2 phải trong khoảng 30–120 ngày kể từ ngày thử việc.'))
-
-    @api.constrains('x_eval_2w_result', 'x_eval_1m_result', 'x_eval_2m_result',
-                    'x_probation_start', 'x_eval_2w_date', 'x_eval_1m_date',
-                    'x_eval_2m_date')
-    def _check_gate_rules(self):
-        today = fields.Date.context_today(self)
-        for emp in self:
-            has_result = (emp.x_eval_2w_result != 'draft'
-                          or emp.x_eval_1m_result != 'draft'
-                          or emp.x_eval_2m_result != 'draft')
-            if has_result and not emp.x_probation_start:
-                raise ValidationError(_(
-                    'Cần nhập Ngày bắt đầu thử việc trước khi ghi kết quả đánh giá.'))
-            # Cổng tháng-1 chỉ mở sau khi tuần-2 đã Đạt
-            if emp.x_eval_1m_result != 'draft' and emp.x_eval_2w_result != 'pass':
-                raise ValidationError(_(
-                    'Chỉ đánh giá cổng tháng-1 sau khi cổng tuần-2 đã Đạt.'))
-            # Cổng tháng-2 chỉ mở khi tháng-1 = Gia hạn (chưa chốt ở mốc 1 tháng)
-            if emp.x_eval_2m_result != 'draft' and emp.x_eval_1m_result != 'extend':
-                raise ValidationError(_(
-                    'Chỉ đánh giá cổng tháng-2 khi cổng tháng-1 đã "Gia hạn".'))
-            for d in (emp.x_eval_2w_date, emp.x_eval_1m_date, emp.x_eval_2m_date):
-                if d and emp.x_probation_start and (d < emp.x_probation_start or d > today):
-                    raise ValidationError(_(
-                        'Ngày đánh giá phải từ ngày bắt đầu thử việc đến hôm nay.'))
 
     @api.constrains('x_trial_score_method', 'x_trial_score_content',
                     'x_trial_lesson_date', 'x_trial_lesson_result',
@@ -596,69 +555,21 @@ class HrEmployee(models.Model):
                         '%(codes)s') % {
                             'emp': emp.name, 'n': len(pending),
                             'codes': ', '.join(pending.mapped('asset_code'))})
-        # Quyền điền kết quả: HR Manager, quản lý trực tiếp, hoặc trưởng phòng
-        # ban của nhân viên (phân theo phòng ban — họp #2).
-        if any(f in vals for f in self.GATE_EDIT_FIELDS) and not self.env.su \
-                and not self.env.user.has_group('hr.group_hr_manager'):
-            user = self.env.user
-            for emp in self:
-                if emp.parent_id.user_id == user:
-                    continue
-                if emp._hocba_user_manages_dept(user):
-                    continue
-                raise AccessError(_(
-                    'Chỉ HR Manager, quản lý trực tiếp hoặc trưởng phòng ban '
-                    'được điền kết quả thử việc.'))
         # F-001: không sửa tay probation→official ngoài automation (trừ HR Manager)
         if vals.get('x_employment_status') == 'official' \
                 and not self.env.context.get('hocba_gate_automation') \
                 and not self.env.su \
                 and not self.env.user.has_group('hr.group_hr_manager'):
             raise AccessError(_(
-                'Chuyển Chính thức được thực hiện qua cổng tháng-2 (AUT-002) '
-                'hoặc bởi HR Manager.'))
+                'Chuyển Chính thức được thực hiện qua bước đánh giá đạt '
+                'chuẩn (quy trình nhận việc) hoặc bởi HR Manager.'))
 
-        track_gates = any(f in vals for f in self.GATE_RESULT_FIELDS)
-        pre = {e.id: (e.x_eval_2w_result, e.x_eval_1m_result, e.x_eval_2m_result)
-               for e in self} if track_gates else {}
-        track_trial = 'x_trial_lesson_result' in vals
-        pre_trial = {e.id: e.x_trial_lesson_result for e in self} if track_trial else {}
         res = super().write(vals)
-        # F-008: kết quả thử giảng → activity cho HR
-        if track_trial:
-            today = fields.Date.context_today(self)
-            for emp in self:
-                if emp.x_trial_lesson_result == pre_trial[emp.id] \
-                        or emp.x_trial_lesson_result == 'draft':
-                    continue
-                if emp.x_trial_lesson_result == 'pass':
-                    emp._hocba_gate_activity(
-                        _('Ký HĐ thỉnh giảng cho %s') % emp.name,
-                        today + timedelta(days=3))
-                    emp.message_post(body=_(
-                        '✅ Thử giảng ĐẠT (PP %(m).1f / CM %(c).1f) — nhắc HR ký HĐ.') % {
-                            'm': emp.x_trial_score_method, 'c': emp.x_trial_score_content})
-                else:
-                    emp._hocba_gate_activity(
-                        _('Thông báo kết quả thử giảng cho %s') % emp.name,
-                        today + timedelta(days=1))
-                    emp.message_post(body=_('❌ Thử giảng KHÔNG ĐẠT — nhắc HR thông báo.'))
-        if track_gates:
-            for emp in self:
-                old_2w, old_1m, old_2m = pre[emp.id]
-                if emp.sudo().x_skip_auto_trigger:
-                    if (emp.x_eval_2w_result != old_2w
-                            or emp.x_eval_1m_result != old_1m
-                            or emp.x_eval_2m_result != old_2m):
-                        emp.message_post(body=_(
-                            'Auto trigger bị bỏ qua bởi %s.') % self.env.user.name)
-                    continue
-                if emp.x_eval_2w_result != old_2w and emp.x_eval_2w_result != 'draft':
-                    emp._hocba_aut_001()
-                if emp.x_eval_1m_result != old_1m and emp.x_eval_1m_result != 'draft':
-                    emp._hocba_aut_001m()
-                if emp.x_eval_2m_result != old_2m and emp.x_eval_2m_result != 'draft':
-                    emp._hocba_aut_002()
+        # NV chuyển sang thử việc / có ngày bắt đầu → gán quy trình bước động
+        if not self.env.context.get('hocba_onb_assigning') and any(
+                f in vals for f in ('x_employment_status',
+                                    'x_probation_start')):
+            self._hocba_maybe_assign_onboarding()
         return res
 
     def _hocba_user_manages_dept(self, user):
@@ -819,6 +730,173 @@ class HrEmployee(models.Model):
             title=title, body=body, target_view='employees',
             target_ref=self.id, dedup_key=dedup_key)
 
+    # ------------------------------------------------------------------
+    # Onboarding bước động — gán template (snapshot)
+    # Spec: docs/superpowers/specs/2026-07-15-onboarding-config-design.md
+    # ------------------------------------------------------------------
+    def _hocba_assign_onboarding(self, template=None):
+        """Sinh instance bước từ template (tự match nếu không truyền).
+        Không match → chuông cảnh báo HR, KHÔNG chặn lưu NV.
+        Đổi template giữa chừng: bỏ bước chưa chạy, giữ bước done/skipped
+        làm lịch sử, bước mới nối tiếp sau (offset sequence)."""
+        self.ensure_one()
+        tpl = template or self.env['hb.onboarding.template'].sudo(
+            )._match_for_employee(self)
+        if not tpl:
+            self._hocba_notify_probation(
+                'onboarding_no_template', 'warning',
+                _('Chưa có quy trình nhận việc phù hợp: %s') % self.name,
+                body=_('Tạo template khớp hoặc gán tay trong màn Cấu hình '
+                       'nhận việc.'),
+                dedup_key='onb_no_tpl:%s' % self.id)
+            return self.env['hb.onboarding.step']
+        Step = self.env['hb.onboarding.step'].sudo()
+        self.x_onboarding_step_ids.filtered(
+            lambda s: s.state in ('waiting', 'open')).sudo().unlink()
+        kept = self.x_onboarding_step_ids
+        base_seq = max(kept.mapped('sequence') or [0])
+        start = self.x_probation_start
+        steps = Step.create([{
+            'employee_id': self.id,
+            'template_id': tpl.id,
+            'sequence': base_seq + ts.sequence,
+            'name': ts.name,
+            'step_type': ts.step_type,
+            'pass_completes': ts.pass_completes,
+            'is_extension': ts.is_extension,
+            'auto_action': ts.auto_action,
+            'note': ts.note,
+            'due_date': (start + timedelta(days=ts.due_days)
+                         if start and ts.due_days else False),
+        } for ts in tpl.step_ids.sorted(lambda s: (s.sequence, s.id))])
+        self.sudo().with_context(hocba_onb_assigning=True).write(
+            {'x_onboarding_template_id': tpl.id})
+        if steps:
+            steps.sorted(lambda s: (s.sequence, s.id))[0]._open()
+        return steps
+
+    def _hocba_maybe_assign_onboarding(self):
+        """Gán tự động khi NV thử việc có ngày bắt đầu mà chưa có bước."""
+        if self.env.context.get('hocba_no_onb_assign'):
+            return
+        for emp in self:
+            if (emp.x_employment_status == 'probation'
+                    and emp.x_probation_start
+                    and not emp.x_onboarding_step_ids):
+                emp._hocba_assign_onboarding()
+
+    # ------------------------------------------------------------------
+    # Migration một lần: field cổng cứng cũ → hb.onboarding.step
+    # (gọi từ migrations/19.0.2.0.0/post-migrate.py; idempotent)
+    # ------------------------------------------------------------------
+    @api.model
+    def _hocba_migrate_legacy_gates(self):
+        """Map dữ liệu cổng cũ (2w/1m/2m, thử giảng, thiết bị) sang instance
+        bước động. Bỏ qua NV đã có bước. NV chưa có dữ liệu cổng → gán mới."""
+        Step = self.env['hb.onboarding.step'].sudo()
+        tpl_vp = self.env.ref('hocba_employees.onb_template_office',
+                              raise_if_not_found=False)
+        tpl_gv = self.env.ref('hocba_employees.onb_template_teacher',
+                              raise_if_not_found=False)
+        emps = self.sudo().with_context(active_test=False).search([
+            ('x_probation_start', '!=', False),
+            ('x_onboarding_step_ids', '=', False)])
+        for emp in emps:
+            is_b = (emp.x_position_type in ('staff', 'manager')
+                    and emp.x_work_form == 'offline')
+            has_trial = (emp.x_trial_lesson_result
+                         and emp.x_trial_lesson_result != 'draft')
+            if is_b and tpl_vp:
+                emp._hocba_migrate_legacy_group_b(Step, tpl_vp)
+            elif not is_b and has_trial and tpl_gv:
+                emp._hocba_migrate_legacy_teacher(Step, tpl_gv)
+            else:
+                # chưa có dữ liệu cổng → đi luồng gán mới bình thường
+                emp._hocba_maybe_assign_onboarding()
+
+    def _hocba_migrate_legacy_group_b(self, Step, tpl):
+        """Nhóm B cũ: tuần-2 → thiết bị → tháng-1 → tháng-2."""
+        self.ensure_one()
+        closed = self.x_official_date or self.x_employment_status in (
+            'official', 'exiting', 'inactive')
+        gates = [
+            # (tên, kết quả cũ, ngày, note, due, pass_completes, is_extension)
+            ('Đánh giá tuần-2', self.x_eval_2w_result, self.x_eval_2w_date,
+             self.x_eval_2w_note, self.x_eval_2w_due, False, False),
+            ('Cấp thiết bị làm việc', None, self.x_equip_grant_date,
+             False, False, False, False),
+            ('Đánh giá tháng-1', self.x_eval_1m_result, self.x_eval_1m_date,
+             self.x_eval_1m_note, self.x_eval_1m_due, True, False),
+            ('Đánh giá tháng-2', self.x_eval_2m_result, self.x_eval_2m_date,
+             self.x_eval_2m_note, self.x_eval_2m_due, True, True),
+        ]
+        opened = False
+        seq = 0
+        for name, res, date, note, due, pc, ext in gates:
+            seq += 1
+            vals = {
+                'employee_id': self.id, 'template_id': tpl.id,
+                'sequence': seq, 'name': name,
+                'step_type': 'task' if res is None else 'evaluation',
+                'pass_completes': pc, 'is_extension': ext,
+                'auto_action': 'grant_assets' if res is None else 'none',
+                'due_date': due or False, 'result_note': note or False,
+            }
+            if res is None:                     # bước thiết bị (task)
+                if date:
+                    vals.update(state='done', done_date=date)
+                elif closed or opened:
+                    vals['state'] = 'skipped'
+                else:
+                    vals['state'] = 'open'
+                    opened = True
+            elif res in ('pass', 'fail', 'extend'):
+                vals.update(state='done', result=res,
+                            done_date=date or False)
+                # extend cũ ở tuần-2 = tái đánh giá tại chỗ → nếu chưa có
+                # dữ liệu phía sau thì để open + extend_count
+                if (res == 'extend' and not ext
+                        and name == 'Đánh giá tuần-2'
+                        and self.x_eval_1m_result == 'draft' and not closed):
+                    vals.update(state='open', result=False, extend_count=1)
+                    opened = True
+            else:                               # draft
+                if closed or opened:
+                    vals['state'] = 'skipped'
+                elif ext and self.x_eval_1m_result != 'extend':
+                    # tháng-2 chỉ mở nếu tháng-1 = Gia hạn
+                    vals['state'] = 'skipped'
+                else:
+                    vals['state'] = 'open'
+                    opened = True
+            Step.create(vals)
+        self.sudo().with_context(hocba_onb_assigning=True).write(
+            {'x_onboarding_template_id': tpl.id})
+
+    def _hocba_migrate_legacy_teacher(self, Step, tpl):
+        """Nhóm A cũ: thử giảng (điểm cũ gộp vào nhận xét) + task ký HĐ."""
+        self.ensure_one()
+        res = self.x_trial_lesson_result
+        note_parts = []
+        if self.x_trial_score_method:
+            note_parts.append('PP %.1f/10' % self.x_trial_score_method)
+        if self.x_trial_score_content:
+            note_parts.append('CM %.1f/10' % self.x_trial_score_content)
+        if self.x_trial_lesson_note:
+            note_parts.append(self.x_trial_lesson_note)
+        Step.create({
+            'employee_id': self.id, 'template_id': tpl.id, 'sequence': 1,
+            'name': 'Thử giảng', 'step_type': 'evaluation',
+            'state': 'done', 'result': res,
+            'done_date': self.x_trial_lesson_date or False,
+            'result_note': '; '.join(note_parts) or False})
+        Step.create({
+            'employee_id': self.id, 'template_id': tpl.id, 'sequence': 2,
+            'name': 'Ký hợp đồng thỉnh giảng', 'step_type': 'task',
+            'state': 'open' if res == 'pass' else 'skipped'})
+        self.sudo().with_context(hocba_onb_assigning=True).write(
+            {'x_onboarding_template_id': tpl.id})
+
     def _hocba_notify_reminder(self, kind, level, title, body=None,
                                dedup_key=None, include_employee=True):
         """Chuông nhắc hạn hồ sơ (hr_reminder) → HR (view 'employees'). Nếu
@@ -842,117 +920,29 @@ class HrEmployee(models.Model):
             title=title, body=body, target_view='employees',
             target_ref=self.id, dedup_key=dedup_key)
 
-    def _hocba_aut_001(self):
-        """Cổng tuần-2: Đạt → cấp thiết bị + tài sản + hẹn tháng-1;
-        Gia hạn → tái đánh giá; Không đạt → offboarding."""
-        self.ensure_one()
-        today = fields.Date.context_today(self)
-        tbp_user = self.parent_id.user_id or self.env.user
-        if self.x_eval_2w_result == 'pass':
-            self.sudo().with_context(hocba_gate_automation=True).write(
-                {'x_equip_grant_date': today})
-            self._hocba_grant_default_assets()
-            self._hocba_gate_activity(
-                _('Cấp thiết bị văn phòng cho %s') % self.name,
-                today + timedelta(days=1))
-            self._hocba_gate_activity(
-                _('Đánh giá thử việc tháng-1: %s') % self.name,
-                self.x_eval_1m_due or today + timedelta(days=16), tbp_user)
-            self.message_post(body=_(
-                '✅ Cổng tuần-2 ĐẠT — đã cấp thiết bị/tài sản và hẹn đánh giá tháng-1.'))
-        elif self.x_eval_2w_result == 'extend':
-            self._hocba_gate_activity(
-                _('Tái đánh giá thử việc (gia hạn): %s') % self.name,
-                today + timedelta(days=7), tbp_user)
-            self.message_post(body=_(
-                '⏳ Cổng tuần-2 GIA HẠN — tiếp tục thử việc, hẹn tái đánh giá.'))
-            self._hocba_notify_probation(
-                'probation_extend', 'warning',
-                _('Gia hạn thử việc: %s') % self.name,
-                body=_('Cổng tuần-2 gia hạn.'), include_employee=True)
-        elif self.x_eval_2w_result == 'fail':
-            self._hocba_start_offboarding(_('tuần-2'))
-
-    def _hocba_aut_001m(self):
-        """Cổng tháng-1: Đạt → Chính thức sớm; Gia hạn → hẹn tháng-2;
-        Không đạt → offboarding."""
-        self.ensure_one()
-        today = fields.Date.context_today(self)
-        tbp_user = self.parent_id.user_id or self.env.user
-        if self.x_eval_1m_result == 'pass':
-            self._hocba_make_official(_('tháng-1'))
-        elif self.x_eval_1m_result == 'extend':
-            self._hocba_gate_activity(
-                _('Đánh giá thử việc tháng-2: %s') % self.name,
-                self.x_eval_2m_due or today + timedelta(days=30), tbp_user)
-            self.message_post(body=_(
-                '⏳ Cổng tháng-1 GIA HẠN — tiếp tục đến cổng tháng-2.'))
-            self._hocba_notify_probation(
-                'probation_extend', 'warning',
-                _('Gia hạn thử việc: %s') % self.name,
-                body=_('Cổng tháng-1 gia hạn.'), include_employee=True)
-        elif self.x_eval_1m_result == 'fail':
-            self._hocba_start_offboarding(_('tháng-1'))
-
-    def _hocba_aut_002(self):
-        """Cổng tháng-2: Đạt → Chính thức; Gia hạn → tái đánh giá;
-        Không đạt → offboarding."""
-        self.ensure_one()
-        today = fields.Date.context_today(self)
-        tbp_user = self.parent_id.user_id or self.env.user
-        if self.x_eval_2m_result == 'pass':
-            self._hocba_make_official(_('tháng-2'))
-        elif self.x_eval_2m_result == 'extend':
-            self._hocba_gate_activity(
-                _('Tái đánh giá thử việc (gia hạn tháng-2): %s') % self.name,
-                today + timedelta(days=14), tbp_user)
-            self.message_post(body=_(
-                '⏳ Cổng tháng-2 GIA HẠN — kéo dài thử việc, hẹn tái đánh giá.'))
-            self._hocba_notify_probation(
-                'probation_extend', 'warning',
-                _('Gia hạn thử việc: %s') % self.name,
-                body=_('Cổng tháng-2 gia hạn.'), include_employee=True)
-        elif self.x_eval_2m_result == 'fail':
-            self._hocba_start_offboarding(_('tháng-2'))
-
     @api.model
     def _cron_probation_eval_reminders(self):
-        """CRON 7:00 SA (Asia/Ho_Chi_Minh): nhắc đánh giá đến hạn trong 2 ngày."""
+        """CRON 7:00 SA (Asia/Ho_Chi_Minh): nhắc bước nhận việc đang mở
+        sắp đến hạn trong 2 ngày (quét hb.onboarding.step thay 3 cổng cũ)."""
         soon = fields.Date.today() + timedelta(days=2)
-        base = [('x_employment_status', '=', 'probation'),
-                ('x_probation_start', '!=', False)]
-        for emp in self.search(base + [('x_eval_2w_result', '=', 'draft'),
-                                       ('x_eval_2w_due', '<=', soon)]):
+        steps = self.env['hb.onboarding.step'].sudo().search([
+            ('state', '=', 'open'),
+            ('due_date', '!=', False),
+            ('due_date', '<=', soon),
+            ('employee_id.x_employment_status', '=', 'probation'),
+        ])
+        for step in steps:
+            emp = step.employee_id
             emp._hocba_gate_activity(
-                _('Sắp đến hạn đánh giá tuần-2: %s') % emp.name,
-                emp.x_eval_2w_due, emp.parent_id.user_id or None)
+                _('Sắp đến hạn bước "%(step)s": %(emp)s') % {
+                    'step': step.name, 'emp': emp.name},
+                step.due_date, emp.parent_id.user_id or None)
             emp._hocba_notify_probation(
                 'probation_eval', 'warning',
-                _('Sắp đến hạn đánh giá tuần-2: %s') % emp.name,
-                body=_('Hạn: %s') % emp.x_eval_2w_due,
-                dedup_key='probation_eval:%s:2w:%s' % (emp.id, emp.x_eval_2w_due))
-        for emp in self.search(base + [('x_eval_2w_result', '=', 'pass'),
-                                       ('x_eval_1m_result', '=', 'draft'),
-                                       ('x_eval_1m_due', '<=', soon)]):
-            emp._hocba_gate_activity(
-                _('Sắp đến hạn đánh giá tháng-1: %s') % emp.name,
-                emp.x_eval_1m_due, emp.parent_id.user_id or None)
-            emp._hocba_notify_probation(
-                'probation_eval', 'warning',
-                _('Sắp đến hạn đánh giá tháng-1: %s') % emp.name,
-                body=_('Hạn: %s') % emp.x_eval_1m_due,
-                dedup_key='probation_eval:%s:1m:%s' % (emp.id, emp.x_eval_1m_due))
-        for emp in self.search(base + [('x_eval_1m_result', '=', 'extend'),
-                                       ('x_eval_2m_result', '=', 'draft'),
-                                       ('x_eval_2m_due', '<=', soon)]):
-            emp._hocba_gate_activity(
-                _('Sắp đến hạn đánh giá tháng-2: %s') % emp.name,
-                emp.x_eval_2m_due, emp.parent_id.user_id or None)
-            emp._hocba_notify_probation(
-                'probation_eval', 'warning',
-                _('Sắp đến hạn đánh giá tháng-2: %s') % emp.name,
-                body=_('Hạn: %s') % emp.x_eval_2m_due,
-                dedup_key='probation_eval:%s:2m:%s' % (emp.id, emp.x_eval_2m_due))
+                _('Sắp đến hạn bước "%(step)s": %(emp)s') % {
+                    'step': step.name, 'emp': emp.name},
+                body=_('Hạn: %s') % step.due_date,
+                dedup_key='onb_step:%s:%s' % (step.id, step.due_date))
 
     @api.model
     def _cron_cert_expiry_alerts(self):
