@@ -5,8 +5,8 @@ access_hr_employee_dependent_user,access.hr.employee.dependent.user,model_hr_emp
 access_hr_employee_dependent_manager,access.hr.employee.dependent.manager,model_hr_employee_dependent,hr.group_hr_manager,1,1,1,1
 access_hocba_asset_type_user,access.hocba.asset.type.user,model_hocba_asset_type,hr.group_hr_user,1,0,0,0
 access_hocba_asset_type_manager,access.hocba.asset.type.manager,model_hocba_asset_type,hr.group_hr_manager,1,1,1,1
-access_hr_employee_asset_user,access.hr.employee.asset.user,model_hr_employee_asset,hr.group_hr_user,1,1,1,0
-access_hr_employee_asset_manager,access.hr.employee.asset.manager,model_hr_employee_asset,hr.group_hr_manager,1,1,1,0
+access_hr_employee_asset_user,access.hr.employee.asset.user,model_hr_employee_asset,hr.group_hr_user,1,1,1,1
+access_hr_employee_asset_manager,access.hr.employee.asset.manager,model_hr_employee_asset,hr.group_hr_manager,1,1,1,1
 access_hr_promotion_history_user,access.hr.promotion.history.user,model_hr_promotion_history,hr.group_hr_user,1,0,0,0
 access_hr_promotion_history_manager,access.hr.promotion.history.manager,model_hr_promotion_history,hr.group_hr_manager,1,1,1,0
 access_hr_employee_giaovu,access.hr.employee.giaovu,hr.model_hr_employee,hocba_employees.group_hocba_giaovu,1,1,1,0

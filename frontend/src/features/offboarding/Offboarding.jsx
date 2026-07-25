@@ -105,7 +105,6 @@ function ManagedTable({ rows, busy, act }) {
 
 function ManagedRow({ r, busy, act }) {
   const b = busy === r.id;
-  const doneBlocked = r.canDone && r.assetPending > 0;
   return (
     <tr>
       <td className="mono" style={{ fontWeight: 600 }}>{r.name}</td>
@@ -114,8 +113,9 @@ function ManagedRow({ r, busy, act }) {
       <td className="mono muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.requestDate)}</td>
       <td className="mono muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.expectedLeaveDate)}</td>
       <td className="tbl-num mono" style={{ fontWeight: 600 }}>
-        {r.assetPending > 0
-          ? <Badge kind="amber">{r.assetPending} chưa thu</Badge> : '0'}
+        {r.assetCount > 0
+          ? <span title={`Đang giữ: ${r.assetCodes}`}><Badge kind="amber">{r.assetCount} đang giữ</Badge></span>
+          : '0'}
       </td>
       <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
         <Badge kind={r.stateKind} dot>{r.stateLabel}</Badge>
@@ -133,8 +133,7 @@ function ManagedRow({ r, busy, act }) {
               onClick={() => act(r, 'hr_approve')}>HR duyệt</button>
           )}
           {r.canDone && (
-            <button className="btn btn-primary btn-sm" disabled={b || doneBlocked}
-              title={doneBlocked ? `Còn ${r.assetPending} tài sản chưa thu hồi` : undefined}
+            <button className="btn btn-primary btn-sm" disabled={b}
               onClick={() => act(r, 'done',
                 'Hoàn tất nghỉ việc? Hồ sơ sẽ lưu trữ và khoá tài khoản đăng nhập.')}>
               Hoàn tất</button>

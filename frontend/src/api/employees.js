@@ -31,13 +31,11 @@ export const createEmployee = (payload) => hbPost('/hocba-hrm/api/employees', pa
 export const updateEmployee = (id, payload) =>
   hbPost(`/hocba-hrm/api/employee/${id}`, payload);
 
-/* Tài sản (F-006) — cấp / thu hồi / chuyển giao inline (chỉ HR). */
+/* Tài sản (F-006 rút gọn) — cấp / gỡ inline (chỉ HR). Không còn thu hồi/chuyển giao. */
 export const createAsset = (empId, payload) =>
   hbPost(`/hocba-hrm/api/employee/${empId}/asset`, payload);
-export const returnAsset = (assetId, payload) =>
-  hbPost(`/hocba-hrm/api/asset/${assetId}/return`, payload);
-export const transferAsset = (assetId, payload) =>
-  hbPost(`/hocba-hrm/api/asset/${assetId}/transfer`, payload);
+export const deleteAsset = (assetId) =>
+  hbPost(`/hocba-hrm/api/asset/${assetId}/delete`, {});
 
 /* Thăng tiến (F-007) — thêm mốc thăng tiến inline (chỉ HR Manager). */
 export const createPromotion = (empId, payload) =>

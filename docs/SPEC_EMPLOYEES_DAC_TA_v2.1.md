@@ -204,7 +204,7 @@ Bản thân `hr.employee` form đã là hồ sơ tổng. Để đáp ứng yêu 
 
 ## **3.5. Quản lý Tài sản Nhân viên (MỚI)**
 
-Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài sản có Mã, Loại, Người giữ, Ngày cấp, Trạng thái (`assigned/returned/transferred`). Cấp phát = tạo bản ghi (kích hoạt sau cổng tuần-2); Thu hồi = cập nhật trạng thái trong Offboarding Plan.
+Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài sản có Mã, Loại, Người giữ, Ngày cấp, Tình trạng khi cấp. Cấp phát = tạo bản ghi; thu hồi = xoá bản ghi *(rút gọn 2026-07-24 — xem F-006)*.
 
 ---
 
@@ -235,7 +235,7 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 | **G-14** | **Cấp thiết bị chỉ khi Đạt cổng tuần-2** (rẽ nhánh điều kiện) | Plan tuyến tính, không rẽ nhánh | Custom | **Cao** | **AUT-001:** Automated Action `On Update` field `x_eval_2w_result`: Đạt → Launch Plan cấp thiết bị; Không đạt → Launch Plan nghỉ TV. AUT-002 tương tự cho cổng tháng-2. |
 | **G-15** | **Hồ sơ tổng quan** gộp toàn cảnh nhân viên | Form tabs rời, chưa có Kanban/summary tùy chỉnh | Custom | TB | **CUS-011 + CFG-011:** Kanban card + Smart Buttons + dòng thời gian TV |
 | **G-16** | **Phân biệt 2 luồng Offboarding** (thử việc vs chính thức có GĐ duyệt + thanh lý HĐ) | Chỉ có Plan tuyến tính chung | Custom | **Cao** | **CFG-012:** 2 Plan template riêng: "Offboarding – Nghỉ thử việc" (4 bước) & "Offboarding – Nghỉ việc CT" (7 bước) |
-| **G-17** | **Quản lý tài sản cấp phát/thu hồi/chuyển giao** đồng bộ với hồ sơ | Có Equipment nhưng chưa khớp checklist Học Bá | Custom | TB | **CUS-012:** Model `hr.employee.asset`; danh mục tài sản chuẩn; tự tạo tác vụ thu hồi trong Offboarding. Block Archive khi còn tài sản chưa thu. |
+| **G-17** | **Danh sách tài sản nhân viên đang giữ** đồng bộ với hồ sơ | Có Equipment nhưng chưa khớp checklist Học Bá | Custom | TB | **CUS-012:** Model `hr.employee.asset`; danh mục tài sản chuẩn; đơn nghỉ việc hiển thị cảnh báo tài sản đang giữ *(rút gọn 2026-07-24: bỏ vòng đời thu hồi/chuyển giao và ràng buộc chặn Archive)*. |
 | **G-18** | **Lịch sử thăng tiến/lương dạng snapshot** theo tháng (sheet 2.4) | Lịch sử HĐ có nhưng không snapshot phụ cấp tháng | Custom | Thấp | **CUS-013:** Model `hr.promotion.history` (One2many) — ghi nhận thay đổi chức danh/phụ cấp kèm ngày hiệu lực |
 | **G-19** | **Đồng bộ kết quả thử giảng (GV)** vào hồ sơ thay vì Excel rời | Kết quả lưu ngoài hệ thống | Custom | TB | **CFG-013:** Activity "Đánh giá thử giảng" với ghi chú Đạt/Không đạt; trường `x_trial_lesson_result` trên hr.employee |
 
@@ -436,7 +436,7 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 **Business Rules:**
 * BR-001: Mã NS sinh tự động format `HB.<next_seq>`; HR có thể override trước khi lưu lần đầu.
 * BR-002: `x_employment_status` mặc định `draft`; chuyển `Thử việc` khi HR xác nhận onboarding.
-* BR-003: Smart Button "Tài sản" đếm records `hr.employee.asset` có `state = assigned`.
+* BR-003: Smart Button "Tài sản" đếm toàn bộ records `hr.employee.asset` của nhân viên.
 
 **UI Reference:** `WIREFRAME_HoSoTongQuan.svg` — Header + Statusbar + Smart Buttons + Tab Tổng quan.
 
@@ -638,53 +638,52 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 
 ---
 
-## **7.6. FUNC-EMP-006 — Quản lý Tài sản Cấp phát & Thu hồi**
+## **7.6. FUNC-EMP-006 — Danh sách Tài sản Nhân viên đang giữ**
 
-**Function ID:** FUNC-EMP-006 | **Module:** Model mới `hr.employee.asset` | **Actor:** IT/Admin (cấp/thu hồi), HR (xem tổng)
+> **Rút gọn 2026-07-24** theo góp ý giảng viên hướng dẫn: quản lý tài sản chi tiết
+> (vòng đời thu hồi / bàn giao) vượt phạm vi đồ án. Chức năng còn lại chỉ trả lời
+> một câu hỏi: **ai đang giữ tài sản nào**. Chi tiết quyết định + đánh đổi:
+> `docs/superpowers/specs/2026-07-24-asset-simplify-design.md`.
 
-**Purpose:** Thay thế sổ tài sản 8.3 Lark + checklist nhúng hồ sơ — quản lý tập trung việc cấp phát, theo dõi và thu hồi thiết bị; đảm bảo không thất thoát khi nhân sự nghỉ việc.
+**Function ID:** FUNC-EMP-006 | **Module:** Model `hr.employee.asset` | **Actor:** HR (cấp phát / gỡ), quản lý (xem)
 
-**Preconditions:** Danh mục tài sản đã cấu hình; Nhóm B: cổng tuần-2 đã Đạt (AUT-001 đã chạy).
+**Purpose:** Thay thế sổ tài sản 8.3 Lark — một danh sách phẳng *nhân viên ↔ thiết bị đang giữ*, để HR biết đòi ai cái gì khi nhân sự nghỉ việc.
+
+**Preconditions:** Danh mục loại tài sản đã cấu hình.
 
 **Main Flow — Cấp phát:**
-1. IT/Admin nhận Activity "Cấp thiết bị" → mở Smart Button "Tài sản" trên hồ sơ.
-2. Bấm **Tạo mới** → chọn loại tài sản, nhập mã, ngày cấp.
-3. `state = assigned` tự set khi lưu. Lặp lại mỗi thiết bị.
-4. Mark as Done Activity.
+1. HR mở Smart Button "Tài sản" trên hồ sơ (hoặc tab Tài sản trên SPA).
+2. Bấm **Cấp phát** → chọn loại tài sản, nhập mã, ngày cấp, tình trạng khi cấp.
+3. Lưu → dòng mới xuất hiện trong danh sách. Lặp lại mỗi thiết bị.
 
-**Main Flow — Thu hồi:**
-1. Offboarding Plan tạo Activity "Thu hồi thiết bị".
-2. IT/Admin mở Smart Button "Tài sản" → danh sách `state = assigned`.
-3. Từng thiết bị: bấm **Thu hồi** → nhập ngày, ghi chú tình trạng → `state = returned`.
-4. Hoặc **Chuyển giao** → chọn NV nhận → `state = transferred`, tạo bản ghi mới bên NV nhận.
-5. Khi tất cả đã `returned/transferred` → Mark as Done Activity.
+**Main Flow — Thu hồi / bàn giao:** không còn là nghiệp vụ có trạng thái.
+* **Thu hồi** = bấm **Gỡ** trên dòng tài sản (có hộp xác nhận) → dòng biến mất.
+* **Bàn giao** = Gỡ dòng của người cũ, rồi Cấp phát dòng mới cho người nhận (giữ nguyên mã thiết bị).
 
-**Exception Flow:** Cố Archive NV khi còn tài sản `assigned` → hệ thống **block** với cảnh báo danh sách thiết bị chưa thu.
+**Tự cấp khi nhận việc:** bước onboarding `auto_action = grant_assets` vẫn tự sinh dòng cho các loại tài sản bật cờ "Cấp mặc định" (`x_is_default`).
+
+**Exception Flow:** Nhân viên nghỉ việc / lưu trữ hồ sơ khi còn tài sản → **KHÔNG chặn**. Đơn nghỉ việc chỉ *hiển thị* cảnh báo "Đang giữ N tài sản: <danh sách mã>" để HR biết mà đòi.
 
 **Validation Rules:**
-* `grant_date` ≥ `x_eval_2w_date`.
-* `return_date` ≥ `grant_date`.
-* Không xóa bản ghi — chỉ đổi state.
-* `asset_code` unique toàn hệ thống.
+* `asset_code` unique toàn hệ thống (một thiết bị chỉ thuộc về một người).
+* Xoá dòng được phép — đó chính là cách biểu diễn "đã thu hồi".
+* ~~`grant_date` ≥ `x_eval_2w_date`~~ (đã bỏ — luật gây tắc, không phục vụ mục tiêu).
 
 **Input Fields:**
 
 | Field | Model field | Type | Required | Rule |
 |---|---|---|---|---|
-| Nhân viên giữ | `employee_id` | Many2one `hr.employee` | * | Auto-fill từ context |
-| Loại tài sản | `asset_type_id` | Many2one `x.asset.type` | * | |
-| Mã tài sản | `asset_code` | Char(50) | * | Unique |
-| Ngày cấp phát | `grant_date` | Date | * | ≥ x_eval_2w_date |
+| Nhân viên giữ | `employee_id` | Many2one `hr.employee` | * | Auto-fill từ context; `ondelete=cascade` |
+| Loại tài sản | `asset_type_id` | Many2one `hocba.asset.type` | * | |
+| Mã tài sản | `asset_code` | Char | * | Unique toàn bảng |
+| Ngày cấp phát | `grant_date` | Date | * | Mặc định hôm nay |
 | Tình trạng khi cấp | `condition_in` | Selection | * | `new/good/fair` |
-| Trạng thái | `state` | Selection | * | `assigned/returned/transferred` |
-| Ngày thu hồi | `return_date` | Date | ° | Khi state = returned |
-| Nhân viên nhận (chuyển giao) | `transferred_to` | Many2one | ° | Khi state = transferred |
-| Ghi chú tình trạng khi thu | `condition_out_note` | Text | — | |
 
 **Business Rules:**
-* BR-050: Khi `transferred` → tự tạo bản ghi tài sản mới trên `transferred_to` với `grant_date = return_date`.
+* ~~BR-050: chuyển giao tự tạo bản ghi mới~~ — **đã gỡ** cùng vòng đời tài sản.
 * BR-051: Danh mục loại tài sản chuẩn: Màn hình, Cây máy tính, Bàn phím, Chuột, Lót bàn phím, Tai nghe (sales/to), Ghế, Bàn, Máy in, Thùng rác.
-* BR-052: Smart Button count chỉ đếm `state = assigned`.
+* BR-052: Smart Button count đếm **toàn bộ** dòng tài sản của nhân viên (mọi dòng đều là "đang giữ").
+* BR-053: Không lưu lịch sử luân chuyển — hệ thống không trả lời được "thiết bị này trước đây ai giữ". Đánh đổi đã được chấp nhận khi rút gọn.
 
 ---
 
@@ -827,7 +826,7 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 | Số tài khoản / Ngân hàng | `bank_account_id` | Many2one | |
 | MST TNCN | `x_pit_code` | Char | G-04 |
 | Số sổ BHXH / Số thẻ BHYT / Nơi KCB | `x_social_insurance_no / x_health_insurance_no / x_health_care_place` | Char | G-07/08 |
-| Checklist tài sản | Records `hr.employee.asset` | One2many | G-17; cấp sau cổng tuần-2 |
+| Checklist tài sản | Records `hr.employee.asset` | One2many | G-17; danh sách đang giữ |
 | Trình độ tiếng Trung | Skills (Tab Resumé) | One2many | G-10 |
 | Số tháng làm việc chính thức | `x_official_months` | Float (computed) | từ `x_official_date` |
 
@@ -905,7 +904,7 @@ Dùng model `hr.employee.asset` để thay sổ 8.3 + checklist 2.1: mỗi tài 
 4. **BR-010 tương tác với AUT-002**: nếu nhân viên chưa khai MST/BHXH mà TBP chấm Đạt cổng tháng-2, automation chuyển Chính thức sẽ bị BR-010 chặn (ValidationError) — HR phải nhập đủ pháp lý TRƯỚC khi chấm Đạt. Đây là hành vi chủ đích.
 5. **Chuyển Chính thức thủ công bị khóa**: chỉ HR Manager hoặc automation (context `hocba_gate_automation`) được set `x_employment_status = official`.
 6. **Quyền điền kết quả 2 cổng**: HR Manager hoặc quản lý trực tiếp (`parent_id.user_id`); quản lý trực tiếp cần thêm nhóm `hr.group_hr_user` để có ACL ghi `hr.employee`.
-7. **Tài sản (F-006)**: mã tài sản gắn với thiết bị vật lý — chuyển giao giữ nguyên mã, ràng buộc "mỗi mã chỉ 1 bản ghi Đang giữ"; cấm `unlink` (audit); chặn Archive nhân viên còn tài sản Đang giữ; chặn cấp phát trước ngày đánh giá tuần-2.
+7. **Tài sản (F-006)** *(rút gọn 2026-07-24)*: danh sách phẳng "ai đang giữ gì" — `asset_code` unique toàn bảng; xoá dòng = thu hồi; KHÔNG chặn nghỉ việc/Archive khi còn tài sản (chỉ cảnh báo). Guard trùng mã phải nằm trong `create()`/`write()` (không dùng `@api.constrains` — SQL unique bắn `IntegrityError` trước khi ORM chạy constrains, làm API trả 500 thay vì lỗi inline).
 8. **Thăng tiến (F-007)**: tạo bản ghi tự áp `job_id`/`department_id` mới lên employee + post message; cấm xóa; sau 24h chỉ HR Manager sửa (BR-060). Lưu ý ACL: HR Officer vốn chỉ được đọc.
 9. **Trường lương/thuế nhạy cảm** (`x_pit_code`, `x_social_insurance_no`) gắn `groups='hr.group_hr_manager'` ở mức field.
 10. **2 CRON** chạy 7:00 sáng VN (00:00/00:05 UTC): nhắc đánh giá đến hạn trong 2 ngày; cảnh báo chứng chỉ sắp/đã hết hạn (tạo Activity, chống trùng theo summary — BR-041).
