@@ -148,9 +148,45 @@ function StageEditor({ stage, onClose, onSaved }) {
   );
 }
 
+/* Khối "cần biết" đầu mỗi tab — giải thích cấu hình tác động tới đâu.
+   Đặt ngay trên nội dung để người cấu hình không phải mở tài liệu ngoài. */
+function InfoNote({ title, children }) {
+  return (
+    <div style={{
+      maxWidth: 760, marginBottom: 14, padding: '12px 15px',
+      background: 'var(--surface-2)', border: '1px solid var(--border)',
+      borderLeft: '3px solid var(--red-600)', borderRadius: 0,
+    }}>
+      <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 5 }}>
+        <Icon name="help-circle" size={15} />
+        <span style={{ fontWeight: 700, fontSize: 13 }}>{title}</span>
+      </div>
+      <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.65 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* Giải thích chi tiết 4 chế độ tự đóng tuyển — cột "Hệ thống làm gì". */
+const AUTO_CLOSE_EFFECT = {
+  full: 'Gỡ vị trí khỏi trang tuyển dụng công khai VÀ chuyển phiếu yêu cầu sang trạng thái đã đóng.',
+  stop: 'Chỉ gỡ vị trí khỏi trang công khai. Phiếu yêu cầu vẫn ở trạng thái đang tuyển để bộ phận theo dõi tiếp.',
+  warn: 'Không đổi gì cả, chỉ ghi một dòng cảnh báo vào lịch sử trao đổi của phiếu để người phụ trách tự quyết.',
+  off: 'Không làm gì. Vị trí vẫn đăng tuyển dù đã nhận đủ người — dùng khi muốn tuyển dự phòng.',
+};
+
+const TABS = [
+  ['stages', 'Quy trình & SLA'],
+  ['autoclose', 'Tự đóng tuyển'],
+  ['help', 'Cách hoạt động'],
+];
+
 export default function RecruitmentConfig() {
   const { data, err, loading, reload } = useFetch(
     fetchRecruitConfig, [], 'recruitment:config');
+  const [tab, setTab] = useState(
+    () => localStorage.getItem('hocba_reccfg_tab') || 'stages');
   const [editing, setEditing] = useState(null); // null | {} (mới) | stage
   const [msg, setMsg] = useState(null);
   const [reordering, setReordering] = useState(false);
@@ -199,34 +235,125 @@ export default function RecruitmentConfig() {
     catch (e) { setMsg(e.message || 'Lưu cấu hình thất bại.'); }
     finally { setSavingMode(false); }
   };
+  const select = (id) => {
+    setTab(id); setMsg(null);
+    localStorage.setItem('hocba_reccfg_tab', id);
+  };
+  const activeTab = TABS.some(([id]) => id === tab) ? tab : 'stages';
 
   return (
     <div className="content fade-in">
       <div className="page-head">
         <div>
           <h1>Cấu hình tuyển dụng</h1>
-          <p>Quy trình tuyển dụng dùng chung toàn hệ thống — chỉnh bước, SLA và
-            chế độ tự đóng tuyển khi đủ chỉ tiêu</p>
+          <p>Quy trình tuyển dụng dùng chung toàn hệ thống — mọi thay đổi ở đây
+            áp dụng ngay cho tất cả vị trí đang tuyển</p>
         </div>
       </div>
-      <div className="card" style={{ padding: 16, marginBottom: 16, maxWidth: 760 }}>
-        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>
-          Khi tuyển đủ chỉ tiêu (ứng viên vào bước hired đủ số lượng cần tuyển)
-        </div>
-        <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
-          Áp dụng toàn hệ thống, cho mọi vị trí đang đăng tuyển.
-        </p>
-        <div style={{ display: 'grid', gap: 7 }}>
-          {Object.entries(data.autoCloseLabels).map(([mode, label]) => (
-            <label key={mode}
-              style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, opacity: savingMode ? 0.6 : 1 }}>
-              <input type="radio" name="autoCloseMode" disabled={savingMode}
-                checked={data.autoCloseMode === mode} onChange={() => setMode(mode)} />
-              {label}
-            </label>
-          ))}
-        </div>
+
+      <div className="tabs">
+        {TABS.map(([id, l]) => (
+          <button key={id} className={'tab' + (activeTab === id ? ' active' : '')}
+            onClick={() => select(id)}>{l}</button>
+        ))}
       </div>
+
+      {msg && (
+        <div style={{ maxWidth: 760, marginBottom: 12, padding: '9px 13px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5 }}>
+          {msg}
+        </div>
+      )}
+
+      {activeTab === 'autoclose' && (
+        <>
+          <InfoNote title="Chế độ này chạy khi nào?">
+            Khi một ứng viên được kéo vào bước có cờ <b>"Đã tuyển"</b>, hệ thống
+            đếm số người đã nhận việc cho vị trí đó. Đủ số lượng cần tuyển ghi
+            trên phiếu yêu cầu thì chế độ dưới đây kích hoạt. Ứng viên vào bước
+            này bằng đường nào cũng tính: kéo kanban, sửa trong Odoo, hay import.
+          </InfoNote>
+          <div className="card" style={{ padding: 16, maxWidth: 760 }}>
+            <div style={{ display: 'grid', gap: 12 }}>
+              {Object.entries(data.autoCloseLabels).map(([mode, label]) => (
+                <label key={mode}
+                  style={{
+                    display: 'flex', gap: 10, alignItems: 'flex-start',
+                    fontSize: 13, cursor: 'pointer',
+                    opacity: savingMode ? 0.6 : 1,
+                    padding: 11, borderRadius: 10,
+                    border: '1px solid ' + (data.autoCloseMode === mode
+                      ? 'var(--red-600)' : 'var(--border)'),
+                    background: data.autoCloseMode === mode
+                      ? 'var(--red-50)' : 'transparent',
+                  }}>
+                  <input type="radio" name="autoCloseMode" disabled={savingMode}
+                    style={{ marginTop: 2 }}
+                    checked={data.autoCloseMode === mode}
+                    onChange={() => setMode(mode)} />
+                  <span>
+                    <span style={{ fontWeight: 700 }}>{label}</span>
+                    <span className="muted" style={{ display: 'block', fontSize: 12.5, marginTop: 2 }}>
+                      {AUTO_CLOSE_EFFECT[mode] || ''}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+          {noHired && (
+            <div style={{ maxWidth: 760, padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginTop: 12, fontSize: 12.5 }}>
+              ⚠ Chưa có bước nào gắn cờ <b>"Đã tuyển"</b> nên chế độ trên sẽ không
+              bao giờ chạy. Sang tab <b>Quy trình &amp; SLA</b> bật cờ này cho bước
+              cuối quy trình.
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === 'help' && (
+        <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <InfoNote title="Bước quy trình là gì?">
+            Mỗi bước là <b>một cột trên kanban CV</b>. Thứ tự bước ở đây quyết
+            định thứ tự cột; đổi thứ tự là kanban đổi theo ngay. Ứng viên đang
+            chạy giữ nguyên bước hiện tại, không bị nhảy lung tung.
+          </InfoNote>
+          <InfoNote title="SLA được tính thế nào?">
+            SLA là <b>số ngày tối đa</b> một ứng viên được nằm ở bước đó. Hệ thống
+            đếm từ lúc ứng viên <b>chuyển vào bước hiện tại</b> (không phải từ ngày
+            nhận CV), theo <b>ngày lịch</b> — tính cả thứ bảy, chủ nhật. Quá số
+            ngày cấu hình thì thẻ ứng viên hiện badge đỏ <b>"Trễ SLA"</b> kèm số
+            ngày vượt. Đặt <b>SLA = 0</b> nghĩa là bước đó không áp hạn. Bước có
+            cờ "Đã tuyển" không bao giờ bị tính trễ vì đó là đích đến.
+          </InfoNote>
+          <InfoNote title="Cờ &quot;Đã tuyển&quot; dùng để làm gì?">
+            Đánh dấu bước đích của quy trình. Ứng viên vào bước này được tính là
+            đã nhận việc: trừ vào chỉ tiêu tuyển, lên thống kê dashboard, và kích
+            hoạt chế độ tự đóng tuyển. Nên chỉ gắn cờ cho <b>đúng một bước</b> —
+            thường là bước cuối.
+          </InfoNote>
+          <InfoNote title="Ẩn bước hay xoá bước?">
+            <b>Ẩn</b> là lựa chọn an toàn: bước biến khỏi kanban và các form chọn
+            bước, nhưng dữ liệu ứng viên cũ giữ nguyên và hiện lại được bất cứ lúc
+            nào. Chỉ ẩn được khi bước không còn ứng viên đang hoạt động.
+            <b> Xoá</b> là vĩnh viễn và bị chặn nếu bước từng có ứng viên — kể cả
+            ứng viên đã lưu trữ. Muốn bỏ một bước khỏi quy trình thì hãy ẩn.
+          </InfoNote>
+          <InfoNote title="Ai sửa được màn này?">
+            Chỉ tài khoản <b>Admin hệ thống</b>. Cấu hình dùng chung toàn hệ thống
+            nên thay đổi ảnh hưởng tới mọi phòng ban và mọi vị trí đang tuyển —
+            sửa xong nên báo bộ phận tuyển dụng.
+          </InfoNote>
+        </div>
+      )}
+
+      {activeTab === 'stages' && (
+        <>
+      <InfoNote title="Cần biết trước khi sửa">
+        Mỗi bước là một cột trên kanban CV, thứ tự ở đây là thứ tự cột.
+        <b> SLA </b>là số ngày tối đa ứng viên được ở bước đó, đếm theo ngày lịch
+        từ lúc chuyển vào bước — quá hạn thì thẻ ứng viên hiện badge đỏ "Trễ SLA".
+        Đặt SLA = 0 để không áp hạn. Chi tiết xem tab <b>Cách hoạt động</b>.
+      </InfoNote>
 
       <div className="between" style={{ marginBottom: 10, maxWidth: 760 }}>
         <div>
@@ -245,11 +372,6 @@ export default function RecruitmentConfig() {
         <div style={{ maxWidth: 760, padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginBottom: 12, fontSize: 12.5 }}>
           ⚠ Chưa có bước nào đánh dấu <b>"Đã tuyển" (hired)</b> — thống kê đã tuyển
           và tự đóng tuyển sẽ không hoạt động. Hãy bật cờ hired cho bước cuối quy trình.
-        </div>
-      )}
-      {msg && (
-        <div style={{ maxWidth: 760, marginBottom: 12, padding: '9px 13px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5 }}>
-          {msg}
         </div>
       )}
 
@@ -340,6 +462,8 @@ export default function RecruitmentConfig() {
             ))}
           </div>
         </div>
+      )}
+        </>
       )}
 
       {editing !== null && (
