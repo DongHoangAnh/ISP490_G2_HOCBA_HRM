@@ -59,6 +59,16 @@ function StageEditor({ stage, onClose, onSaved }) {
       throw e;
     }
   };
+  const toggleHide = async () => {
+    setErr(null); setBusy(true);
+    try {
+      await updateRecruitStage(stage.id, { active: stage.active === false });
+      onSaved(null);
+    } catch (e) {
+      setErr(e.message || 'Thao tác thất bại.');
+      setBusy(false);
+    }
+  };
 
   return (
     <Modal onClose={onClose}>
@@ -111,6 +121,15 @@ function StageEditor({ stage, onClose, onSaved }) {
               style={{ marginRight: 'auto', color: 'var(--red-700)' }}>
               <Icon name="trash" size={14} />Xoá bước</button>
           )}
+          {!isNew && (
+            <button className="btn btn-ghost btn-sm" disabled={busy}
+              onClick={toggleHide}
+              title={stage.active === false
+                ? 'Đưa bước trở lại kanban CV'
+                : 'Ẩn khỏi kanban CV — không xoá dữ liệu, hiện lại được'}>
+              <Icon name={stage.active === false ? 'eye' : 'eye-off'} size={14} />
+              {stage.active === false ? 'Hiện lại' : 'Ẩn bước'}</button>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Huỷ</button>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>
             {busy ? 'Đang lưu…' : 'Lưu bước'}</button>
@@ -143,7 +162,9 @@ export default function RecruitmentConfig() {
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <LoadingState label="Đang tải cấu hình tuyển dụng…" />;
 
-  const stages = data.stages || [];
+  const allStages = data.stages || [];
+  const stages = allStages.filter((s) => s.active !== false);
+  const hiddenStages = allStages.filter((s) => s.active === false);
   const noHired = !stages.some((s) => s.hiredStage);
 
   const doReorder = async (ids) => {
@@ -165,6 +186,11 @@ export default function RecruitmentConfig() {
     const [moved] = ids.splice(dragIdx, 1);
     ids.splice(i, 0, moved);
     doReorder(ids);
+  };
+  const unhide = async (s) => {
+    setMsg(null);
+    try { await updateRecruitStage(s.id, { active: true }); await reload(); }
+    catch (e) { setMsg(e.message || 'Hiện lại bước thất bại.'); }
   };
   const setMode = async (mode) => {
     if (mode === data.autoCloseMode) return;
@@ -208,7 +234,7 @@ export default function RecruitmentConfig() {
             Quy trình tuyển dụng ({stages.length} bước)
           </div>
           <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-            Kéo thẻ (hoặc bấm ▲▼) đổi thứ tự cột kanban; click thẻ để sửa/xoá.
+            Kéo thẻ (hoặc bấm ▲▼) đổi thứ tự cột kanban; click thẻ để sửa/ẩn/xoá.
           </p>
         </div>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>
@@ -278,6 +304,43 @@ export default function RecruitmentConfig() {
           </div>
         ))}
       </div>
+
+      {hiddenStages.length > 0 && (
+        <div style={{ maxWidth: 760, marginTop: 22 }}>
+          <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 2 }}>
+            Bước đã ẩn ({hiddenStages.length})
+          </div>
+          <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+            Không hiển thị trên kanban CV và form chọn bước — dữ liệu ứng viên cũ
+            giữ nguyên; bấm "Hiện lại" để đưa về quy trình.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {hiddenStages.map((s) => (
+              <div key={s.id} className="card"
+                onClick={() => setEditing(s)}
+                style={{
+                  padding: '11px 14px', cursor: 'pointer', display: 'flex',
+                  gap: 12, alignItems: 'center', opacity: 0.72,
+                }}>
+                <Icon name="eye-off" size={16} className="muted" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{s.name}</span>
+                    <Badge kind="gray">Đã ẩn</Badge>
+                    {s.hiredStage && <Badge kind="green" dot>Đã tuyển</Badge>}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                    {s.applicantCount} ứng viên (kể cả lưu trữ) từng ở bước này
+                  </div>
+                </div>
+                <button className="btn btn-ghost btn-sm"
+                  onClick={(e) => { e.stopPropagation(); unhide(s); }}>
+                  <Icon name="eye" size={14} />Hiện lại</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {editing !== null && (
         <StageEditor stage={editing}

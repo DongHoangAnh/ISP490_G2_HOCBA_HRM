@@ -1368,6 +1368,7 @@ class HocBaTuyenDung(http.Controller):
         'successCriteria': ('success_criteria', 'str'),
         'slaDays': ('sla_days', 'num'),
         'hiredStage': ('hired_stage', 'bool'),
+        'active': ('active', 'bool'),
     }
 
     AUTO_CLOSE_LABELS = {
@@ -1377,21 +1378,27 @@ class HocBaTuyenDung(http.Controller):
         'off': 'Tắt — không làm gì khi tuyển đủ chỉ tiêu',
     }
 
-    def _stage_config_row(self, s, applicant_counts=None):
+    def _stage_config_row(self, s, applicant_counts=None, active_counts=None):
         count = (applicant_counts or {}).get(s.id)
         if count is None:
             count = request.env['hr.applicant'].sudo().with_context(
                 active_test=False).search_count([('stage_id', '=', s.id)])
+        active_count = (active_counts or {}).get(s.id)
+        if active_count is None:
+            active_count = request.env['hr.applicant'].sudo().search_count(
+                [('stage_id', '=', s.id)])
         return {
             'id': s.id,
             'name': s.name or '',
             'sequence': s.sequence,
+            'active': bool(s.active),
             'hiredStage': bool(s.hired_stage),
             'slaDays': s.sla_days or 0,
             'supportPerson': s.support_person or '',
             'requirements': s.requirements or '',
             'successCriteria': s.success_criteria or '',
             'applicantCount': count,
+            'activeApplicantCount': active_count,
         }
 
     def _stage_config_vals(self, payload):
@@ -1408,16 +1415,20 @@ class HocBaTuyenDung(http.Controller):
         if not self._is_admin():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         env = request.env
-        stages = env['hr.recruitment.stage'].sudo().search([], order='sequence, id')
+        stages = env['hr.recruitment.stage'].sudo().with_context(
+            active_test=False).search([], order='sequence, id')
         counts = dict(env['hr.applicant'].sudo().with_context(
             active_test=False)._read_group(
             [('stage_id', 'in', stages.ids)], ['stage_id'], ['__count']))
         counts = {s.id: c for s, c in counts.items()}
+        active_counts = {s.id: c for s, c in env['hr.applicant'].sudo()._read_group(
+            [('stage_id', 'in', stages.ids)], ['stage_id'], ['__count'])}
         return request.make_json_response({
             'isAdmin': True,
             'autoCloseMode': env['hr.applicant']._hb_auto_close_mode(),
             'autoCloseLabels': self.AUTO_CLOSE_LABELS,
-            'stages': [self._stage_config_row(s, counts) for s in stages],
+            'stages': [self._stage_config_row(s, counts, active_counts)
+                       for s in stages],
         })
 
     @http.route('/hocba-hrm/api/recruitment/config/stages', auth='user',
