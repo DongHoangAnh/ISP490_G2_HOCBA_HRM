@@ -7,6 +7,7 @@ import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
+import Reviews from '../features/reviews/Reviews';
 import Accounts from '../features/accounts/Accounts';
 import Departments from '../features/departments/Departments';
 import TimeOff from '../features/timeoff/TimeOff';
@@ -81,6 +82,7 @@ export default function App() {
         {view === 'offboarding' && <Offboarding search={search} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
+        {view === 'reviews' && canManage && <Reviews search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
         {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}

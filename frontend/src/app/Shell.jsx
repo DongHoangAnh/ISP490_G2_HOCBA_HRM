@@ -18,6 +18,8 @@ const NAV = [
     { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'manage' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'manage' },
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
+    // Đánh giá định kỳ (giảng viên / văn phòng) — HR, trưởng phòng, giáo vụ
+    { id: 'reviews', label: 'Đánh giá', icon: 'star', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
     { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
@@ -84,6 +86,7 @@ export const PAGE_META = {
   offboarding: { t: 'Nghỉ việc', c: 'Nhân sự / Offboarding' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   finance: { t: 'Tài chính — Dòng tiền', c: 'Tài chính / Quản lý dòng tiền' },
+  reviews: { t: 'Đánh giá nhân viên', c: 'Quản lý nhân sự / Đánh giá định kỳ' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
   departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },

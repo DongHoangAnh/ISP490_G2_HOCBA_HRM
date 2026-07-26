@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <!-- Bộ tiêu chí mặc định. noupdate=1: HR sửa trọng số trên giao diện thì
+       upgrade module KHÔNG ghi đè lại.
+       Thiết kế: docs/superpowers/specs/2026-07-26-performance-review-design.md
+       Công thức: docs/CONG_THUC_DANH_GIA.md -->
+  <data noupdate="1">
+
+    <!-- ============ Giảng viên (tổng trọng số 100) ============ -->
+    <record id="crit_t_quality" model="hb.review.criteria">
+      <field name="name">Chất lượng giờ dạy</field>
+      <field name="code">t_quality</field>
+      <field name="role_group">teacher</field>
+      <field name="sequence">10</field>
+      <field name="weight">25</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Giáo án chuẩn bị đầy đủ, truyền đạt dễ hiểu, kiểm soát tiến độ bài giảng. Căn cứ: dự giờ, phản hồi học viên, kết quả kiểm tra của lớp.</field>
+    </record>
+    <record id="crit_t_expertise" model="hb.review.criteria">
+      <field name="name">Chuyên môn &amp; chứng chỉ</field>
+      <field name="code">t_expertise</field>
+      <field name="role_group">teacher</field>
+      <field name="sequence">20</field>
+      <field name="weight">20</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">cert</field>
+      <field name="guideline">Hệ thống chấm theo chứng chỉ đã xác minh trên hồ sơ: hết hạn 2đ, sắp hết hạn 3đ, 1 chứng chỉ còn hạn 4đ, từ 2 chứng chỉ còn hạn 5đ.</field>
+    </record>
+    <record id="crit_t_punctual" model="hb.review.criteria">
+      <field name="name">Chuyên cần &amp; đúng giờ lên lớp</field>
+      <field name="code">t_punctual</field>
+      <field name="role_group">teacher</field>
+      <field name="sequence">30</field>
+      <field name="weight">20</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">punctuality</field>
+      <field name="guideline">Hệ thống chấm theo tỷ lệ buổi dạy chấm công hợp lệ (đúng cửa sổ giờ, đúng vị trí, ảnh khuôn mặt không bị nghi ngờ).</field>
+    </record>
+    <record id="crit_t_class" model="hb.review.criteria">
+      <field name="name">Quản lý lớp &amp; chăm sóc học viên</field>
+      <field name="code">t_class</field>
+      <field name="role_group">teacher</field>
+      <field name="sequence">40</field>
+      <field name="weight">15</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Duy trì sĩ số, theo dõi học viên yếu, xử lý tình huống lớp học, phản hồi phụ huynh/học viên kịp thời.</field>
+    </record>
+    <record id="crit_t_workload" model="hb.review.criteria">
+      <field name="name">Khối lượng giảng dạy</field>
+      <field name="code">t_workload</field>
+      <field name="role_group">teacher</field>
+      <field name="sequence">50</field>
+      <field name="weight">10</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">workload</field>
+      <field name="guideline">Hệ thống chấm theo số buổi dạy trong kỳ so với chỉ tiêu (mặc định 60 buổi/quý).</field>
+    </record>
+    <record id="crit_t_teamwork" model="hb.review.criteria">
+      <field name="name">Phối hợp &amp; báo cáo</field>
+      <field name="code">t_teamwork</field>
+      <field name="role_group">teacher</field>
+      <field name="sequence">60</field>
+      <field name="weight">10</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Nộp báo cáo/điểm đúng hạn, phối hợp giáo vụ, hỗ trợ dạy thay khi cần, tham gia họp chuyên môn.</field>
+    </record>
+
+    <!-- ============ Nhân viên văn phòng (tổng trọng số 100) ============ -->
+    <record id="crit_o_result" model="hb.review.criteria">
+      <field name="name">Kết quả công việc / KPI</field>
+      <field name="code">o_result</field>
+      <field name="role_group">office</field>
+      <field name="sequence">10</field>
+      <field name="weight">35</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Mức độ hoàn thành khối lượng và chất lượng công việc được giao trong kỳ, so với mục tiêu đã thống nhất đầu kỳ.</field>
+    </record>
+    <record id="crit_o_punctual" model="hb.review.criteria">
+      <field name="name">Chuyên cần &amp; kỷ luật giờ giấc</field>
+      <field name="code">o_punctual</field>
+      <field name="role_group">office</field>
+      <field name="sequence">20</field>
+      <field name="weight">20</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">punctuality</field>
+      <field name="guideline">Hệ thống chấm theo tỷ lệ ngày công không đi trễ và không về sớm.</field>
+    </record>
+    <record id="crit_o_attitude" model="hb.review.criteria">
+      <field name="name">Thái độ &amp; tinh thần trách nhiệm</field>
+      <field name="code">o_attitude</field>
+      <field name="role_group">office</field>
+      <field name="sequence">30</field>
+      <field name="weight">15</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Chủ động nhận việc, chịu trách nhiệm tới cùng, tuân thủ nội quy và văn hoá công ty.</field>
+    </record>
+    <record id="crit_o_teamwork" model="hb.review.criteria">
+      <field name="name">Phối hợp</field>
+      <field name="code">o_teamwork</field>
+      <field name="role_group">office</field>
+      <field name="sequence">40</field>
+      <field name="weight">15</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Hỗ trợ đồng nghiệp, giao tiếp rõ ràng, phối hợp tốt với bộ phận khác.</field>
+    </record>
+    <record id="crit_o_initiative" model="hb.review.criteria">
+      <field name="name">Chủ động &amp; cải tiến</field>
+      <field name="code">o_initiative</field>
+      <field name="role_group">office</field>
+      <field name="sequence">50</field>
+      <field name="weight">10</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Đề xuất cải tiến quy trình, tự học nâng cao nghiệp vụ, giải quyết vấn đề không cần nhắc.</field>
+    </record>
+    <record id="crit_o_potential" model="hb.review.criteria">
+      <field name="name">Tiềm năng phát triển</field>
+      <field name="code">o_potential</field>
+      <field name="role_group">office</field>
+      <field name="sequence">60</field>
+      <field name="weight">5</field>
+      <field name="max_score">5</field>
+      <field name="auto_source">none</field>
+      <field name="guideline">Khả năng đảm nhận vai trò cao hơn trong 6–12 tháng tới.</field>
+    </record>
+
+    <!-- ============ Ngưỡng xếp loại & chỉ tiêu ============ -->
+    <record id="ir_config_grade_a" model="ir.config_parameter">
+      <field name="key">hocba_reviews.grade_a</field>
+      <field name="value">85</field>
+    </record>
+    <record id="ir_config_grade_b" model="ir.config_parameter">
+      <field name="key">hocba_reviews.grade_b</field>
+      <field name="value">70</field>
+    </record>
+    <record id="ir_config_grade_c" model="ir.config_parameter">
+      <field name="key">hocba_reviews.grade_c</field>
+      <field name="value">55</field>
+    </record>
+    <record id="ir_config_sessions_target" model="ir.config_parameter">
+      <field name="key">hocba_reviews.teacher_sessions_target</field>
+      <field name="value">60</field>
+    </record>
+
+  </data>
+</odoo>
