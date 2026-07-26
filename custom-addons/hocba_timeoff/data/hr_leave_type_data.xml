@@ -42,6 +42,7 @@
             <!-- Phase 6: cho phép nghỉ nửa ngày (Sáng/Chiều) -->
             <field name="request_unit">half_day</field>
             <field name="color">10</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -59,6 +60,7 @@
             <!-- Phase 6: cho phép nghỉ nửa ngày (Sáng/Chiều) -->
             <field name="request_unit">half_day</field>
             <field name="color">1</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -76,6 +78,7 @@
             <!-- cho phép nghỉ nửa ngày (Sáng/Chiều) -->
             <field name="request_unit">half_day</field>
             <field name="color">2</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -92,6 +95,7 @@
             <field name="unpaid">False</field>
             <field name="request_unit">day</field>
             <field name="color">4</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -109,6 +113,7 @@
             <!-- Phase 6: cho phép nghỉ nửa ngày (Sáng/Chiều) -->
             <field name="request_unit">half_day</field>
             <field name="color">6</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -126,6 +131,7 @@
             <!-- Phase 6: cho phép nghỉ nửa ngày (Sáng/Chiều) -->
             <field name="request_unit">half_day</field>
             <field name="color">8</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -144,6 +150,7 @@
             <!-- cho phép nghỉ nửa ngày (Sáng/Chiều) -->
             <field name="request_unit">half_day</field>
             <field name="color">3</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
         <!-- ====================================================
@@ -160,6 +167,7 @@
             <field name="unpaid">False</field>
             <field name="request_unit">day</field>
             <field name="color">7</field>
+            <field name="x_hb_managed">True</field>
         </record>
 
     </data>

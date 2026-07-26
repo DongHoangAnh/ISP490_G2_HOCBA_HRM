@@ -49,23 +49,24 @@ class HocbaOffboarding(models.Model):
     chk_handover = fields.Boolean(string='Đã bàn giao công việc')
     chk_payroll = fields.Boolean(string='Đã chốt lương/công nợ')
     chk_documents = fields.Boolean(string='Đã lưu hồ sơ')
-    asset_pending_count = fields.Integer(
-        string='Tài sản chưa thu hồi', compute='_compute_asset_pending_count')
+    asset_count = fields.Integer(
+        string='Tài sản đang giữ', compute='_compute_asset_info')
+    asset_codes = fields.Char(
+        string='Mã tài sản đang giữ', compute='_compute_asset_info')
     state = fields.Selection(
         STATE_SEL, string='Trạng thái', default='draft',
         required=True, tracking=True, copy=False)
     prev_employment_status = fields.Char(readonly=True, copy=False)
     note = fields.Text(string='Ghi chú')
 
-    @api.depends('employee_id.x_asset_ids.state')
-    def _compute_asset_pending_count(self):
+    @api.depends('employee_id.x_asset_ids')
+    def _compute_asset_info(self):
         # sudo: ACL hr.employee.asset chỉ cấp nhóm HR, nhưng NV/quản lý cần
-        # thấy SỐ ĐẾM tài sản chưa thu trên đơn trong phạm vi mình (chỉ đếm,
-        # không lộ chi tiết tài sản).
+        # thấy tài sản đang giữ trên đơn trong phạm vi mình.
         for rec in self:
-            rec.asset_pending_count = len(
-                rec.employee_id.sudo().x_asset_ids.filtered(
-                    lambda a: a.state == 'assigned'))
+            assets = rec.employee_id.sudo().x_asset_ids
+            rec.asset_count = len(assets)
+            rec.asset_codes = ', '.join(assets.mapped('asset_code'))
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -164,11 +165,11 @@ class HocbaOffboarding(models.Model):
             rec.hr_approved_date = fields.Datetime.now()
             rec.state = 'hr_approved'
             rec.message_post(body=_(
-                '✅ HR đã duyệt — chờ thu hồi tài sản & hoàn tất.'))
+                '✅ HR đã duyệt — chờ hoàn tất thủ tục nghỉ việc.'))
             rec._notify_users(
                 rec.employee_id.user_id, 'approved', 'info',
                 'Đơn nghỉ việc đã được HR duyệt',
-                '%s — chờ thu hồi tài sản & hoàn tất.' % rec.name)
+                '%s — chờ hoàn tất thủ tục nghỉ việc.' % rec.name)
 
     def action_done(self):
         for rec in self:
@@ -177,12 +178,6 @@ class HocbaOffboarding(models.Model):
             if not rec._is_hr_manager():
                 raise AccessError(_('Chỉ HR Manager được hoàn tất đơn nghỉ.'))
             emp = rec.employee_id
-            pending = emp.x_asset_ids.filtered(lambda a: a.state == 'assigned')
-            if pending:
-                raise ValidationError(_(
-                    'Còn %(n)d tài sản chưa thu hồi: %(codes)s') % {
-                        'n': len(pending),
-                        'codes': ', '.join(pending.mapped('asset_code'))})
             rec.actual_leave_date = fields.Date.context_today(rec)
             emp.sudo().with_context(hocba_gate_automation=True).write({
                 'x_employment_status': 'resigned', 'active': False})

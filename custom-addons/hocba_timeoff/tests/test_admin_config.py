@@ -1,0 +1,550 @@
+# ============================================================
+# Test — Trung tâm Cấu hình Time Off (Admin), Phase 1: Loại nghỉ.
+# Theo quy ước repo: TransactionCase gọi thẳng hàm cấp module của controller
+# với self.env(user=...). Owner: Nhật Anh.
+# ============================================================
+from odoo.tests.common import TransactionCase
+from odoo.tests import tagged
+from odoo.exceptions import ValidationError
+
+HB_XMLIDS = (
+    'hb_leave_type_annual', 'hb_leave_type_sick', 'hb_leave_type_unpaid',
+    'hb_leave_type_maternity', 'hb_leave_type_emergency',
+    'hb_leave_type_compensatory', 'hb_leave_type_personal',
+    'hb_leave_type_teaching_off',
+)
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigLeaveTypes(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin', 'login': 'cfg_admin',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+        self.hr_mgr_user = self.env['res.users'].create({
+            'name': 'Cfg HRM', 'login': 'cfg_hrm',
+            'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
+
+    def _admin_env(self):
+        return self.env(user=self.admin_user)
+
+    def test_is_admin_gate(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _is_admin
+        self.assertTrue(_is_admin(self._admin_env()))
+        self.assertFalse(_is_admin(self.env(user=self.hr_mgr_user)))
+
+    def test_list_returns_eight_managed(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_leave_types
+        rows = _config_list_leave_types(self._admin_env())
+        self.assertEqual(len(rows), len(HB_XMLIDS))
+        annual = next(r for r in rows
+                      if r['id'] == self.env.ref('hocba_timeoff.hb_leave_type_annual').id)
+        self.assertTrue(annual['requiresAllocation'])
+        self.assertEqual(annual['requestUnit'], 'half_day')
+
+    def test_create_leave_type_appears(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        env = self._admin_env()
+        row = _config_save_leave_type(env, {
+            'name': 'Nghỉ Thử Nghiệm', 'requiresAllocation': False,
+            'unpaid': False, 'validationType': 'hr', 'requestUnit': 'day',
+            'supportDocument': False, 'isEmergency': False, 'color': 5})
+        self.assertTrue(row['id'])
+        lt = self.env['hr.leave.type'].browse(row['id'])
+        self.assertTrue(lt.x_hb_managed)
+        self.assertIn(row['id'], _hb_leave_type_ids(self.env))
+
+    def test_update_leave_type_writes(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        env = self._admin_env()
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        row = _config_save_leave_type(env, {
+            'id': annual.id, 'name': 'Phép Năm (đã sửa)',
+            'requiresAllocation': True, 'unpaid': False,
+            'validationType': 'both', 'requestUnit': 'half_day',
+            'supportDocument': False, 'isEmergency': False, 'color': 10})
+        self.assertEqual(row['name'], 'Phép Năm (đã sửa)')
+        self.assertEqual(row['validationType'], 'both')
+        self.assertEqual(annual.leave_validation_type, 'both')
+
+    def test_toggle_archives_and_hides(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_leave_type, _config_toggle_leave_type)
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        env = self._admin_env()
+        row = _config_save_leave_type(env, {
+            'name': 'Nghỉ Tạm', 'requiresAllocation': False, 'unpaid': False,
+            'validationType': 'hr', 'requestUnit': 'day',
+            'supportDocument': False, 'isEmergency': False, 'color': 3})
+        _config_toggle_leave_type(env, row['id'], False)
+        self.assertNotIn(row['id'], _hb_leave_type_ids(self.env))
+
+    def test_save_empty_name_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(self._admin_env(), {'name': '   '})
+
+    def test_seeded_types_are_managed(self):
+        for xmlid in HB_XMLIDS:
+            lt = self.env.ref('hocba_timeoff.%s' % xmlid)
+            self.assertTrue(
+                lt.x_hb_managed,
+                'Loại nghỉ %s phải có x_hb_managed=True' % xmlid)
+
+    def test_hb_leave_type_ids_matches_seeded(self):
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        expected = set()
+        for xmlid in HB_XMLIDS:
+            expected.add(self.env.ref('hocba_timeoff.%s' % xmlid).id)
+        self.assertEqual(set(_hb_leave_type_ids(self.env)), expected)
+
+    def test_hb_leave_type_ids_excludes_unmanaged(self):
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        other = self.env['hr.leave.type'].create({
+            'name': 'Loại demo không thuộc HB', 'x_hb_managed': False})
+        self.assertNotIn(other.id, _hb_leave_type_ids(self.env))
+
+    def test_hb_leave_type_ids_includes_new_managed(self):
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        new_managed = self.env['hr.leave.type'].create({
+            'name': 'Loại HB tạo mới', 'x_hb_managed': True})
+        self.assertIn(new_managed.id, _hb_leave_type_ids(self.env))
+
+    def test_hb_leave_type_ids_excludes_archived(self):
+        from odoo.addons.hocba_timeoff.controllers.main import _hb_leave_type_ids
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        self.assertIn(annual.id, _hb_leave_type_ids(self.env))
+        annual.active = False
+        self.assertNotIn(annual.id, _hb_leave_type_ids(self.env))
+
+    def test_second_allocation_type_rejected(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        # Nghỉ Phép Năm (seed) đã có requires_allocation=True và đang active.
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(self._admin_env(), {
+                'name': 'Quỹ Phép Thứ Hai', 'requiresAllocation': True,
+                'unpaid': False, 'validationType': 'hr', 'requestUnit': 'day',
+                'supportDocument': False, 'isEmergency': False, 'color': 1})
+
+    def test_second_unpaid_type_rejected(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        # Nghỉ Không Lương (seed) đã có unpaid=True và đang active.
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(self._admin_env(), {
+                'name': 'Không Lương Thứ Hai', 'requiresAllocation': False,
+                'unpaid': True, 'validationType': 'hr', 'requestUnit': 'day',
+                'supportDocument': False, 'isEmergency': False, 'color': 1})
+
+    def test_edit_allocation_type_keeps_itself(self):
+        # Sửa chính loại Phép Năm mà vẫn giữ requires_allocation=True phải OK
+        # (không tự xung đột với chính nó).
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        row = _config_save_leave_type(self._admin_env(), {
+            'id': annual.id, 'name': 'Nghỉ Phép Năm', 'requiresAllocation': True,
+            'unpaid': False, 'validationType': 'hr', 'requestUnit': 'half_day',
+            'supportDocument': False, 'isEmergency': False, 'color': 10})
+        self.assertTrue(row['requiresAllocation'])
+
+    def test_allocation_flag_ok_when_existing_archived(self):
+        # Nếu loại giữ cờ đang TẮT thì được phép tạo loại allocation mới đang bật.
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_leave_type, _config_toggle_leave_type)
+        annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+        _config_toggle_leave_type(self._admin_env(), annual.id, False)  # archive Annual
+        row = _config_save_leave_type(self._admin_env(), {
+            'name': 'Quỹ Phép Mới', 'requiresAllocation': True, 'unpaid': False,
+            'validationType': 'hr', 'requestUnit': 'day',
+            'supportDocument': False, 'isEmergency': False, 'color': 2})
+        self.assertTrue(row['requiresAllocation'])
+        # Bật lại Annual bây giờ phải bị chặn (sẽ thành 2 loại allocation active).
+        with self.assertRaises(ValidationError):
+            _config_toggle_leave_type(self._admin_env(), annual.id, True)
+
+    # ---- Regression: sửa loại nghỉ ĐÃ có đơn duyệt (bug HTTP 422) ----
+    def _used_leave_type(self):
+        """Loại nghỉ 'Nghỉ Ốm' (seeded, request_unit='half_day') kèm MỘT đơn nghỉ
+        đã duyệt (state='validate'). Mẫu: tests/test_burnout._approved_leave."""
+        lt = self.env.ref('hocba_timeoff.hb_leave_type_sick')
+        dept = self.env['hr.department'].create({'name': 'Phòng Test LT'})
+        emp = self.env['hr.employee'].create({
+            'name': 'NV Test LT', 'department_id': dept.id,
+            'x_employment_status': 'official', 'identification_id': '990000000123',
+            'x_pit_code': '0000000123', 'x_social_insurance_no': '9900000001'})
+        leave = self.env['hr.leave'].create({
+            'name': 'Đơn test LT', 'employee_id': emp.id,
+            'holiday_status_id': lt.id,
+            'request_date_from': '2026-08-03', 'request_date_to': '2026-08-03',
+            'request_date_from_period': 'am', 'request_date_to_period': 'pm'})
+        leave.sudo().action_approve()
+        if leave.state != 'validate':
+            leave.sudo()._action_validate()
+        self.assertEqual(leave.state, 'validate')
+        return lt, leave
+
+    def _payload(self, lt, **override):
+        base = {
+            'id': lt.id, 'name': lt.name,
+            'requiresAllocation': lt.requires_allocation, 'unpaid': lt.unpaid,
+            'validationType': lt.leave_validation_type,
+            'requestUnit': lt.request_unit,
+            'supportDocument': lt.support_document,
+            'isEmergency': lt.x_is_emergency_type, 'color': lt.color}
+        base.update(override)
+        return base
+
+    def test_change_validation_only_on_used_type_ok(self):
+        """Đổi RIÊNG bậc duyệt của loại nghỉ đã có đơn duyệt phải THÀNH CÔNG.
+        Trước fix: controller ghi cả request_unit (dù không đổi) → Odoo core khoá
+        → ràng buộc nổ lúc flush → HTTP 422."""
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        lt, _leave = self._used_leave_type()
+        self.assertNotEqual(lt.leave_validation_type, 'both')
+        row = _config_save_leave_type(
+            self._admin_env(), self._payload(lt, validationType='both'))
+        self.env.flush_all()  # buộc mọi ràng buộc flush ngay như cuối request thật
+        self.assertEqual(row['validationType'], 'both')
+        self.assertEqual(lt.leave_validation_type, 'both')
+        self.assertEqual(lt.request_unit, 'half_day')  # KHÔNG bị đụng
+
+    def test_change_request_unit_on_used_type_raises_clean(self):
+        """Đổi đơn vị nghỉ của loại đã có đơn duyệt → ValidationError (route trả
+        400), KHÔNG để rơi thành 422."""
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_leave_type
+        lt, _leave = self._used_leave_type()
+        with self.assertRaises(ValidationError):
+            _config_save_leave_type(
+                self._admin_env(), self._payload(lt, requestUnit='day'))
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigPolicies(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin P2', 'login': 'cfg_admin_p2',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+
+    def _env(self):
+        return self.env(user=self.admin_user)
+
+    def test_list_returns_six_policies_with_choices(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_policies
+        data = _config_list_policies(self._env())
+        self.assertEqual(len(data['policies']), 6)
+        ft = next(p for p in data['policies'] if p['employmentType'] == 'fulltime')
+        self.assertEqual(ft['annualDays'], 12)
+        self.assertEqual(ft['employmentLabel'], 'Nhân viên Toàn thời gian')
+        self.assertTrue(data['leaveTypeChoices'])
+        annual_id = self.env.ref('hocba_timeoff.hb_leave_type_annual').id
+        self.assertIn(annual_id, [c['id'] for c in data['leaveTypeChoices']])
+        ft_plan = self.env.ref('hocba_timeoff.hb_accrual_plan_annual_fulltime').id
+        self.assertIn(ft_plan, [c['id'] for c in data['accrualPlanChoices']])
+
+    def test_update_policy_writes(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        env = self._env()
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        sick_id = self.env.ref('hocba_timeoff.hb_leave_type_sick').id
+        row = _config_save_policy(env, {
+            'id': rule.id, 'name': 'CS Toàn thời gian (sửa)',
+            'allocationMode': 'fixed', 'annualDays': 15,
+            'accrualPlanId': False, 'notes': 'ghi chú mới',
+            'leaveTypeIds': [sick_id]})
+        self.assertEqual(row['annualDays'], 15)
+        self.assertEqual(row['allocationMode'], 'fixed')
+        self.assertEqual(rule.name, 'CS Toàn thời gian (sửa)')
+        self.assertEqual(rule.leave_type_ids.ids, [sick_id])
+
+    def test_employment_type_immutable(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        env = self._env()
+        rule = self.env.ref('hocba_timeoff.hb_policy_ta')
+        _config_save_policy(env, {
+            'id': rule.id, 'name': rule.name, 'employmentType': 'fulltime',
+            'allocationMode': rule.allocation_mode, 'annualDays': rule.annual_days,
+            'leaveTypeIds': rule.leave_type_ids.ids})
+        self.assertEqual(rule.employment_type, 'ta')
+
+    def test_negative_annual_days_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': rule.id, 'name': 'x', 'allocationMode': 'none',
+                'annualDays': -1, 'leaveTypeIds': []})
+
+    def test_save_without_id_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'name': 'mới', 'allocationMode': 'none', 'annualDays': 0})
+
+    def test_bad_allocation_mode_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': rule.id, 'name': 'x', 'allocationMode': 'weird',
+                'annualDays': 0, 'leaveTypeIds': []})
+
+    def test_bad_id_type_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': 'abc', 'name': 'x', 'allocationMode': 'none',
+                'annualDays': 0, 'leaveTypeIds': []})
+
+    def test_bad_accrual_plan_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        rule = self.env.ref('hocba_timeoff.hb_policy_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_save_policy(self._env(), {
+                'id': rule.id, 'name': 'x', 'allocationMode': 'accrual',
+                'annualDays': 0, 'accrualPlanId': 99999999, 'leaveTypeIds': []})
+
+    def test_nonmanaged_leave_type_dropped(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_policy
+        env = self._env()
+        rule = self.env.ref('hocba_timeoff.hb_policy_ta')
+        managed_id = self.env.ref('hocba_timeoff.hb_leave_type_annual').id
+        bad = self.env['hr.leave.type'].search(
+            [('x_hb_managed', '=', False)], limit=1)
+        self.assertTrue(bad, 'cần ít nhất 1 loại nghỉ non-managed để test')
+        row = _config_save_policy(env, {
+            'id': rule.id, 'name': rule.name, 'allocationMode': 'none',
+            'annualDays': 0, 'leaveTypeIds': [managed_id, bad.id]})
+        self.assertEqual(row['leaveTypeIds'], [managed_id])  # bad id bị loại
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigHolidays(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin P3', 'login': 'cfg_admin_p3',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+
+    def _env(self):
+        return self.env(user=self.admin_user)
+
+    def _count_twin(self, start):
+        from odoo import fields
+        return self.env['resource.calendar.leaves'].search_count([
+            ('calendar_id', '=', False), ('resource_id', '=', False),
+            ('time_type', '=', 'leave'),
+            ('date_from', '>=', fields.Datetime.to_datetime('%s 00:00:00' % start)),
+            ('date_from', '<=', fields.Datetime.to_datetime('%s 23:59:59' % start)),
+        ])
+
+    def test_create_writes_both_models(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        row = _config_save_holiday(self._env(), {
+            'name': 'Ngày lễ thử', 'startDate': '2027-05-19',
+            'endDate': '2027-05-19', 'color': 3})
+        mday = self.env['hr.leave.mandatory.day'].browse(row['id'])
+        self.assertTrue(mday.exists())
+        self.assertEqual(str(mday.start_date), '2027-05-19')
+        self.assertEqual(self._count_twin('2027-05-19'), 1)
+
+    def test_list_by_year_filters(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_holiday, _config_list_holidays)
+        env = self._env()
+        _config_save_holiday(env, {'name': 'Lễ 2028', 'startDate': '2028-03-10',
+                                    'endDate': '2028-03-10', 'color': 1})
+        data = _config_list_holidays(env, 2028)
+        names = [h['name'] for h in data['holidays']]
+        self.assertIn('Lễ 2028', names)
+        data_other = _config_list_holidays(env, 2029)
+        self.assertNotIn('Lễ 2028', [h['name'] for h in data_other['holidays']])
+
+    def test_update_syncs_both(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        env = self._env()
+        row = _config_save_holiday(env, {'name': 'Lễ cũ', 'startDate': '2027-07-01',
+                                         'endDate': '2027-07-01', 'color': 2})
+        row2 = _config_save_holiday(env, {'id': row['id'], 'name': 'Lễ mới',
+                                          'startDate': '2027-07-02',
+                                          'endDate': '2027-07-03', 'color': 5})
+        mday = self.env['hr.leave.mandatory.day'].browse(row2['id'])
+        self.assertEqual(mday.name, 'Lễ mới')
+        self.assertEqual(str(mday.end_date), '2027-07-03')
+        self.assertEqual(self._count_twin('2027-07-02'), 1)
+        self.assertEqual(self._count_twin('2027-07-01'), 0)  # twin đã dời ngày
+
+    def test_delete_removes_both(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_holiday, _config_delete_holiday)
+        env = self._env()
+        row = _config_save_holiday(env, {'name': 'Lễ xoá', 'startDate': '2027-09-09',
+                                         'endDate': '2027-09-09', 'color': 1})
+        _config_delete_holiday(env, row['id'])
+        self.assertFalse(self.env['hr.leave.mandatory.day'].browse(row['id']).exists())
+        self.assertEqual(self._count_twin('2027-09-09'), 0)
+
+    def test_end_before_start_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'name': 'x', 'startDate': '2027-05-10',
+                                               'endDate': '2027-05-09'})
+
+    def test_name_required_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'name': '  ', 'startDate': '2027-05-10',
+                                               'endDate': '2027-05-10'})
+
+    def test_bad_color_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'name': 'x', 'startDate': '2027-05-10',
+                                               'endDate': '2027-05-10', 'color': 'blue'})
+
+    def test_bad_id_type_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_holiday
+        with self.assertRaises(ValidationError):
+            _config_save_holiday(self._env(), {'id': 'abc', 'name': 'x',
+                                               'startDate': '2027-05-10', 'endDate': '2027-05-10'})
+
+    def test_delete_nonexistent_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_delete_holiday
+        with self.assertRaises(ValidationError):
+            _config_delete_holiday(self._env(), 999999999)
+
+
+@tagged('post_install', '-at_install')
+class TestAdminConfigAccrual(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = self.env['res.users'].create({
+            'name': 'Cfg Admin P4', 'login': 'cfg_admin_p4',
+            'group_ids': [(4, self.env.ref('base.group_system').id)]})
+        self.annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
+
+    def _env(self):
+        return self.env(user=self.admin_user)
+
+    def _level(self, **kw):
+        base = {'sequence': 10, 'addedValue': 1, 'addedValueType': 'day',
+                'frequency': 'monthly', 'startType': 'day', 'startCount': 0,
+                'milestoneDate': 'creation', 'capAccruedTime': True,
+                'maximumLeave': 12, 'actionWithUnusedAccruals': 'all',
+                'carryoverOptions': 'limited', 'postponeMaxDays': 5}
+        base.update(kw)
+        return base
+
+    def test_list_returns_seeded_plans(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_accrual_plans
+        data = _config_list_accrual_plans(self._env())
+        names = [p['name'] for p in data['plans']]
+        self.assertIn('Phép Năm — Nhân Viên Toàn Thời Gian', names)
+        self.assertTrue(data['leaveTypeChoices'])
+
+    def test_field_options_frequency_curated(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_list_accrual_plans
+        data = _config_list_accrual_plans(self._env())
+        freq_vals = {o['value'] for o in data['fieldOptions']['frequency']}
+        self.assertEqual(freq_vals, {'daily', 'monthly'})
+
+    def test_create_plan_with_level(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        row = _config_save_accrual_plan(self._env(), {
+            'name': 'Plan Thử', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': True,
+            'carryoverMonth': '3', 'carryoverDay': '31',
+            'levels': [self._level(addedValue=0.5, maximumLeave=6)]})
+        plan = self.env['hr.leave.accrual.plan'].browse(row['id'])
+        self.assertEqual(len(plan.level_ids), 1)
+        self.assertEqual(plan.level_ids.added_value, 0.5)
+        self.assertEqual(plan.level_ids.frequency, 'monthly')
+
+    def test_update_replaces_levels(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        env = self._env()
+        row = _config_save_accrual_plan(env, {
+            'name': 'Plan Sửa', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': False,
+            'levels': [self._level(addedValue=1)]})
+        row2 = _config_save_accrual_plan(env, {
+            'id': row['id'], 'name': 'Plan Sửa', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': False,
+            'levels': [self._level(addedValue=2), self._level(sequence=20, addedValue=3)]})
+        plan = self.env['hr.leave.accrual.plan'].browse(row2['id'])
+        self.assertEqual(len(plan.level_ids), 2)
+        self.assertEqual(sorted(plan.level_ids.mapped('added_value')), [2.0, 3.0])
+
+    def test_delete_used_plan_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_delete_accrual_plan
+        used = self.env.ref('hocba_timeoff.hb_accrual_plan_annual_fulltime')
+        with self.assertRaises(ValidationError):
+            _config_delete_accrual_plan(self._env(), used.id)
+
+    def test_delete_unused_plan_ok(self):
+        from odoo.addons.hocba_timeoff.controllers.config import (
+            _config_save_accrual_plan, _config_delete_accrual_plan)
+        env = self._env()
+        row = _config_save_accrual_plan(env, {
+            'name': 'Plan Bỏ', 'timeOffTypeId': self.annual.id,
+            'accruedGainTime': 'start', 'canBeCarryover': False,
+            'levels': [self._level()]})
+        _config_delete_accrual_plan(env, row['id'])
+        self.assertFalse(self.env['hr.leave.accrual.plan'].browse(row['id']).exists())
+
+    def test_bad_frequency_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level(frequency='weekly')]})
+
+    def test_non_positive_added_value_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level(addedValue=0)]})
+
+    def test_name_required_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': '  ', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level()]})
+
+    def test_bad_type_id_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': 999999999,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level()]})
+
+    def test_bad_id_type_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'id': 'abc', 'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False,
+                'levels': [self._level()]})
+
+    def test_empty_levels_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_save_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_save_accrual_plan(self._env(), {
+                'name': 'x', 'timeOffTypeId': self.annual.id,
+                'accruedGainTime': 'start', 'canBeCarryover': False, 'levels': []})
+
+    def test_delete_nonexistent_raises(self):
+        from odoo.addons.hocba_timeoff.controllers.config import _config_delete_accrual_plan
+        with self.assertRaises(ValidationError):
+            _config_delete_accrual_plan(self._env(), 999999999)

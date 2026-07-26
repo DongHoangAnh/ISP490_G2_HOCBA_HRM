@@ -95,11 +95,18 @@ export const fetchWorkdays = (year) => {
   return hbGet('/hocba-hrm/api/timeoff/workdays' + (q ? '?' + q : ''));
 };
 
-/* Thêm 1 hoặc nhiều ngày đi làm (HR). dates: mảng 'YYYY-MM-DD'. */
+/* Thêm 1 hoặc nhiều ngày đi làm (HR). dates: mảng 'YYYY-MM-DD'.
+   Chỉ nhận ngày CHƯA ĐẾN (>= minDate); ngày đã qua → 400 'past_workday'. */
 export const addWorkdays = (dates, name, year) =>
   hbPost('/hocba-hrm/api/timeoff/workdays/add', { dates, name, year });
 
-/* Xoá 1 ngày đi làm (HR). */
+/* Sửa 1 ngày đi làm (HR): đổi ngày và/hoặc ghi chú. Chỉ ngày CHƯA ĐẾN;
+   ngày đã diễn ra → 400 'locked_workday'. */
+export const updateWorkday = (id, { date, name }, year) =>
+  hbPost(`/hocba-hrm/api/timeoff/workdays/${id}/update`, { date, name, year });
+
+/* Xoá 1 ngày đi làm (HR). Chỉ ngày CHƯA ĐẾN — ngày đã diễn ra bị chặn (400)
+   vì chấm công/lương của ngày đó đã tính theo lịch này. */
 export const deleteWorkday = (id, year) =>
   hbPost(`/hocba-hrm/api/timeoff/workdays/${id}/delete`, { year });
 

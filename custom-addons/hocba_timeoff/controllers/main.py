@@ -175,13 +175,12 @@ def _scoped_departments(env, scope):
 
 
 def _hb_leave_type_ids(env):
-    """ID các loại nghỉ Học Bá (theo xml_id, bỏ qua loại thiếu)."""
-    ids = []
-    for xmlid in HB_LEAVE_TYPE_XMLIDS:
-        rec = env.ref('hocba_timeoff.%s' % xmlid, raise_if_not_found=False)
-        if rec:
-            ids.append(rec.id)
-    return ids
+    """ID các loại nghỉ Học Bá — lọc theo cờ DB x_hb_managed (thay cho lọc
+    cứng theo xml_id): loại admin tạo mới tự xuất hiện, loại tắt (active=False)
+    tự ẩn khỏi SPA. HB_LEAVE_TYPE_XMLIDS giữ lại làm tài liệu danh sách 8 loại
+    chuẩn; không còn dùng để lọc (migration seed cờ bằng danh sách riêng)."""
+    return env['hr.leave.type'].sudo().search(
+        [('x_hb_managed', '=', True)], order='id').ids
 
 
 def _teaching_off_type_id(env):
@@ -2163,12 +2162,19 @@ class HocBaTimeoff(http.Controller):
     # Lịch làm việc — Thứ 2..6 mặc định + các ngày đi làm thêm do HR thêm
     # ------------------------------------------------------------------
     def _work_days(self, year):
+        """Ngày đi làm thêm trong năm. `locked` = ngày đã đến/đã qua → SPA khoá
+        nút sửa/xoá (model hb.work.day mới là nơi chặn thật)."""
         days = request.env['hb.work.day'].sudo().search([
             ('date', '>=', '%d-01-01' % year),
             ('date', '<=', '%d-12-31' % year),
         ], order='date')
-        return [{'id': d.id, 'date': _d(d.date), 'name': d.name or 'Ngày đi làm'}
+        return [{'id': d.id, 'date': _d(d.date), 'name': d.name or 'Ngày đi làm',
+                 'locked': d.is_locked}
                 for d in days]
+
+    def _min_work_day(self):
+        """Ngày sớm nhất HR còn được thêm/sửa lịch làm việc (= ngày mai)."""
+        return _d(request.env['hb.work.day'].sudo()._first_editable_date())
 
     def _public_holiday_dates(self, start, end):
         """Tập NGÀY lễ toàn cục (resource.calendar.leaves) trong [start, end].
@@ -2219,8 +2225,9 @@ class HocBaTimeoff(http.Controller):
         except (TypeError, ValueError):
             year = self._this_year()
         return request.make_json_response({
-            'canEdit': scope['isHrManager'],   # chỉ HR/Admin được thêm/xoá
+            'canEdit': scope['isHrManager'],   # chỉ HR/Admin được thêm/sửa/xoá
             'year': year,
+            'minDate': self._min_work_day(),   # ngày sớm nhất còn thao tác được
             'workDays': self._work_days(year),
         })
 
@@ -2239,6 +2246,8 @@ class HocBaTimeoff(http.Controller):
             year = self._this_year()
 
         Model = request.env['hb.work.day'].sudo()
+        limit = Model._first_editable_date()
+        days = []
         for ds in raw_dates:
             ds = (ds or '').strip()
             if not ds:
@@ -2247,10 +2256,65 @@ class HocBaTimeoff(http.Controller):
                 day = fields.Date.to_date(ds)
             except (ValueError, TypeError):
                 continue
+            days.append(day)
+        # Chặn TRƯỚC khi tạo: chỉ nhận ngày chưa đến. Báo lỗi cả lô (không tạo
+        # một phần) để HR sửa lại danh sách rồi lưu lại — tránh trạng thái
+        # "đã lưu 2/3 ngày" khó hiểu.
+        past = sorted({d for d in days if d < limit})
+        if past:
+            return request.make_json_response(
+                {'error': 'past_workday',
+                 'message': 'Không thêm được ngày đã đến hoặc đã qua: %s. '
+                            'Ngày đã diễn ra thì chấm công và lương đã tính '
+                            'theo lịch lúc đó. Chỉ thêm được từ ngày %s trở đi.'
+                            % (', '.join(d.strftime('%d/%m/%Y') for d in past),
+                               limit.strftime('%d/%m/%Y'))},
+                status=400)
+        for day in days:
             if not Model.search_count([('date', '=', day)]):
                 Model.create({'date': day, 'name': name})
         return request.make_json_response({
-            'canEdit': True, 'year': year, 'workDays': self._work_days(year),
+            'canEdit': True, 'year': year, 'minDate': self._min_work_day(),
+            'workDays': self._work_days(year),
+        })
+
+    @http.route('/hocba-hrm/api/timeoff/workdays/<int:day_id>/update',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_workdays_update(self, day_id, **kw):
+        """Sửa 1 ngày đi làm (đổi ngày / ghi chú) — chỉ khi ngày CHƯA ĐẾN."""
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data() or {}
+        try:
+            year = int(payload.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+        rec = request.env['hb.work.day'].sudo().browse(day_id)
+        if not rec.exists():
+            return request.make_json_response(
+                {'error': 'not_found',
+                 'message': 'Ngày làm việc này không còn trong lịch.'},
+                status=404)
+        vals = {}
+        if payload.get('date'):
+            try:
+                vals['date'] = fields.Date.to_date(payload['date'])
+            except (ValueError, TypeError):
+                return request.make_json_response(
+                    {'error': 'bad_date', 'message': 'Ngày không hợp lệ.'},
+                    status=400)
+        if payload.get('name') is not None:
+            vals['name'] = (payload.get('name') or '').strip() or 'Ngày đi làm'
+        if vals:
+            try:
+                rec.write(vals)
+            except (UserError, ValidationError) as ex:
+                return request.make_json_response(
+                    {'error': 'locked_workday', 'message': str(ex)}, status=400)
+        return request.make_json_response({
+            'canEdit': True, 'year': year, 'minDate': self._min_work_day(),
+            'workDays': self._work_days(year),
         })
 
     @http.route('/hocba-hrm/api/timeoff/workdays/<int:day_id>/delete',
@@ -2266,9 +2330,15 @@ class HocBaTimeoff(http.Controller):
             year = self._this_year()
         rec = request.env['hb.work.day'].sudo().browse(day_id)
         if rec.exists():
-            rec.unlink()
+            # Ngày đã diễn ra bị model chặn — trả 400 kèm lý do thay vì 500.
+            try:
+                rec.unlink()
+            except (UserError, ValidationError) as ex:
+                return request.make_json_response(
+                    {'error': 'locked_workday', 'message': str(ex)}, status=400)
         return request.make_json_response({
-            'canEdit': True, 'year': year, 'workDays': self._work_days(year),
+            'canEdit': True, 'year': year, 'minDate': self._min_work_day(),
+            'workDays': self._work_days(year),
         })
 
     # ------------------------------------------------------------------

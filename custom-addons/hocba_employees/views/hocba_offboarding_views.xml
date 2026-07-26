@@ -36,7 +36,8 @@
                             <field name="request_date"/>
                             <field name="expected_leave_date"/>
                             <field name="actual_leave_date"/>
-                            <field name="asset_pending_count"/>
+                            <field name="asset_count"/>
+                            <field name="asset_codes"/>
                         </group>
                     </group>
                     <group string="Duyệt">
@@ -65,7 +66,7 @@
                 <field name="reason_type"/>
                 <field name="request_date"/>
                 <field name="expected_leave_date"/>
-                <field name="asset_pending_count"/>
+                <field name="asset_count"/>
                 <field name="state" widget="badge"/>
             </list>
         </field>
