@@ -1,4 +1,5 @@
 ﻿from odoo import api, fields, models
+from odoo.exceptions import UserError, ValidationError
 
 _ODOO_DEFAULT_STAGE_NAMES = [
     'New', 'Qualification', 'Initial Qualification',
@@ -20,6 +21,42 @@ class HrRecruitmentStageHocBaExt(models.Model):
         string='Người hỗ trợ',
         help='Bộ phận / cá nhân phối hợp hỗ trợ trong bước này',
     )
+    sla_days = fields.Integer(
+        string='SLA (ngày)', default=0,
+        help='Số ngày tối đa ứng viên được ở trong bước này; 0 = không áp SLA. '
+             'Quá hạn → badge "Trễ SLA" trên kanban CV.',
+    )
+
+    @api.constrains('sla_days')
+    def _check_sla_days(self):
+        for stage in self:
+            if stage.sla_days < 0:
+                raise ValidationError('SLA (ngày) không được âm.')
+
+    @api.model
+    def action_reorder(self, ordered_ids):
+        """Ghi lại sequence 10/20/30… theo thứ tự id truyền vào (kéo-thả từ SPA).
+        Mirror hb.onboarding.template.action_reorder."""
+        stages = self.browse([int(i) for i in ordered_ids])
+        stages.check_access('write')
+        for seq, stage in zip(range(10, 10 * len(stages) + 1, 10), stages):
+            stage.sequence = seq
+        return True
+
+    @api.ondelete(at_uninstall=False)
+    def _unlink_except_in_use(self):
+        """Chặn xoá bằng thông báo dễ hiểu thay vì lỗi khoá ngoại thô."""
+        Applicant = self.env['hr.applicant'].sudo().with_context(active_test=False)
+        for stage in self:
+            count = Applicant.search_count([('stage_id', '=', stage.id)])
+            if count:
+                raise UserError(
+                    'Không thể xoá bước "%s": còn %s ứng viên (kể cả lưu trữ) '
+                    'đang ở bước này. Hãy chuyển họ sang bước khác trước.'
+                    % (stage.name, count))
+        remaining = self.search_count([('id', 'not in', self.ids)])
+        if not remaining:
+            raise UserError('Quy trình phải còn ít nhất 1 bước.')
 
     @api.model
     def _hocba_cleanup_default_stages(self):

@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<odoo noupdate="0">
+<odoo noupdate="1">
 
     <!--
         Sheet 7.1 — Quy trình tuyển dụng Học Bá (10 bước)
-        noupdate="0" — luôn đồng bộ từ XML khi upgrade module.
+        noupdate="1" — chỉ seed lần đầu; admin chỉnh trên màn "Cấu hình tuyển dụng"
+        (SPA) và không bị XML ghi đè khi upgrade. DB cũ: migration 19.0.2.2.0
+        set lại cờ noupdate + seed sla_days.
     -->
 
     <!-- ── Bước 1: Yêu cầu tuyển dụng ── -->
@@ -34,6 +36,7 @@
     <record id="hb_stage_screening" model="hr.recruitment.stage">
         <field name="name">Lọc CV</field>
         <field name="sequence">30</field>
+        <field name="sla_days">1</field>
         <field name="support_person">TBP</field>
         <field name="requirements">Trong 24h sau khi nhận CV: BP tuyển dụng chuyển hồ sơ, TBP lọc CV ứng viên phù hợp.</field>
         <field name="success_criteria">TBP nhận đầy đủ hồ sơ. Lọc và chọn CV phù hợp. Với các CV phù hợp điền "Pass" / không phù hợp điền "Fail" tại cột Lọc CV.</field>
@@ -46,6 +49,7 @@
     <record id="hb_stage_schedule" model="hr.recruitment.stage">
         <field name="name">Lên lịch phỏng vấn</field>
         <field name="sequence">40</field>
+        <field name="sla_days">1</field>
         <field name="support_person">BP tuyển dụng</field>
         <field name="requirements">Trong 1 ngày làm việc: TBP điền lịch rảnh phỏng vấn trong tuần.</field>
         <field name="success_criteria">TBP điền lịch rảnh mình có thể phỏng vấn. BP tuyển dụng sẽ liên hệ và hẹn ứng viên theo lịch rảnh TBP đã cung cấp.</field>
@@ -58,6 +62,7 @@
     <record id="hb_stage_invite" model="hr.recruitment.stage">
         <field name="name">Hẹn &amp; mời phỏng vấn</field>
         <field name="sequence">50</field>
+        <field name="sla_days">1</field>
         <field name="support_person">TBP</field>
         <field name="requirements">Trong 1 ngày làm việc sau khi có lịch: BP tuyển dụng liên hệ, hẹn lịch và gửi mail mời phỏng vấn.</field>
         <field name="success_criteria">Trên 80% ứng viên đồng ý và xác nhận lịch phỏng vấn.</field>
@@ -82,6 +87,7 @@
     <record id="hb_stage_result" model="hr.recruitment.stage">
         <field name="name">Kết quả phỏng vấn</field>
         <field name="sequence">70</field>
+        <field name="sla_days">1</field>
         <field name="support_person">BP tuyển dụng</field>
         <field name="requirements">Trong 1 ngày sau phỏng vấn: TBP gửi kết quả phỏng vấn cho BP tuyển dụng.</field>
         <field name="success_criteria">BP tuyển dụng nhận đầy đủ kết quả và lí do pass / không pass từ TBP.</field>
@@ -94,6 +100,7 @@
     <record id="hb_stage_offer" model="hr.recruitment.stage">
         <field name="name">Gửi Offer</field>
         <field name="sequence">80</field>
+        <field name="sla_days">1</field>
         <field name="support_person">TBP</field>
         <field name="requirements">Trong 1 ngày sau khi nhận kết quả: BP tuyển dụng gửi thư mời nhận việc / offer.</field>
         <field name="success_criteria">Offer rõ ràng, ứng viên xác nhận đồng ý theo mail mẫu.</field>
@@ -106,6 +113,7 @@
     <record id="hb_stage_onboarding" model="hr.recruitment.stage">
         <field name="name">Onboarding</field>
         <field name="sequence">90</field>
+        <field name="sla_days">2</field>
         <field name="support_person">TBP</field>
         <field name="requirements">Ngày đầu đi làm — đào tạo hội nhập trong 1-2 ngày đi làm đầu tiên.</field>
         <field name="success_criteria">Sáng ngày 1: Nhân sự nắm rõ quy trình, hoà nhập nhanh, ký HĐ đầy đủ. Ngày 1 (hoặc 2): Nhân sự hiểu sứ mệnh, giá trị, văn hoá, quy định Học Bá.</field>

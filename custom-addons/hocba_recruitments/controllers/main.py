@@ -130,6 +130,10 @@ class HocBaTuyenDung(http.Controller):
                 or u.has_group('hr.group_hr_manager')
                 or self._has_recruit_group())
 
+    def _is_admin(self):
+        """Chỉ Admin hệ thống — dùng cho màn Cấu hình tuyển dụng."""
+        return request.env.user.has_group('base.group_system')
+
     def _managed_department_ids(self):
         """Phòng ban (gồm phòng con) mà user làm trưởng phòng (manager_id)."""
         emp = request.env.user.employee_id
@@ -194,7 +198,7 @@ class HocBaTuyenDung(http.Controller):
             att = Att.search(
                 [('res_model', '=', 'hr.applicant'), ('res_id', '=', a.id)],
                 order='id desc', limit=1)
-        return {
+        row = {
             'id': a.id,
             'dateReceived': _d(a.date_received or (a.create_date and a.create_date.date())),
             'ctv': a.ctv_tuyen_dung or '',
@@ -227,6 +231,10 @@ class HocBaTuyenDung(http.Controller):
             'employeeName': a.employee_id.name or '',
             'employeeCode': a.employee_id.x_employee_code or '',
         }
+        # SLA theo bước (spec 2026-07-23-recruitment-config-design.md)
+        days, sla, overdue = a._hb_sla_state()
+        row.update({'daysInStage': days, 'slaDays': sla, 'slaOverdue': overdue})
+        return row
 
     def _meta(self):
         """Stages + jobs + nhãn select — cho kanban và form Thêm/Sửa."""
@@ -234,7 +242,8 @@ class HocBaTuyenDung(http.Controller):
         stages = env['hr.recruitment.stage'].sudo().search([], order='sequence, id')
         jobs = env['hr.job'].sudo().search([], order='name')
         return {
-            'stages': [{'id': s.id, 'name': s.name, 'sequence': s.sequence}
+            'stages': [{'id': s.id, 'name': s.name, 'sequence': s.sequence,
+                        'hiredStage': bool(s.hired_stage), 'slaDays': s.sla_days or 0}
                        for s in stages],
             'jobs': [{'id': j.id, 'name': j.name} for j in jobs],
             'cvResultLabels': self._sel_labels('hr.applicant', 'cv_filter_result'),
@@ -1345,3 +1354,165 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(self._slot_row(s))
+
+    # ------------------------------------------------------------------
+    # Cấu hình tuyển dụng (admin/HR) — tab "Cấu hình" của SPA.
+    # Spec: docs/superpowers/specs/2026-07-23-recruitment-config-design.md
+    # Stages CRUD + kéo-thả thứ tự + SLA; chế độ tự đóng tuyển (auto_close_mode).
+    # ------------------------------------------------------------------
+
+    STAGE_CONFIG_FIELDS = {
+        'name': ('name', 'str'),
+        'supportPerson': ('support_person', 'str'),
+        'requirements': ('requirements', 'str'),
+        'successCriteria': ('success_criteria', 'str'),
+        'slaDays': ('sla_days', 'num'),
+        'hiredStage': ('hired_stage', 'bool'),
+    }
+
+    AUTO_CLOSE_LABELS = {
+        'full': 'Ngừng đăng tuyển + đóng phiếu yêu cầu (mặc định)',
+        'stop': 'Chỉ ngừng đăng tuyển (giữ phiếu đang tuyển)',
+        'warn': 'Chỉ cảnh báo trên chatter, không đổi trạng thái',
+        'off': 'Tắt — không làm gì khi tuyển đủ chỉ tiêu',
+    }
+
+    def _stage_config_row(self, s, applicant_counts=None):
+        count = (applicant_counts or {}).get(s.id)
+        if count is None:
+            count = request.env['hr.applicant'].sudo().with_context(
+                active_test=False).search_count([('stage_id', '=', s.id)])
+        return {
+            'id': s.id,
+            'name': s.name or '',
+            'sequence': s.sequence,
+            'hiredStage': bool(s.hired_stage),
+            'slaDays': s.sla_days or 0,
+            'supportPerson': s.support_person or '',
+            'requirements': s.requirements or '',
+            'successCriteria': s.success_criteria or '',
+            'applicantCount': count,
+        }
+
+    def _stage_config_vals(self, payload):
+        vals = {}
+        for key, (field, typ) in self.STAGE_CONFIG_FIELDS.items():
+            if key in payload:
+                vals[field] = _conv(typ, payload[key])
+        return vals
+
+    @http.route('/hocba-hrm/api/recruitment/config', auth='user',
+                type='http', methods=['GET'])
+    def api_recruitment_config(self, **kw):
+        """Toàn bộ cấu hình tuyển dụng — CHỈ Admin hệ thống."""
+        if not self._is_admin():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        env = request.env
+        stages = env['hr.recruitment.stage'].sudo().search([], order='sequence, id')
+        counts = dict(env['hr.applicant'].sudo().with_context(
+            active_test=False)._read_group(
+            [('stage_id', 'in', stages.ids)], ['stage_id'], ['__count']))
+        counts = {s.id: c for s, c in counts.items()}
+        return request.make_json_response({
+            'isAdmin': True,
+            'autoCloseMode': env['hr.applicant']._hb_auto_close_mode(),
+            'autoCloseLabels': self.AUTO_CLOSE_LABELS,
+            'stages': [self._stage_config_row(s, counts) for s in stages],
+        })
+
+    @http.route('/hocba-hrm/api/recruitment/config/stages', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_stage_create(self, **kw):
+        """Thêm bước quy trình (vào cuối) — chỉ Admin."""
+        if not self._is_admin():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        vals = self._stage_config_vals(request.get_json_data() or {})
+        if not (vals.get('name') or '').strip():
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Vui lòng nhập tên bước.'},
+                status=400)
+        Stage = request.env['hr.recruitment.stage'].sudo()
+        last = Stage.search([], order='sequence desc, id desc', limit=1)
+        vals.setdefault('sequence', (last.sequence or 0) + 10)
+        try:
+            s = Stage.create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._stage_config_row(s))
+
+    @http.route('/hocba-hrm/api/recruitment/config/stage/<int:stage_id>',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_stage_update(self, stage_id, **kw):
+        if not self._is_admin():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        s = request.env['hr.recruitment.stage'].sudo().browse(stage_id)
+        if not s.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        vals = self._stage_config_vals(request.get_json_data() or {})
+        if 'name' in vals and not (vals['name'] or '').strip():
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Tên bước không được rỗng.'},
+                status=400)
+        try:
+            if vals:
+                s.write(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(self._stage_config_row(s))
+
+    @http.route('/hocba-hrm/api/recruitment/config/stage/<int:stage_id>/delete',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_stage_delete(self, stage_id, **kw):
+        """Xoá bước — guard ondelete (còn ứng viên / bước cuối cùng) trả 400. Chỉ Admin."""
+        if not self._is_admin():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        s = request.env['hr.recruitment.stage'].sudo().browse(stage_id)
+        if not s.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        try:
+            s.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True})
+
+    @http.route('/hocba-hrm/api/recruitment/config/stages/reorder',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_stage_reorder(self, **kw):
+        """Kéo-thả đổi thứ tự: body {ids: [id theo thứ tự mới]}. Chỉ Admin."""
+        if not self._is_admin():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        ids = (request.get_json_data() or {}).get('ids') or []
+        if not ids:
+            return request.make_json_response({'error': 'bad_request'}, status=400)
+        try:
+            request.env['hr.recruitment.stage'].sudo().action_reorder(ids)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response({'ok': True})
+
+    @http.route('/hocba-hrm/api/recruitment/config/settings', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_settings(self, **kw):
+        """Lưu cấu hình chung: {autoCloseMode: full|stop|warn|off}. Chỉ Admin."""
+        if not self._is_admin():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data() or {}
+        mode = payload.get('autoCloseMode')
+        if mode is not None:
+            if mode not in self.AUTO_CLOSE_LABELS:
+                return request.make_json_response(
+                    {'error': 'bad_request', 'message': 'Chế độ không hợp lệ.'},
+                    status=400)
+            request.env['ir.config_parameter'].sudo().set_param(
+                'hocba_recruitments.auto_close_mode', mode)
+        return request.make_json_response(
+            {'ok': True,
+             'autoCloseMode': request.env['hr.applicant']._hb_auto_close_mode()})

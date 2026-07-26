@@ -9,6 +9,11 @@ Ca 1: chưa đủ (còn thiếu 1) → không đụng gì.
 Ca 2: đủ (còn thiếu 0) → job stopped + unpublish + phiếu recruiting bị đóng.
 Ca 3: kéo ra khỏi hired sau khi đã tự đóng → job KHÔNG tự mở lại.
 Ca 4: duyệt phiếu mới sau khi đã đóng → job trở lại recruiting, không tự publish.
+
+Chế độ cấu hình (ir.config_parameter hocba_recruitments.auto_close_mode —
+spec 2026-07-23-recruitment-config-design.md):
+  full (mặc định) = hành vi trên · stop = chỉ ngừng đăng, giữ phiếu ·
+  warn = chỉ cảnh báo chatter · off = tắt · giá trị lạ → coi như full.
 """
 from odoo.tests import TransactionCase, tagged
 
@@ -128,3 +133,51 @@ class TestAutoCloseRecruitment(TransactionCase):
         self.job.write({'x_published': False, 'recruitment_status': 'recruiting'})
         self.assertEqual(self.job.recruitment_status, 'recruiting')
         self.assertFalse(self.job.x_published)
+
+    # ── Chế độ auto-close cấu hình được ──────────────────────────────────────
+
+    def _set_mode(self, mode):
+        self.env['ir.config_parameter'].sudo().set_param(
+            'hocba_recruitments.auto_close_mode', mode)
+
+    def _hire_full_quota(self):
+        a1 = self._new_applicant('UV Một')
+        a2 = self._new_applicant('UV Hai')
+        (a1 + a2).write({'stage_id': self.stage_hired.id})
+
+    def test_07_mode_stop_keeps_requests_open(self):
+        """stop: ngừng đăng nhưng KHÔNG đóng phiếu đang tuyển."""
+        self._set_mode('stop')
+        self._hire_full_quota()
+        self.assertEqual(self.job.recruitment_status, 'stopped')
+        self.assertFalse(self.job.x_published)
+        self.assertEqual(self.req.state, 'recruiting',
+                         'mode stop không được đóng phiếu')
+
+    def test_08_mode_warn_only_posts_message(self):
+        """warn: giữ nguyên trạng thái + publish, chỉ post cảnh báo chatter."""
+        self._set_mode('warn')
+        before = len(self.job.message_ids)
+        self._hire_full_quota()
+        self.assertEqual(self.job.recruitment_status, 'recruiting')
+        self.assertTrue(self.job.x_published)
+        self.assertEqual(self.req.state, 'recruiting')
+        self.assertGreater(len(self.job.message_ids), before,
+                           'phải có message cảnh báo trên chatter')
+
+    def test_09_mode_off_does_nothing(self):
+        """off: tuyển đủ vẫn không đổi gì."""
+        self._set_mode('off')
+        before = len(self.job.message_ids)
+        self._hire_full_quota()
+        self.assertEqual(self.job.recruitment_status, 'recruiting')
+        self.assertTrue(self.job.x_published)
+        self.assertEqual(self.req.state, 'recruiting')
+        self.assertEqual(len(self.job.message_ids), before)
+
+    def test_10_unknown_mode_falls_back_full(self):
+        """Giá trị param rác → hành vi mặc định full."""
+        self._set_mode('banana')
+        self._hire_full_quota()
+        self.assertEqual(self.job.recruitment_status, 'stopped')
+        self.assertEqual(self.req.state, 'closed')

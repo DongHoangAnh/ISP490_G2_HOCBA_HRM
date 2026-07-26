@@ -34,6 +34,8 @@ export default function Recruitment({ search }) {
 
   const select = (id) => { setTab(id); localStorage.setItem('hocba_rec_tab', id); };
   const label = TABS.find(([id]) => id === tab)?.[1] || '';
+  // Tab lưu trong localStorage có thể không còn (vd 'config' cũ) → về tab đầu.
+  const activeTab = TABS.some(([id]) => id === tab) ? tab : 'cv';
 
   return (
     <div className="content fade-in">
@@ -46,23 +48,23 @@ export default function Recruitment({ search }) {
 
       <div className="tabs">
         {TABS.map(([id, l]) => (
-          <button key={id} className={'tab' + (tab === id ? ' active' : '')} onClick={() => select(id)}>{l}</button>
+          <button key={id} className={'tab' + (activeTab === id ? ' active' : '')} onClick={() => select(id)}>{l}</button>
         ))}
       </div>
 
-      {tab === 'cv' ? (
+      {activeTab === 'cv' ? (
         <CvList search={search} />
-      ) : tab === 'jobs' ? (
+      ) : activeTab === 'jobs' ? (
         <Jobs search={search} />
-      ) : tab === 'requests' ? (
+      ) : activeTab === 'requests' ? (
         <Requests search={search} />
-      ) : tab === 'interviews' ? (
+      ) : activeTab === 'interviews' ? (
         <InterviewSlots />
-      ) : tab === 'offers' ? (
+      ) : activeTab === 'offers' ? (
         <Offers search={search} />
-      ) : tab === 'mails' ? (
+      ) : activeTab === 'mails' ? (
         <MailTemplates search={search} />
-      ) : tab === 'maillog' ? (
+      ) : activeTab === 'maillog' ? (
         <MailLogs search={search} />
       ) : (
         <div className="card" style={{ padding: 36, textAlign: 'center' }}>

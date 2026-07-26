@@ -50,6 +50,20 @@ export const previewMailTemplate = (id, applicantId) =>
 export const logSentMail = (logs) =>
   hbPost('/hocba-hrm/api/recruitment/mail/log-sent', { logs });
 
+/* Cấu hình tuyển dụng (admin/HR) — stages + SLA + auto-close.
+   Spec: docs/superpowers/specs/2026-07-23-recruitment-config-design.md */
+export const fetchRecruitConfig = () => hbGet('/hocba-hrm/api/recruitment/config');
+export const createRecruitStage = (payload) =>
+  hbPost('/hocba-hrm/api/recruitment/config/stages', payload);
+export const updateRecruitStage = (id, payload) =>
+  hbPost(`/hocba-hrm/api/recruitment/config/stage/${id}`, payload);
+export const deleteRecruitStage = (id) =>
+  hbPost(`/hocba-hrm/api/recruitment/config/stage/${id}/delete`, {});
+export const reorderRecruitStages = (ids) =>
+  hbPost('/hocba-hrm/api/recruitment/config/stages/reorder', { ids });
+export const saveRecruitSettings = (payload) =>
+  hbPost('/hocba-hrm/api/recruitment/config/settings', payload);
+
 /* Lịch rảnh phỏng vấn (hb.interview.slot) */
 export const fetchInterviewSlots = (from, to) =>
   hbGet(`/hocba-hrm/api/recruitment/interview-slots?from=${from}&to=${to}`);

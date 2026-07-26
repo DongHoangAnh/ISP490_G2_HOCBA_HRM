@@ -43,9 +43,33 @@ class HrApplicantHocBaExt(models.Model):
     offer_note = fields.Text(string='Ghi chú offer')
     candidate_confirmed = fields.Char(string='UV xác nhận mail', help='VD: Đã xác nhận, Đã phản hồi')
 
+    # ── SLA theo bước (cấu hình sla_days trên hr.recruitment.stage) ──────────
+
+    def _hb_sla_state(self):
+        """(số ngày ở bước hiện tại, sla_days của bước, có trễ SLA không).
+        Mốc vào bước = date_last_stage_update (core cập nhật mỗi lần đổi stage),
+        fallback create_date. Bước hired / sla_days=0 → không tính trễ."""
+        self.ensure_one()
+        anchor = self.date_last_stage_update or self.create_date
+        days = (fields.Datetime.now() - anchor).days if anchor else 0
+        sla = self.stage_id.sla_days or 0
+        overdue = bool(sla and not self.stage_id.hired_stage and days > sla)
+        return days, sla, overdue
+
     # ── Tự động ngừng đăng khi tuyển đủ chỉ tiêu ─────────────────────────────
     # Ứng viên vào stage "Đã tuyển" (hired_stage) qua bất kỳ đường nào (kéo
     # kanban SPA, backend Odoo, import) đều đi qua write/create → kiểm chỉ tiêu.
+    # Hành vi cấu hình được qua ir.config_parameter hocba_recruitments.auto_close_mode:
+    #   full (mặc định) = ngừng đăng + đóng phiếu · stop = chỉ ngừng đăng ·
+    #   warn = chỉ cảnh báo trên chatter · off = không làm gì.
+
+    AUTO_CLOSE_MODES = ('full', 'stop', 'warn', 'off')
+
+    @api.model
+    def _hb_auto_close_mode(self):
+        mode = self.env['ir.config_parameter'].sudo().get_param(
+            'hocba_recruitments.auto_close_mode', 'full')
+        return mode if mode in self.AUTO_CLOSE_MODES else 'full'
 
     def write(self, vals):
         res = super().write(vals)
@@ -70,6 +94,9 @@ class HrApplicantHocBaExt(models.Model):
         applicant vào stage hired, cộng lại khi kéo ra (hr_recruitment,
         hr_applicant.write). Vì hook này chạy SAU super().write() nên
         no_of_recruitment đã được core trừ → đủ chỉ tiêu ⇔ còn thiếu <= 0."""
+        mode = self._hb_auto_close_mode()
+        if mode == 'off':
+            return
         Applicant = self.env['hr.applicant'].sudo().with_context(active_test=False)
         Request = self.env['hb.recruitment.request'].sudo()
         for job in self.sudo().mapped('job_id'):
@@ -81,15 +108,23 @@ class HrApplicantHocBaExt(models.Model):
                 ('job_id', '=', job.id),
                 ('stage_id.hired_stage', '=', True),
             ])
+            if mode == 'warn':
+                job.sudo().message_post(body=Markup(
+                    '<p>Đã tuyển đủ chỉ tiêu (<b>%s</b> ứng viên nhận việc). '
+                    'Tin vẫn đang đăng — cân nhắc Ngừng đăng tuyển (chế độ tự '
+                    'đóng đang đặt "Chỉ cảnh báo").</p>') % hired)
+                continue
             vals = {'recruitment_status': 'stopped', 'x_published': False}
             # website_hr_recruitment có thể không cài (vd DB test local)
             if 'is_published' in job._fields:
                 vals['is_published'] = False
             job.sudo().write(vals)
-            reqs = Request.search([
-                ('job_id', '=', job.id), ('state', '=', 'recruiting')])
-            if reqs:
-                reqs.write({'state': 'closed'})
+            reqs = Request.browse()
+            if mode == 'full':
+                reqs = Request.search([
+                    ('job_id', '=', job.id), ('state', '=', 'recruiting')])
+                if reqs:
+                    reqs.write({'state': 'closed'})
             job.sudo().message_post(body=Markup(
                 '<p>Đã tuyển đủ chỉ tiêu (<b>%s</b> ứng viên nhận việc) — hệ thống '
                 'tự <b>Ngừng đăng tuyển</b>%s.</p>') % (

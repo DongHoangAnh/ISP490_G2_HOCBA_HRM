@@ -272,6 +272,11 @@ function KanbanView({ rows, stages, labels, isRecruiter, onOpen, onMoved, onErro
                   <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{r.jobName || 'Chưa gán vị trí'}</div>
                   {r.phone && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{r.phone}</div>}
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+                    {r.slaOverdue && (
+                      <Badge kind="red" dot>
+                        Trễ SLA +{r.daysInStage - r.slaDays}ng
+                      </Badge>
+                    )}
                     {r.cvResult && <Badge kind={CV_RESULT_KIND[r.cvResult] || 'gray'}>{labels.cvResultLabels[r.cvResult]}</Badge>}
                     {r.callStatus && <Badge kind={CALL_STATUS_KIND[r.callStatus] || 'gray'}>{labels.callStatusLabels[r.callStatus]}</Badge>}
                   </div>
