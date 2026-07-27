@@ -2,6 +2,7 @@ import json
 import math
 
 from odoo import models, fields, api
+from odoo.exceptions import ValidationError
 
 
 class AttendancePolicy(models.Model):
@@ -54,6 +55,52 @@ class AttendancePolicy(models.Model):
         string='Cửa sổ check-in ca (phút)', default=15,
         help='CTV/OT được check-in/out trong ±N phút quanh giờ ca đã duyệt.')
 
+    # --- Kỳ tính công (admin sửa được): 1..31, mặc định 1→1 (tháng dương lịch)
+    # Ví dụ 15→15 = kỳ trung tuần; 25→5 = kỳ cuối tháng trước → đầu tháng sau.
+    period_start_day = fields.Integer(
+        string='Ngày đầu kỳ tính công (1..31)', default=1)
+    period_end_day = fields.Integer(
+        string='Ngày cuối kỳ tính công (1..31)', default=1,
+        help='Nếu < period_start_day, kỳ cuốn sang tháng kế tiếp.')
+
+    # --- Đa vị trí chấm công hợp lệ (cơ sở)
+    office_location_ids = fields.One2many(
+        'hocba.attendance.office.location', 'policy_id',
+        string='Vị trí chấm công hợp lệ')
+    default_location_id = fields.Many2one(
+        'hocba.attendance.office.location', string='Vị trí mặc định',
+        compute='_compute_default_location', store=True)
+    default_map_url = fields.Char(
+        string='Google Maps (mặc định)',
+        related='default_location_id.map_url', readonly=True)
+
+    @api.depends('office_location_ids.sequence', 'office_location_ids.active')
+    def _compute_default_location(self):
+        for rec in self:
+            active = rec.office_location_ids.filtered(lambda l: l.active)
+            rec.default_location_id = (
+                active.sorted(lambda l: (l.sequence, l.id))[:1]
+                if active else False)
+
+    _period_start_range = models.Constraint(
+        'CHECK(period_start_day BETWEEN 1 AND 31)',
+        'period_start_day phải nằm trong 1..31.')
+    _period_end_range = models.Constraint(
+        'CHECK(period_end_day BETWEEN 1 AND 31)',
+        'period_end_day phải nằm trong 1..31.')
+
+    @api.constrains('period_start_day', 'period_end_day')
+    def _check_period_days(self):
+        for rec in self:
+            if not 1 <= rec.period_start_day <= 31:
+                raise ValidationError(
+                    'Ngày đầu kỳ (%s) phải nằm trong 1..31.'
+                    % rec.period_start_day)
+            if not 1 <= rec.period_end_day <= 31:
+                raise ValidationError(
+                    'Ngày cuối kỳ (%s) phải nằm trong 1..31.'
+                    % rec.period_end_day)
+
     @api.model
     def get_policy(self):
         """Return the active policy, creating a default one if none exists."""
@@ -75,13 +122,27 @@ class AttendancePolicy(models.Model):
         return 2 * r * math.asin(math.sqrt(a))
 
     def is_within_office(self, lat, lng):
-        """True if (lat, lng) is within office_radius_m of the office point.
-        Returns False if any coordinate is missing/unset."""
+        """Backward-compatible alias for `is_within_any_office`. Returns True
+        if (lat, lng) is within any active `office_location_ids` (preferred)
+        or, if none, within the legacy single office point."""
+        return self.is_within_any_office(lat, lng)
+
+    def is_within_any_office(self, lat, lng):
+        """True if (lat, lng) falls within ANY active location on this policy.
+        Falls back to the legacy single-office fields when no location has
+        been set yet (existing data keeps working until admin migrates)."""
         self.ensure_one()
-        if not lat or not lng or not self.office_lat or not self.office_lng:
+        if not lat or not lng:
             return False
-        dist = self._haversine_m(self.office_lat, self.office_lng, lat, lng)
-        return dist <= self.office_radius_m
+        active = self.office_location_ids.filtered('active')
+        for loc in active:
+            if loc.is_within(lat, lng):
+                return True
+        # Legacy fallback (single office lat/lng/radius)
+        if self.office_lat and self.office_lng:
+            dist = self._haversine_m(self.office_lat, self.office_lng, lat, lng)
+            return dist <= self.office_radius_m
+        return False
 
     def is_workday(self, dt_local):
         """True if dt_local (naive local datetime) falls on an enabled workday."""

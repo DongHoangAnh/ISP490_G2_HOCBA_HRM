@@ -15,3 +15,5 @@ access_hocba_shift_attendance_user,access.hocba.shift.attendance.user,model_hocb
 access_hocba_shift_attendance_manager,access.hocba.shift.attendance.manager,model_hocba_shift_attendance,hr.group_hr_manager,1,1,1,1
 access_hocba_teaching_attendance_user,access.hocba.teaching.attendance.user,model_hocba_teaching_attendance,hr.group_hr_user,1,1,1,0
 access_hocba_teaching_attendance_manager,access.hocba.teaching.attendance.manager,model_hocba_teaching_attendance,hr.group_hr_manager,1,1,1,1
+access_hocba_attendance_office_location_user,access.hocba.attendance.office.location.user,model_hocba_attendance_office_location,hr.group_hr_user,1,0,0,0
+access_hocba_attendance_office_location_manager,access.hocba.attendance.office.location.manager,model_hocba_attendance_office_location,hr.group_hr_manager,1,1,1,1
