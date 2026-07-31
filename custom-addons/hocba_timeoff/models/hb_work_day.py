@@ -37,10 +37,13 @@ class HbWorkDay(models.Model):
         string='Đã chốt', compute='_compute_is_locked',
         help='Ngày đã đến hoặc đã qua → khoá, không sửa/xoá được nữa.')
 
-    _sql_constraints = [
-        ('uniq_work_day_date', 'unique(date, company_id)',
-         'Ngày làm việc này đã có trong lịch.'),
-    ]
+    # Odoo 19: _sql_constraints không còn được hỗ trợ → models.Constraint.
+    # Khai bằng API cũ chỉ log WARNING rồi bỏ qua, Postgres không có constraint
+    # nào cả → trùng ngày lọt qua, số ngày làm việc / SLA đọc bảng này bị lệch.
+    _uniq_work_day_date = models.Constraint(
+        'unique (date, company_id)',
+        'Ngày làm việc này đã có trong lịch.',
+    )
 
     # ------------------------------------------------------------------
     # Khoá theo ngày
@@ -56,6 +59,8 @@ class HbWorkDay(models.Model):
         """Ngày sớm nhất còn được thêm/sửa = ngày mai (theo tz người dùng)."""
         return fields.Date.add(fields.Date.context_today(self), days=1)
 
+    # Lưới đỡ cho `_uniq_work_day_date`: thông báo rõ ngày nào bị trùng, và vẫn
+    # chặn được nếu constraint chưa kịp tạo trên một DB nào đó.
     @api.constrains('date', 'company_id')
     def _check_unique_date(self):
         for rec in self:
