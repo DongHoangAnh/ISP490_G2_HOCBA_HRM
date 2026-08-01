@@ -7,7 +7,7 @@
 | **Owner** | Nhật Anh |
 | **Nhánh** | `NhatAnh/Service` (fork từ `origin/main` @9518b36) |
 | **Module mới** | `custom-addons/hocba_service` |
-| **Trạng thái** | **P1 → P4 XONG** (2026-08-01) — model + ACL + seed + controller API + SPA hai phía (gửi & xử lý), `0 failed, 0 error(s) of 90 tests`. Kiểm tay trên DB local: §10.3 (P3), §10.4 (P4). Tiếp theo: P5 (thông báo + cron quá hạn + `StatsPanel`) |
+| **Trạng thái** | **P1 → P5 XONG** (2026-08-02) — model + ACL + seed + controller API + SPA hai phía (gửi & xử lý) + thông báo/cron/KPI, `0 failed, 0 error(s) of 111 tests`. Kiểm tay trên DB local: §10.3 (P3), §10.4 (P4), §10.5 (P5). Tiếp theo: P6 (màn Cấu hình loại yêu cầu) |
 | **Nguồn yêu cầu** | Giảng viên hướng dẫn — bổ sung cho phần self-service của tài khoản nhân viên |
 
 ---
@@ -256,7 +256,7 @@ description       Text                     # hướng dẫn hiện trên form SP
 | **L1 — Schema** | Đơn không có field người gửi. Danh tính nằm ở `hocba.hr.request.sender`, **không ACL** ⇒ HR/TP không đọc được ở bất kỳ đâu (SPA, `/odoo`, XML-RPC). |
 | **L2 — `create_uid`** | Đơn + message + sender tạo bằng `sudo()` ⇒ `create_uid = 1 (OdooBot)`, không phải NV. |
 | **L3 — Serializer** | Controller là chốt cuối: `is_anonymous=True` và người xem ≠ người gửi ⇒ **không** đưa `employeeName` / `department` / `authorName` vào JSON. Viết 1 hàm `_serialize_request(req, viewer_is_sender)` dùng chung để không lệch giữa các route. |
-| **L4 — Thông báo** | `hb.notification.title/body` **không chứa tên** khi ẩn danh. Đây là chỗ rò rỉ dễ bỏ sót nhất. |
+| **L4 — Thông báo** | `hb.notification.title/body` **không chứa tên** khi ẩn danh (cổng duy nhất: `_notif_sender_label()`). Và bản thân dòng thông báo phải tạo bằng `with_user(SUPERUSER_ID)`: `ir.rule` cho người nhận đọc dòng của chính mình ⇒ họ đọc luôn `create_uid` của nó (§10.5a). Đây là chỗ rò rỉ dễ bỏ sót nhất. |
 
 ### 4.3 Vì sao KHÔNG dùng `mail.thread`
 
@@ -448,10 +448,11 @@ Thêm `('service', 'Dịch vụ nhân sự')` vào `CATEGORY_SEL` của [`hocba_
 | `service_claimed` | Người gửi | Có người nhận xử lý |
 | `service_reply` | Bên còn lại | Có message mới, `is_internal=False` |
 | `service_answered` | Người gửi | `→ answered` |
-| `service_closed` | Người gửi | `→ closed` |
+| `service_closed` | **Bên còn lại** (người xử lý đóng → người gửi; người gửi đóng → người xử lý — §10.5c) | `→ closed` |
 | `service_overdue` | handler (hoặc mọi người nhận nếu chưa claim) | Cron |
 
 `target_view='service'`, `target_ref=request.id`, `target_tab='mine'|'inbox'`.
+`level`: `answered` = `success`, `overdue` = `warning`, còn lại `info`. `action_cancel` (rút đơn) không sinh thông báo — chỉ rút được khi còn `new` nên chưa ai nhận việc.
 
 **BR-SVC-11** — Với đơn ẩn danh, `title`/`body` chỉ được chứa `name` + `type_id.name` + `subject`. Cấm tên/phòng ban.
 
@@ -569,7 +570,7 @@ Cần thấy `0 failed, 0 error(s) of N tests` với **N > 0**. Lần đầu dù
 | **P2** ✅ | Controller `/service/*` (trừ config) + serializer chung + **BR-SVC-12 (giới hạn 3 đơn ẩn danh/ngày)** + test route | ✅ 2026-07-31: `0 failed, 0 error(s) of 87 tests` (38 test API mới). 12 route + 8 helper cấp module; xem §6.1, §6.2, §10.2 |
 | **P3** ✅ | SPA phía NV: `Service.jsx`, `RequestForm`, `MyRequestsPanel`, `RequestThread` (+ `svcMeta.js`) + sửa `Shell.jsx`/`App.jsx` | ✅ 2026-08-01: gửi được đơn thường + ẩn danh, đính kèm round-trip, hội thoại 2 chiều trên đơn ẩn danh, 4 chốt §7.3 chặn tại chỗ. Kiểm tay: §10.3 |
 | **P4** ✅ | SPA phía xử lý: `InboxPanel` (claim/answer/close, filter, badge SLA), ghi chú nội bộ | ✅ 2026-08-01: `0 failed, 0 error(s) of 90 tests` (thêm guard `dept_no_manager` + 3 test). HR và TP xử lý trọn vòng đời; TP chỉ thấy đơn phòng mình. Kiểm tay: §10.4 |
-| **P5** | `hb.notification` producers + cron quá hạn + `StatsPanel` (KPI) | Chuông nhận đủ 6 kind, bấm nhảy đúng đơn; test §9.1 case 5 xanh |
+| **P5** ✅ | `hb.notification` producers + cron quá hạn + `StatsPanel` (KPI) | ✅ 2026-08-02: `0 failed, 0 error(s) of 111 tests` (+21 test `test_notify.py`). Đủ 6 kind, bấm chuông nhảy đúng view/tab/đơn; cron `dedup_key` không nhân bản; nội dung thông báo đơn ẩn danh sạch danh tính **và** `create_uid = OdooBot`. Kiểm tay: §10.5 |
 | **P6** | Màn Cấu hình loại yêu cầu (Admin/HR Manager) — `/service/config/types*` + sửa 2 `ir.config_parameter` (`min_anon_dept_size`, `anon_daily_limit`) | Admin thêm/sửa/ẩn loại + đổi 2 ngưỡng không cần sửa code; BR-SVC-09 chặn được |
 
 **Thứ tự bắt buộc:** backend chắc (model → security → API → test) trước, UI sau — theo CLAUDE.md.
@@ -645,6 +646,33 @@ Môi trường kiểm: container Odoo **thứ hai** cổng 8079 trên DB local `
 **(d) `setData(null)` chuyển vào trong `load()` (`InboxPanel` **và** `MyRequestsPanel`).** Đặt ở `onChange` của select là bẫy: nếu giá trị **không đổi thật**, `load` giữ nguyên identity ⇒ `useEffect` không chạy lại ⇒ **skeleton treo vĩnh viễn** (gặp thật khi kiểm tay). Đặt trong `load` thì mỗi lần filter đổi vẫn có skeleton, mà chọn lại giá trị cũ thì bảng đứng yên thay vì trắng.
 
 **Ghi nhận thêm (không sửa ở P4):** `base.css` không có rule `.btn:disabled` ⇒ mọi nút `disabled` toàn SPA vẫn trông bấm được. `RequestThread` tạm dim tại chỗ bằng inline style; sửa gốc là 1 rule CSS ở file chung, tách thành việc riêng cho cả nhóm.
+
+### 10.5 P5 — kiểm tay + 4 điều chỉnh
+
+**Đã làm:** 6 kind thông báo gắn thẳng vào các hàm vòng đời của model (`create_request`, `action_claim/answer/close`, `post_message`) + `_cron_overdue_reminder` (`ir.cron` hằng ngày, `nextcall` 00:20 UTC) + `StatsPanel` (6 KPI + phân bố theo loại). 21 test mới (`tests/test_notify.py`) ⇒ **`0 failed, 0 error(s) of 111 tests`**. `hocba_notify/models/hb_notification.py` chỉ thêm **1 dòng** selection `('service', 'Dịch vụ nhân sự')`.
+
+Chuông `NotificationBell.jsx` **không phải sửa**: nó hoàn toàn không biết category (màu chấm lấy theo `level`, điều hướng theo `targetView`/`targetTab`), và `hocba_notify/controllers/main.py` đã trả `create_date` dạng ISO + `Z` nên "vừa xong" hiện đúng (không lệch 7h).
+
+| Kiểm (DB local `hocba_hrm`, container 8079) | Kết quả |
+|---|---|
+| `svc.nv` gửi 2 đơn qua form: `YCDV/2026/1096` (thường) + `1097` (**ẩn danh**) | Chuông `svc.hr` badge **2**, đúng 2 dòng `service_new`, `targetTab='inbox'` |
+| Nội dung thông báo đơn ẩn danh | `"YCDV/2026/1097 — Góp ý ẩn danh về máy lạnh P5 (Đánh giá & góp ý) · Người gửi (ẩn danh)"` — **không** có tên NV, **không** có phòng ban; đơn thường thì có `· Nguyễn Nhân Viên` |
+| `create_uid` của dòng `hb.notification` (DB thật, không chỉ test) | `= 1` (OdooBot) cho cả `service_new` ẩn danh và `service_overdue` |
+| Bấm thông báo khi **đang ở view khác** (Nghỉ phép) | Nhảy sang view `service`, tự chọn tab **Cần xử lý**, mở đúng `1097` ở vai trò **người xử lý** (có “Nhận xử lý”) |
+| HR nhận xử lý → trả lời công khai | `svc.nv` nhận `service_claimed` (kèm tên người xử lý) + `service_reply`, cả hai `targetTab='mine'`; bấm vào mở thread ở vai trò **người gửi** (“Bạn (ẩn danh)”, không có ô ghi chú nội bộ) |
+| Cron: đẩy `1096` về hạn 25/07 rồi chạy `_cron_overdue_reminder()` **2 lần** | Tạo **2** dòng (`svc.hr` + `admin` — cả hai đều có `hr.group_hr_user`), `level='warning'`, `dedup_key='svc_overdue_1096'`; lần chạy thứ 2 **không** nhân bản. Đơn `1097` đã có người nhận và chưa quá hạn nên không bị nhắc |
+| `ir.cron` sau `-u hocba_service` | 1 dòng `cron_service_overdue_reminder`, `active=t`, `1 days`, `nextcall 2026-08-02 00:20` |
+| `StatsPanel` — HR | 6 KPI vừa **1 hàng** ở 1500px: Tổng 8 · Đang mở 7 (88%) · Quá hạn 0 · TG trả lời TB 0,2 giờ · Điểm TB 4,00★ (2 đơn) · Ẩn danh 3 (38%); phân bố 3 loại có thanh + % |
+| `StatsPanel` — Trưởng phòng (`svc.tp`) | Tổng **1** đơn (đúng phạm vi phòng mình ⇒ BR-SVC-13 đứng vững cả ở route `/stats`), Điểm TB hiện `—` |
+| Console browser | Không có lỗi |
+
+**(a) Thông báo phải bắn bằng `with_user(SUPERUSER_ID)`, `.sudo()` là RÒ.** `ir.rule` của `hb.notification` cho người nhận đọc **dòng của chính mình** ⇒ người xử lý đọc được luôn `create_uid` của dòng đó. Với đơn ẩn danh, `.sudo()` để lại `create_uid` = NV (env.uid không đổi — §10.1b) ⇒ chỉ cần mở record thông báo là biết ai gửi. Mutation test xác nhận test bắt được: đổi về `.sudo()` thì `test_anon_notification_create_uid_is_odoobot` đỏ ngay (`27199 != 1`).
+
+**(b) `_notif_sender_label()` là cổng DUY NHẤT lấy tên người gửi cho nội dung thông báo** (trả `ANON_LABEL` khi ẩn danh) — cùng lý do với `serialize()` ở lớp L3: 6 producer tự nối chuỗi là chắc chắn có một chỗ quên ẩn tên (BR-SVC-11).
+
+**(c) `service_closed` báo BÊN CÒN LẠI, không cứng nhắc “báo người gửi”.** Bảng §8.1 ghi người nhận là người gửi; nhưng người gửi **cũng** đóng được đơn (`action_close` cho phép), lúc đó báo lại chính người vừa bấm là nhiễu — nên đổi sang: người gửi đóng → báo **người đang xử lý** (`targetTab='inbox'`, để họ dừng việc), người xử lý đóng → báo người gửi. `action_cancel` (rút đơn) **không** sinh thông báo: chỉ rút được ở trạng thái `new` nên chưa có ai nhận việc.
+
+**(d) `_notif_handlers()` chỉ gồm group HR + TP của phòng đích, KHÔNG gồm `base.group_system`.** Lệch có chủ ý với `_svc_scope()` (ở đó `is_admin` được tính là HR): sysadmin đọc được hộp thư nhưng không phải người xử lý nghiệp vụ, ping họ mọi đơn là nhiễu. Đổi lại: user chỉ có `group_system` mà không có group HR sẽ **không** nhận chuông.
 
 ---
 
