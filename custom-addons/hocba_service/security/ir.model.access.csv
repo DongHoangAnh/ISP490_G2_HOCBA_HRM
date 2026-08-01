@@ -1,0 +1,8 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hocba_hr_request_hr_user,hocba.hr.request hr_user,model_hocba_hr_request,hr.group_hr_user,1,1,0,0
+access_hocba_hr_request_hr_manager,hocba.hr.request hr_manager,model_hocba_hr_request,hr.group_hr_manager,1,1,1,1
+access_hocba_hr_request_message_hr_user,hocba.hr.request.message hr_user,model_hocba_hr_request_message,hr.group_hr_user,1,1,1,0
+access_hocba_hr_request_message_hr_manager,hocba.hr.request.message hr_manager,model_hocba_hr_request_message,hr.group_hr_manager,1,1,1,1
+access_hocba_hr_request_type_base_user,hocba.hr.request.type base_user,model_hocba_hr_request_type,base.group_user,1,0,0,0
+access_hocba_hr_request_type_hr_manager,hocba.hr.request.type hr_manager,model_hocba_hr_request_type,hr.group_hr_manager,1,1,1,0
+access_hocba_hr_request_type_system,hocba.hr.request.type system,model_hocba_hr_request_type,base.group_system,1,1,1,1

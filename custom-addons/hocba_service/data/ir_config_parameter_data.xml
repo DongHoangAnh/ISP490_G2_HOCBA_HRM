@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate="1": giá trị Admin sửa ở màn Cấu hình (P6) KHÔNG bị ghi đè
+         khi nâng cấp module. -->
+    <data noupdate="1">
+        <!-- BR-SVC-03 — số NV tối thiểu của phòng để cho gửi ẩn danh tới
+             trưởng phòng. ⚠️ DB test có phòng < 5 NV: trước khi demo luồng này,
+             kiểm headcount phòng đích rồi hạ giá trị ở đây (vd 3). -->
+        <record id="param_min_anon_dept_size" model="ir.config_parameter">
+            <field name="key">hocba_service.min_anon_dept_size</field>
+            <field name="value">5</field>
+        </record>
+        <!-- BR-SVC-12 — số đơn ẩn danh tối đa mỗi NV mỗi ngày (chống spam). -->
+        <record id="param_anon_daily_limit" model="ir.config_parameter">
+            <field name="key">hocba_service.anon_daily_limit</field>
+            <field name="value">3</field>
+        </record>
+    </data>
+</odoo>
