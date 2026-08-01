@@ -10,6 +10,7 @@ import { fetchMeta } from '../../api/service';
 import RequestForm from './RequestForm';
 import MyRequestsPanel from './MyRequestsPanel';
 import InboxPanel from './InboxPanel';
+import StatsPanel from './StatsPanel';
 
 export default function Service({ search, focus }) {
   const [meta, setMeta] = useState(null);
@@ -41,7 +42,7 @@ export default function Service({ search, focus }) {
      canHandle = HR / HR Manager / Trưởng phòng. */
   const tabs = [];
   if (meta.canSend) tabs.push(['me', 'Đơn của tôi']);
-  if (meta.canHandle) tabs.push(['inbox', 'Cần xử lý']);
+  if (meta.canHandle) tabs.push(['inbox', 'Cần xử lý'], ['stats', 'Thống kê']);
   const activeTab = tab || (tabs.length ? tabs[0][0] : null);
 
   return (
@@ -84,6 +85,8 @@ export default function Service({ search, focus }) {
       {activeTab === 'inbox' && (
         <InboxPanel meta={meta} search={search} focus={focus} />
       )}
+
+      {activeTab === 'stats' && <StatsPanel />}
 
       {creating && (
         <RequestForm meta={meta}
