@@ -17,6 +17,7 @@
         'data/ir_sequence_data.xml',
         'data/ir_config_parameter_data.xml',
         'data/hocba_hr_request_type_data.xml',
+        'data/ir_cron_data.xml',
     ],
     'installable': True,
     'auto_install': False,

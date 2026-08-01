@@ -1,9 +1,12 @@
+import logging
 from datetime import timedelta
 
 from odoo import SUPERUSER_ID, api, fields, models, _
 from odoo.exceptions import AccessError, ValidationError
 
 from .hocba_hr_request_type import RECIPIENT_SEL
+
+_logger = logging.getLogger(__name__)
 
 OPEN_STATES = ('new', 'in_progress')
 ANON_LABEL = 'Người gửi (ẩn danh)'
@@ -237,6 +240,74 @@ class HocbaHrRequest(models.Model):
             return False
         return bool(self.sudo().filtered_domain(_inbox_domain(scope)))
 
+    # ------------------------------------------------- thông báo (SPEC §8.1)
+
+    def _notif_sender_label(self):
+        """Nhãn người gửi dùng TRONG NỘI DUNG THÔNG BÁO — cổng duy nhất.
+
+        BR-SVC-11: title/body của đơn ẩn danh chỉ được chứa mã đơn + loại +
+        tiêu đề. Mọi producer bắt buộc lấy tên người gửi qua đây, không đọc
+        thẳng _sender_row().employee_id.name — quên một chỗ là rò một chỗ.
+        """
+        self.ensure_one()
+        if self.sudo().is_anonymous:
+            return ANON_LABEL
+        return self._sender_row().employee_id.name or ANON_LABEL
+
+    def _notif_ref(self):
+        """Dòng nhận diện đơn, an toàn cho cả đơn ẩn danh."""
+        self.ensure_one()
+        rec = self.sudo()
+        return '%s — %s (%s)' % (rec.name, rec.subject, rec.type_id.name)
+
+    def _svc_notify(self, users, kind, level, title, body,
+                    tab='mine', dedup_key=None):
+        """Bắn hb.notification cho màn 'service'.
+
+        ⚠️ with_user(SUPERUSER_ID) chứ không .sudo(): ir.rule của hb.notification
+        cho người nhận đọc dòng của CHÍNH MÌNH ⇒ người xử lý đọc được cả
+        create_uid của dòng đó. Với đơn ẩn danh, create_uid = NV là lộ danh tính
+        y hệt lớp L2 trên bản ghi đơn (.sudo() không đổi env.uid — §10.1b).
+        """
+        self.ensure_one()
+        if not users:
+            return self.env['hb.notification']
+        return self.env['hb.notification'].with_user(SUPERUSER_ID)._notify(
+            users, category='service', kind=kind, level=level,
+            title=title, body=body, target_view='service',
+            target_ref=self.id, target_tab=tab, dedup_key=dedup_key)
+
+    def _notif_handlers(self):
+        """Người dùng có đơn này trong hộp thư — bám đúng _inbox_domain().
+
+        Người gửi bị loại: HR tự gửi đơn cho HR thì không tự rung chuông mình.
+        Ghi nhận lệch có chủ ý: user chỉ có base.group_system (không có group
+        HR) vẫn ĐỌC được hộp thư nhưng không nhận chuông — sysadmin không phải
+        người xử lý nghiệp vụ, ping họ mọi đơn là nhiễu.
+        """
+        self.ensure_one()
+        rec = self.sudo()
+        Users = self.env['res.users'].sudo()
+        users = Users.browse()
+        if rec.recipient_scope in ('hr', 'both'):
+            grp = self.env.ref('hr.group_hr_user', raise_if_not_found=False)
+            if grp:
+                users |= Users.search([('all_group_ids', 'in', grp.id),
+                                       ('active', '=', True)])
+        if (rec.recipient_scope in ('manager', 'both')
+                and not rec.type_id.force_hr_only):          # BR-SVC-01/10
+            mgr_user = rec.target_department_id.manager_id.sudo().user_id
+            if mgr_user:
+                users |= mgr_user
+        sender_user = self._sender_row().user_id
+        if sender_user:
+            users -= sender_user
+        return users
+
+    def _notif_sender_user(self):
+        self.ensure_one()
+        return self._sender_row().user_id
+
     # -------------------------------------------------------------- gửi đơn
 
     @api.model
@@ -387,11 +458,16 @@ class HocbaHrRequest(models.Model):
             'user_id': user.id,
             'department_id': emp.sudo().department_id.id or False,
         })
-        # P5 sẽ bắn hb.notification 'service_new' tại đây.
         # Trả về recordset của CHÍNH user gửi (uid gốc + su) để _is_sender() /
         # serialize() phía sau xác định đúng vai trò — không trả recordset
         # OdooBot ra ngoài.
-        return self.sudo().browse(req.id)
+        out = self.sudo().browse(req.id)
+        out._svc_notify(
+            out._notif_handlers(), 'service_new', 'info',
+            title=_('Yêu cầu dịch vụ mới'),
+            body='%s · %s' % (out._notif_ref(), out._notif_sender_label()),
+            tab='inbox')
+        return out
 
     # ------------------------------------------------------- hội thoại
 
@@ -425,6 +501,25 @@ class HocbaHrRequest(models.Model):
         # trên đơn ẩn danh sẽ chỉ đúng người gửi.
         if role == 'sender' and self.sudo().state == 'answered':
             self._as_system().write({'state': 'in_progress'})
+
+        # BR-SVC-07: ghi chú nội bộ người gửi không đọc được ⇒ tuyệt đối không
+        # rung chuông họ (tiêu đề thông báo cũng là nội dung bị rò).
+        if not internal:
+            if role == 'handler':
+                self._svc_notify(
+                    self._notif_sender_user(), 'service_reply', 'info',
+                    title=_('Trả lời mới cho yêu cầu của bạn'),
+                    body=self._notif_ref(), tab='mine')
+            else:
+                # Đơn đã có người nhận → chỉ báo người đó; chưa ai nhận → báo
+                # cả hộp thư, nếu không phản hồi nằm im tới khi có người mở.
+                targets = self.sudo().handler_id or self._notif_handlers()
+                self._svc_notify(
+                    targets, 'service_reply', 'info',
+                    title=_('Người gửi vừa phản hồi'),
+                    body='%s · %s' % (self._notif_ref(),
+                                      self._notif_sender_label()),
+                    tab='inbox')
         return msg
 
     # ------------------------------------------------------ vòng đời
@@ -452,6 +547,11 @@ class HocbaHrRequest(models.Model):
                 'handler_id': rec.env.user.id,
                 'claimed_at': fields.Datetime.now(),
             })
+            rec._svc_notify(
+                rec._notif_sender_user(), 'service_claimed', 'info',
+                title=_('Yêu cầu của bạn đã có người xử lý'),
+                body='%s · %s' % (rec._notif_ref(), rec.env.user.name),
+                tab='mine')
         return True
 
     def action_answer(self):
@@ -470,6 +570,10 @@ class HocbaHrRequest(models.Model):
                 'state': 'answered',
                 'answered_at': fields.Datetime.now(),
             })
+            rec._svc_notify(
+                rec._notif_sender_user(), 'service_answered', 'success',
+                title=_('Yêu cầu của bạn đã được trả lời'),
+                body=rec._notif_ref(), tab='mine')
         return True
 
     def action_close(self, reason=None):
@@ -484,8 +588,23 @@ class HocbaHrRequest(models.Model):
                 'closed_at': fields.Datetime.now(),
                 'closed_reason': (reason or '').strip() or False,
             }
+            handler = rec.sudo().handler_id
             # Người gửi đóng đơn ⇒ ghi dưới OdooBot để write_uid không lộ họ.
             (rec._as_system() if by_sender else rec.sudo()).write(vals)
+            # Báo BÊN CÒN LẠI: người gửi tự đóng thì báo người đang xử lý để họ
+            # dừng việc, không báo ngược lại chính người vừa bấm.
+            if by_sender:
+                rec._svc_notify(
+                    handler, 'service_closed', 'info',
+                    title=_('Người gửi đã đóng yêu cầu'),
+                    body='%s · %s' % (rec._notif_ref(),
+                                      rec._notif_sender_label()),
+                    tab='inbox')
+            else:
+                rec._svc_notify(
+                    rec._notif_sender_user(), 'service_closed', 'info',
+                    title=_('Yêu cầu của bạn đã đóng'),
+                    body=rec._notif_ref(), tab='mine')
         return True
 
     def action_cancel(self):
@@ -496,6 +615,37 @@ class HocbaHrRequest(models.Model):
                 raise SvcError('bad_state', _(
                     'Đơn đã có người xử lý nên không rút được nữa.'))
             rec._as_system().write({'state': 'cancelled'})
+        return True
+
+    # ------------------------------------------------------------- cron
+
+    @api.model
+    def _cron_overdue_reminder(self):
+        """CRON-SVC-001 — nhắc đơn quá hạn SLA, chạy hằng ngày (SPEC §8.2).
+
+        dedup_key='svc_overdue_<id>': _notify bỏ qua khi người nhận còn một
+        dòng CHƯA ĐỌC cùng khoá ⇒ chạy 30 ngày liền vẫn 1 dòng, đọc rồi mà
+        chưa xử lý thì hôm sau nhắc lại.
+        """
+        overdue = self.sudo().search([
+            ('state', 'in', OPEN_STATES),
+            ('deadline', '<', fields.Datetime.now()),
+        ])
+        sent = 0
+        for rec in overdue:
+            # Đã có người nhận → chỉ nhắc người đó; chưa ai nhận → nhắc cả hộp
+            # thư, không thì đơn mồ côi không ai thấy là mình phải làm.
+            targets = rec.handler_id or rec._notif_handlers()
+            sent += len(rec._svc_notify(
+                targets, 'service_overdue', 'warning',
+                title=_('Yêu cầu dịch vụ quá hạn xử lý'),
+                body='%s · %s · hạn %s' % (
+                    rec._notif_ref(), rec._notif_sender_label(),
+                    fields.Datetime.context_timestamp(
+                        rec, rec.deadline).strftime('%d/%m/%Y')),
+                tab='inbox', dedup_key='svc_overdue_%s' % rec.id))
+        _logger.info('CRON-SVC-001: %d đơn quá hạn, gửi %d thông báo.',
+                     len(overdue), sent)
         return True
 
     # ------------------------------------------------------- serializer
