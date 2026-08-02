@@ -113,3 +113,23 @@ Wire format camelCase, lỗi `{error, message}` theo `docs/QUY_UOC_FRONTEND.md`.
 - SLA tính theo **ngày lịch** (đơn giản, dễ giải thích khi demo); ngày làm việc để sau.
 - Sửa stage ảnh hưởng ứng viên đang chạy (không snapshot như onboarding) — chấp nhận:
   stage là cột kanban sống, không phải lộ trình từng người.
+
+## Bổ sung 2026-07-26 — Ẩn bước (thay vì chỉ xoá)
+
+- `hr.recruitment.stage` thêm `active` (Boolean, default True). Ẩn = archive:
+  biến mất khỏi kanban CV + form chọn bước (mọi `search([])` tự lọc), dữ liệu
+  ứng viên cũ giữ nguyên, hiện lại được bất cứ lúc nào.
+- Guard `_check_can_hide()` (chạy trong `write` khi set `active=False`, kiểm tra
+  "còn ≥1 bước hiển thị" TRƯỚC rồi mới đếm ứng viên — thứ tự này để test
+  tất-định trên DB có sẵn dữ liệu):
+  - Phải còn ít nhất 1 bước đang hiển thị.
+  - Không ẩn bước còn ứng viên **đang hoạt động** (ứng viên lưu trữ KHÔNG chặn —
+    khác guard xoá vốn chặn cả archived; đây chính là lý do có nút Ẩn).
+- API: `/config` trả cả bước ẩn (`active_test=False`) + field `active`,
+  `activeApplicantCount`; update endpoint nhận `active` (whitelist). Version
+  19.0.2.3.0 (chỉ thêm cột, không cần migration).
+- UI `RecruitmentConfig.jsx`: nút "Ẩn bước"/"Hiện lại" trong editor (cạnh Xoá),
+  khu "Bước đã ẩn" mờ dưới danh sách với nút Hiện lại; danh sách chính/kéo-thả
+  chỉ gồm bước hiển thị.
+- Test: ẩn bị chặn khi còn UV hoạt động; UV lưu trữ không chặn; ẩn hết mọi bước
+  bị chặn; hiện lại giữ nguyên cấu hình (test_09–11).

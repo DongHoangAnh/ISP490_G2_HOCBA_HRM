@@ -26,12 +26,38 @@ class HrRecruitmentStageHocBaExt(models.Model):
         help='Số ngày tối đa ứng viên được ở trong bước này; 0 = không áp SLA. '
              'Quá hạn → badge "Trễ SLA" trên kanban CV.',
     )
+    active = fields.Boolean(
+        string='Đang dùng', default=True,
+        help='Bỏ chọn = ẩn bước khỏi kanban CV và các form chọn bước, '
+             'không xoá dữ liệu; có thể hiện lại bất cứ lúc nào. '
+             'Chỉ ẩn được bước không còn ứng viên đang hoạt động.',
+    )
 
     @api.constrains('sla_days')
     def _check_sla_days(self):
         for stage in self:
             if stage.sla_days < 0:
                 raise ValidationError('SLA (ngày) không được âm.')
+
+    def write(self, vals):
+        if vals.get('active') is False:
+            self._check_can_hide()
+        return super().write(vals)
+
+    def _check_can_hide(self):
+        """Guard Ẩn bước: giữ ít nhất 1 bước hiển thị; không ẩn bước còn ứng viên
+        đang hoạt động (ứng viên lưu trữ không tính — khác guard xoá)."""
+        remaining = self.search_count(
+            [('id', 'not in', self.ids), ('active', '=', True)])
+        if not remaining:
+            raise UserError('Quy trình phải còn ít nhất 1 bước đang hiển thị.')
+        Applicant = self.env['hr.applicant'].sudo()
+        for stage in self:
+            count = Applicant.search_count([('stage_id', '=', stage.id)])
+            if count:
+                raise UserError(
+                    'Không thể ẩn bước "%s": còn %s ứng viên đang ở bước này. '
+                    'Hãy chuyển họ sang bước khác trước.' % (stage.name, count))
 
     @api.model
     def action_reorder(self, ordered_ids):

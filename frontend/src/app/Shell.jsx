@@ -20,18 +20,20 @@ const NAV = [
     { id: 'service', label: 'Yêu cầu dịch vụ', icon: 'mail', need: 'manage' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'manage' },
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
+    // Đánh giá định kỳ (giảng viên / văn phòng) — HR, trưởng phòng, giáo vụ
+    { id: 'reviews', label: 'Đánh giá', icon: 'star', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
     { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
-    // Cấu hình quy trình nhận việc bước động — chỉ HR Manager/Admin
-    { id: 'onboarding-config', label: 'Cấu hình nhận việc', icon: 'settings', need: 'hrm' },
-    // Cấu hình tuyển dụng (stages/SLA/auto-close) — CHỈ Admin hệ thống
-    { id: 'recruitment-config', label: 'Cấu hình tuyển dụng', icon: 'settings', need: 'admin' },
   ]},
   { sec: 'Tài chính', need: 'finance', items: [
     { id: 'finance', label: 'Dòng tiền', icon: 'wallet', need: 'finance' },
   ]},
-  { sec: 'Hệ thống', need: 'admin', items: [
+  // Mọi màn cấu hình quy trình gom về đây (need section 'hrm' để HR Manager vẫn
+  // thấy Cấu hình nhận việc; từng item tự chặn theo vai trò).
+  { sec: 'Hệ thống', need: 'hrm', items: [
+    { id: 'onboarding-config', label: 'Cấu hình nhận việc', icon: 'settings', need: 'hrm' },
+    { id: 'recruitment-config', label: 'Cấu hình tuyển dụng', icon: 'settings', need: 'admin' },
     { id: 'timeoffConfig', label: 'Cấu hình nghỉ phép', icon: 'settings', need: 'admin' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
@@ -88,11 +90,12 @@ export const PAGE_META = {
   offboarding: { t: 'Nghỉ việc', c: 'Nhân sự / Offboarding' },
   payroll: { t: 'Bảng lương', c: 'Quản lý nhân sự / Payroll' },
   finance: { t: 'Tài chính — Dòng tiền', c: 'Tài chính / Quản lý dòng tiền' },
+  reviews: { t: 'Đánh giá nhân viên', c: 'Quản lý nhân sự / Đánh giá định kỳ' },
   recruitment: { t: 'Tuyển dụng', c: 'Quản lý nhân sự / Recruitment' },
   accounts: { t: 'Tài khoản', c: 'Quản lý nhân sự / Tài khoản' },
   departments: { t: 'Phòng ban', c: 'Quản lý nhân sự / Phòng ban' },
-  'onboarding-config': { t: 'Cấu hình nhận việc', c: 'Quản lý nhân sự / Cấu hình quy trình' },
-  'recruitment-config': { t: 'Cấu hình tuyển dụng', c: 'Quản lý nhân sự / Cấu hình quy trình' },
+  'onboarding-config': { t: 'Cấu hình nhận việc', c: 'Hệ thống / Cấu hình quy trình' },
+  'recruitment-config': { t: 'Cấu hình tuyển dụng', c: 'Hệ thống / Cấu hình quy trình' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
   // Crumb trung tính: view này xuất hiện ở CẢ 2 mục nav (quản lý + cá nhân),
   // PAGE_META lại theo view nên "Cá nhân / Self-service" sẽ sai với HR.

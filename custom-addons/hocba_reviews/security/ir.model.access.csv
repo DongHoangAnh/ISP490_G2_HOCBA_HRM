@@ -1,0 +1,8 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hb_review_criteria_user,hb.review.criteria user,model_hb_review_criteria,base.group_user,1,0,0,0
+access_hb_review_criteria_hr,hb.review.criteria hr,model_hb_review_criteria,hr.group_hr_user,1,1,1,0
+access_hb_review_criteria_manager,hb.review.criteria manager,model_hb_review_criteria,hr.group_hr_manager,1,1,1,1
+access_hb_performance_review_hr,hb.performance.review hr,model_hb_performance_review,hr.group_hr_user,1,1,1,0
+access_hb_performance_review_manager,hb.performance.review manager,model_hb_performance_review,hr.group_hr_manager,1,1,1,1
+access_hb_performance_review_line_hr,hb.performance.review.line hr,model_hb_performance_review_line,hr.group_hr_user,1,1,1,1
+access_hb_performance_review_line_manager,hb.performance.review.line manager,model_hb_performance_review_line,hr.group_hr_manager,1,1,1,1

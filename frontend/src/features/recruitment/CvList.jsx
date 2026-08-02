@@ -6,7 +6,7 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchCvList, changeStage, updateApplicant } from '../../api/recruitment';
-import { CV_RESULT_KIND, CALL_STATUS_KIND } from './util';
+import { CV_RESULT_KIND, CALL_STATUS_KIND, INTERVIEW_RESULT_KIND } from './util';
 import ApplicantDrawer from './ApplicantDrawer';
 import ApplicantForm from './ApplicantForm';
 
@@ -97,6 +97,10 @@ function ResultBadge({ k, label }) {
 function CallBadge({ k, label }) {
   return k ? <Badge kind={CALL_STATUS_KIND[k] || 'gray'}>{label}</Badge> : <span className="muted">—</span>;
 }
+function InterviewBadge({ k, label }) {
+  return k ? <Badge kind={INTERVIEW_RESULT_KIND[k] || 'gray'}>{label}</Badge>
+    : <span className="muted">—</span>;
+}
 
 function CvFileCell({ row }) {
   // Ưu tiên file PDF thật đã upload; nếu chưa có thì xét cvLink (URL hoặc tên file).
@@ -130,7 +134,7 @@ const cellStyle = {
 
 function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
   const [savingId, setSavingId] = useState(null);
-  const { jobs = [], cvResultLabels = {}, callStatusLabels = {} } = meta || {};
+  const { jobs = [], cvResultLabels = {}, interviewResultLabels = {} } = meta || {};
 
   // Lưu 1 trường rồi cập nhật dòng vào state (không refetch).
   const saveField = async (id, patch) => {
@@ -150,7 +154,7 @@ function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
         <table className="tbl">
           <thead><tr>
             <th>Ứng viên</th><th>Vị trí</th><th>Ngày nhận</th><th>CTV</th>
-            <th>Lọc CV</th><th>Gọi điện</th><th>Link CV / File PDF</th><th></th>
+            <th>Lọc CV</th><th>Kết quả PV</th><th>Link CV / File PDF</th><th></th>
           </tr></thead>
           <tbody>
             {rows.map((r) => {
@@ -198,13 +202,14 @@ function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
                 </td>
                 <td onClick={(e) => e.stopPropagation()}>
                   {isRecruiter ? (
-                    <select value={r.callStatus || ''} disabled={busy}
-                      onChange={(e) => saveField(r.id, { callStatus: e.target.value })}
+                    <select value={r.interviewResult || ''} disabled={busy}
+                      onChange={(e) => saveField(r.id, { interviewResult: e.target.value })}
                       style={{ ...cellStyle, width: 130, opacity: op }}>
-                      <option value="">— Chưa gọi —</option>
-                      {Object.entries(callStatusLabels).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      <option value="">— Chưa PV —</option>
+                      {Object.entries(interviewResultLabels).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
-                  ) : (<CallBadge k={r.callStatus} label={callStatusLabels[r.callStatus]} />)}
+                  ) : (<InterviewBadge k={r.interviewResult}
+                    label={interviewResultLabels[r.interviewResult]} />)}
                 </td>
                 <td><CvFileCell row={r} /></td>
                 <td><button className="icon-btn" title="Xem hồ sơ" onClick={(e) => { e.stopPropagation(); onOpen(r); }}>

@@ -92,3 +92,29 @@ class TestStageConfig(TransactionCase):
     def test_08_delete_empty_stage_ok(self):
         self.stage_free.unlink()
         self.assertFalse(self.stage_free.exists())
+
+    # ── Guard ẩn / hiện lại ──────────────────────────────────────────────────
+
+    def test_09_hide_stage_with_active_applicant_blocked(self):
+        self._applicant(self.stage_sla)
+        with self.assertRaises(UserError):
+            self.stage_sla.active = False
+
+    def test_10_hide_stage_with_archived_applicant_ok(self):
+        """Khác guard xoá: ứng viên đã lưu trữ không chặn ẩn."""
+        a = self._applicant(self.stage_sla)
+        a.active = False
+        self.stage_sla.active = False
+        Stage = self.env['hr.recruitment.stage']
+        self.assertNotIn(self.stage_sla, Stage.search([]))
+        self.assertIn(self.stage_sla,
+                      Stage.with_context(active_test=False).search([]))
+        # hiện lại được, không mất dữ liệu
+        self.stage_sla.active = True
+        self.assertIn(self.stage_sla, Stage.search([]))
+        self.assertEqual(self.stage_sla.sla_days, 2)
+
+    def test_11_hide_all_visible_stages_blocked(self):
+        all_visible = self.env['hr.recruitment.stage'].search([])
+        with self.assertRaises(UserError):
+            all_visible.write({'active': False})
