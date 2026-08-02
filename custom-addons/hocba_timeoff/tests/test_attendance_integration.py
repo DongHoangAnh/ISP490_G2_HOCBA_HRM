@@ -106,6 +106,37 @@ class TestIsWorkdayExtra(TransactionCase):
 
 @tagged('post_install', '-at_install', 'hocba_timeoff')
 class TestFullDayBlock(_LeaveAttMixin):
+    """Chặn check-in luôn xét NGÀY HÔM NAY (_assert_not_on_full_day_leave đọc
+    fields.Date.context_today) nên đơn nghỉ của fixture phải duyệt được vào bất
+    kỳ thứ nào: hr_holidays bác đơn có number_of_days = 0 ("The following
+    employees are not supposed to work during that period") ⇒ chạy suite vào
+    T7/CN thì 2 test dưới đây đỏ dù code không sai.
+
+    Vì vậy NV của riêng class này dùng lịch làm 7 ngày. KHÔNG đặt ở
+    _LeaveAttMixin: TestGenerateFullDay cần lịch mặc định để test
+    'bỏ cuối tuần' còn ý nghĩa.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        att = []
+        for dow in range(7):
+            att += [
+                (0, 0, {'name': 'Sáng', 'dayofweek': str(dow),
+                        'hour_from': 8.0, 'hour_to': 12.0,
+                        'day_period': 'morning'}),
+                (0, 0, {'name': 'Chiều', 'dayofweek': str(dow),
+                        'hour_from': 13.0, 'hour_to': 17.0,
+                        'day_period': 'afternoon'}),
+            ]
+        # tz='UTC' cho khớp emp không gắn user_id (xem chú thích ở
+        # TestGenerateFullDay: giờ local == giờ UTC lưu trong DB).
+        cls.emp.resource_calendar_id = cls.env['resource.calendar'].create({
+            'name': 'Lịch test làm cả tuần (timeoff)',
+            'tz': 'UTC',
+            'attendance_ids': att,
+        })
 
     def test_block_check_in_on_full_day_leave(self):
         today = fields.Date.context_today(self.Att)
