@@ -7,7 +7,7 @@
 | **Owner** | Nhật Anh |
 | **Nhánh** | `NhatAnh/Service` (fork từ `origin/main` @9518b36) |
 | **Module mới** | `custom-addons/hocba_service` |
-| **Trạng thái** | **P1 → P5 XONG** (2026-08-02) — model + ACL + seed + controller API + SPA hai phía (gửi & xử lý) + thông báo/cron/KPI, `0 failed, 0 error(s) of 111 tests`. Kiểm tay trên DB local: §10.3 (P3), §10.4 (P4), §10.5 (P5). Tiếp theo: P6 (màn Cấu hình loại yêu cầu) |
+| **Trạng thái** | **P1 → P6 XONG — ĐỦ PHẠM VI** (2026-08-02) — model + ACL + seed + controller API + SPA ba phía (gửi & xử lý & cấu hình) + thông báo/cron/KPI, `0 failed, 0 error(s) of 141 tests`. Kiểm tay trên DB local: §10.3 (P3), §10.4 (P4), §10.5 (P5), §10.6 (P6). Còn lại trước demo: cài module lên Neon (`-i hocba_service` qua endpoint trực tiếp) |
 | **Nguồn yêu cầu** | Giảng viên hướng dẫn — bổ sung cho phần self-service của tài khoản nhân viên |
 
 ---
@@ -367,7 +367,7 @@ Không liên quan nghiệp vụ dịch vụ ⇒ **không cấp**. Giáo vụ ch�
 | POST | `/service/request/<int:rid>/cancel` | người gửi rút, chỉ từ `new` |
 | GET | `/service/stats` | KPI: tổng / đang mở / quá hạn / thời gian xử lý TB (giờ) / điểm đánh giá TB / phân bố theo loại |
 | GET | `/service/attachment/<int:att_id>` | Tải file, kiểm phạm vi trước — copy pattern `/timeoff/attachment/<id>` |
-| GET | `/service/config/types` · POST `/service/config/types/save` · POST `/service/config/types/toggle-active` | P6, Admin/HR Manager |
+| GET | `/service/config/types` · POST `/service/config/types/save` · POST `/service/config/types/toggle-active` · POST `/service/config/params` | P6, Admin/HR Manager. Route thứ 4 cho 2 ngưỡng — xem §10.6(a) |
 
 **Quy ước lỗi:** `403` ngoài phạm vi · `400` vi phạm BR (kèm `code` để SPA hiện đúng thông điệp, vd `anon_dept_too_small`, `anon_not_allowed`, `attachment_not_allowed`).
 
@@ -571,7 +571,7 @@ Cần thấy `0 failed, 0 error(s) of N tests` với **N > 0**. Lần đầu dù
 | **P3** ✅ | SPA phía NV: `Service.jsx`, `RequestForm`, `MyRequestsPanel`, `RequestThread` (+ `svcMeta.js`) + sửa `Shell.jsx`/`App.jsx` | ✅ 2026-08-01: gửi được đơn thường + ẩn danh, đính kèm round-trip, hội thoại 2 chiều trên đơn ẩn danh, 4 chốt §7.3 chặn tại chỗ. Kiểm tay: §10.3 |
 | **P4** ✅ | SPA phía xử lý: `InboxPanel` (claim/answer/close, filter, badge SLA), ghi chú nội bộ | ✅ 2026-08-01: `0 failed, 0 error(s) of 90 tests` (thêm guard `dept_no_manager` + 3 test). HR và TP xử lý trọn vòng đời; TP chỉ thấy đơn phòng mình. Kiểm tay: §10.4 |
 | **P5** ✅ | `hb.notification` producers + cron quá hạn + `StatsPanel` (KPI) | ✅ 2026-08-02: `0 failed, 0 error(s) of 111 tests` (+21 test `test_notify.py`). Đủ 6 kind, bấm chuông nhảy đúng view/tab/đơn; cron `dedup_key` không nhân bản; nội dung thông báo đơn ẩn danh sạch danh tính **và** `create_uid = OdooBot`. Kiểm tay: §10.5 |
-| **P6** | Màn Cấu hình loại yêu cầu (Admin/HR Manager) — `/service/config/types*` + sửa 2 `ir.config_parameter` (`min_anon_dept_size`, `anon_daily_limit`) | Admin thêm/sửa/ẩn loại + đổi 2 ngưỡng không cần sửa code; BR-SVC-09 chặn được |
+| **P6** ✅ | Màn Cấu hình loại yêu cầu (Admin/HR Manager) — `/service/config/types*` + sửa 2 `ir.config_parameter` (`min_anon_dept_size`, `anon_daily_limit`) | ✅ 2026-08-02: `0 failed, 0 error(s) of 141 tests` (+30 test `test_config.py`). Thêm/sửa/tắt loại + đổi 2 ngưỡng ngay trên SPA; BR-SVC-09 chặn cả ở form (khoá chéo ô) và ở `@api.constrains`. Kiểm tay: §10.6 |
 
 **Thứ tự bắt buộc:** backend chắc (model → security → API → test) trước, UI sau — theo CLAUDE.md.
 
@@ -673,6 +673,38 @@ Chuông `NotificationBell.jsx` **không phải sửa**: nó hoàn toàn không b
 **(c) `service_closed` báo BÊN CÒN LẠI, không cứng nhắc “báo người gửi”.** Bảng §8.1 ghi người nhận là người gửi; nhưng người gửi **cũng** đóng được đơn (`action_close` cho phép), lúc đó báo lại chính người vừa bấm là nhiễu — nên đổi sang: người gửi đóng → báo **người đang xử lý** (`targetTab='inbox'`, để họ dừng việc), người xử lý đóng → báo người gửi. `action_cancel` (rút đơn) **không** sinh thông báo: chỉ rút được ở trạng thái `new` nên chưa có ai nhận việc.
 
 **(d) `_notif_handlers()` chỉ gồm group HR + TP của phòng đích, KHÔNG gồm `base.group_system`.** Lệch có chủ ý với `_svc_scope()` (ở đó `is_admin` được tính là HR): sysadmin đọc được hộp thư nhưng không phải người xử lý nghiệp vụ, ping họ mọi đơn là nhiễu. Đổi lại: user chỉ có `group_system` mà không có group HR sẽ **không** nhận chuông.
+
+---
+
+### 10.6 P6 — kiểm tay + 4 điều chỉnh
+
+**Đã làm:** 3 hàm nghiệp vụ trên `hocba.hr.request.type` (`config_save`, `config_toggle_active`, `config_set_params`) + `_config_payload()` + 4 route + tab **Cấu hình** trên SPA (`ConfigPanel.jsx`: bảng loại yêu cầu, modal thêm/sửa, bật/tắt, khối 2 ngưỡng). 30 test mới (`tests/test_config.py`) ⇒ **`0 failed, 0 error(s) of 141 tests`**.
+
+Kiểm tay trên DB local `hocba_hrm` (container thứ hai cổng **8079**, không đụng Neon), đăng nhập bằng tài khoản HR Manager mới seed `svc.hrm`:
+
+| # | Kiểm | Kết quả |
+|---|---|---|
+| 1 | Tab **Cấu hình** chỉ hiện với `canConfig` | HR Manager: `Đơn của tôi \| Cần xử lý \| Thống kê \| Cấu hình`; HR User (`svc.hr`): `Cần xử lý \| Thống kê`; Trưởng phòng (`svc.tp`): `canConfig=false` |
+| 2 | 3 route cấu hình với HR User | GET `/config/types`, POST `/save`, POST `/params` → **403 `forbidden`** cả ba |
+| 3 | Bảng loại: 9 loại seed + cột "Đã dùng" | `confirm_work` `3 đơn · 3 đang mở`, `feedback` `4 đơn · 3 đang mở` — khớp dữ liệu demo |
+| 4 | Khoá chéo BR-SVC-09 **trên form** | Loại mới mặc định `Cho đính kèm` = bật ⇒ ô `Cho gửi ẩn danh` **disabled** kèm lý do; tắt đính kèm thì mở, và ngược lại |
+| 5 | Thêm loại qua modal | Nhập mã `"  Doi_Ca_P6 "` → lưu ra `doi_ca_p6` (chuẩn hoá), SLA 6, ẩn danh bật, đính kèm tắt |
+| 6 | Mã trùng | Lưu mã `feedback` → lỗi inline *“Mã "feedback" đã dùng cho loại "Đánh giá & góp ý".”*, modal không đóng |
+| 7 | Tắt loại → biến khỏi **form gửi** | Tắt `reissue_badge` → badge `Đã tắt`; rời tab Cấu hình (meta nạp lại) → select của form gửi còn 9 loại, **không** có "Cấp lại thẻ", **có** loại mới |
+| 8 | Đổi ngưỡng | `min_anon_dept_size` 5 → 3, nút "Lưu ngưỡng" disabled khi chưa đổi, hiện "Đã lưu." sau khi lưu; `/meta` trả `minAnonDeptSize=3` |
+| 9 | Ngưỡng sai | `anonDailyLimit = 0` → **400 `param_invalid`** *“"Số đơn ẩn danh mỗi người mỗi ngày" phải trong khoảng 1..999.”*, giá trị cũ **không** bị ghi |
+| 10 | Vòng tròn khép kín (đúng kịch bản §2.2) | `svc.nvnho` (phòng **3 NV**, trước đó bị `anon_dept_too_small`) gửi **ẩn danh cho TP** bằng loại vừa tạo → **200** `YCDV/2026/1308`, `deadline = create + 6 ngày`, `senderName = "Bạn (ẩn danh)"` |
+| 11 | Hạ SLA **không** đụng đơn đang chạy | Đổi `confirm_work` SLA 3 → 1: `deadline` của `0587/0584/0431` **y nguyên**, `isOverdue` vẫn `false` (rồi trả SLA về 3) |
+
+**(a) Thêm route thứ 4 `POST /service/config/params`.** §6 chỉ liệt kê 3 route `types*`. Nhồi 2 ngưỡng vào `types/save` sẽ trộn hai thứ khác nhau (một bản ghi `hocba.hr.request.type` vs 2 dòng `ir.config_parameter`) vào một payload, và mọi lần sửa SLA lại phải gửi kèm ngưỡng. Cả 4 route đều trả **nguyên payload cấu hình mới** để SPA khỏi gọi thêm một vòng.
+
+**(b) `sla_days` được CHỤP LẠI trên đơn (field mới trên `hocba.hr.request`).** Đây là điều chỉnh bắt buộc do P6 sinh ra: `deadline` là compute-store, bản P1 khai `@api.depends('type_id.sla_days', 'create_date')` ⇒ **Admin hạ SLA của một loại là dịch hạn của mọi đơn đang chạy thuộc loại đó**, đẩy chúng thành quá hạn và để cron `service_overdue` bắn thông báo oan. Nay `deadline = create_date + request.sla_days`, còn `request.sla_days` là compute-store `readonly=False` chỉ phụ thuộc `type_id` (không phải `type_id.sla_days`) nên: đơn mới lấy SLA hiện hành (`create_request` ghi tường minh), đơn cũ được điền một lần khi nâng cấp module, và đổi SLA của loại **không** chạy ngược vào đơn đã gửi. Test `test_changing_type_sla_does_not_move_deadline_of_existing_requests` + kiểm tay #11 khoá hồi quy.
+
+**(c) `config_save` tự bọc `cr.savepoint()`, không dựa vào savepoint của controller.** `@api.constrains` (BR-SVC-09, BR-SVC-01) chỉ nổ lúc **flush**, tức sau khi INSERT/UPDATE đã chạy ⇒ một lần lưu sai để lại bản ghi dở dang. Hàm này còn bị test và RPC gọi trực tiếp (không qua `_guarded()`) nên phải tự lo. Kèm `flush_recordset()` để lỗi rơi **trong** savepoint thay vì lúc commit — commit là ngoài tầm `_guarded()` nên sẽ thành 500 chứ không phải 400. Riêng **mã trùng** thì kiểm tường minh trước (`code_duplicate`): unique index nổ `IntegrityError`, không phải `ValidationError`, `_guarded()` không bắt được.
+
+**(d) Hai chốt chặn ngoài spec, cùng lý do "đừng tự bắn vào chân".** `config_toggle_active` **không cho tắt loại cuối cùng còn bật** (`last_active_type`) — tắt hết thì không ai gửi được yêu cầu nào nữa và màn hình không có đường thoát. `config_set_params` chặn ngoài khoảng **1..999** (`PARAM_MAX`) — `_param_int()` coi giá trị ≤ 0 là "dùng mặc định" nên lưu `0` sẽ âm thầm thành 5/3, người cấu hình tưởng đã tắt kiểm tra. Ngoài ra `config_*` **patch từng phần** (chỉ ghi key có trong payload) để sửa một field không vô tình reset field bị quên.
+
+**Đã kiểm và KHÔNG phải sửa:** tắt một loại **không** làm đơn cũ biến mất khỏi hộp thư. `_inbox_domain()` có nhánh `('type_id.force_hr_only', '=', False)`; Odoo 19 duyệt path quan hệ **không** áp `active_test` cho comodel nên đơn thuộc loại đã tắt vẫn khớp — 2 test khoá lại hành vi này (`test_toggle_off_keeps_existing_requests_in_manager_inbox` / `..._hr_inbox`) để bản Odoo sau đổi ý thì đỏ ngay.
 
 ---
 
