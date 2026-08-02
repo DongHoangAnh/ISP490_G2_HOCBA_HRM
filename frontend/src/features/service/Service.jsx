@@ -11,6 +11,7 @@ import RequestForm from './RequestForm';
 import MyRequestsPanel from './MyRequestsPanel';
 import InboxPanel from './InboxPanel';
 import StatsPanel from './StatsPanel';
+import ConfigPanel from './ConfigPanel';
 
 export default function Service({ search, focus }) {
   const [meta, setMeta] = useState(null);
@@ -43,7 +44,14 @@ export default function Service({ search, focus }) {
   const tabs = [];
   if (meta.canSend) tabs.push(['me', 'Đơn của tôi']);
   if (meta.canHandle) tabs.push(['inbox', 'Cần xử lý'], ['stats', 'Thống kê']);
+  if (meta.canConfig) tabs.push(['config', 'Cấu hình']);
   const activeTab = tab || (tabs.length ? tabs[0][0] : null);
+
+  /* Sửa cấu hình xong phải nạp lại meta NGAY: form gửi (và tab khác) đọc danh
+     mục loại + 2 ngưỡng từ meta, giữ bản cũ là hiểu nhầm ngay ("đã thêm loại
+     rồi mà không thấy"). Bấm "Gửi yêu cầu" ngay trong tab Cấu hình cũng phải
+     đúng, nên làm mới theo SỰ KIỆN lưu chứ không theo lúc đổi tab. */
+  const reloadMeta = () => { fetchMeta().then(setMeta).catch(() => {}); };
 
   return (
     <div className="content fade-in">
@@ -87,6 +95,8 @@ export default function Service({ search, focus }) {
       )}
 
       {activeTab === 'stats' && <StatsPanel />}
+
+      {activeTab === 'config' && <ConfigPanel onChanged={reloadMeta} />}
 
       {creating && (
         <RequestForm meta={meta}

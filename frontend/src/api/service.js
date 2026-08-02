@@ -71,3 +71,27 @@ export const closeRequest = (id, closedReason) =>
 
 /* KPI hộp thư của CHÍNH người xử lý (không phải toàn hệ thống — BR-SVC-13). */
 export const fetchStats = () => hbGet(`${BASE}/stats`);
+
+/* ---- Cấu hình (P6) — chỉ HR Manager/Admin (meta.canConfig) -------------- */
+
+/* → { canConfig, params: { minAnonDeptSize, anonDailyLimit },
+       types: [{ …như meta.types…, sequence, active, usageCount, openCount }] }
+   Khác meta.types: có CẢ loại đã tắt + số đơn đang dùng. HR User gọi → 403. */
+export const fetchServiceConfig = () => hbGet(`${BASE}/config/types`);
+
+/* Thêm (không có id) hoặc sửa (có id) một loại. Chỉ gửi key nào muốn đổi —
+   BE patch từng phần. → nguyên payload cấu hình mới (khỏi gọi lại).
+   Mã lỗi: name_required · code_required · code_invalid · code_duplicate ·
+   sla_invalid · scope_invalid · type_invalid; riêng BR-SVC-09 (ẩn danh +
+   đính kèm) và BR-SVC-01 về từ @api.constrains nên chỉ có `message`. */
+export const saveRequestType = (payload) =>
+  hbPost(`${BASE}/config/types/save`, payload);
+
+/* Bật/tắt loại. Tắt = ẩn khỏi form gửi, KHÔNG đụng đơn đang chạy.
+   Lỗi last_active_type khi cố tắt loại cuối cùng còn bật. */
+export const toggleRequestType = (id, active) =>
+  hbPost(`${BASE}/config/types/toggle-active`, { id, active });
+
+/* 2 ngưỡng ẩn danh (BR-SVC-03 / BR-SVC-12), 1..999. Lỗi: param_invalid. */
+export const saveServiceParams = (params) =>
+  hbPost(`${BASE}/config/params`, params);
