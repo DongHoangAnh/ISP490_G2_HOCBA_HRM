@@ -165,6 +165,13 @@ class HocbaHrRequest(models.Model):
     answered_at = fields.Datetime(string='Trả lời lúc', readonly=True)
     closed_at = fields.Datetime(string='Đóng lúc', readonly=True)
     closed_reason = fields.Text(string='Lý do đóng')
+    sla_days = fields.Integer(
+        string='SLA lúc gửi (ngày)', compute='_compute_sla_days',
+        store=True, readonly=False,
+        help='CHỤP LẠI type_id.sla_days tại thời điểm gửi. Màn Cấu hình (P6) '
+             'cho Admin sửa SLA của loại bất cứ lúc nào; nếu hạn xử lý bám '
+             'thẳng type_id.sla_days thì một lần hạ SLA sẽ đẩy hàng loạt đơn '
+             'đang chạy thành quá hạn và cron bắn thông báo oan.')
     deadline = fields.Datetime(
         string='Hạn xử lý', compute='_compute_deadline', store=True)
     is_overdue = fields.Boolean(
@@ -178,11 +185,21 @@ class HocbaHrRequest(models.Model):
 
     # ---------------------------------------------------------------- compute
 
-    @api.depends('type_id.sla_days', 'create_date')
+    @api.depends('type_id')
+    def _compute_sla_days(self):
+        """Chỉ điền khi còn trống — đơn cũ (nâng cấp module) lấy SLA hiện hành
+        của loại, đơn mới đã được create_request() ghi tường minh. Phụ thuộc
+        `type_id` chứ KHÔNG phải `type_id.sla_days`: đổi SLA của loại không
+        được chạy ngược vào đơn đã gửi."""
+        for rec in self:
+            if not rec.sla_days:
+                rec.sla_days = rec.type_id.sla_days or 0
+
+    @api.depends('sla_days', 'create_date')
     def _compute_deadline(self):
         for rec in self:
             base = rec.create_date or fields.Datetime.now()
-            rec.deadline = base + timedelta(days=rec.type_id.sla_days or 0)
+            rec.deadline = base + timedelta(days=rec.sla_days or 0)
 
     @api.depends('state', 'deadline')
     def _compute_is_overdue(self):
@@ -441,6 +458,7 @@ class HocbaHrRequest(models.Model):
             'name': env['ir.sequence'].sudo().next_by_code(
                 'hocba.hr.request') or '/',
             'type_id': req_type.id,
+            'sla_days': req_type.sla_days,       # chốt SLA lúc gửi (§10.6)
             'subject': subject,
             'body': body,
             'recipient_scope': scope,

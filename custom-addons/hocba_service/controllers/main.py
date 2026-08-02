@@ -71,6 +71,9 @@ def _meta_payload(env):
         'isHrManager': scope['isHrManager'],
         'isDeptManager': scope['isDeptManager'],
         'canHandle': scope['canHandle'],
+        # Tab "Cấu hình" (P6) — chỉ HR Manager/Admin. Cùng một cờ với
+        # _config_guard() ở model để SPA không đoán vai trò khác BE.
+        'canConfig': scope['isHrManager'],
         'canSend': bool(emp),
         'types': [_type_payload(rt) for rt in types],
         'myDepartment': {
@@ -279,6 +282,44 @@ def _stats_payload(env):
     }
 
 
+def _config_payload(env):
+    """Màn Cấu hình (P6): TẤT CẢ loại (kể cả đã tắt) + 2 ngưỡng + số đơn đã dùng.
+
+    Khác _meta_payload ở 3 chỗ, đừng gộp: (a) lấy cả loại đã tắt, (b) chỉ HR
+    Manager/Admin đọc được, (c) kèm usageCount/openCount để Admin biết mình sắp
+    tắt một loại đang có đơn chạy dở.
+    """
+    Type = env['hocba.hr.request.type']
+    Type._config_guard()
+    types = Type.with_context(active_test=False).search([])
+    Request = env['hocba.hr.request'].sudo()
+    used = dict(Request._read_group(
+        [('type_id', 'in', types.ids)], ['type_id'], ['__count']))
+    open_used = dict(Request._read_group(
+        [('type_id', 'in', types.ids), ('state', 'in', list(OPEN_STATES))],
+        ['type_id'], ['__count']))
+    rows = []
+    for rt in types:
+        row = _type_payload(rt)
+        row.update({
+            'sequence': rt.sequence,
+            'active': rt.active,
+            'usageCount': used.get(rt, 0),
+            'openCount': open_used.get(rt, 0),
+        })
+        rows.append(row)
+    return {
+        'canConfig': True,
+        'types': rows,
+        'params': {
+            'minAnonDeptSize': _param_int(
+                env, PARAM_MIN_ANON_DEPT, DEFAULT_MIN_ANON_DEPT),
+            'anonDailyLimit': _param_int(
+                env, PARAM_ANON_DAILY, DEFAULT_ANON_DAILY),
+        },
+    }
+
+
 def _attachment_owner(env, att):
     """Đơn chứa attachment này. Quan hệ là Many2many nên không tin res_id —
     tra ngược qua bảng nối."""
@@ -461,3 +502,45 @@ class HocBaService(http.Controller):
             ('Content-Length', len(data)),
             ('Content-Disposition', content_disposition(att.name or 'tep')),
         ])
+
+    # ------------------------------------------------------------------
+    # 13-16. Cấu hình (P6) — Admin / HR Manager. Toàn bộ luật ở model
+    #   hocba.hr.request.type.config_*; ở đây chỉ parse JSON như mọi route khác.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/service/config/types', auth='user',
+                type='http', methods=['GET'])
+    def api_config_types(self, **kw):
+        return _guarded(lambda: _config_payload(request.env))
+
+    @http.route('/hocba-hrm/api/service/config/types/save', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_config_type_save(self, **kw):
+        payload = request.get_json_data() or {}
+
+        def build():
+            request.env['hocba.hr.request.type'].config_save(payload)
+            # Trả lại nguyên bảng: sửa 1 loại có thể đổi thứ tự hiển thị, và
+            # SPA khỏi phải gọi thêm 1 vòng để làm mới.
+            return _config_payload(request.env)
+        return _guarded(build)
+
+    @http.route('/hocba-hrm/api/service/config/types/toggle-active',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_config_type_toggle(self, **kw):
+        payload = request.get_json_data() or {}
+
+        def build():
+            request.env['hocba.hr.request.type'].config_toggle_active(
+                payload.get('id'), payload.get('active'))
+            return _config_payload(request.env)
+        return _guarded(build)
+
+    @http.route('/hocba-hrm/api/service/config/params', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_config_params(self, **kw):
+        payload = request.get_json_data() or {}
+
+        def build():
+            request.env['hocba.hr.request.type'].config_set_params(payload)
+            return _config_payload(request.env)
+        return _guarded(build)

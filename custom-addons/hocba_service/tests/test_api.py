@@ -448,9 +448,13 @@ class TestServiceApi(ServiceCase):
             '%s/request/<int:rid>' % base,
             '%s/stats' % base,
             '%s/attachment/<int:att_id>' % base,
+            '%s/config/types' % base,
         ]
         expected_post = [
             '%s/request' % base,
+            '%s/config/types/save' % base,
+            '%s/config/types/toggle-active' % base,
+            '%s/config/params' % base,
             '%s/request/<int:rid>/reply' % base,
             '%s/request/<int:rid>/claim' % base,
             '%s/request/<int:rid>/answer' % base,
