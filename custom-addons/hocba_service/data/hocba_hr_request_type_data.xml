@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate KHÔNG bật: seed 9 loại chuẩn của Học Bá vẫn nâng cấp được khi
+         sửa nhãn/SLA ở bản sau. Admin thêm loại riêng thì tạo record mới, không
+         bị ảnh hưởng. -->
+    <data>
+        <record id="type_confirm_work" model="hocba.hr.request.type">
+            <field name="name">Xin giấy xác nhận công tác</field>
+            <field name="code">confirm_work</field>
+            <field name="sequence">10</field>
+            <field name="default_recipient">hr</field>
+            <field name="sla_days">3</field>
+            <field name="description">Ghi rõ mục đích sử dụng (vay vốn, xin visa, làm thủ tục…) và số bản cần cấp.</field>
+        </record>
+
+        <record id="type_confirm_income" model="hocba.hr.request.type">
+            <field name="name">Xác nhận thu nhập / bảng lương</field>
+            <field name="code">confirm_income</field>
+            <field name="sequence">20</field>
+            <field name="default_recipient">hr</field>
+            <field name="sla_days">3</field>
+            <field name="description">Ghi rõ khoảng thời gian cần xác nhận và nơi nhận giấy.</field>
+        </record>
+
+        <record id="type_contract_copy" model="hocba.hr.request.type">
+            <field name="name">Sao y hợp đồng</field>
+            <field name="code">contract_copy</field>
+            <field name="sequence">30</field>
+            <field name="default_recipient">hr</field>
+            <field name="sla_days">5</field>
+        </record>
+
+        <record id="type_qna_payroll" model="hocba.hr.request.type">
+            <field name="name">Hỏi đáp lương / BHXH / thuế</field>
+            <field name="code">qna_payroll</field>
+            <field name="sequence">40</field>
+            <field name="default_recipient">hr</field>
+            <field name="sla_days">2</field>
+            <field name="description">Nêu rõ kỳ lương hoặc khoản mục cần giải thích để HR tra cứu nhanh.</field>
+        </record>
+
+        <record id="type_reissue_badge" model="hocba.hr.request.type">
+            <field name="name">Cấp lại thẻ nhân viên</field>
+            <field name="code">reissue_badge</field>
+            <field name="sequence">50</field>
+            <field name="default_recipient">hr</field>
+            <field name="sla_days">5</field>
+        </record>
+
+        <record id="type_work_proposal" model="hocba.hr.request.type">
+            <field name="name">Đề xuất / xin ý kiến công việc</field>
+            <field name="code">work_proposal</field>
+            <field name="sequence">60</field>
+            <field name="default_recipient">manager</field>
+            <field name="sla_days">3</field>
+        </record>
+
+        <!-- Ẩn danh: allow_attachment BẮT BUỘC False (BR-SVC-09). -->
+        <record id="type_feedback" model="hocba.hr.request.type">
+            <field name="name">Đánh giá &amp; góp ý</field>
+            <field name="code">feedback</field>
+            <field name="sequence">70</field>
+            <field name="default_recipient">hr</field>
+            <field name="allow_anonymous" eval="True"/>
+            <field name="allow_attachment" eval="False"/>
+            <field name="has_rating" eval="True"/>
+            <field name="sla_days">7</field>
+            <field name="description">Có thể gửi ẩn danh. HR/Trưởng phòng sẽ không thấy tên và phòng ban của bạn, nhưng vẫn trả lời được để bạn đọc ở tab "Đơn của tôi".</field>
+        </record>
+
+        <!-- BR-SVC-01: force_hr_only → Trưởng phòng KHÔNG BAO GIỜ đọc được. -->
+        <record id="type_complaint_mgr" model="hocba.hr.request.type">
+            <field name="name">Khiếu nại về quản lý</field>
+            <field name="code">complaint_mgr</field>
+            <field name="sequence">80</field>
+            <field name="default_recipient">hr</field>
+            <field name="force_hr_only" eval="True"/>
+            <field name="allow_anonymous" eval="True"/>
+            <field name="allow_attachment" eval="False"/>
+            <field name="sla_days">5</field>
+            <field name="description">Đơn này chỉ HR đọc được — trưởng phòng của bạn không nhìn thấy, kể cả khi họ là người bị khiếu nại.</field>
+        </record>
+
+        <record id="type_other" model="hocba.hr.request.type">
+            <field name="name">Khác</field>
+            <field name="code">other</field>
+            <field name="sequence">90</field>
+            <field name="default_recipient">hr</field>
+            <field name="sla_days">5</field>
+        </record>
+    </data>
+</odoo>

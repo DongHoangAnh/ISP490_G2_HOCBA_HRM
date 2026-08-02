@@ -17,6 +17,7 @@ import RecruitmentConfig from '../features/recruitment/RecruitmentConfig';
 import Payroll from '../features/payroll/Payroll';
 import Finance from '../features/finance/Finance';
 import TimeoffConfig from '../features/timeoff-config/TimeoffConfig';
+import Service from '../features/service/Service';
 import { LoadingState, ErrorState } from '../components/states';
 import Login from '../features/auth/Login';
 
@@ -37,8 +38,13 @@ export default function App() {
     const view = n.targetView || 'timeoff';
     if (!allowedViews(me).has(view)) return;
     setView(view);
-    if (view === 'timeoff') {
-      setFocus({ requestId: n.targetRef, kind: n.kind, nonce: Date.now() });
+    // timeoff + service đều cần focus để mở đúng đơn từ thông báo.
+    // targetTab: service dùng để chọn tab người gửi / người xử lý.
+    if (view === 'timeoff' || view === 'service') {
+      setFocus({
+        requestId: n.targetRef, kind: n.kind,
+        targetTab: n.targetTab, nonce: Date.now(),
+      });
     }
   };
 
@@ -79,6 +85,7 @@ export default function App() {
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
         {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
+        {view === 'service' && <Service search={search} focus={focus} />}
         {view === 'offboarding' && <Offboarding search={search} />}
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}

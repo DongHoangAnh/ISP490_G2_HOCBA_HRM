@@ -16,6 +16,8 @@ const NAV = [
     { id: 'onboarding', label: 'Nhận việc', icon: 'checkCircle', need: 'manage' },
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'manage' },
     { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'manage' },
+    // Hộp thư yêu cầu/góp ý của nhân viên (HR + Trưởng phòng xử lý).
+    { id: 'service', label: 'Yêu cầu dịch vụ', icon: 'mail', need: 'manage' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'manage' },
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     // Đánh giá định kỳ (giảng viên / văn phòng) — HR, trưởng phòng, giáo vụ
@@ -40,6 +42,8 @@ const NAV = [
     // (Admin/HR/Giáo vụ) thấy Nghỉ phép ở mục Quản lý nhân sự (need:manage);
     // component TimeOff tự bổ sung tab Chờ duyệt/Đơn đã duyệt theo data.isOfficer.
     { id: 'timeoff', label: 'Nghỉ phép', icon: 'calendar', need: 'self' },
+    // Gửi yêu cầu/góp ý (kể cả ẩn danh) tới HR hoặc trưởng phòng.
+    { id: 'service', label: 'Yêu cầu & Góp ý', icon: 'mail', need: 'self' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
   ]},
@@ -93,6 +97,9 @@ export const PAGE_META = {
   'onboarding-config': { t: 'Cấu hình nhận việc', c: 'Hệ thống / Cấu hình quy trình' },
   'recruitment-config': { t: 'Cấu hình tuyển dụng', c: 'Hệ thống / Cấu hình quy trình' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
+  // Crumb trung tính: view này xuất hiện ở CẢ 2 mục nav (quản lý + cá nhân),
+  // PAGE_META lại theo view nên "Cá nhân / Self-service" sẽ sai với HR.
+  service: { t: 'Yêu cầu dịch vụ nhân sự', c: 'Nhân sự / Yêu cầu & Góp ý' },
   timeoffConfig: { t: 'Cấu hình nghỉ phép', c: 'Hệ thống / Time Off' },
 };
 

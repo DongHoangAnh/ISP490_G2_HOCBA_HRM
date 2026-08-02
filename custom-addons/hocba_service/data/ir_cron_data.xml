@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- CRON-SVC-001: nhắc đơn dịch vụ quá hạn SLA (SPEC SVC §8.2).
+             nextcall 00:20 UTC = 7:20 SA giờ VN — lệch 20 phút so với các cron
+             của hocba_employees (00:00/00:05/00:10) để không chồng lượt chạy.
+             ⚠️ Odoo 19: ir.cron KHÔNG còn numbercall / nextcall tz. -->
+        <record id="cron_service_overdue_reminder" model="ir.cron">
+            <field name="name">HOCBA: Nhắc yêu cầu dịch vụ quá hạn</field>
+            <field name="model_id" ref="model_hocba_hr_request"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_overdue_reminder()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall"
+                   eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 00:20:00')"/>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>
