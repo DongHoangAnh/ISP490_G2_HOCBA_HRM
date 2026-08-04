@@ -1,28 +1,78 @@
 /* Tab "Danh sách CV" — list + kanban (kéo-thả đổi stage), xem chi tiết, sửa,
    thêm CV thủ công. Owner: Việt. Spec: docs/SPEC_API_RECRUITMENT.md · 3 trạng thái §5b. */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
-import { fmtDate } from '../../utils/format';
+import Pagination, { usePaged } from '../../components/Pagination';
 import { fetchCvList, changeStage, updateApplicant } from '../../api/recruitment';
-import { CV_RESULT_KIND, CALL_STATUS_KIND, INTERVIEW_RESULT_KIND } from './util';
+import { CV_RESULT_KIND, INTERVIEW_RESULT_KIND } from './util';
 import ApplicantDrawer from './ApplicantDrawer';
 import ApplicantForm from './ApplicantForm';
 
-export default function CvList({ search, stageNames }) {
+/* Chip lọc nhanh — sinh động từ nhãn Selection do BE trả về, bắc qua 2 trường:
+   kết quả lọc CV (cvResult) và kết quả phỏng vấn (interviewResult).
+   Thêm/bớt giá trị trong Selection ở Odoo là chip tự có, không phải sửa file này.
+   Khoá giữ nguyên dạng cv_<key> / pv_<key> nên chip đang chọn không bị mất. */
+const buildFilters = (cvLabels = {}, pvLabels = {}) => [
+  ['all', 'Tất cả', null],
+  ...Object.entries(cvLabels).map(
+    ([k, l]) => [`cv_${k}`, `${l} CV`, (r) => r.cvResult === k]),
+  ...Object.entries(pvLabels).map(
+    ([k, l]) => [`pv_${k}`, `${l} PV`, (r) => r.interviewResult === k]),
+];
+
+/* Màu card kanban — lái theo KẾT QUẢ (lọc CV + phỏng vấn), KHÔNG theo tên bước
+   (bước cấu hình được nên tên/thứ tự có thể đổi):
+     xanh = đã Pass PV (giữ nguyên qua Offer/Nhận việc) ·
+     đỏ   = đã dừng, do Fail PV HOẶC Fail CV ·
+     vàng = chưa có kết quả (còn đang chạy). */
+const CARD_TONE = {
+  pass: { bd: 'var(--green)',   bg: 'var(--green-bg)' },
+  fail: { bd: 'var(--red-600)', bg: 'var(--red-50)' },
+};
+const TONE_PENDING = { bd: 'var(--amber)', bg: 'var(--amber-bg)' };
+
+/* Kết quả PV xét trước vì nó là bước sau; chưa PV mà đã Fail CV thì cũng đỏ.
+   Dữ liệu mâu thuẫn (Fail CV nhưng Pass PV) hiếm nhưng có thể xảy ra do sửa
+   tay — khi đó ưu tiên PV, vì đó là phán quyết mới hơn. */
+const cardTone = (r) => CARD_TONE[r.interviewResult]
+  || (r.cvResult === 'fail' ? CARD_TONE.fail : TONE_PENDING);
+
+export default function CvList({ search, stageNames, focus }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [cvFilter, setCvFilter] = useState('all');
   const [vmode, setVmode] = useState(() => localStorage.getItem('hocba_cv_vmode') || 'table');
   const [sel, setSel] = useState(null);       // applicant đang xem chi tiết
   const [creating, setCreating] = useState(false);
+  const handledFocus = useRef(null);      // nonce thông báo đã xử lý
 
   const load = () => {
     setErr(null); setData(null);
     fetchCvList().then(setData).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
+
+  /* Bấm thông báo "CV quá hạn xử lý" ở chuông → mở drawer đúng ứng viên.
+
+     Tìm trong data.rows (toàn bộ) nên drawer luôn mở được, kể cả khi chip lọc
+     đang giấu ứng viên đó. Vẫn reset chip về "Tất cả" để lúc ĐÓNG drawer ứng
+     viên vừa được nhắc còn nằm trong danh sách — không thì vừa được nhắc xong
+     đã mất dấu ngay.
+
+     Phụ thuộc `data` vì thông báo có thể bấm lúc danh sách chưa tải xong; nhưng
+     `data` còn đổi mỗi lần sửa 1 ô (applyRow) ⇒ chốt bằng ref theo nonce để
+     mỗi lần bấm chuông chỉ mở drawer ĐÚNG MỘT LẦN, không tự bật lại. */
+  useEffect(() => {
+    if (!focus || !focus.requestId || !data) return;
+    if (handledFocus.current === focus.nonce) return;
+    const row = data.rows.find((r) => r.id === focus.requestId);
+    if (!row) return;
+    handledFocus.current = focus.nonce;
+    setCvFilter('all');
+    setSel(row);
+  }, [focus, data]);
 
   const setView = (m) => { setVmode(m); localStorage.setItem('hocba_cv_vmode', m); };
 
@@ -45,7 +95,11 @@ export default function CvList({ search, stageNames }) {
     return [r.name, r.phone, r.email, r.jobName, r.ctv]
       .some((v) => (v || '').toLowerCase().includes(q));
   };
-  const matchCv = (r) => cvFilter === 'all' || (r.cvResult || 'none') === cvFilter;
+  const filters = buildFilters(cvResultLabels, interviewResultLabels);
+  const matchCv = (r) => {
+    const f = filters.find(([k]) => k === cvFilter);
+    return !f || !f[2] || f[2](r);   // chip lạ (Selection đổi) → coi như Tất cả
+  };
   // Tập theo stage (tab PV/Offer) — dùng cho cả chip đếm lẫn bảng/kanban.
   const stageRows = stageNames ? rows.filter((r) => stageNames.includes(r.stage)) : rows;
   const filtered = stageRows.filter((r) => matchSearch(r) && matchCv(r));
@@ -53,11 +107,9 @@ export default function CvList({ search, stageNames }) {
   return (
     <div>
       <div className="filterbar">
-        <button className={'chip' + (cvFilter === 'all' ? ' active' : '')} onClick={() => setCvFilter('all')}>
-          Tất cả <span className="ct">{stageRows.length}</span></button>
-        {Object.entries(cvResultLabels).map(([k, l]) => (
+        {filters.map(([k, l, pred]) => (
           <button key={k} className={'chip' + (cvFilter === k ? ' active' : '')} onClick={() => setCvFilter(k)}>
-            {l} <span className="ct">{stageRows.filter((r) => r.cvResult === k).length}</span></button>
+            {l} <span className="ct">{pred ? stageRows.filter(pred).length : stageRows.length}</span></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
           {isRecruiter && (
@@ -72,9 +124,10 @@ export default function CvList({ search, stageNames }) {
       </div>
 
       {vmode === 'table' ? (
-        <TableView rows={filtered} meta={meta} isRecruiter={isRecruiter} onOpen={setSel} onSaved={applyRow} />
+        <TableView rows={filtered} resetKey={search + '|' + cvFilter}
+          meta={meta} isRecruiter={isRecruiter} onOpen={setSel} onSaved={applyRow} />
       ) : (
-        <KanbanView rows={filtered} stages={stages} labels={{ cvResultLabels, callStatusLabels }}
+        <KanbanView rows={filtered} stages={stages}
           isRecruiter={isRecruiter} onOpen={setSel} onMoved={applyRow} onError={load} />
       )}
 
@@ -93,9 +146,6 @@ export default function CvList({ search, stageNames }) {
 
 function ResultBadge({ k, label }) {
   return k ? <Badge kind={CV_RESULT_KIND[k] || 'gray'}>{label}</Badge> : <span className="muted">—</span>;
-}
-function CallBadge({ k, label }) {
-  return k ? <Badge kind={CALL_STATUS_KIND[k] || 'gray'}>{label}</Badge> : <span className="muted">—</span>;
 }
 function InterviewBadge({ k, label }) {
   return k ? <Badge kind={INTERVIEW_RESULT_KIND[k] || 'gray'}>{label}</Badge>
@@ -132,9 +182,11 @@ const cellStyle = {
   background: '#fff', fontSize: 12.5, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
 };
 
-function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
+function TableView({ rows, resetKey, meta, isRecruiter, onOpen, onSaved }) {
   const [savingId, setSavingId] = useState(null);
   const { jobs = [], cvResultLabels = {}, interviewResultLabels = {} } = meta || {};
+  // Phân trang chỉ ở chế độ Danh sách — Kanban cắt trang thì gãy luồng kéo-thả.
+  const pg = usePaged(rows, [resetKey]);
 
   // Lưu 1 trường rồi cập nhật dòng vào state (không refetch).
   const saveField = async (id, patch) => {
@@ -153,11 +205,11 @@ function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
       <div className="tbl-wrap tbl-scroll">
         <table className="tbl">
           <thead><tr>
-            <th>Ứng viên</th><th>Vị trí</th><th>Ngày nhận</th><th>CTV</th>
-            <th>Lọc CV</th><th>Kết quả PV</th><th>Link CV / File PDF</th><th></th>
+            <th>Ứng viên</th><th>Vị trí</th>
+            <th>Trạng thái CV</th><th>Kết quả PV</th><th>CV</th><th></th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => {
+            {pg.rows.map((r) => {
               const busy = savingId === r.id;
               const op = busy ? 0.6 : 1;
               return (
@@ -175,20 +227,6 @@ function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
                       {jobs.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
                     </select>
                   ) : (r.jobName || '—')}
-                </td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  {isRecruiter ? (
-                    <input type="date" value={r.dateReceived ? r.dateReceived.slice(0, 10) : ''}
-                      disabled={busy} onChange={(e) => saveField(r.id, { dateReceived: e.target.value || '' })}
-                      style={{ ...cellStyle, width: 140, opacity: op }} />
-                  ) : (<span className="muted mono">{r.dateReceived ? fmtDate(r.dateReceived) : '—'}</span>)}
-                </td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  {isRecruiter ? (
-                    <input type="text" defaultValue={r.ctv || ''} placeholder="Tên CTV" disabled={busy}
-                      onBlur={(e) => { if ((e.target.value || '') !== (r.ctv || '')) saveField(r.id, { ctv: e.target.value }); }}
-                      style={{ ...cellStyle, width: 120, opacity: op }} />
-                  ) : (r.ctv || <span className="muted">—</span>)}
                 </td>
                 <td onClick={(e) => e.stopPropagation()}>
                   {isRecruiter ? (
@@ -221,11 +259,12 @@ function TableView({ rows, meta, isRecruiter, onOpen, onSaved }) {
         </table>
       </div>
       {rows.length === 0 && <EmptyState>Không tìm thấy CV phù hợp.</EmptyState>}
+      <Pagination {...pg} />
     </div>
   );
 }
 
-function KanbanView({ rows, stages, labels, isRecruiter, onOpen, onMoved, onError }) {
+function KanbanView({ rows, stages, isRecruiter, onOpen, onMoved, onError }) {
   const [dragId, setDragId] = useState(null);
   const [overStage, setOverStage] = useState(null);
 
@@ -246,6 +285,7 @@ function KanbanView({ rows, stages, labels, isRecruiter, onOpen, onMoved, onErro
   };
 
   return (
+    <>
     <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>
       {stages.map((s) => {
         const col = rows.filter((r) => r.stageId === s.id);
@@ -265,32 +305,70 @@ function KanbanView({ rows, stages, labels, isRecruiter, onOpen, onMoved, onErro
               <span className="badge badge-gray">{col.length}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 40 }}>
-              {col.map((r) => (
+              {col.map((r) => {
+                const tone = cardTone(r);
+                // Fail PV thì thôi giục — ứng viên đã dừng, quá hạn không còn nghĩa.
+                const showSla = r.slaOverdue && r.interviewResult !== 'fail';
+                return (
                 <div key={r.id}
                   draggable={isRecruiter}
                   onDragStart={() => setDragId(r.id)}
                   onDragEnd={() => setDragId(null)}
                   onClick={() => onOpen(r)}
                   className="card"
-                  style={{ padding: 11, cursor: isRecruiter ? 'grab' : 'pointer', opacity: dragId === r.id ? 0.5 : 1 }}>
+                  style={{
+                    padding: 11, cursor: isRecruiter ? 'grab' : 'pointer',
+                    opacity: dragId === r.id ? 0.5 : 1,
+                    background: tone.bg, borderLeft: '3px solid ' + tone.bd,
+                  }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{r.name || '—'}</div>
-                  <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{r.jobName || 'Chưa gán vị trí'}</div>
-                  {r.phone && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{r.phone}</div>}
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-                    {r.slaOverdue && (
-                      <Badge kind="red" dot>
-                        Trễ SLA +{r.daysInStage - r.slaDays}ng
-                      </Badge>
-                    )}
-                    {r.cvResult && <Badge kind={CV_RESULT_KIND[r.cvResult] || 'gray'}>{labels.cvResultLabels[r.cvResult]}</Badge>}
-                    {r.callStatus && <Badge kind={CALL_STATUS_KIND[r.callStatus] || 'gray'}>{labels.callStatusLabels[r.callStatus]}</Badge>}
-                  </div>
+                  {showSla && (
+                    <div style={{ marginTop: 8 }}>
+                      <Badge kind="red" dot>Quá hạn {r.daysInStage - r.slaDays} ngày</Badge>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
       })}
+    </div>
+    <ColorLegend />
+    </>
+  );
+}
+
+/* Chú thích màu card — đặt dưới bảng Kanban. Lấy màu từ chính CARD_TONE /
+   TONE_PENDING để chú thích không bao giờ lệch với card thật. */
+const LEGEND = [
+  [CARD_TONE.pass, 'Đã Pass PV', 'gồm cả các bước sau: Offer, Nhận việc, Đã tuyển'],
+  [TONE_PENDING,   'Đang chạy', 'chưa có kết quả lọc CV / phỏng vấn, hoặc đang ở mức Tiềm năng'],
+  [CARD_TONE.fail, 'Fail CV hoặc Fail PV', 'ứng viên đã dừng'],
+];
+
+function ColorLegend() {
+  return (
+    <div className="card" style={{ padding: '10px 12px', marginTop: 10 }}>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontWeight: 700, fontSize: 12 }}>Chú thích màu</span>
+        {LEGEND.map(([tone, label, hint]) => (
+          <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span style={{
+              width: 26, height: 15, borderRadius: 4, flexShrink: 0,
+              background: tone.bg, borderLeft: '3px solid ' + tone.bd,
+            }} />
+            <span style={{ fontSize: 12 }}>{label}</span>
+            <span className="muted" style={{ fontSize: 11.5 }}>· {hint}</span>
+          </span>
+        ))}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <Badge kind="red" dot>Quá hạn N ngày</Badge>
+          <span className="muted" style={{ fontSize: 11.5 }}>
+            ứng viên nằm ở bước này lâu hơn hạn xử lý N ngày · không hiện với ứng viên Fail PV</span>
+        </span>
+      </div>
     </div>
   );
 }

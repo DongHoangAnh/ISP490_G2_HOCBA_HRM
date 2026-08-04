@@ -12,7 +12,11 @@ import SlotForm from './SlotForm';
 import SlotImport from './SlotImport';
 import MailSendModal from './MailSendModal';
 
-const INTERVIEW_STAGE = 'Phỏng vấn';
+/* Ba bước thuộc khâu phỏng vấn. Lọc theo MÃ bước (xmlid) chứ không theo tên:
+   tên bước sửa được trên màn Cấu hình, so tên là danh sách rỗng ngay khi ai đó
+   đổi chữ. Thứ tự trong mảng cũng là thứ tự sắp xếp của bảng. */
+const PV_STAGE_REFS = ['hb_stage_schedule', 'hb_stage_invite', 'hb_stage_interview'];
+const inPvStage = (r) => PV_STAGE_REFS.includes(r.stageRef);
 
 const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
@@ -240,10 +244,10 @@ function InterviewApplicants({ cv, setCv, templates }) {
   return (
     <div style={{ marginTop: 22 }}>
       <div className="between" style={{ marginBottom: 10 }}>
-        <h2 style={{ fontSize: 15.5, fontWeight: 800, margin: 0 }}>Ứng viên đang phỏng vấn</h2>
+        <h2 style={{ fontSize: 15.5, fontWeight: 800, margin: 0 }}>Ứng viên trong khâu phỏng vấn</h2>
         {cv && (
           <span className="muted" style={{ fontSize: 12.5 }}>
-            {cv.rows.filter((r) => r.stage === INTERVIEW_STAGE).length} ứng viên
+            {cv.rows.filter(inPvStage).length} ứng viên
           </span>
         )}
       </div>
@@ -252,10 +256,11 @@ function InterviewApplicants({ cv, setCv, templates }) {
         <LoadingState label="Đang tải danh sách ứng viên…" />
       ) : (() => {
         const rows = cv.rows
-          .filter((r) => r.stage === INTERVIEW_STAGE)
-          .sort((a, b) => (b.interviewDate || '').localeCompare(a.interviewDate || ''));
+          .filter(inPvStage)
+          .sort((a, b) => (PV_STAGE_REFS.indexOf(a.stageRef) - PV_STAGE_REFS.indexOf(b.stageRef))
+            || (b.interviewDate || '').localeCompare(a.interviewDate || ''));
         if (rows.length === 0)
-          return <EmptyState>Chưa có ứng viên nào ở bước phỏng vấn.</EmptyState>;
+          return <EmptyState>Chưa có ứng viên nào trong khâu phỏng vấn.</EmptyState>;
         const attLabels = cv.attendanceLabels || {};
         const resLabels = cv.interviewResultLabels || {};
         const jobs = cv.jobs || [];
@@ -264,7 +269,7 @@ function InterviewApplicants({ cv, setCv, templates }) {
             <div className="tbl-wrap tbl-scroll">
               <table className="tbl">
                 <thead><tr>
-                  <th>Họ tên ứng viên</th><th>Vị trí ứng tuyển</th><th>Ngày PV</th><th>Giờ</th>
+                  <th>Họ tên ứng viên</th><th>Bước</th><th>Vị trí ứng tuyển</th><th>Ngày PV</th><th>Giờ</th>
                   <th>Người PV</th><th>Tham gia PV</th><th>Kết quả PV</th><th></th>
                 </tr></thead>
                 <tbody>
@@ -276,6 +281,7 @@ function InterviewApplicants({ cv, setCv, templates }) {
                         <div className="nm">{r.name || '—'}</div>
                         <div className="id">{[r.phone, r.email].filter(Boolean).join(' · ') || '—'}</div>
                       </td>
+                      <td><Badge kind={r.stageRef === 'hb_stage_interview' ? 'blue' : 'gray'}>{r.stage || '—'}</Badge></td>
                       <td>
                         {isRecruiter ? (
                           <select value={r.jobId || ''} disabled={busy}

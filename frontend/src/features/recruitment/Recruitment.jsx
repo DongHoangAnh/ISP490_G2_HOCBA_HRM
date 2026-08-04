@@ -1,7 +1,7 @@
 /* Màn Tuyển dụng — điều phối tab (mẫu chuẩn: màn Nhân viên / Chấm công).
    Owner: Việt. API: /hocba-hrm/api/recruitment/* (đang chờ spec).
    Giai đoạn này mới dựng khung tab; nội dung từng tab nối API sau. */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import CvList from './CvList';
 import Jobs from './Jobs';
 import Requests from './Requests';
@@ -29,10 +29,18 @@ const TAB_DESC = {
   mails:      'Mẫu email dùng trong quy trình tuyển dụng.',
 };
 
-export default function Recruitment({ search }) {
+export default function Recruitment({ search, focus }) {
   const [tab, setTab] = useState(() => localStorage.getItem('hocba_rec_tab') || 'cv');
 
   const select = (id) => { setTab(id); localStorage.setItem('hocba_rec_tab', id); };
+
+  /* Bấm thông báo ở chuông → về đúng tab rồi để màn con mở drawer:
+     'cv' = CV quá hạn xử lý · 'requests' = phiếu yêu cầu chờ duyệt. */
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.targetTab === 'cv') select('cv');
+    else if (focus.targetTab === 'requests') select('requests');
+  }, [focus && focus.nonce]);
   const label = TABS.find(([id]) => id === tab)?.[1] || '';
   // Tab lưu trong localStorage có thể không còn (vd 'config' cũ) → về tab đầu.
   const activeTab = TABS.some(([id]) => id === tab) ? tab : 'cv';
@@ -53,11 +61,11 @@ export default function Recruitment({ search }) {
       </div>
 
       {activeTab === 'cv' ? (
-        <CvList search={search} />
+        <CvList search={search} focus={focus} />
       ) : activeTab === 'jobs' ? (
         <Jobs search={search} />
       ) : activeTab === 'requests' ? (
-        <Requests search={search} />
+        <Requests search={search} focus={focus} />
       ) : activeTab === 'interviews' ? (
         <InterviewSlots />
       ) : activeTab === 'offers' ? (
