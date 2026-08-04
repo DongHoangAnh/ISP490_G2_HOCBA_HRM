@@ -127,12 +127,60 @@ class HbRecruitmentRequest(models.Model):
             if not self.jd_link and self.job_id.jd_google_link:
                 self.jd_link = self.job_id.jd_google_link
 
+    # ── Thông báo chuông ──────────────────────────────────────────────────────
+    # Vai theo sheet quy trình 7.1: TBP order → HR duyệt.
+    #   gửi duyệt   → báo HR / BP tuyển dụng (người sẽ duyệt)
+    #   duyệt / từ chối → báo ngược lại người tạo phiếu (TBP)
+
+    def _hr_approver_users(self):
+        """Người có quyền duyệt phiếu — phải khớp với _is_hr() bên controller.
+
+        _is_hr() = base.group_system | hr.group_hr_manager | nhóm Tuyển dụng.
+        Nếu chỉ báo cho nhóm Tuyển dụng thì HR Manager duyệt được mà không được
+        báo — đúng ca đã gặp với tài khoản test_hrmanager@hocba.vn.
+
+        Tìm theo all_group_ids nên bắt luôn group_hr_recruitment_manager kế thừa.
+        Lệch có chủ ý (giống hocba_service): user CHỈ có base.group_system thì
+        không nhận chuông — sysadmin không phải người xử lý nghiệp vụ.
+        """
+        Users = self.env['res.users'].sudo()
+        gids = [g.id for g in (
+            self.env.ref('hr_recruitment.group_hr_recruitment_user',
+                         raise_if_not_found=False),
+            self.env.ref('hr.group_hr_manager', raise_if_not_found=False),
+        ) if g]
+        if not gids:
+            return Users.browse()
+        return Users.search([('all_group_ids', 'in', gids),
+                             ('active', '=', True)])
+
+    def _req_notify(self, users, event, level, title, body):
+        """Bắn chuông, tự loại người vừa bấm nút — không ai cần tự báo mình."""
+        self.ensure_one()
+        targets = users.filtered(lambda u: u.id != self.env.uid)
+        if not targets:
+            return self.env['hb.notification']
+        return self.env['hb.notification'].sudo()._notify(
+            targets, category='recruitment', kind='request_%s' % event,
+            level=level, title=title, body=body,
+            target_view='recruitment', target_tab='requests', target_ref=self.id,
+            dedup_key='rec_request_%s_%s' % (self.id, event))
+
+    def _label(self):
+        self.ensure_one()
+        return '%s · %s · %s người' % (
+            self.name, self.job_title or 'Chưa rõ vị trí', self.qty_expected)
+
     # ── State transitions ─────────────────────────────────────────────────────
     def action_submit(self):
         for rec in self:
             if rec.state != 'draft':
                 raise UserError('Chỉ có thể gửi duyệt phiếu đang ở trạng thái Nháp.')
             rec.state = 'submitted'
+            rec._req_notify(
+                rec._hr_approver_users(), 'submitted', 'warning',
+                'Phiếu yêu cầu tuyển dụng chờ duyệt',
+                '%s · do %s gửi' % (rec._label(), rec.env.user.name))
 
     def action_approve(self):
         for rec in self:
@@ -149,6 +197,10 @@ class HbRecruitmentRequest(models.Model):
             # → mở lại trạng thái Đang tuyển; KHÔNG tự publish (HR chủ động đăng).
             if rec.job_id and rec.job_id.recruitment_status != 'recruiting':
                 rec.job_id.recruitment_status = 'recruiting'
+            rec._req_notify(
+                rec.requester_id, 'approved', 'success',
+                'Phiếu yêu cầu tuyển dụng đã được duyệt',
+                '%s · duyệt bởi %s' % (rec._label(), rec.env.user.name))
 
     def action_close(self):
         for rec in self:
@@ -161,6 +213,12 @@ class HbRecruitmentRequest(models.Model):
             if rec.state != 'submitted':
                 raise UserError('Chỉ từ chối phiếu đang chờ bộ phận duyệt.')
             rec.state = 'refused'
+            rec._req_notify(
+                rec.requester_id, 'refused', 'danger',
+                'Phiếu yêu cầu tuyển dụng bị từ chối',
+                '%s · từ chối bởi %s%s' % (
+                    rec._label(), rec.env.user.name,
+                    ' · Lý do: %s' % rec.refuse_reason if rec.refuse_reason else ''))
 
     def action_reset_draft(self):
         for rec in self:

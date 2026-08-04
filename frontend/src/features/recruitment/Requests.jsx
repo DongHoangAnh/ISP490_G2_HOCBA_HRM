@@ -1,24 +1,52 @@
 /* Tab "Phiếu yêu cầu" — danh sách + workflow phê duyệt, xem chi tiết, sửa, thêm.
    Owner: Việt. Spec: docs/SPEC_API_RECRUITMENT.md · 3 trạng thái §5b. */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import Pagination, { usePaged } from '../../components/Pagination';
 import { fmtDate } from '../../utils/format';
 import { fetchRequests } from '../../api/recruitment';
 import { REQUEST_STATE_KIND } from './util';
 import RequestDrawer from './RequestDrawer';
 import RequestForm from './RequestForm';
 
-export default function Requests({ search }) {
+export default function Requests({ search, focus }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [state, setState] = useState('all');
   const [sel, setSel] = useState(null);
   const [creating, setCreating] = useState(false);
+  const handledFocus = useRef(null);   // nonce thông báo đã xử lý
 
   const load = () => { setErr(null); setData(null); fetchRequests().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
+
+  /* Bấm thông báo "Phiếu chờ duyệt" ở chuông → mở drawer đúng phiếu. Cùng cách
+     làm với CvList: chốt bằng ref theo nonce để drawer không tự bật lại mỗi lần
+     `data` đổi, và reset chip lọc để đóng drawer xong còn thấy phiếu đó. */
+  useEffect(() => {
+    if (!focus || !focus.requestId || !data) return;
+    if (handledFocus.current === focus.nonce) return;
+    const row = data.rows.find((r) => r.id === focus.requestId);
+    if (!row) return;
+    handledFocus.current = focus.nonce;
+    setState('all');
+    setSel(row);
+  }, [focus, data]);
+
+  /* Lọc + phân trang đặt TRƯỚC early-return: usePaged là hook, gọi sau
+     `if (!data) return` sẽ đổi số hook giữa lúc loading và lúc có dữ liệu. */
+  const filtered = (data ? data.rows : []).filter((r) => {
+    if (state !== 'all' && r.state !== state) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!((r.name || '').toLowerCase().includes(q) || (r.jobTitle || '').toLowerCase().includes(q)
+        || (r.depName || '').toLowerCase().includes(q))) return false;
+    }
+    return true;
+  });
+  const pg = usePaged(filtered, [state, search]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải phiếu yêu cầu…" />;
@@ -29,16 +57,6 @@ export default function Requests({ search }) {
   const applyRow = (det) => setData((p) => {
     const exists = p.rows.some((r) => r.id === det.id);
     return { ...p, rows: exists ? p.rows.map((r) => (r.id === det.id ? { ...r, ...det } : r)) : [det, ...p.rows] };
-  });
-
-  const filtered = rows.filter((r) => {
-    if (state !== 'all' && r.state !== state) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!((r.name || '').toLowerCase().includes(q) || (r.jobTitle || '').toLowerCase().includes(q)
-        || (r.depName || '').toLowerCase().includes(q))) return false;
-    }
-    return true;
   });
 
   return (
@@ -66,7 +84,7 @@ export default function Requests({ search }) {
               <th className="tbl-num">SL</th><th>Lý do</th><th>Ngày order</th><th>Trạng thái</th><th></th>
             </tr></thead>
             <tbody>
-              {filtered.map((r) => (
+              {pg.rows.map((r) => (
                 <tr key={r.id} onClick={() => setSel(r)}>
                   <td className="mono" style={{ fontWeight: 600 }}>{r.name}</td>
                   <td><div className="nm">{r.jobTitle || '—'}</div>{r.level && <div className="id">{levelLabels[r.level]}</div>}</td>
@@ -82,6 +100,7 @@ export default function Requests({ search }) {
           </table>
         </div>
         {filtered.length === 0 && <EmptyState>Không có phiếu yêu cầu phù hợp.</EmptyState>}
+        <Pagination {...pg} />
       </div>
 
       {sel && (
