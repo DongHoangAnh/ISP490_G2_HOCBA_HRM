@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import Pagination, { usePaged } from '../../components/Pagination';
 import { fetchJobs, updateJob } from '../../api/recruitment';
 import JobDrawer from './JobDrawer';
 import JobForm from './JobForm';
@@ -22,6 +23,20 @@ export default function Jobs({ search }) {
   useEffect(load, []);
 
   const setView = (m) => { setVmode(m); localStorage.setItem('hocba_job_vmode', m); };
+
+  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx).
+     Chỉ áp cho 2 chế độ Thẻ / Bảng; chế độ Phòng ban là cây nhóm, cắt trang
+     giữa các nhóm thì mất luôn ý nghĩa gom nhóm. */
+  const filtered = (data ? data.rows : []).filter((r) => {
+    if (status !== 'all' && r.status !== status) return false;
+    if (dep !== 'all' && r.depId !== dep) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!((r.name || '').toLowerCase().includes(q) || (r.depName || '').toLowerCase().includes(q))) return false;
+    }
+    return true;
+  });
+  const pg = usePaged(filtered, [status, dep, search, vmode]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải vị trí tuyển dụng…" />;
@@ -45,16 +60,6 @@ export default function Jobs({ search }) {
     try { applyRow(await updateJob(jobId, { published: next })); }
     catch (e) { alert(e.message || 'Không đổi được trạng thái đăng tuyển.'); }
   };
-
-  const filtered = rows.filter((r) => {
-    if (status !== 'all' && r.status !== status) return false;
-    if (dep !== 'all' && r.depId !== dep) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!((r.name || '').toLowerCase().includes(q) || (r.depName || '').toLowerCase().includes(q))) return false;
-    }
-    return true;
-  });
 
   // Vị trí đang tuyển = phiếu yêu cầu (state recruiting). Lọc theo phòng ban + tìm kiếm.
   const filteredRequests = requests.filter((r) => {
@@ -103,7 +108,7 @@ export default function Jobs({ search }) {
         <DepartmentView groups={deptGroups} isRecruiter={isRecruiter} onOpenJob={openJob} onTogglePublish={togglePublish} />
       ) : vmode === 'grid' ? (
         <div className="grid-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
-          {filtered.map((r) => (
+          {pg.rows.map((r) => (
             <div key={r.id} className="card" style={{ padding: 18, cursor: 'pointer' }} onClick={() => setSel(r)}>
               <div className="between">
                 <div style={{ fontWeight: 800, fontSize: 14.5 }}>{r.name}</div>
@@ -120,6 +125,7 @@ export default function Jobs({ search }) {
             </div>
           ))}
           {filtered.length === 0 && <EmptyState>Không tìm thấy vị trí phù hợp.</EmptyState>}
+          <div style={{ gridColumn: '1/-1' }}><Pagination {...pg} /></div>
         </div>
       ) : (
         <div className="card">
@@ -131,7 +137,7 @@ export default function Jobs({ search }) {
                 <th>Đăng tuyển</th><th></th>
               </tr></thead>
               <tbody>
-                {filtered.map((r) => (
+                {pg.rows.map((r) => (
                   <tr key={r.id} onClick={() => setSel(r)}>
                     <td><div className="nm">{r.name}</div></td>
                     <td className="muted">{r.depName}</td>
@@ -151,6 +157,7 @@ export default function Jobs({ search }) {
             </table>
           </div>
           {filtered.length === 0 && <EmptyState>Không tìm thấy vị trí phù hợp.</EmptyState>}
+          <Pagination {...pg} />
         </div>
       )}
 

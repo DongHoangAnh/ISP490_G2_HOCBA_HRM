@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import Pagination, { usePaged } from '../../components/Pagination';
 import { fmtDate } from '../../utils/format';
 import Badge from '../../components/Badge';
 import { fetchCvList, fetchMailTemplates, updateApplicant, createEmployeeFromApplicant } from '../../api/recruitment';
@@ -52,12 +53,8 @@ export default function Offers({ search }) {
     } finally { setEmpBusyId(null); }
   };
 
-  if (err) return <ErrorState message={err} onRetry={load} />;
-  if (!cv) return <LoadingState label="Đang tải danh sách offer…" />;
-
-  const isRecruiter = cv.isRecruiter;
-
-  const rows = cv.rows
+  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
+  const rows = (cv ? cv.rows : [])
     .filter((r) => OFFER_STAGES.includes(r.stage))
     .filter((r) => {
       if (!search) return true;
@@ -65,6 +62,12 @@ export default function Offers({ search }) {
       return [r.name, r.phone, r.email, r.jobName].some((v) => (v || '').toLowerCase().includes(q));
     })
     .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+  const pg = usePaged(rows, [search]);
+
+  if (err) return <ErrorState message={err} onRetry={load} />;
+  if (!cv) return <LoadingState label="Đang tải danh sách offer…" />;
+
+  const isRecruiter = cv.isRecruiter;
 
   return (
     <div>
@@ -80,7 +83,7 @@ export default function Offers({ search }) {
               <th>Offer</th><th>Ngày nhận việc</th><th></th>
             </tr></thead>
             <tbody>
-              {rows.map((r) => (
+              {pg.rows.map((r) => (
                 <tr key={r.id}>
                   <td>
                     <div className="nm">{r.name || '—'}</div>
@@ -140,6 +143,7 @@ export default function Offers({ search }) {
           </table>
         </div>
         {rows.length === 0 && <EmptyState>Chưa có ứng viên nào ở bước Offer &amp; Nhận việc.</EmptyState>}
+        <Pagination {...pg} />
       </div>
 
       {mailFor && (

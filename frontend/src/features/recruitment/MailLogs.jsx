@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import Pagination, { usePaged } from '../../components/Pagination';
 import { fetchMailLogs } from '../../api/recruitment';
 
 const STATUS = {
@@ -25,18 +26,22 @@ export default function MailLogs({ search }) {
   const load = () => { setErr(null); setData(null); fetchMailLogs().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
 
-  if (err) return <ErrorState message={err} onRetry={load} />;
-  if (!data) return <LoadingState label="Đang tải lịch sử gửi mail…" />;
-
-  const { rows } = data;
-  const counts = rows.reduce((m, r) => ({ ...m, [r.status]: (m[r.status] || 0) + 1 }), {});
-  const filtered = rows
+  /* Lọc + phân trang đặt TRƯỚC early-return: usePaged là hook, gọi sau
+     `if (!data) return` sẽ đổi số hook giữa lúc loading và lúc có dữ liệu. */
+  const filtered = (data ? data.rows : [])
     .filter((r) => filter === 'all' || r.status === filter)
     .filter((r) => {
       if (!search) return true;
       const q = search.toLowerCase();
       return [r.applicant, r.email, r.subject].some((v) => (v || '').toLowerCase().includes(q));
     });
+  const pg = usePaged(filtered, [filter, search]);
+
+  if (err) return <ErrorState message={err} onRetry={load} />;
+  if (!data) return <LoadingState label="Đang tải lịch sử gửi mail…" />;
+
+  const { rows } = data;
+  const counts = rows.reduce((m, r) => ({ ...m, [r.status]: (m[r.status] || 0) + 1 }), {});
 
   return (
     <div>
@@ -56,7 +61,7 @@ export default function MailLogs({ search }) {
               <th>Ứng viên</th><th>Email</th><th>Tiêu đề</th><th>Ngày gửi</th><th>Trạng thái</th>
             </tr></thead>
             <tbody>
-              {filtered.map((r) => {
+              {pg.rows.map((r) => {
                 const [kind, label] = STATUS[r.status] || ['gray', r.status];
                 return (
                   <tr key={r.id}>
@@ -75,6 +80,7 @@ export default function MailLogs({ search }) {
           </table>
         </div>
         {filtered.length === 0 && <EmptyState>Chưa có email nào được gửi.</EmptyState>}
+        <Pagination {...pg} />
       </div>
     </div>
   );
