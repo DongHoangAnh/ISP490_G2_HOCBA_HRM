@@ -1,6 +1,10 @@
-﻿from markupsafe import Markup
+﻿import logging
+
+from markupsafe import Markup
 
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class HrApplicantHocBaExt(models.Model):
@@ -56,6 +60,127 @@ class HrApplicantHocBaExt(models.Model):
         overdue = bool(sla and not self.stage_id.hired_stage and days > sla)
         return days, sla, overdue
 
+    # ── Tự chuyển bước theo hành động của HR ─────────────────────────────────
+    # Bám xmlid chứ KHÔNG bám tên bước: admin đổi tên bước trên màn Cấu hình là
+    # chuyện bình thường, bám tên thì tự động hoá chết ngay lúc đó.
+
+    def _hb_stage(self, ref):
+        return self.env.ref('hocba_recruitments.' + ref, raise_if_not_found=False)
+
+    def _hb_advance_stage(self, from_ref, to_ref, reason):
+        """Chuyển các bản ghi ĐANG ở một trong các bước `from_ref` sang `to_ref`.
+
+        `from_ref` nhận 1 mã hoặc list mã — vd Kết quả PV có thể được điền lúc
+        ứng viên còn ở bước "Phỏng vấn" hoặc đã sang "Kết quả phỏng vấn".
+
+        Chỉ đẩy tới, không kéo lùi: ứng viên đã đi xa hơn thì bỏ qua. Bước bị
+        admin xoá/ẩn ⇒ không làm gì (im lặng, không chặn thao tác của HR).
+        Ghi chatter để còn lần được ai/khi nào bị máy đổi bước.
+        """
+        refs = [from_ref] if isinstance(from_ref, str) else list(from_ref)
+        src_ids = [s.id for s in (self._hb_stage(r) for r in refs) if s]
+        dst = self._hb_stage(to_ref)
+        if not src_ids or not dst or not dst.active:
+            return
+        todo = self.filtered(lambda a: a.stage_id.id in src_ids)
+        if not todo:
+            return
+        for a in todo:
+            src_name = a.stage_id.name
+            a.write({'stage_id': dst.id})
+            a.message_post(body=Markup(
+                '<p>⚙ Tự chuyển bước <b>%s</b> → <b>%s</b><br/>%s</p>'
+            ) % (src_name, dst.name, reason))
+
+    # ── Nhắc CV quá hạn xử lý (CRON-REC-001) ─────────────────────────────────
+    # Spec: docs/superpowers/specs/2026-08-03-recruitment-overdue-notification-design.md
+
+    # Ai nhận nhắc quá hạn — cấu hình trên màn Cấu hình tuyển dụng, tab Thông báo.
+    # both (mặc định) = HR + Trưởng phòng · hr_only · manager_only · off = tắt.
+    OVERDUE_NOTIFY_MODES = ('both', 'hr_only', 'manager_only', 'off')
+
+    @api.model
+    def _hb_overdue_notify_mode(self):
+        mode = self.env['ir.config_parameter'].sudo().get_param(
+            'hocba_recruitments.overdue_notify_mode', 'both')
+        return mode if mode in self.OVERDUE_NOTIFY_MODES else 'both'
+
+    def _hb_overdue_recipients(self):
+        """HR nhóm tuyển dụng + Trưởng phòng của phòng ban vị trí này.
+
+        Phạm vi cắt theo _hb_overdue_notify_mode(): phòng Giảng viên có 169 NV,
+        ngày gán Trưởng phòng cho phòng đó thì người này nhận chuông cho MỌI CV
+        giáo viên quá hạn — phải tắt được mà không cần sửa code.
+
+        Ghi nhận lệch có chủ ý (giống hocba_service._notif_handlers): user chỉ
+        có base.group_system mà không thuộc nhóm tuyển dụng thì KHÔNG nhận
+        chuông — sysadmin không phải người xử lý nghiệp vụ.
+        """
+        self.ensure_one()
+        mode = self._hb_overdue_notify_mode()
+        Users = self.env['res.users'].sudo()
+        users = Users.browse()
+        if mode == 'off':
+            return users
+        if mode in ('both', 'hr_only'):
+            # group_hr_recruitment_manager kế thừa group user ⇒ all_group_ids bắt cả hai.
+            grp = self.env.ref('hr_recruitment.group_hr_recruitment_user',
+                               raise_if_not_found=False)
+            if grp:
+                users |= Users.search([('all_group_ids', 'in', grp.id),
+                                       ('active', '=', True)])
+        if mode in ('both', 'manager_only'):
+            mgr_user = self.sudo().department_id.manager_id.user_id
+            if mgr_user:
+                users |= mgr_user.sudo()
+        return users
+
+    @api.model
+    def _cron_overdue_reminder(self):
+        """Nhắc ứng viên đứng ở một bước lâu hơn hạn xử lý của bước đó.
+
+        4 điều kiện loại trừ khớp 1-1 với quy tắc hiện badge trên card kanban
+        (SPA CvList) — cố ý, để "có badge" ⇔ "có thông báo".
+
+        interview_result != 'fail' KHÔNG loại mất ứng viên chưa PV: ORM quy về
+        `not in ['fail']` và tự sinh `... OR interview_result IS NULL`
+        (odoo/orm/fields.py). Test BR-4b khoá hành vi này.
+
+        dedup_key='rec_overdue_<id>': _notify bỏ qua khi người nhận còn một
+        dòng CHƯA ĐỌC cùng khoá ⇒ chạy 30 ngày liền vẫn 1 dòng, đọc rồi mà
+        chưa xử lý thì hôm sau nhắc lại.
+        """
+        if self._hb_overdue_notify_mode() == 'off':
+            _logger.info('CRON-REC-001: đang tắt (overdue_notify_mode=off).')
+            return True
+        candidates = self.sudo().search([
+            ('active', '=', True),
+            ('stage_id.sla_days', '>', 0),
+            ('stage_id.hired_stage', '=', False),
+            ('interview_result', '!=', 'fail'),
+        ])
+        Notification = self.env['hb.notification'].sudo()
+        sent = 0
+        overdue_count = 0
+        for app in candidates:
+            days, sla, overdue = app._hb_sla_state()
+            if not overdue:
+                continue
+            overdue_count += 1
+            sent += len(Notification._notify(
+                app._hb_overdue_recipients(),
+                category='recruitment', kind='recruitment_overdue',
+                level='warning', title='CV quá hạn xử lý',
+                body='%s · %s · bước "%s" · quá hạn %s ngày' % (
+                    app.partner_name or app.display_name,
+                    app.job_id.name or 'Chưa gán vị trí',
+                    app.stage_id.name, days - sla),
+                target_view='recruitment', target_tab='cv', target_ref=app.id,
+                dedup_key='rec_overdue_%s' % app.id))
+        _logger.info('CRON-REC-001: %d CV quá hạn, gửi %d thông báo.',
+                     overdue_count, sent)
+        return True
+
     # ── Tự động ngừng đăng khi tuyển đủ chỉ tiêu ─────────────────────────────
     # Ứng viên vào stage "Đã tuyển" (hired_stage) qua bất kỳ đường nào (kéo
     # kanban SPA, backend Odoo, import) đều đi qua write/create → kiểm chỉ tiêu.
@@ -77,6 +202,21 @@ class HrApplicantHocBaExt(models.Model):
             stage = self.env['hr.recruitment.stage'].browse(vals['stage_id'])
             if stage.hired_stage:
                 self._hb_auto_close_if_filled()
+        # ── Tự chuyển bước theo kết quả HR vừa nhập ──────────────────────────
+        # Đều chỉ xét khi GÁN giá trị; xoá trắng không kéo ngược bước.
+        # Chỉ tự động cho luồng ĐẠT; Fail/Tiềm năng do HR tự quyết đi tiếp thế nào.
+        if vals.get('cv_filter_result') == 'pass':
+            self._hb_advance_stage(
+                'hb_stage_screening', 'hb_stage_schedule',
+                'Do kết quả lọc CV là Pass.')
+        if vals.get('interview_date'):
+            self._hb_advance_stage(
+                'hb_stage_schedule', 'hb_stage_invite',
+                'Do đã đặt Ngày hẹn phỏng vấn.')
+        if vals.get('interview_result') == 'pass':
+            self._hb_advance_stage(
+                ['hb_stage_interview', 'hb_stage_result'], 'hb_stage_offer',
+                'Do kết quả phỏng vấn là Pass.')
         return res
 
     @api.model_create_multi

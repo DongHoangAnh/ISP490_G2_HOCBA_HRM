@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- CRON-REC-001: nhắc CV quá hạn xử lý.
+             Spec: docs/superpowers/specs/2026-08-03-recruitment-overdue-notification-design.md
+             nextcall 01:00 UTC = 08:00 SA giờ VN — đầu giờ làm, và tách khỏi
+             cụm cron sáng sớm của hocba_employees (00:00/00:05/00:10) lẫn
+             hocba_service (00:20) để không chồng lượt chạy.
+             noupdate="1": admin đổi giờ chạy không bị upgrade ghi đè.
+             ⚠️ Odoo 19: ir.cron KHÔNG còn numbercall / nextcall theo tz. -->
+        <record id="cron_recruitment_overdue_reminder" model="ir.cron">
+            <field name="name">HOCBA: Nhắc CV quá hạn xử lý</field>
+            <field name="model_id" ref="hr_recruitment.model_hr_applicant"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_overdue_reminder()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall"
+                   eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 01:00:00')"/>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

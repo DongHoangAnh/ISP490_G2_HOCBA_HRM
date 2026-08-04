@@ -1,6 +1,6 @@
 {
     'name': 'Tuyển dụng Học Bá',
-    'version': '19.0.2.3.0',
+    'version': '19.0.2.4.0',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
     'category': 'Human Resources/Recruitment',
@@ -13,7 +13,7 @@
         - Constraint: không trùng tên vị trí trong cùng phòng ban (active)
         - Constraint: phòng Giảng viên / Trợ giảng bắt buộc chọn trình độ ≠ N/A
     ''',
-    'depends': ['hr_recruitment', 'hocba_employees'],
+    'depends': ['hr_recruitment', 'hocba_employees', 'hocba_notify'],
     'data': [
         'security/ir.model.access.csv',
         'data/hr_recruitment_stages.xml',
@@ -23,6 +23,7 @@
         'data/hb_applicant_data.xml',
         'data/hb_interview_results.xml',
         'data/hb_mail_templates.xml',
+        'data/ir_cron_data.xml',
         'views/hr_recruitment_stage_views.xml',
         'views/hr_job_form_inherit.xml',
         'views/hr_applicant_kanban.xml',

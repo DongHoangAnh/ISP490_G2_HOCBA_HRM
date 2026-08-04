@@ -13,6 +13,7 @@ class HbNotification(models.Model):
         ('onboarding', 'Nhận việc / Thử việc'),
         ('hr_reminder', 'Nhắc hạn hồ sơ'),
         ('service', 'Dịch vụ nhân sự'),
+        ('recruitment', 'Tuyển dụng'),
     ]
     LEVEL_SEL = [
         ('info', 'Info'), ('success', 'Success'),
