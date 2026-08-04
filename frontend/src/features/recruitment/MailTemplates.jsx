@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import Pagination, { usePaged } from '../../components/Pagination';
 import { fetchMailTemplates, deleteMailTemplate } from '../../api/recruitment';
 import MailTemplateForm from './MailTemplateForm';
+import MailTemplateImport from './MailTemplateImport';
 import SendMailModal from './SendMailModal';
 
 export default function MailTemplates({ search }) {
@@ -13,6 +15,7 @@ export default function MailTemplates({ search }) {
   const [editing, setEditing] = useState(null);   // null | 'new' | {id,name,subject}
   const [sending, setSending] = useState(null);   // null | {id,name}
   const [deletingId, setDeletingId] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const load = () => { setErr(null); setData(null); fetchMailTemplates().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
@@ -28,20 +31,25 @@ export default function MailTemplates({ search }) {
     } finally { setDeletingId(null); }
   };
 
+  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
+  const filtered = (data ? data.rows : []).filter((r) => !search
+    || (r.name || '').toLowerCase().includes(search.toLowerCase())
+    || (r.subject || '').toLowerCase().includes(search.toLowerCase()));
+  const pg = usePaged(filtered, [search]);
+
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải mail mẫu…" />;
 
   const { rows, recipients, isRecruiter } = data;
-  const filtered = rows.filter((r) => !search
-    || (r.name || '').toLowerCase().includes(search.toLowerCase())
-    || (r.subject || '').toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div>
       <div className="filterbar">
         <span className="muted" style={{ fontSize: 13 }}>{rows.length} mẫu · {recipients.length} ứng viên có email</span>
         {isRecruiter && (
-          <div style={{ marginLeft: 'auto' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
+            <button className="btn btn-soft" onClick={() => setImporting(true)}>
+              <Icon name="upload" size={16} />Import mẫu</button>
             <button className="btn btn-primary" onClick={() => setEditing('new')}>
               <Icon name="plus" size={16} />Thêm mẫu</button>
           </div>
@@ -49,7 +57,7 @@ export default function MailTemplates({ search }) {
       </div>
 
       <div className="grid-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))' }}>
-        {filtered.map((t) => (
+        {pg.rows.map((t) => (
           <div key={t.id} className="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -78,12 +86,18 @@ export default function MailTemplates({ search }) {
           </div>
         ))}
         {filtered.length === 0 && <EmptyState>Chưa có mail mẫu nào.</EmptyState>}
+        <Pagination {...pg} />
       </div>
 
       {editing && (
         <MailTemplateForm tmpl={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {importing && (
+        <MailTemplateImport
+          onClose={() => setImporting(false)}
+          onSaved={() => { setImporting(false); load(); }} />
       )}
       {sending && (
         <SendMailModal tmpl={sending} recipients={recipients} onClose={() => setSending(null)} />
