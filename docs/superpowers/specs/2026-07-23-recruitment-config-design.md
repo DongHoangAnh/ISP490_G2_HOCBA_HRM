@@ -1,6 +1,14 @@
-# Spec — Cấu hình tuyển dụng (admin) · v1.1
+# Spec — Cấu hình tuyển dụng · v1.2
 
-> v1.1 (cùng ngày, theo yêu cầu user): quyền siết từ HR toàn quyền → **CHỈ Admin
+> v1.2 (2026-08-03, theo yêu cầu user): quyền **nới lại** từ CHỈ Admin →
+> **Admin hoặc HR Manager** (`base.group_system` | `hr.group_hr_manager`), cho
+> khớp màn "Cấu hình nhận việc" vốn đã dùng `need: 'hrm'`. Backend thêm
+> `_can_config()` thay cho `_is_admin()` trên 6 route cấu hình; sidebar đổi
+> `need: 'admin'` → `'hrm'`. **Không** mở cho nhóm tuyển dụng
+> (`group_hr_recruitment_user`): họ chạy quy trình hằng ngày chứ không phải
+> người được đổi quy trình/hạn xử lý.
+>
+> v1.1 (2026-07-23): quyền siết từ HR toàn quyền → **CHỈ Admin
 > (`base.group_system`)**; UI chuyển từ tab trong màn Tuyển dụng → **mục sidebar
 > riêng "Cấu hình tuyển dụng"** (như "Cấu hình nhận việc"), `need: 'admin'`.
 

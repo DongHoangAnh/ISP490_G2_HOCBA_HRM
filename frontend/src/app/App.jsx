@@ -38,9 +38,10 @@ export default function App() {
     const view = n.targetView || 'timeoff';
     if (!allowedViews(me).has(view)) return;
     setView(view);
-    // timeoff + service đều cần focus để mở đúng đơn từ thông báo.
-    // targetTab: service dùng để chọn tab người gửi / người xử lý.
-    if (view === 'timeoff' || view === 'service') {
+    // timeoff + service + recruitment đều cần focus để mở đúng đơn/ứng viên.
+    // targetTab: service chọn tab người gửi / người xử lý; recruitment chọn
+    // tab 'cv' rồi mở drawer ứng viên quá hạn.
+    if (view === 'timeoff' || view === 'service' || view === 'recruitment') {
       setFocus({
         requestId: n.targetRef, kind: n.kind,
         targetTab: n.targetTab, nonce: Date.now(),
@@ -90,12 +91,12 @@ export default function App() {
         {view === 'payroll' && canManage && <Payroll search={search} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
         {view === 'reviews' && canManage && <Reviews search={search} />}
-        {view === 'recruitment' && canManage && <Recruitment search={search} />}
+        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
         {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
         {view === 'timeoffConfig' && me.isAdmin && <TimeoffConfig />}
         {view === 'onboarding-config' && (me.isHrManager || me.isAdmin) && <OnboardingConfig />}
-        {view === 'recruitment-config' && me.isAdmin && <RecruitmentConfig />}
+        {view === 'recruitment-config' && (me.isHrManager || me.isAdmin) && <RecruitmentConfig />}
         {view === 'profile' && <Profile />}
       </div>
     </div>

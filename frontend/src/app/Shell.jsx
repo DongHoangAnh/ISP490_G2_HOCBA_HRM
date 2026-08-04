@@ -33,7 +33,7 @@ const NAV = [
   // thấy Cấu hình nhận việc; từng item tự chặn theo vai trò).
   { sec: 'Hệ thống', need: 'hrm', items: [
     { id: 'onboarding-config', label: 'Cấu hình nhận việc', icon: 'settings', need: 'hrm' },
-    { id: 'recruitment-config', label: 'Cấu hình tuyển dụng', icon: 'settings', need: 'admin' },
+    { id: 'recruitment-config', label: 'Cấu hình tuyển dụng', icon: 'settings', need: 'hrm' },
     { id: 'timeoffConfig', label: 'Cấu hình nghỉ phép', icon: 'settings', need: 'admin' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
@@ -59,7 +59,6 @@ const allow = (need, me) => {
   if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
   if (need === 'admin') return !!(me && me.isAdmin);
   if (need === 'hrm') return !!(me && (me.isHrManager || me.isAdmin));
-  if (need === 'admin') return !!(me && me.isAdmin);
   if (need === 'finance') return !!(me && me.isFinance);
   if (need === 'self') return !isRoleAccount(me);
   return true;

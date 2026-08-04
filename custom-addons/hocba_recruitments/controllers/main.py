@@ -1,5 +1,5 @@
 ﻿import pytz
-from datetime import datetime, time as dt_time
+from datetime import date, datetime, time as dt_time
 from markupsafe import Markup, escape
 from psycopg2 import IntegrityError
 
@@ -118,6 +118,21 @@ class HocBaTuyenDung(http.Controller):
     #     → chỉ thao tác dữ liệu tuyển dụng THUỘC phòng mình.
     # ------------------------------------------------------------------
 
+    def _stage_refs(self):
+        """map stage_id -> mã xmlid ngắn (vd 'hb_stage_invite'), cache 1 lần/request.
+
+        Frontend cần mã ổn định để lọc theo bước: tên bước sửa được trên màn
+        Cấu hình nên so tên là hỏng ngay khi admin đổi chữ.
+        """
+        cache = getattr(self, '_stage_ref_cache', None)
+        if cache is None:
+            rows = request.env['ir.model.data'].sudo().search_read(
+                [('model', '=', 'hr.recruitment.stage'),
+                 ('module', '=', 'hocba_recruitments')], ['res_id', 'name'])
+            cache = {r['res_id']: r['name'] for r in rows}
+            self._stage_ref_cache = cache
+        return cache
+
     def _has_recruit_group(self):
         u = request.env.user
         return (u.has_group('hr_recruitment.group_hr_recruitment_user')
@@ -131,8 +146,20 @@ class HocBaTuyenDung(http.Controller):
                 or self._has_recruit_group())
 
     def _is_admin(self):
-        """Chỉ Admin hệ thống — dùng cho màn Cấu hình tuyển dụng."""
+        """Chỉ Admin hệ thống."""
         return request.env.user.has_group('base.group_system')
+
+    def _can_config(self):
+        """Sửa được màn Cấu hình tuyển dụng — Admin hoặc HR Manager.
+
+        Spec v1.2 (2026-08-03, user yêu cầu) nới từ CHỈ Admin xuống thêm HR
+        Manager, cho khớp "Cấu hình nhận việc" (need 'hrm' trên sidebar).
+        KHÔNG mở cho nhóm tuyển dụng (group_hr_recruitment_user): họ dùng quy
+        trình hằng ngày, không phải người được đổi quy trình/hạn xử lý.
+        """
+        u = request.env.user
+        return (u.has_group('base.group_system')
+                or u.has_group('hr.group_hr_manager'))
 
     def _managed_department_ids(self):
         """Phòng ban (gồm phòng con) mà user làm trưởng phòng (manager_id)."""
@@ -219,6 +246,7 @@ class HocBaTuyenDung(http.Controller):
             'interviewer': a.interviewer_name or '',
             'stageId': a.stage_id.id or False,
             'stage': a.stage_id.name or '',
+            'stageRef': self._stage_refs().get(a.stage_id.id, ''),
             # Phỏng vấn & Offer (Sheet 7.5/7.6)
             'attendanceStatus': a.attendance_status or '',
             'interviewResult': a.interview_result or '',
@@ -243,7 +271,8 @@ class HocBaTuyenDung(http.Controller):
         jobs = env['hr.job'].sudo().search([], order='name')
         return {
             'stages': [{'id': s.id, 'name': s.name, 'sequence': s.sequence,
-                        'hiredStage': bool(s.hired_stage), 'slaDays': s.sla_days or 0}
+                        'hiredStage': bool(s.hired_stage), 'slaDays': s.sla_days or 0,
+                        'ref': self._stage_refs().get(s.id, '')}
                        for s in stages],
             'jobs': [{'id': j.id, 'name': j.name} for j in jobs],
             'cvResultLabels': self._sel_labels('hr.applicant', 'cv_filter_result'),
@@ -276,8 +305,15 @@ class HocBaTuyenDung(http.Controller):
         if scope is not None:
             domain = ['|', ('department_id', 'in', scope),
                       ('job_id.department_id', 'in', scope)]
-        applicants = env['hr.applicant'].sudo().search(
-            domain, order='date_received desc, id desc')
+        # Ứng viên mới nhất lên đầu. KHÔNG dùng order SQL vì Postgres xếp
+        # NULLS FIRST với DESC ⇒ ứng viên bỏ trống "Ngày nhận CV" nhảy lên đầu
+        # bảng, đè cả CV vừa nhập hôm nay. Thiếu date_received thì lấy ngày tạo
+        # bản ghi làm mốc (vẫn là "mới" theo nghĩa vừa vào hệ thống).
+        applicants = env['hr.applicant'].sudo().search(domain).sorted(
+            key=lambda a: (a.date_received
+                           or (a.create_date and a.create_date.date())
+                           or date.min, a.id),
+            reverse=True)
         data = {'isRecruiter': self._is_recruiter(),
                 'rows': [self._cv_row(a) for a in applicants]}
         data.update(self._meta())
@@ -945,6 +981,7 @@ class HocBaTuyenDung(http.Controller):
             'id': a.id, 'name': a.partner_name or '(Chưa có tên)',
             'email': a.email_from or '', 'jobName': a.job_id.name or '',
             'stage': a.stage_id.name or '',
+            'stageRef': self._stage_refs().get(a.stage_id.id, ''),
         } for a in apps]
 
     @http.route('/hocba-hrm/api/recruitment/mail-templates', auth='user',
@@ -1054,6 +1091,7 @@ class HocBaTuyenDung(http.Controller):
         ovr_body = payload.get('bodyHtml')
         Applicant = request.env['hr.applicant'].sudo()
         sent, skipped = 0, 0
+        sent_ids = []
         for aid in ids:
             a = Applicant.browse(aid)
             if not a.exists() or not a.email_from:
@@ -1073,8 +1111,18 @@ class HocBaTuyenDung(http.Controller):
                     ev = {'subject': r['subject'], 'body_html': r['body_html']}
                 t.send_mail(aid, force_send=False, email_values=ev)
                 sent += 1
+                sent_ids.append(aid)
             except (AccessError, ValidationError, UserError):
                 skipped += 1
+        # Gửi xong THƯ MỜI PHỎNG VẤN ⇒ khâu "hẹn & mời" xong, đẩy sang bước
+        # Phỏng vấn. Chỉ đúng template này; mẫu khác gửi đi không đổi bước.
+        invite = request.env.ref(
+            'hocba_recruitments.email_template_interview_invite',
+            raise_if_not_found=False)
+        if invite and t.id == invite.id and sent_ids:
+            Applicant.browse(sent_ids)._hb_advance_stage(
+                'hb_stage_invite', 'hb_stage_interview',
+                'Do đã gửi thư mời tham gia phỏng vấn.')
         return request.make_json_response({'sent': sent, 'skipped': skipped})
 
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/preview',
@@ -1377,6 +1425,12 @@ class HocBaTuyenDung(http.Controller):
         'warn': 'Chỉ cảnh báo trên chatter, không đổi trạng thái',
         'off': 'Tắt — không làm gì khi tuyển đủ chỉ tiêu',
     }
+    OVERDUE_NOTIFY_LABELS = {
+        'both': 'HR tuyển dụng + Trưởng phòng của vị trí (mặc định)',
+        'hr_only': 'Chỉ HR tuyển dụng',
+        'manager_only': 'Chỉ Trưởng phòng của vị trí',
+        'off': 'Tắt — không gửi thông báo quá hạn cho ai',
+    }
 
     def _stage_config_row(self, s, applicant_counts=None, active_counts=None):
         count = (applicant_counts or {}).get(s.id)
@@ -1412,7 +1466,7 @@ class HocBaTuyenDung(http.Controller):
                 type='http', methods=['GET'])
     def api_recruitment_config(self, **kw):
         """Toàn bộ cấu hình tuyển dụng — CHỈ Admin hệ thống."""
-        if not self._is_admin():
+        if not self._can_config():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         env = request.env
         stages = env['hr.recruitment.stage'].sudo().with_context(
@@ -1424,9 +1478,12 @@ class HocBaTuyenDung(http.Controller):
         active_counts = {s.id: c for s, c in env['hr.applicant'].sudo()._read_group(
             [('stage_id', 'in', stages.ids)], ['stage_id'], ['__count'])}
         return request.make_json_response({
-            'isAdmin': True,
+            'isAdmin': self._is_admin(),   # HR Manager cũng vào được (spec v1.2)
+            'canConfig': True,
             'autoCloseMode': env['hr.applicant']._hb_auto_close_mode(),
             'autoCloseLabels': self.AUTO_CLOSE_LABELS,
+            'overdueNotifyMode': env['hr.applicant']._hb_overdue_notify_mode(),
+            'overdueNotifyLabels': self.OVERDUE_NOTIFY_LABELS,
             'stages': [self._stage_config_row(s, counts, active_counts)
                        for s in stages],
         })
@@ -1435,7 +1492,7 @@ class HocBaTuyenDung(http.Controller):
                 type='http', methods=['POST'], csrf=False)
     def api_recruitment_config_stage_create(self, **kw):
         """Thêm bước quy trình (vào cuối) — chỉ Admin."""
-        if not self._is_admin():
+        if not self._can_config():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         vals = self._stage_config_vals(request.get_json_data() or {})
         if not (vals.get('name') or '').strip():
@@ -1456,7 +1513,7 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/config/stage/<int:stage_id>',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_config_stage_update(self, stage_id, **kw):
-        if not self._is_admin():
+        if not self._can_config():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         s = request.env['hr.recruitment.stage'].sudo().browse(stage_id)
         if not s.exists():
@@ -1479,7 +1536,7 @@ class HocBaTuyenDung(http.Controller):
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_config_stage_delete(self, stage_id, **kw):
         """Xoá bước — guard ondelete (còn ứng viên / bước cuối cùng) trả 400. Chỉ Admin."""
-        if not self._is_admin():
+        if not self._can_config():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         s = request.env['hr.recruitment.stage'].sudo().browse(stage_id)
         if not s.exists():
@@ -1496,7 +1553,7 @@ class HocBaTuyenDung(http.Controller):
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_config_stage_reorder(self, **kw):
         """Kéo-thả đổi thứ tự: body {ids: [id theo thứ tự mới]}. Chỉ Admin."""
-        if not self._is_admin():
+        if not self._can_config():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         ids = (request.get_json_data() or {}).get('ids') or []
         if not ids:
@@ -1512,18 +1569,29 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/config/settings', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_recruitment_config_settings(self, **kw):
-        """Lưu cấu hình chung: {autoCloseMode: full|stop|warn|off}. Chỉ Admin."""
-        if not self._is_admin():
+        """Lưu cấu hình chung — chỉ Admin. Nhận rời từng khoá:
+        {autoCloseMode: full|stop|warn|off}
+        {overdueNotifyMode: both|hr_only|manager_only|off}
+        """
+        if not self._can_config():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data() or {}
-        mode = payload.get('autoCloseMode')
-        if mode is not None:
-            if mode not in self.AUTO_CLOSE_LABELS:
+        Param = request.env['ir.config_parameter'].sudo()
+        for key, labels, param in (
+                ('autoCloseMode', self.AUTO_CLOSE_LABELS,
+                 'hocba_recruitments.auto_close_mode'),
+                ('overdueNotifyMode', self.OVERDUE_NOTIFY_LABELS,
+                 'hocba_recruitments.overdue_notify_mode')):
+            mode = payload.get(key)
+            if mode is None:
+                continue
+            if mode not in labels:
                 return request.make_json_response(
                     {'error': 'bad_request', 'message': 'Chế độ không hợp lệ.'},
                     status=400)
-            request.env['ir.config_parameter'].sudo().set_param(
-                'hocba_recruitments.auto_close_mode', mode)
+            Param.set_param(param, mode)
+        Applicant = request.env['hr.applicant']
         return request.make_json_response(
             {'ok': True,
-             'autoCloseMode': request.env['hr.applicant']._hb_auto_close_mode()})
+             'autoCloseMode': Applicant._hb_auto_close_mode(),
+             'overdueNotifyMode': Applicant._hb_overdue_notify_mode()})

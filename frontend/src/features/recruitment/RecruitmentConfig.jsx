@@ -90,7 +90,7 @@ function StageEditor({ stage, onClose, onSaved }) {
                 placeholder="VD: BP tuyển dụng / TBP" />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 130 }}>
-              <span className="faint" style={{ fontSize: 11 }}>SLA (ngày) — 0 = không áp</span>
+              <span className="faint" style={{ fontSize: 11 }}>Hạn xử lý (ngày) — 0 = không áp</span>
               <input type="number" min="0" style={inp} value={f.slaDays}
                 onChange={(e) => set('slaDays', e.target.value)} />
             </label>
@@ -177,10 +177,49 @@ const AUTO_CLOSE_EFFECT = {
 };
 
 const TABS = [
-  ['stages', 'Quy trình & SLA'],
+  ['stages', 'Quy trình & hạn xử lý'],
   ['autoclose', 'Tự đóng tuyển'],
-  ['help', 'Cách hoạt động'],
+  ['notify', 'Thông báo'],
+  ['help', 'Cách hoạt động và chú thích'],
 ];
+
+/* Hệ quả từng chế độ nhắc quá hạn — hiện dưới nhãn để admin biết mình đang tắt gì. */
+const OVERDUE_NOTIFY_EFFECT = {
+  both: 'HR nắm toàn bộ, Trưởng phòng chỉ nhận CV thuộc phòng mình. Dùng khi Trưởng phòng có tham gia lọc CV / phỏng vấn.',
+  hr_only: 'Chỉ bộ phận tuyển dụng bị nhắc. Dùng khi Trưởng phòng không muốn bị làm phiền, hoặc phòng quá đông ứng viên.',
+  manager_only: 'Chỉ Trưởng phòng bị nhắc. Dùng khi việc tồn đọng nằm ở phía phòng ban chứ không phải bộ phận tuyển dụng.',
+  off: 'Không ai nhận thông báo. Badge "Quá hạn N ngày" trên kanban vẫn hiện bình thường.',
+};
+
+/* Nhóm radio chọn chế độ — dùng chung cho Tự đóng tuyển và Thông báo. */
+function ModeRadioGroup({ name, labels, value, effects, disabled, onPick }) {
+  return (
+    <div className="card" style={{ padding: 16, maxWidth: 760 }}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {Object.entries(labels || {}).map(([mode, label]) => (
+          <label key={mode}
+            style={{
+              display: 'flex', gap: 10, alignItems: 'flex-start',
+              fontSize: 13, cursor: 'pointer', opacity: disabled ? 0.6 : 1,
+              padding: 11, borderRadius: 10,
+              border: '1px solid ' + (value === mode ? 'var(--red-600)' : 'var(--border)'),
+              background: value === mode ? 'var(--red-50)' : 'transparent',
+            }}>
+            <input type="radio" name={name} disabled={disabled}
+              style={{ marginTop: 2 }}
+              checked={value === mode} onChange={() => onPick(mode)} />
+            <span>
+              <span style={{ fontWeight: 700 }}>{label}</span>
+              <span className="muted" style={{ display: 'block', fontSize: 12.5, marginTop: 2 }}>
+                {(effects || {})[mode] || ''}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function RecruitmentConfig() {
   const { data, err, loading, reload } = useFetch(
@@ -228,10 +267,12 @@ export default function RecruitmentConfig() {
     try { await updateRecruitStage(s.id, { active: true }); await reload(); }
     catch (e) { setMsg(e.message || 'Hiện lại bước thất bại.'); }
   };
-  const setMode = async (mode) => {
-    if (mode === data.autoCloseMode) return;
+  /* Route settings nhận rời từng khoá (autoCloseMode / overdueNotifyMode) nên
+     một hàm dùng chung cho mọi nhóm radio cấu hình. */
+  const saveSetting = async (key, mode) => {
+    if (mode === data[key]) return;
     setSavingMode(true); setMsg(null);
-    try { await saveRecruitSettings({ autoCloseMode: mode }); await reload(); }
+    try { await saveRecruitSettings({ [key]: mode }); await reload(); }
     catch (e) { setMsg(e.message || 'Lưu cấu hình thất bại.'); }
     finally { setSavingMode(false); }
   };
@@ -272,41 +313,38 @@ export default function RecruitmentConfig() {
             trên phiếu yêu cầu thì chế độ dưới đây kích hoạt. Ứng viên vào bước
             này bằng đường nào cũng tính: kéo kanban, sửa trong Odoo, hay import.
           </InfoNote>
-          <div className="card" style={{ padding: 16, maxWidth: 760 }}>
-            <div style={{ display: 'grid', gap: 12 }}>
-              {Object.entries(data.autoCloseLabels).map(([mode, label]) => (
-                <label key={mode}
-                  style={{
-                    display: 'flex', gap: 10, alignItems: 'flex-start',
-                    fontSize: 13, cursor: 'pointer',
-                    opacity: savingMode ? 0.6 : 1,
-                    padding: 11, borderRadius: 10,
-                    border: '1px solid ' + (data.autoCloseMode === mode
-                      ? 'var(--red-600)' : 'var(--border)'),
-                    background: data.autoCloseMode === mode
-                      ? 'var(--red-50)' : 'transparent',
-                  }}>
-                  <input type="radio" name="autoCloseMode" disabled={savingMode}
-                    style={{ marginTop: 2 }}
-                    checked={data.autoCloseMode === mode}
-                    onChange={() => setMode(mode)} />
-                  <span>
-                    <span style={{ fontWeight: 700 }}>{label}</span>
-                    <span className="muted" style={{ display: 'block', fontSize: 12.5, marginTop: 2 }}>
-                      {AUTO_CLOSE_EFFECT[mode] || ''}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
+          <ModeRadioGroup name="autoCloseMode" labels={data.autoCloseLabels}
+            value={data.autoCloseMode} effects={AUTO_CLOSE_EFFECT}
+            disabled={savingMode}
+            onPick={(m) => saveSetting('autoCloseMode', m)} />
           {noHired && (
             <div style={{ maxWidth: 760, padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginTop: 12, fontSize: 12.5 }}>
               ⚠ Chưa có bước nào gắn cờ <b>"Đã tuyển"</b> nên chế độ trên sẽ không
-              bao giờ chạy. Sang tab <b>Quy trình &amp; SLA</b> bật cờ này cho bước
+              bao giờ chạy. Sang tab <b>Quy trình &amp; hạn xử lý</b> bật cờ này cho bước
               cuối quy trình.
             </div>
           )}
+        </>
+      )}
+
+      {activeTab === 'notify' && (
+        <>
+          <InfoNote title="Thông báo này bắn khi nào?">
+            Mỗi sáng <b>08:00</b> hệ thống quét ứng viên đang đứng ở một bước
+            <b> lâu hơn hạn xử lý</b> của bước đó, rồi đẩy thông báo lên chuông.
+            Bấm vào thông báo là mở thẳng hồ sơ ứng viên ở tab Danh sách CV.
+            Ứng viên đã <b>Fail PV</b>, bước để hạn = 0, và bước có cờ "Đã tuyển"
+            đều không bị nhắc.
+          </InfoNote>
+          <ModeRadioGroup name="overdueNotifyMode" labels={data.overdueNotifyLabels}
+            value={data.overdueNotifyMode} effects={OVERDUE_NOTIFY_EFFECT}
+            disabled={savingMode}
+            onPick={(m) => saveSetting('overdueNotifyMode', m)} />
+          <div style={{ maxWidth: 760, padding: '10px 14px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 11, marginTop: 12, fontSize: 12.5 }}>
+            💡 Một ứng viên quá hạn chỉ sinh <b>một dòng chưa đọc</b> cho mỗi
+            người nhận — chạy 30 ngày liền vẫn một dòng. Đọc rồi mà vẫn chưa xử
+            lý thì hôm sau nhắc lại.
+          </div>
         </>
       )}
 
@@ -317,13 +355,61 @@ export default function RecruitmentConfig() {
             định thứ tự cột; đổi thứ tự là kanban đổi theo ngay. Ứng viên đang
             chạy giữ nguyên bước hiện tại, không bị nhảy lung tung.
           </InfoNote>
-          <InfoNote title="SLA được tính thế nào?">
-            SLA là <b>số ngày tối đa</b> một ứng viên được nằm ở bước đó. Hệ thống
-            đếm từ lúc ứng viên <b>chuyển vào bước hiện tại</b> (không phải từ ngày
-            nhận CV), theo <b>ngày lịch</b> — tính cả thứ bảy, chủ nhật. Quá số
-            ngày cấu hình thì thẻ ứng viên hiện badge đỏ <b>"Trễ SLA"</b> kèm số
-            ngày vượt. Đặt <b>SLA = 0</b> nghĩa là bước đó không áp hạn. Bước có
-            cờ "Đã tuyển" không bao giờ bị tính trễ vì đó là đích đến.
+          <InfoNote title="Hạn xử lý được tính thế nào?">
+            Hạn xử lý là <b>số ngày tối đa</b> một ứng viên được nằm ở bước đó. Hệ
+            thống đếm từ lúc ứng viên <b>chuyển vào bước hiện tại</b> (không phải từ
+            ngày nhận CV), theo <b>ngày lịch</b> — tính cả thứ bảy, chủ nhật. Quá số
+            ngày cấu hình thì thẻ ứng viên hiện badge đỏ <b>"Quá hạn N ngày"</b> với
+            N là số ngày vượt. Đặt <b>hạn = 0</b> nghĩa là bước đó không áp hạn. Bước
+            có cờ "Đã tuyển" không bao giờ bị tính quá hạn vì đó là đích đến.
+          </InfoNote>
+          <InfoNote title="Màu thẻ ứng viên trên Kanban nghĩa là gì?">
+            <b style={{ color: 'var(--green)' }}>Xanh</b> = đã <b>Pass PV</b>, và
+            giữ nguyên màu này qua các bước sau (Gửi Offer, Onboarding, Đã tuyển).
+            <b style={{ color: 'var(--red-700)' }}> Đỏ</b> = ứng viên đã dừng, do
+            <b> Fail PV</b> hoặc <b>Fail CV</b>.
+            <b style={{ color: 'var(--amber)' }}> Vàng</b> = <b>đang chạy</b> —
+            chưa có kết quả lọc CV / phỏng vấn, hoặc đang ở mức "Tiềm năng".
+            <br /><br />
+            Màu đọc từ hai ô <b>Trạng thái CV</b> và <b>Kết quả PV</b> chứ không
+            đọc từ tên bước — vì bước quy trình sửa được nên bám vào tên bước sẽ
+            sai ngay khi ai đó đổi cấu hình. <b>Kết quả PV xét trước</b> vì đó là
+            phán quyết mới hơn; chỉ khi chưa có kết quả PV mới xét tới Fail CV.
+            Hệ quả: kéo ứng viên sang bước Offer mà <b>quên điền Kết quả PV</b>
+            thì thẻ vẫn vàng — đó là chủ ý, để lộ ra chỗ thiếu dữ liệu.
+          </InfoNote>
+          <InfoNote title="Badge đỏ &quot;Quá hạn N ngày&quot; trên thẻ">
+            Chỉ hiện khi ứng viên ở bước lâu hơn hạn xử lý; <b>N là số ngày
+            vượt</b> chứ không phải số ngày đã nằm ở bước. Ví dụ bước "Lọc CV"
+            hạn 1 ngày, ứng viên nằm đó 4 ngày ⇒ badge ghi "Quá hạn 3 ngày".
+            Ứng viên <b>Fail PV không hiện badge</b> — đã dừng thì giục vô nghĩa.
+          </InfoNote>
+          <InfoNote title="Chip lọc ở tab Danh sách CV">
+            Hàng chip sinh tự động từ hai danh mục: hậu tố <b>CV</b> là kết quả
+            <b> lọc hồ sơ</b> (Pass CV, Fail CV, Tiềm năng CV, Liên hệ sau CV),
+            hậu tố <b>PV</b> là kết quả <b>phỏng vấn</b> (Pass PV, Fail PV, Tiềm
+            năng PV). Hai nhóm này độc lập: một người có thể <b>Pass CV</b> nhưng
+            <b> Fail PV</b>. Số trên chip đếm theo tập đang xem, nên chip số 0 chỉ
+            nghĩa là chưa có ai ở trạng thái đó.
+          </InfoNote>
+          <InfoNote title="Khi nào hệ thống tự chuyển bước?">
+            Bốn hành động của HR sẽ tự đẩy ứng viên đi tiếp, khỏi phải kéo tay
+            trên kanban:
+            <br /><br />
+            • Đặt <b>Trạng thái CV = Pass</b> → sang <b>Lên lịch phỏng vấn</b><br />
+            • Đặt <b>Ngày hẹn phỏng vấn</b> → sang <b>Hẹn &amp; mời phỏng vấn</b><br />
+            • Gửi <b>Thư mời tham gia phỏng vấn</b> → sang <b>Phỏng vấn</b><br />
+            • Đặt <b>Kết quả PV = Pass</b> → sang <b>Gửi Offer</b>
+            <br /><br />
+            Bốn quy tắc an toàn: <b>chỉ đẩy tới, không kéo lùi</b> (ứng viên đã
+            đi xa hơn thì đứng yên); <b>xoá trắng giá trị không đổi bước</b>;
+            chỉ luồng <b>Pass</b> mới tự động, còn Fail / Tiềm năng / Liên hệ sau
+            do HR tự quyết; bước đích bị <b>xoá hoặc ẩn</b> thì bỏ qua im lặng,
+            không chặn thao tác. Mỗi lần máy đổi bước đều ghi một dòng vào lịch
+            sử trao đổi của ứng viên, xem lại được ai/khi nào.
+            <br /><br />
+            Lưu ý: đổi bước làm <b>reset đồng hồ hạn xử lý</b> — ứng viên vừa tự
+            nhảy bước sẽ hết badge "Quá hạn", vì họ vừa được xử lý xong.
           </InfoNote>
           <InfoNote title="Cờ &quot;Đã tuyển&quot; dùng để làm gì?">
             Đánh dấu bước đích của quy trình. Ứng viên vào bước này được tính là
@@ -338,6 +424,12 @@ export default function RecruitmentConfig() {
             <b> Xoá</b> là vĩnh viễn và bị chặn nếu bước từng có ứng viên — kể cả
             ứng viên đã lưu trữ. Muốn bỏ một bước khỏi quy trình thì hãy ẩn.
           </InfoNote>
+          <InfoNote title="Thông báo &quot;CV quá hạn xử lý&quot; gửi cho ai?">
+            Mặc định là <b>HR tuyển dụng</b> (nhóm quyền Tuyển dụng) cộng
+            <b> Trưởng phòng</b> của phòng ban gắn với vị trí ứng tuyển. Đổi hoặc
+            tắt ở tab <b>Thông báo</b>. Lưu ý: phòng <b>chưa gán Trưởng phòng</b>
+            thì chỉ HR nhận — không phải lỗi, chỉ là phòng đó thiếu người phụ trách.
+          </InfoNote>
           <InfoNote title="Ai sửa được màn này?">
             Chỉ tài khoản <b>Admin hệ thống</b>. Cấu hình dùng chung toàn hệ thống
             nên thay đổi ảnh hưởng tới mọi phòng ban và mọi vị trí đang tuyển —
@@ -350,9 +442,10 @@ export default function RecruitmentConfig() {
         <>
       <InfoNote title="Cần biết trước khi sửa">
         Mỗi bước là một cột trên kanban CV, thứ tự ở đây là thứ tự cột.
-        <b> SLA </b>là số ngày tối đa ứng viên được ở bước đó, đếm theo ngày lịch
-        từ lúc chuyển vào bước — quá hạn thì thẻ ứng viên hiện badge đỏ "Trễ SLA".
-        Đặt SLA = 0 để không áp hạn. Chi tiết xem tab <b>Cách hoạt động</b>.
+        <b> Hạn xử lý </b>là số ngày tối đa ứng viên được ở bước đó, đếm theo ngày
+        lịch từ lúc chuyển vào bước — vượt hạn thì thẻ ứng viên hiện badge đỏ
+        "Quá hạn N ngày". Đặt hạn = 0 để không áp hạn. Chi tiết xem tab
+        <b> Cách hoạt động</b>.
       </InfoNote>
 
       <div className="between" style={{ marginBottom: 10, maxWidth: 760 }}>
@@ -416,7 +509,7 @@ export default function RecruitmentConfig() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 700, fontSize: 13.5 }}>{s.name}</span>
                 {s.hiredStage && <Badge kind="green" dot>Đã tuyển</Badge>}
-                {s.slaDays > 0 && <Badge kind="gold">SLA {s.slaDays} ngày</Badge>}
+                {s.slaDays > 0 && <Badge kind="gold">Hạn {s.slaDays} ngày</Badge>}
               </div>
               <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
                 {s.supportPerson ? `Hỗ trợ: ${s.supportPerson} · ` : ''}
