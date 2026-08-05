@@ -1766,7 +1766,14 @@ def _dashboard_stats(env):
         'byDepartment': by_department,
         'turnoverByMonth': turnover,
         'kpi': {
-            'total': len(all_emps),
+            # total = onboard + offboard, KHÔNG phải len(all_emps).
+            # Hồ sơ NV không xoá được qua ORM (BR-060: hr.promotion.history là
+            # audit trail, FK restrict) nên mọi hồ sơ tạo nhầm/hồ sơ test chỉ
+            # được archive và nằm lại vĩnh viễn trong all_emps. Chúng archived
+            # nhưng x_employment_status vẫn 'probation'/'official' ⇒ không rơi
+            # vào onboard lẫn offboard, khiến thẻ "Số nhân sự tính đến hiện tại"
+            # phình lên và total ≠ onboard + offboard (đã gặp: 17 vs 6 + 1).
+            'total': len(working) + len(resigned),
             'onboard': len(working),
             'offboard': len(resigned),
             'avgAge': round(sum(ages) / len(ages)) if ages else 0,

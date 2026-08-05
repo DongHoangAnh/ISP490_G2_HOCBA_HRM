@@ -24,7 +24,14 @@ Bỏ các khối demo: "Phân bổ theo phòng ban", "Mới vào gần đây", "
 - **Nguồn NV**: `hr.employee` với `active_test=False` (NV nghỉ việc bị archive vẫn tính),
   lọc theo phạm vi vai trò `_emp_scope_domain` (HR/Admin = tất cả; Trưởng phòng = phòng mình;
   Giáo vụ = giáo viên; user thường = mình).
-- **Số nhân sự tính đến hiện tại** = tổng mọi hồ sơ trong phạm vi (kể cả đã nghỉ).
+- **Số nhân sự tính đến hiện tại** = **Onboard + Offboard** (đang làm + đã nghỉ).
+  ⚠️ Sửa 2026-08-06: trước đây đếm `len(all_emps)` = mọi hồ sơ kể cả archived.
+  Hồ sơ NV **không xoá được** qua ORM (BR-060: `hr.promotion.history` là audit
+  trail + FK restrict) nên hồ sơ tạo nhầm / hồ sơ test chỉ được archive và ở
+  lại vĩnh viễn; chúng archived nhưng `x_employment_status` vẫn `probation`/
+  `official` ⇒ không thuộc Onboard lẫn Offboard, làm thẻ này phình lên và
+  `total ≠ onboard + offboard` (ca thật: phòng Test QA hiện 17 trong khi
+  6 + 1 = 7). Nay 3 thẻ luôn cộng khớp nhau.
 - **Onboard** = đang làm việc (`active=True` và `x_employment_status != 'resigned'`).
 - **Offboard** = đã nghỉ (`x_employment_status = 'resigned'`).
 - **Độ tuổi trung bình** = trung bình tuổi (năm tròn) của NV đang làm có `birthday`.

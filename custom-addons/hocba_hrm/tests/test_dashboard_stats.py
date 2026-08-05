@@ -57,6 +57,31 @@ class TestDashboardStats(TransactionCase):
         self.assertEqual(kpi['onboard'], 2)
         self.assertEqual(kpi['offboard'], 1)
 
+    def test_kpi_bo_qua_ho_so_archived_chua_danh_dau_nghi_viec(self):
+        """Hồ sơ tạo nhầm/hồ sơ test: archived nhưng trạng thái vẫn 'probation'.
+
+        Không xoá được (BR-060 audit trail) nên nằm lại vĩnh viễn — không được
+        tính vào thẻ "Số nhân sự tính đến hiện tại", vì nó không thuộc cả
+        Onboard lẫn Offboard. Ca thật đã gặp: phòng hiện 17 trong khi 6 + 1 = 7.
+        """
+        for i in range(3):
+            ghost = self.env['hr.employee'].create({
+                'name': 'Ghost Dash %s' % i,
+                'x_employee_code': 'HB.DASHGHOST%s' % i,
+                'department_id': self.dep.id,
+            })
+            ghost.sudo().with_context(hocba_gate_automation=True).write(
+                {'active': False})   # archive, KHÔNG đặt resigned
+
+        kpi = _dashboard_stats(self.env(user=self.mgr_user))['kpi']
+        self.assertEqual(kpi['total'], 3)      # vẫn 3, không nhảy lên 6
+        self.assertEqual(kpi['onboard'], 2)
+        self.assertEqual(kpi['offboard'], 1)
+
+    def test_kpi_total_luon_bang_onboard_cong_offboard(self):
+        kpi = self.stats['kpi']
+        self.assertEqual(kpi['total'], kpi['onboard'] + kpi['offboard'])
+
     def test_kpi_averages(self):
         kpi = self.stats['kpi']
         self.assertEqual(kpi['avgAge'], 27)        # (30 + 24) / 2
