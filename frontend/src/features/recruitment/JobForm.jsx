@@ -20,9 +20,13 @@ function Field({ label, full, children }) {
   );
 }
 
-function initForm(j) {
+/* meta.departments đã lọc theo phạm vi ở backend: HR = mọi phòng, trưởng phòng =
+   phòng mình. Chỉ có đúng 1 phòng thì chọn sẵn, khỏi bắt bấm "— Chọn —". */
+function initForm(j, meta) {
+  const deps = (meta && meta.departments) || [];
+  const depMacDinh = deps.length === 1 ? deps[0].id : '';
   return {
-    name: j?.name || '', depId: j?.depId || '', status: j?.status || 'recruiting',
+    name: j?.name || '', depId: j?.depId || depMacDinh, status: j?.status || 'recruiting',
     published: j?.published ?? false, jdLink: j?.jdLink || '', expected: j?.expected ?? '',
     teachingLevel: j?.teachingLevel || '', sessionsPerWeek: j?.sessionsPerWeek ?? '',
     description: j?.description || '',
@@ -31,7 +35,7 @@ function initForm(j) {
 
 export default function JobForm({ job, meta, onClose, onSaved }) {
   const isEdit = !!job;
-  const [f, setF] = useState(() => initForm(job));
+  const [f, setF] = useState(() => initForm(job, meta));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));

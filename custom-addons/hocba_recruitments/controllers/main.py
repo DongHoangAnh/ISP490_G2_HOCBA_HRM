@@ -660,7 +660,13 @@ class HocBaTuyenDung(http.Controller):
 
     def _job_meta(self):
         env = request.env
-        deps = env['hr.department'].sudo().search([], order='name')
+        # Danh sách phòng ban cho ô chọn ở form Thêm/Sửa vị trí: HR thấy tất cả,
+        # trưởng phòng chỉ thấy phòng mình quản lý (gồm phòng con). Trước đây trả
+        # hết mọi phòng nên TBP chọn được phòng ngoài phạm vi rồi mới ăn 403 lúc
+        # lưu (guard ở api_recruitment_job_create) — chặn ngay từ ô chọn cho gọn.
+        scope = self._dept_scope_ids()
+        dep_domain = [] if scope is None else [('id', 'in', scope)]
+        deps = env['hr.department'].sudo().search(dep_domain, order='name')
         return {
             'departments': [{'id': d.id, 'name': d.name} for d in deps],
             # Danh sách GỢI Ý cho ô Trình độ (Char) — SPA đổ vào <datalist>,
