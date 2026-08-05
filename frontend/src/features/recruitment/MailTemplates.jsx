@@ -8,6 +8,15 @@ import { fetchMailTemplates, deleteMailTemplate } from '../../api/recruitment';
 import MailTemplateForm from './MailTemplateForm';
 import MailTemplateImport from './MailTemplateImport';
 import SendMailModal from './SendMailModal';
+import { toFriendly } from './mailTokens';
+
+/* Cắt bớt phần chữ dài mà vẫn giữ nguyên nghĩa: tiêu đề dài ngắn khác nhau từng
+   mẫu, để trôi tự do thì thẻ cao thấp lệch nhau và nút "Gửi mail" mỗi thẻ một
+   độ cao. Kẹp 2 dòng + đẩy hàng nút xuống đáy ⇒ nút luôn thẳng hàng. */
+const clamp = (lines) => ({
+  display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical',
+  overflow: 'hidden', wordBreak: 'break-word',
+});
 
 export default function MailTemplates({ search }) {
   const [data, setData] = useState(null);
@@ -57,18 +66,23 @@ export default function MailTemplates({ search }) {
       </div>
 
       <div className="grid-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))' }}>
-        {pg.rows.map((t) => (
+        {pg.rows.map((t) => {
+          // Tiêu đề hiện dạng thẻ tiếng Việt ([Vị trí ứng tuyển]) thay vì biểu
+          // thức Odoo thô — vừa dễ đọc vừa ngắn hơn hẳn.
+          const subject = toFriendly(t.subject) || '(Không có tiêu đề)';
+          return (
           <div key={t.id} className="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 <Icon name="mail" size={18} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{t.subject || '(Không có tiêu đề)'}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, ...clamp(2) }} title={t.name}>{t.name}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 3, ...clamp(2) }} title={subject}>{subject}</div>
               </div>
             </div>
-            <div className="divider" style={{ margin: '6px 0' }}></div>
+            {/* marginTop:auto — hàng nút bám đáy thẻ, không bị tiêu đề dài đẩy lệch */}
+            <div className="divider" style={{ margin: '6px 0', marginTop: 'auto' }}></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => setSending(t)}>
                 <Icon name="mail" size={14} />Gửi mail</button>
@@ -84,9 +98,10 @@ export default function MailTemplates({ search }) {
               )}
             </div>
           </div>
-        ))}
-        {filtered.length === 0 && <EmptyState>Chưa có mail mẫu nào.</EmptyState>}
-        <Pagination {...pg} />
+          );
+        })}
+        {filtered.length === 0 && <div style={{ gridColumn: '1/-1' }}><EmptyState>Chưa có mail mẫu nào.</EmptyState></div>}
+        <div style={{ gridColumn: '1/-1' }}><Pagination {...pg} /></div>
       </div>
 
       {editing && (
