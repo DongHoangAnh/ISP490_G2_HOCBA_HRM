@@ -41,8 +41,13 @@ export default function Jobs({ search }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải vị trí tuyển dụng…" />;
 
-  const { rows, requests = [], statusLabels, teachingLevels, departments, isRecruiter } = data;
+  const { rows, requests = [], statusLabels, teachingLevels, departments, isRecruiter, isHr } = data;
   const meta = { statusLabels, teachingLevels, departments };
+
+  /* Chỉ HR mới nhìn tổng thể theo phòng ban. Trưởng phòng đã bị backend giới hạn
+     trong phòng mình nên ẩn view "Phòng ban" lẫn bộ lọc phòng ban — chỉ Thẻ / Bảng.
+     vmode cũ lưu trong localStorage có thể là 'dept' → ép về 'grid'. */
+  const vm = !isHr && vmode === 'dept' ? 'grid' : vmode;
 
   const applyRow = (det) => setData((p) => {
     const exists = p.rows.some((r) => r.id === det.id);
@@ -88,25 +93,27 @@ export default function Jobs({ search }) {
             {l} <span className="ct">{rows.filter((r) => r.status === k).length}</span></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
-          <select className="sel" value={dep} onChange={(e) => setDep(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
-            <option value="all">Mọi phòng ban</option>
-            {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          {isHr && (
+            <select className="sel" value={dep} onChange={(e) => setDep(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+              <option value="all">Mọi phòng ban</option>
+              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          )}
           {isRecruiter && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} />Thêm vị trí</button>
           )}
           <div className="seg">
-            <button className={vmode === 'dept' ? 'active' : ''} onClick={() => setView('dept')}>Phòng ban</button>
-            <button className={vmode === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>Thẻ</button>
-            <button className={vmode === 'table' ? 'active' : ''} onClick={() => setView('table')}>Bảng</button>
+            {isHr && <button className={vm === 'dept' ? 'active' : ''} onClick={() => setView('dept')}>Phòng ban</button>}
+            <button className={vm === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>Thẻ</button>
+            <button className={vm === 'table' ? 'active' : ''} onClick={() => setView('table')}>Bảng</button>
           </div>
         </div>
       </div>
 
-      {vmode === 'dept' ? (
+      {vm === 'dept' ? (
         <DepartmentView groups={deptGroups} isRecruiter={isRecruiter} onOpenJob={openJob} onTogglePublish={togglePublish} />
-      ) : vmode === 'grid' ? (
+      ) : vm === 'grid' ? (
         <div className="grid-3" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
           {pg.rows.map((r) => (
             <div key={r.id} className="card" style={{ padding: 18, cursor: 'pointer' }} onClick={() => setSel(r)}>

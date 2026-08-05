@@ -3,6 +3,17 @@ from odoo.exceptions import ValidationError
 
 _TEACHING_DEPTS = frozenset(['Giảng viên', 'Trợ giảng'])
 
+# Gợi ý trình độ cho ô "Trình độ" của vị trí tuyển dụng. Đây chỉ là DANH SÁCH
+# GỢI Ý (field là Char, không phải Selection) — trung tâm gặp chứng chỉ lạ thì
+# gõ thẳng, không phải chờ sửa code. Gồm đủ các cấp đang lưu hành trên thị
+# trường: HSK 2.0 (1–6), HSK 3.0 cấp cao (7–9), HSKK khẩu ngữ và TOCFL.
+HB_TEACHING_LEVELS = [
+    'HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6',
+    'HSK7', 'HSK8', 'HSK9', 'HSK7-9',
+    'HSKK Sơ cấp', 'HSKK Trung cấp', 'HSKK Cao cấp',
+    'TOCFL Band A', 'TOCFL Band B', 'TOCFL Band C', 'TOCFL',
+]
+
 
 class HrJobHocBaExt(models.Model):
     _inherit = 'hr.job'
@@ -26,16 +37,11 @@ class HrJobHocBaExt(models.Model):
         string='Link JD',
         help='Google Docs / Drive link chứa Job Description.',
     )
-    x_teaching_level = fields.Selection(
-        selection=[
-            ('hsk2', 'HSK2'),
-            ('hsk3', 'HSK3'),
-            ('tocfl', 'TOCFL'),
-            ('na', 'N/A'),
-        ],
-        string='Trình độ giảng dạy',
-        default='na',
-        help='Yêu cầu trình độ tiếng Trung với vị trí Giảng viên / Trợ giảng.',
+    x_teaching_level = fields.Char(
+        string='Trình độ',
+        help='Yêu cầu trình độ tiếng Trung với vị trí Giảng viên / Trợ giảng. '
+             'Chọn trong danh sách gợi ý hoặc gõ trình độ khác nếu cần. '
+             'Để trống = không yêu cầu.',
     )
     x_required_sessions_per_week = fields.Integer(
         string='Số buổi/tuần tối thiểu',
@@ -95,13 +101,16 @@ class HrJobHocBaExt(models.Model):
                     )
                 )
 
-    # ── Logic 3: Phòng Giảng viên / Trợ giảng bắt buộc chọn trình độ ─────────
+    # ── Logic 3: Phòng Giảng viên / Trợ giảng bắt buộc điền trình độ ─────────
+    # Field là Char nên "chưa điền" = rỗng, hoặc người dùng gõ N/A cho có lệ.
     @api.constrains('x_teaching_level', 'department_id')
     def _check_teaching_level_required(self):
         for rec in self:
+            level = (rec.x_teaching_level or '').strip()
             if (rec.department_id
                     and rec.department_id.name in _TEACHING_DEPTS
-                    and rec.x_teaching_level == 'na'):
+                    and level.lower() in ('', 'na', 'n/a')):
                 raise ValidationError(
-                    'Phòng ban "%s" yêu cầu chọn Trình độ giảng dạy cụ thể (HSK2 / HSK3 / TOCFL).' % rec.department_id.name
+                    'Phòng ban "%s" yêu cầu điền Trình độ cụ thể '
+                    '(VD: HSK4, HSK7-9, TOCFL Band B…).' % rec.department_id.name
                 )

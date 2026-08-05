@@ -35,12 +35,32 @@ class HbInterviewSlot(models.Model):
         'hr.department', string='Phòng ban',
         compute='_compute_department', store=True,
     )
+    # Một slot có thể phỏng vấn NHIỀU ứng viên cùng khung giờ (PV nhóm, hoặc
+    # hội đồng gọi lần lượt trong 1 tiếng) ⇒ many2many chứ không phải 1 ứng viên.
+    applicant_ids = fields.Many2many(
+        'hr.applicant', 'hb_interview_slot_applicant_rel', 'slot_id', 'applicant_id',
+        string='Ứng viên',
+    )
+    applicant_count = fields.Integer(
+        string='Số ứng viên', compute='_compute_applicant_count', store=True,
+    )
+    # Trạng thái suy ra từ danh sách ứng viên — tránh 2 nguồn sự thật lệch nhau
+    # khi ai đó sửa ứng viên thẳng trên form backend.
     state = fields.Selection([
         ('available', 'Còn trống'),
         ('booked',    'Đã đặt'),
-    ], string='Trạng thái', default='available', required=True)
-    applicant_id = fields.Many2one('hr.applicant', string='Ứng viên')
+    ], string='Trạng thái', compute='_compute_state', store=True, readonly=True)
     notes = fields.Text(string='Ghi chú')
+
+    @api.depends('applicant_ids')
+    def _compute_applicant_count(self):
+        for rec in self:
+            rec.applicant_count = len(rec.applicant_ids)
+
+    @api.depends('applicant_ids')
+    def _compute_state(self):
+        for rec in self:
+            rec.state = 'booked' if rec.applicant_ids else 'available'
 
     @api.depends('user_id', 'start_datetime')
     def _compute_name(self):
@@ -64,11 +84,9 @@ class HbInterviewSlot(models.Model):
             if rec.stop_datetime <= rec.start_datetime:
                 raise ValidationError('Thời gian kết thúc phải sau thời gian bắt đầu.')
 
-    def action_mark_booked(self):
-        self.write({'state': 'booked'})
-
     def action_mark_available(self):
-        self.write({'state': 'available', 'applicant_id': False})
+        """Trả slot về Còn trống = gỡ hết ứng viên (state tự tính lại)."""
+        self.write({'applicant_ids': [(5, 0, 0)]})
 
 
 class HbInterviewSlotWizard(models.TransientModel):

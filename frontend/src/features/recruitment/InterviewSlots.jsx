@@ -54,14 +54,20 @@ export default function InterviewSlots() {
     try { await deleteInterviewSlot(id); load(); } catch (e) { alert(e.message); }
   };
 
-  // Đặt slot lại về Rảnh; lịch PV đã ghi trên hồ sơ ứng viên vẫn giữ nguyên.
-  const unbookSlot = async (id) => {
-    if (!window.confirm('Hủy đặt slot này (trả về Rảnh)?')) return;
-    try { await unbookInterviewSlot(id); load(); fetchCvList().then(setCv).catch(() => {}); }
+  /* Gỡ ứng viên khỏi slot; lịch PV đã ghi trên hồ sơ ứng viên vẫn giữ nguyên.
+     Có applicant → gỡ đúng người đó, slot chỉ về Rảnh khi hết ứng viên. */
+  const unbookSlot = async (id, applicant) => {
+    const msg = applicant
+      ? `Gỡ "${applicant.name || 'ứng viên'}" khỏi slot này?`
+      : 'Gỡ hết ứng viên khỏi slot này (trả về Rảnh)?';
+    if (!window.confirm(msg)) return;
+    try { await unbookInterviewSlot(id, applicant && applicant.id); load(); fetchCvList().then(setCv).catch(() => {}); }
     catch (e) { alert(e.message); }
   };
 
-  // Sau khi đặt UV: refresh cả lịch (slot → Đã đặt) lẫn danh sách CV (ngày/giờ PV mới).
+  /* Đóng modal đặt UV → refresh cả lịch (slot → Đã đặt) lẫn danh sách CV (ngày/giờ
+     PV mới). Refresh chỉ chạy lúc đóng vì load() set data=null ⇒ cả tab (kèm modal)
+     bị unmount; muốn xếp nhiều UV vào 1 slot thì modal phải sống qua từng lượt đặt. */
   const afterBook = () => { setBooking(null); load(); fetchCvList().then(setCv).catch(() => {}); };
 
   if (err) return <ErrorState message={err} onRetry={load} />;
@@ -110,31 +116,40 @@ export default function InterviewSlots() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {daySlots.length === 0 && <div className="muted" style={{ fontSize: 11, textAlign: 'center', padding: '8px 0' }}>—</div>}
-                {daySlots.map((s) => (
+                {daySlots.map((s) => {
+                  const apps = s.applicants || [];
+                  return (
                   <div key={s.id} className="card" style={{ padding: 8 }}>
                     <div className="between">
                       <span className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{s.startTime}–{s.endTime}</span>
-                      <Badge kind={s.state === 'booked' ? 'blue' : 'green'}>{s.state === 'booked' ? 'Đã đặt' : 'Rảnh'}</Badge>
+                      <Badge kind={apps.length ? 'blue' : 'green'}>
+                        {apps.length ? `Đã đặt · ${apps.length}` : 'Rảnh'}</Badge>
                     </div>
                     <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>{s.interviewer}</div>
-                    {s.applicant && <div style={{ fontSize: 11.5, marginTop: 2, fontWeight: 600 }}>UV: {s.applicant}</div>}
+                    {/* Nhiều UV cùng slot: mỗi người 1 dòng, gỡ riêng từng người. */}
+                    {apps.map((a) => (
+                      <div key={a.id} className="between" style={{ fontSize: 11.5, marginTop: 3, gap: 4, alignItems: 'flex-start' }}>
+                        <span style={{ fontWeight: 600, minWidth: 0 }} title={a.jobName || ''}>UV: {a.name}</span>
+                        {canManage && (
+                          <button className="icon-btn" title="Gỡ ứng viên khỏi slot"
+                            style={{ flexShrink: 0 }} onClick={() => unbookSlot(s.id, a)}>
+                            <Icon name="x" size={12} className="faint" /></button>
+                        )}
+                      </div>
+                    ))}
                     {canManage && (
                       <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                        {s.state === 'booked' ? (
-                          <button className="btn btn-ghost btn-sm" style={{ padding: '2px 7px', fontSize: 11 }} onClick={() => unbookSlot(s.id)}>
-                            <Icon name="x" size={12} />Hủy đặt</button>
-                        ) : (
-                          <>
-                            <button className="btn btn-soft btn-sm" style={{ padding: '2px 7px', fontSize: 11 }} onClick={() => setBooking(s)}>
-                              <Icon name="user" size={12} />Đặt UV</button>
-                            <button className="icon-btn" title="Xoá" onClick={() => removeSlot(s.id)}>
-                              <Icon name="trash" size={14} className="faint" /></button>
-                          </>
+                        <button className="btn btn-soft btn-sm" style={{ padding: '2px 7px', fontSize: 11 }} onClick={() => setBooking(s)}>
+                          <Icon name="user" size={12} />{apps.length ? 'Thêm UV' : 'Đặt UV'}</button>
+                        {apps.length === 0 && (
+                          <button className="icon-btn" title="Xoá" onClick={() => removeSlot(s.id)}>
+                            <Icon name="trash" size={14} className="faint" /></button>
                         )}
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -155,20 +170,25 @@ export default function InterviewSlots() {
       )}
       {booking && (
         <SlotBookModal slot={booking} candidates={(cv && cv.rows) || []}
-          onClose={() => setBooking(null)} onBooked={afterBook} />
+          onClose={afterBook} />
       )}
     </div>
   );
 }
 
-/* Modal chọn ứng viên để đặt vào 1 slot rảnh. Đặt xong: slot -> Đã đặt và lịch PV
-   (ngày/giờ/người PV) tự điền lên hồ sơ ứng viên. */
-function SlotBookModal({ slot, candidates, onClose, onBooked }) {
+/* Modal chọn ứng viên để đặt vào 1 slot. Đặt xong: slot -> Đã đặt và lịch PV
+   (ngày/giờ/người PV) tự điền lên hồ sơ ứng viên.
+   Một slot xếp được NHIỀU ứng viên nên modal không đóng sau mỗi lượt chọn — chọn
+   liên tiếp rồi bấm Xong, lúc đó lịch mới refresh. */
+function SlotBookModal({ slot, candidates, onClose }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [added, setAdded] = useState(() => slot.applicants || []);
 
+  const addedIds = new Set(added.map((a) => a.id));
   const list = candidates.filter((c) => {
+    if (addedIds.has(c.id)) return false; // đã ở trong slot
     if (!q) return true;
     const s = q.toLowerCase();
     return [c.name, c.phone, c.email, c.jobName].some((v) => (v || '').toLowerCase().includes(s));
@@ -176,8 +196,11 @@ function SlotBookModal({ slot, candidates, onClose, onBooked }) {
 
   const book = async (aid) => {
     setBusy(true); setErr(null);
-    try { await bookInterviewSlot(slot.id, aid); onBooked(); }
-    catch (e) { setErr(e.message || 'Không đặt được lịch.'); setBusy(false); }
+    try {
+      const row = await bookInterviewSlot(slot.id, aid);
+      setAdded(row.applicants || []);
+    } catch (e) { setErr(e.message || 'Không đặt được lịch.'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -194,6 +217,15 @@ function SlotBookModal({ slot, candidates, onClose, onBooked }) {
         <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
       </div>
       <div style={{ padding: '16px 22px' }}>
+        {added.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 6 }}>
+              Đã xếp vào slot ({added.length}):</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {added.map((a) => <Badge key={a.id} kind="blue">{a.name}</Badge>)}
+            </div>
+          </div>
+        )}
         <input type="text" autoFocus placeholder="Tìm ứng viên theo tên / SĐT / email / vị trí…"
           value={q} onChange={(e) => setQ(e.target.value)}
           style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border-strong)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
@@ -210,6 +242,9 @@ function SlotBookModal({ slot, candidates, onClose, onBooked }) {
               <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => book(c.id)}>Chọn</button>
             </div>
           ))}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <button className="btn btn-soft" onClick={onClose}>Xong</button>
         </div>
       </div>
     </Modal>

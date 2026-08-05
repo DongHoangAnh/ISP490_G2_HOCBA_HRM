@@ -36,7 +36,8 @@ export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }
     ['Số lượng cần tuyển', d.expected],
     ['Số đơn ứng tuyển', d.applications],
     ['Địa điểm', d.location || '—'],
-    ['Trình độ giảng dạy', d.requiresTeaching ? (meta.teachingLevels[d.teachingLevel] || '—') : '—'],
+    // teachingLevel là chữ nhập tự do — giá trị chính là nhãn, không tra bảng nữa.
+    ['Trình độ', d.teachingLevel || '—'],
     ['Số buổi/tuần tối thiểu', d.sessionsPerWeek || '—'],
   ];
 

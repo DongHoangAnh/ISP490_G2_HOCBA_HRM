@@ -73,5 +73,7 @@ export const deleteInterviewSlot = (id) =>
   hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/delete`, {});
 export const bookInterviewSlot = (id, applicantId) =>
   hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/book`, { applicantId });
-export const unbookInterviewSlot = (id) =>
-  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/unbook`, {});
+/* Bỏ applicantId = gỡ hết ứng viên khỏi slot; truyền vào = chỉ gỡ ứng viên đó. */
+export const unbookInterviewSlot = (id, applicantId) =>
+  hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/unbook`,
+    applicantId ? { applicantId } : {});

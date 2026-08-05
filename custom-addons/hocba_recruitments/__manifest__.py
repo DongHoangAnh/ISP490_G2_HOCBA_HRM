@@ -1,6 +1,6 @@
 {
     'name': 'Tuyển dụng Học Bá',
-    'version': '19.0.2.4.0',
+    'version': '19.0.2.6.0',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
     'category': 'Human Resources/Recruitment',
@@ -8,10 +8,10 @@
     'description': '''
         Module mở rộng hr_recruitment cho Học Bá Education.
         - x_published: toggle Đăng tuyển (badge PUBLISHED xanh trên Kanban)
-        - x_teaching_level: HSK2 / HSK3 / TOCFL / N/A (Tab Recruitment)
+        - x_teaching_level: Trình độ (HSK1-9 / HSKK / TOCFL, nhập tự do được)
         - x_required_sessions_per_week: số buổi/tuần tối thiểu
         - Constraint: không trùng tên vị trí trong cùng phòng ban (active)
-        - Constraint: phòng Giảng viên / Trợ giảng bắt buộc chọn trình độ ≠ N/A
+        - Constraint: phòng Giảng viên / Trợ giảng bắt buộc điền Trình độ
     ''',
     'depends': ['hr_recruitment', 'hocba_employees', 'hocba_notify'],
     'data': [

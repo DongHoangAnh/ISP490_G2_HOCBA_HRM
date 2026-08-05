@@ -7,6 +7,8 @@ from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
+from ..models.hr_job import HB_TEACHING_LEVELS
+
 
 def _d(v):
     """date/datetime → chuỗi ISO (None-safe)."""
@@ -610,8 +612,9 @@ class HocBaTuyenDung(http.Controller):
             if req.expected_start_date:
                 info.append(('Thời gian nhận việc dự kiến',
                              req.expected_start_date.strftime('%d/%m/%Y')))
-        if j.x_teaching_level and j.x_teaching_level != 'na':
-            info.append(('Trình độ giảng dạy', sel_label(j, 'x_teaching_level')))
+        # x_teaching_level là Char (nhập tự do) — giá trị chính là nhãn hiển thị.
+        if (j.x_teaching_level or '').strip().lower() not in ('', 'na', 'n/a'):
+            info.append(('Trình độ', j.x_teaching_level.strip()))
         if j.x_required_sessions_per_week:
             info.append(('Số buổi/tuần tối thiểu', str(int(j.x_required_sessions_per_week))))
 
@@ -660,7 +663,9 @@ class HocBaTuyenDung(http.Controller):
         deps = env['hr.department'].sudo().search([], order='name')
         return {
             'departments': [{'id': d.id, 'name': d.name} for d in deps],
-            'teachingLevels': self._sel_labels('hr.job', 'x_teaching_level'),
+            # Danh sách GỢI Ý cho ô Trình độ (Char) — SPA đổ vào <datalist>,
+            # người dùng vẫn gõ được giá trị ngoài danh sách.
+            'teachingLevels': list(HB_TEACHING_LEVELS),
             'statusLabels': self._sel_labels('hr.job', 'recruitment_status'),
         }
 
@@ -696,7 +701,11 @@ class HocBaTuyenDung(http.Controller):
         scope = self._dept_scope_ids()
         job_domain = [] if scope is None else [('department_id', 'in', scope)]
         jobs = env['hr.job'].sudo().search(job_domain, order='name')
+        # isHr: chỉ HR mới xem tổng thể theo phòng ban (view "Phòng ban" + bộ lọc
+        # phòng ban). Trưởng phòng vốn đã bị giới hạn trong phòng mình nên SPA ẩn
+        # cả hai, chỉ còn Thẻ / Bảng.
         data = {'isRecruiter': self._is_recruiter(),
+                'isHr': self._is_hr(),
                 'rows': [self._job_row(j) for j in jobs]}
         data.update(self._job_meta())
         # Vị trí cần tuyển = phiếu yêu cầu ĐANG TUYỂN. Cần tuyển = SL phiếu;
@@ -1273,8 +1282,11 @@ class HocBaTuyenDung(http.Controller):
             'interviewer': s.user_id.name or '',
             'department': s.department_id.name or '',
             'state': s.state or 'available',
-            'applicant': s.applicant_id.partner_name or '',
-            'applicantId': s.applicant_id.id or False,
+            # Nhiều ứng viên có thể cùng phỏng vấn trong 1 slot.
+            'applicants': [{'id': a.id,
+                            'name': a.partner_name or '',
+                            'jobName': a.job_id.name or ''}
+                           for a in s.applicant_ids],
             'notes': s.notes or '',
         }
 
@@ -1356,9 +1368,10 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/interview-slot/<int:slot_id>/book',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_slot_book(self, slot_id, **kw):
-        """Đặt slot rảnh cho 1 ứng viên: slot -> 'booked' + gán applicant_id, đồng thời
+        """Thêm 1 ứng viên vào slot: nối vào applicant_ids (slot -> 'booked'), đồng thời
         điền lịch PV lên hồ sơ ứng viên (ngày/giờ/người PV) để khép vòng với tab
-        Danh sách CV và mail Thư mời phỏng vấn (biến interview_date/time)."""
+        Danh sách CV và mail Thư mời phỏng vấn (biến interview_date/time).
+        Gọi nhiều lần để xếp nhiều ứng viên vào cùng khung giờ."""
         if not self._can_manage_slots():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         s = request.env['hb.interview.slot'].sudo().browse(slot_id)
@@ -1371,9 +1384,13 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(int(aid))
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if a in s.applicant_ids:
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Ứng viên này đã có trong slot.'}, status=400)
         try:
             start_local = pytz.utc.localize(s.start_datetime).astimezone(self._user_tz())
-            s.write({'state': 'booked', 'applicant_id': a.id})
+            s.write({'applicant_ids': [(4, a.id)]})
             a.write({
                 'interview_date': start_local.date(),
                 'interview_time': start_local.strftime('%H:%M'),
@@ -1388,15 +1405,16 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/interview-slot/<int:slot_id>/unbook',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_slot_unbook(self, slot_id, **kw):
-        """Hủy đặt slot: trả về 'available' + gỡ ứng viên (giữ nguyên lịch PV đã ghi
-        trên hồ sơ ứng viên — chỉ giải phóng slot)."""
+        """Hủy đặt slot (giữ nguyên lịch PV đã ghi trên hồ sơ ứng viên — chỉ giải
+        phóng slot). body {applicantId} = gỡ đúng ứng viên đó; không truyền = gỡ hết."""
         if not self._can_manage_slots():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         s = request.env['hb.interview.slot'].sudo().browse(slot_id)
         if not s.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        aid = (request.get_json_data() or {}).get('applicantId')
         try:
-            s.write({'state': 'available', 'applicant_id': False})
+            s.write({'applicant_ids': [(3, int(aid))] if aid else [(5, 0, 0)]})
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(

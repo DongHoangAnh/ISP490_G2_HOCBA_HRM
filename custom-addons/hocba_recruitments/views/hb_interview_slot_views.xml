@@ -45,7 +45,7 @@
                       quick_create="0">
                 <field name="user_id"/>
                 <field name="state"/>
-                <field name="applicant_id"/>
+                <field name="applicant_ids"/>
             </calendar>
         </field>
     </record>
@@ -65,7 +65,8 @@
                 <field name="state" widget="badge"
                        decoration-success="state == 'available'"
                        decoration-danger="state == 'booked'"/>
-                <field name="applicant_id" string="Ứng viên" optional="show"/>
+                <field name="applicant_ids" string="Ứng viên" widget="many2many_tags" optional="show"/>
+                <field name="applicant_count" string="Số UV" optional="show"/>
                 <field name="notes" string="Ghi chú" optional="hide"/>
             </list>
         </field>
@@ -78,11 +79,10 @@
         <field name="arch" type="xml">
             <form string="Chi tiết lịch rảnh">
                 <header>
-                    <button name="action_mark_booked" type="object"
-                            string="Đánh dấu đã đặt" class="btn-primary"
-                            invisible="state == 'booked'"/>
+                    <!-- Không còn nút "Đánh dấu đã đặt": state suy ra từ danh sách
+                         ứng viên, thêm/bớt ứng viên là đủ. -->
                     <button name="action_mark_available" type="object"
-                            string="Trả về còn trống"
+                            string="Gỡ hết ứng viên"
                             invisible="state == 'available'"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="available,booked"/>
@@ -101,9 +101,10 @@
                             <field name="stop_datetime"/>
                         </group>
                     </group>
-                    <group string="Ứng viên được đặt (nếu có)">
-                        <field name="applicant_id" nolabel="1"
-                               invisible="state == 'available'"/>
+                    <group string="Ứng viên phỏng vấn trong slot">
+                        <field name="applicant_ids" nolabel="1" colspan="2"
+                               widget="many2many_tags"
+                               options="{'no_create': True}"/>
                     </group>
                     <group string="Ghi chú">
                         <field name="notes" nolabel="1" colspan="2"/>

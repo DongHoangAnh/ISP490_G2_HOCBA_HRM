@@ -44,7 +44,8 @@
                 <group string="Học Bá — Yêu cầu giảng dạy" name="hocba_teaching"
                       invisible="not x_requires_teaching_level">
                     <field name="x_teaching_level"
-                           required="x_requires_teaching_level"/>
+                           required="x_requires_teaching_level"
+                           placeholder="VD: HSK4, HSK7-9, TOCFL Band B…"/>
                     <field name="x_required_sessions_per_week"
                            invisible="not x_requires_teaching_level"/>
                 </group>

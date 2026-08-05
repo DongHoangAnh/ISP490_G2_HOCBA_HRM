@@ -24,7 +24,7 @@ function initForm(j) {
   return {
     name: j?.name || '', depId: j?.depId || '', status: j?.status || 'recruiting',
     published: j?.published ?? false, jdLink: j?.jdLink || '', expected: j?.expected ?? '',
-    teachingLevel: j?.teachingLevel || 'na', sessionsPerWeek: j?.sessionsPerWeek ?? '',
+    teachingLevel: j?.teachingLevel || '', sessionsPerWeek: j?.sessionsPerWeek ?? '',
     description: j?.description || '',
   };
 }
@@ -77,10 +77,15 @@ export default function JobForm({ job, meta, onClose, onSaved }) {
             </select></Field>
           <Field label="Số lượng cần tuyển">
             <input type="number" style={inp} value={f.expected} onChange={set('expected')} placeholder="0" /></Field>
-          <Field label="Trình độ giảng dạy">
-            <select style={inp} value={f.teachingLevel} onChange={set('teachingLevel')}>
-              {Object.entries(meta.teachingLevels).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select></Field>
+          {/* Combobox: chọn trong gợi ý (HSK1-9 / HSKK / TOCFL) HOẶC gõ trình độ
+              khác — trung tâm gặp chứng chỉ lạ thì không phải chờ sửa code. */}
+          <Field label="Trình độ">
+            <input style={inp} list="hb-teaching-levels" value={f.teachingLevel}
+              onChange={set('teachingLevel')}
+              placeholder="Chọn hoặc gõ, VD: HSK4, TOCFL Band B…" />
+            <datalist id="hb-teaching-levels">
+              {(meta.teachingLevels || []).map((l) => <option key={l} value={l} />)}
+            </datalist></Field>
           <Field label="Số buổi/tuần tối thiểu">
             <input type="number" style={inp} value={f.sessionsPerWeek} onChange={set('sessionsPerWeek')} placeholder="0" /></Field>
           <Field label="Link JD (Google Docs/Drive)" full>
