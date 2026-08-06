@@ -1,0 +1,752 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_PAY001"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler" exporterVersion="5.42.0">
+
+  <!-- ══════════════════════════════════════════════════════════════
+       COLLABORATION: Payroll Structure &amp; Rule Management
+       Level 0 — Main Process Overview
+       ══════════════════════════════════════════════════════════════ -->
+  <bpmn:collaboration id="Collaboration_Main">
+    <bpmn:participant id="Pool_HR" name="HR Manager" processRef="Process_HR" />
+    <bpmn:participant id="Pool_System" name="Odoo System" processRef="Process_System" />
+
+    <!-- Cross-pool message flows -->
+    <bpmn:messageFlow id="MF_Navigate" name="Request list" sourceRef="Task_Navigate" targetRef="Task_Sys_ShowList" />
+    <bpmn:messageFlow id="MF_New" name="Create new" sourceRef="Task_ClickNew" targetRef="Task_Sys_OpenForm" />
+    <bpmn:messageFlow id="MF_Save" name="Submit data" sourceRef="Task_SaveStructure" targetRef="Task_Sys_ValidateCreate" />
+    <bpmn:messageFlow id="MF_Rules" name="Load rules" sourceRef="Task_OpenRules" targetRef="Task_Sys_ShowRules" />
+    <bpmn:messageFlow id="MF_RuleConfig" name="Rule data" sourceRef="CallAct_RuleConfig" targetRef="Task_Sys_ProcessRule" />
+    <bpmn:messageFlow id="MF_Archive" name="Deactivate" sourceRef="Task_Deactivate" targetRef="Task_Sys_HideArchived" />
+  </bpmn:collaboration>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       PROCESS: HR Manager — Salary Structure Management
+       ────────────────────────────────────────────────────────────── -->
+  <bpmn:process id="Process_HR" name="Salary Structure Management" isExecutable="false">
+
+    <bpmn:startEvent id="Start_HR" name="Start">
+      <bpmn:outgoing>SF_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_Navigate" name="Navigate to Payroll &gt; Configuration &gt; Salary Structures">
+      <bpmn:incoming>SF_1</bpmn:incoming>
+      <bpmn:outgoing>SF_2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_ClickNew" name="Click &#34;New&#34;">
+      <bpmn:incoming>SF_2</bpmn:incoming>
+      <bpmn:outgoing>SF_3</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_FillStructure" name="Enter structure details (name, code, active, note)">
+      <bpmn:incoming>SF_3</bpmn:incoming>
+      <bpmn:outgoing>SF_4</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_SaveStructure" name="Save Structure">
+      <bpmn:incoming>SF_4</bpmn:incoming>
+      <bpmn:outgoing>SF_5</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_Validation" name="Validation passed?">
+      <bpmn:incoming>SF_5</bpmn:incoming>
+      <bpmn:outgoing>SF_6_OK</bpmn:outgoing>
+      <bpmn:outgoing>SF_6_ERR</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_OpenRules" name="Open Salary Rules Tab">
+      <bpmn:incoming>SF_6_OK</bpmn:incoming>
+      <bpmn:outgoing>SF_7</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:callActivity id="CallAct_RuleConfig" name="Configure Salary Rules" calledElement="Process_RuleConfig">
+      <bpmn:incoming>SF_7</bpmn:incoming>
+      <bpmn:outgoing>SF_8</bpmn:outgoing>
+    </bpmn:callActivity>
+
+    <bpmn:exclusiveGateway id="GW_Archive" name="Archive structure?">
+      <bpmn:incoming>SF_8</bpmn:incoming>
+      <bpmn:outgoing>SF_9_YES</bpmn:outgoing>
+      <bpmn:outgoing>SF_9_NO</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_Deactivate" name="Set active = false">
+      <bpmn:incoming>SF_9_YES</bpmn:incoming>
+      <bpmn:outgoing>SF_10</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="End_HR" name="Structure configured">
+      <bpmn:incoming>SF_9_NO</bpmn:incoming>
+      <bpmn:incoming>SF_10</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="End_DupError" name="Duplicate code error">
+      <bpmn:incoming>SF_6_ERR</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_DupCode" />
+    </bpmn:endEvent>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="SF_1" sourceRef="Start_HR" targetRef="Task_Navigate" />
+    <bpmn:sequenceFlow id="SF_2" sourceRef="Task_Navigate" targetRef="Task_ClickNew" />
+    <bpmn:sequenceFlow id="SF_3" sourceRef="Task_ClickNew" targetRef="Task_FillStructure" />
+    <bpmn:sequenceFlow id="SF_4" sourceRef="Task_FillStructure" targetRef="Task_SaveStructure" />
+    <bpmn:sequenceFlow id="SF_5" sourceRef="Task_SaveStructure" targetRef="GW_Validation" />
+    <bpmn:sequenceFlow id="SF_6_OK" name="Valid" sourceRef="GW_Validation" targetRef="Task_OpenRules" />
+    <bpmn:sequenceFlow id="SF_6_ERR" name="Duplicate code" sourceRef="GW_Validation" targetRef="End_DupError" />
+    <bpmn:sequenceFlow id="SF_7" sourceRef="Task_OpenRules" targetRef="CallAct_RuleConfig" />
+    <bpmn:sequenceFlow id="SF_8" sourceRef="CallAct_RuleConfig" targetRef="GW_Archive" />
+    <bpmn:sequenceFlow id="SF_9_YES" name="Yes" sourceRef="GW_Archive" targetRef="Task_Deactivate" />
+    <bpmn:sequenceFlow id="SF_9_NO" name="No" sourceRef="GW_Archive" targetRef="End_HR" />
+    <bpmn:sequenceFlow id="SF_10" sourceRef="Task_Deactivate" targetRef="End_HR" />
+  </bpmn:process>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       PROCESS: Odoo System — Automated Responses
+       ────────────────────────────────────────────────────────────── -->
+  <bpmn:process id="Process_System" name="System Processing" isExecutable="false">
+
+    <bpmn:serviceTask id="Task_Sys_ShowList" name="Display structure list view (name, code, rule_count, active)" />
+    <bpmn:serviceTask id="Task_Sys_OpenForm" name="Open blank structure form" />
+    <bpmn:serviceTask id="Task_Sys_ValidateCreate" name="Validate fields (UNIQUE code) &amp; create record" />
+    <bpmn:serviceTask id="Task_Sys_ShowRules" name="Display salary rules list (sequence, code, name, category, amount_type)" />
+    <bpmn:serviceTask id="Task_Sys_ProcessRule" name="Create / update salary rule, recompute rule_count" />
+    <bpmn:serviceTask id="Task_Sys_HideArchived" name="Hide archived structure from default list view" />
+  </bpmn:process>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PROCESS: Salary Rule Configuration (Level 1 Detail)
+       Called by CallAct_RuleConfig in main process
+       ══════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_RuleConfig" name="Salary Rule Configuration" isExecutable="false">
+
+    <bpmn:startEvent id="Start_RC" name="Start">
+      <bpmn:outgoing>SF_RC_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_RC_OpenForm" name="Open rule form (inline or standalone)">
+      <bpmn:incoming>SF_RC_1</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_FillReq" name="Fill required fields (name, code, sequence, structure, category)">
+      <bpmn:incoming>SF_RC_2</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_3</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_SelectType" name="Select amount type">
+      <bpmn:incoming>SF_RC_3</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_4</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_RC_Type" name="Amount type?">
+      <bpmn:incoming>SF_RC_4</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_5a</bpmn:outgoing>
+      <bpmn:outgoing>SF_RC_5b</bpmn:outgoing>
+      <bpmn:outgoing>SF_RC_5c</bpmn:outgoing>
+      <bpmn:outgoing>SF_RC_5d</bpmn:outgoing>
+      <bpmn:outgoing>SF_RC_5e</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_RC_Fixed" name="Enter fixed amount">
+      <bpmn:incoming>SF_RC_5a</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_6a</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_Pct" name="Enter percentage + percentage base">
+      <bpmn:incoming>SF_RC_5b</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_6b</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_Formula" name="Enter Excel-like formula (IF, SUM, MAX, MIN, ABS, ROUND)">
+      <bpmn:incoming>SF_RC_5c</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_6c</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_Code" name="Enter Python code (assign result)">
+      <bpmn:incoming>SF_RC_5d</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_6d</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_Lookup" name="Select lookup source &amp; field (e.g. attendance.work_credit)">
+      <bpmn:incoming>SF_RC_5e</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_6e</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_RC_Merge">
+      <bpmn:incoming>SF_RC_6a</bpmn:incoming>
+      <bpmn:incoming>SF_RC_6b</bpmn:incoming>
+      <bpmn:incoming>SF_RC_6c</bpmn:incoming>
+      <bpmn:incoming>SF_RC_6d</bpmn:incoming>
+      <bpmn:incoming>SF_RC_6e</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_7</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:exclusiveGateway id="GW_RC_Condition" name="Add execution condition?">
+      <bpmn:incoming>SF_RC_7</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_8a</bpmn:outgoing>
+      <bpmn:outgoing>SF_RC_8b</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_RC_SetCondition" name="Define Python condition">
+      <bpmn:incoming>SF_RC_8a</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_9</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_RC_CondMerge">
+      <bpmn:incoming>SF_RC_9</bpmn:incoming>
+      <bpmn:incoming>SF_RC_8b</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_10</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_RC_Toggle" name="Set payslip visibility">
+      <bpmn:incoming>SF_RC_10</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_11</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RC_Save" name="Save Rule">
+      <bpmn:incoming>SF_RC_11</bpmn:incoming>
+      <bpmn:outgoing>SF_RC_12</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="End_RC" name="Rule saved">
+      <bpmn:incoming>SF_RC_12</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="SF_RC_1" sourceRef="Start_RC" targetRef="Task_RC_OpenForm" />
+    <bpmn:sequenceFlow id="SF_RC_2" sourceRef="Task_RC_OpenForm" targetRef="Task_RC_FillReq" />
+    <bpmn:sequenceFlow id="SF_RC_3" sourceRef="Task_RC_FillReq" targetRef="Task_RC_SelectType" />
+    <bpmn:sequenceFlow id="SF_RC_4" sourceRef="Task_RC_SelectType" targetRef="GW_RC_Type" />
+    <bpmn:sequenceFlow id="SF_RC_5a" name="Fixed" sourceRef="GW_RC_Type" targetRef="Task_RC_Fixed" />
+    <bpmn:sequenceFlow id="SF_RC_5b" name="Percentage" sourceRef="GW_RC_Type" targetRef="Task_RC_Pct" />
+    <bpmn:sequenceFlow id="SF_RC_5c" name="Formula" sourceRef="GW_RC_Type" targetRef="Task_RC_Formula" />
+    <bpmn:sequenceFlow id="SF_RC_5d" name="Python Code" sourceRef="GW_RC_Type" targetRef="Task_RC_Code" />
+    <bpmn:sequenceFlow id="SF_RC_5e" name="Lookup" sourceRef="GW_RC_Type" targetRef="Task_RC_Lookup" />
+    <bpmn:sequenceFlow id="SF_RC_6a" sourceRef="Task_RC_Fixed" targetRef="GW_RC_Merge" />
+    <bpmn:sequenceFlow id="SF_RC_6b" sourceRef="Task_RC_Pct" targetRef="GW_RC_Merge" />
+    <bpmn:sequenceFlow id="SF_RC_6c" sourceRef="Task_RC_Formula" targetRef="GW_RC_Merge" />
+    <bpmn:sequenceFlow id="SF_RC_6d" sourceRef="Task_RC_Code" targetRef="GW_RC_Merge" />
+    <bpmn:sequenceFlow id="SF_RC_6e" sourceRef="Task_RC_Lookup" targetRef="GW_RC_Merge" />
+    <bpmn:sequenceFlow id="SF_RC_7" sourceRef="GW_RC_Merge" targetRef="GW_RC_Condition" />
+    <bpmn:sequenceFlow id="SF_RC_8a" name="Yes" sourceRef="GW_RC_Condition" targetRef="Task_RC_SetCondition" />
+    <bpmn:sequenceFlow id="SF_RC_8b" name="No" sourceRef="GW_RC_Condition" targetRef="GW_RC_CondMerge" />
+    <bpmn:sequenceFlow id="SF_RC_9" sourceRef="Task_RC_SetCondition" targetRef="GW_RC_CondMerge" />
+    <bpmn:sequenceFlow id="SF_RC_10" sourceRef="GW_RC_CondMerge" targetRef="Task_RC_Toggle" />
+    <bpmn:sequenceFlow id="SF_RC_11" sourceRef="Task_RC_Toggle" targetRef="Task_RC_Save" />
+    <bpmn:sequenceFlow id="SF_RC_12" sourceRef="Task_RC_Save" targetRef="End_RC" />
+  </bpmn:process>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PROCESS: Formula Computation Engine (Level 2 Detail)
+       System-internal process for formula transpilation &amp; evaluation
+       ══════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_FormulaEngine" name="Formula Computation Engine" isExecutable="false">
+
+    <bpmn:startEvent id="Start_FE" name="Payslip computation triggered">
+      <bpmn:outgoing>SF_FE_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="Task_FE_Transpile" name="Transpile formula to Python&#10;(IF&#8594;ternary, SUM&#8594;_range_sum, ROUND&#8594;_round_dir, codes&#8594;rules.get())">
+      <bpmn:incoming>SF_FE_1</bpmn:incoming>
+      <bpmn:outgoing>SF_FE_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_FE_Eval" name="Execute safe_eval(transpiled_expression)">
+      <bpmn:incoming>SF_FE_2</bpmn:incoming>
+      <bpmn:outgoing>SF_FE_3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_FE_Result" name="Evaluation OK?">
+      <bpmn:incoming>SF_FE_3</bpmn:incoming>
+      <bpmn:outgoing>SF_FE_4a</bpmn:outgoing>
+      <bpmn:outgoing>SF_FE_4b</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_FE_Store" name="Store result in rules dict &amp; categories accumulator">
+      <bpmn:incoming>SF_FE_4a</bpmn:incoming>
+      <bpmn:outgoing>SF_FE_5a</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End_FE_OK" name="Rule computed successfully">
+      <bpmn:incoming>SF_FE_5a</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_FE_Log" name="Log warning, set amount = 0">
+      <bpmn:incoming>SF_FE_4b</bpmn:incoming>
+      <bpmn:outgoing>SF_FE_5b</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End_FE_Err" name="Rule fallback (amount = 0)">
+      <bpmn:incoming>SF_FE_5b</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_FE_Eval" />
+    </bpmn:endEvent>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="SF_FE_1" sourceRef="Start_FE" targetRef="Task_FE_Transpile" />
+    <bpmn:sequenceFlow id="SF_FE_2" sourceRef="Task_FE_Transpile" targetRef="Task_FE_Eval" />
+    <bpmn:sequenceFlow id="SF_FE_3" sourceRef="Task_FE_Eval" targetRef="GW_FE_Result" />
+    <bpmn:sequenceFlow id="SF_FE_4a" name="Success" sourceRef="GW_FE_Result" targetRef="Task_FE_Store" />
+    <bpmn:sequenceFlow id="SF_FE_4b" name="Syntax / eval error" sourceRef="GW_FE_Result" targetRef="Task_FE_Log" />
+    <bpmn:sequenceFlow id="SF_FE_5a" sourceRef="Task_FE_Store" targetRef="End_FE_OK" />
+    <bpmn:sequenceFlow id="SF_FE_5b" sourceRef="Task_FE_Log" targetRef="End_FE_Err" />
+  </bpmn:process>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       DIAGRAM 1: Main Process Overview (Level 0)
+       ══════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Main" name="Payroll Structure Management — Overview">
+    <bpmndi:BPMNPlane id="BPMNPlane_Main" bpmnElement="Collaboration_Main">
+
+      <!-- ── HR Manager Pool ── -->
+      <bpmndi:BPMNShape id="Pool_HR_di" bpmnElement="Pool_HR" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1840" height="310" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Start_HR_di" bpmnElement="Start_HR">
+        <dc:Bounds x="225" y="217" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="230" y="260" width="26" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Navigate_di" bpmnElement="Task_Navigate">
+        <dc:Bounds x="300" y="195" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_ClickNew_di" bpmnElement="Task_ClickNew">
+        <dc:Bounds x="530" y="205" width="120" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FillStructure_di" bpmnElement="Task_FillStructure">
+        <dc:Bounds x="700" y="195" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_SaveStructure_di" bpmnElement="Task_SaveStructure">
+        <dc:Bounds x="910" y="205" width="120" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_Validation_di" bpmnElement="GW_Validation" isMarkerVisible="true">
+        <dc:Bounds x="1080" y="210" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1058" y="186" width="94" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_DupError_di" bpmnElement="End_DupError">
+        <dc:Bounds x="1087" y="320" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1050" y="363" width="110" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_OpenRules_di" bpmnElement="Task_OpenRules">
+        <dc:Bounds x="1190" y="195" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="CallAct_RuleConfig_di" bpmnElement="CallAct_RuleConfig">
+        <dc:Bounds x="1410" y="195" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_Archive_di" bpmnElement="GW_Archive" isMarkerVisible="true">
+        <dc:Bounds x="1630" y="210" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1610" y="186" width="90" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Deactivate_di" bpmnElement="Task_Deactivate">
+        <dc:Bounds x="1730" y="300" width="160" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_HR_di" bpmnElement="End_HR">
+        <dc:Bounds x="1920" y="217" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1892" y="260" width="92" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- HR Sequence Flow Edges -->
+      <bpmndi:BPMNEdge id="SF_1_di" bpmnElement="SF_1">
+        <di:waypoint x="261" y="235" />
+        <di:waypoint x="300" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_2_di" bpmnElement="SF_2">
+        <di:waypoint x="480" y="235" />
+        <di:waypoint x="530" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_3_di" bpmnElement="SF_3">
+        <di:waypoint x="650" y="235" />
+        <di:waypoint x="700" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_4_di" bpmnElement="SF_4">
+        <di:waypoint x="860" y="235" />
+        <di:waypoint x="910" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_5_di" bpmnElement="SF_5">
+        <di:waypoint x="1030" y="235" />
+        <di:waypoint x="1080" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_6_OK_di" bpmnElement="SF_6_OK">
+        <di:waypoint x="1130" y="235" />
+        <di:waypoint x="1190" y="235" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1145" y="217" width="25" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_6_ERR_di" bpmnElement="SF_6_ERR">
+        <di:waypoint x="1105" y="260" />
+        <di:waypoint x="1105" y="320" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1112" y="280" width="76" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_7_di" bpmnElement="SF_7">
+        <di:waypoint x="1360" y="235" />
+        <di:waypoint x="1410" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_8_di" bpmnElement="SF_8">
+        <di:waypoint x="1580" y="235" />
+        <di:waypoint x="1630" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_9_NO_di" bpmnElement="SF_9_NO">
+        <di:waypoint x="1680" y="235" />
+        <di:waypoint x="1920" y="235" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1790" y="217" width="15" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_9_YES_di" bpmnElement="SF_9_YES">
+        <di:waypoint x="1655" y="260" />
+        <di:waypoint x="1655" y="330" />
+        <di:waypoint x="1730" y="330" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1663" y="288" width="18" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_10_di" bpmnElement="SF_10">
+        <di:waypoint x="1890" y="330" />
+        <di:waypoint x="1938" y="330" />
+        <di:waypoint x="1938" y="253" />
+      </bpmndi:BPMNEdge>
+
+      <!-- ── System Pool ── -->
+      <bpmndi:BPMNShape id="Pool_System_di" bpmnElement="Pool_System" isHorizontal="true">
+        <dc:Bounds x="160" y="440" width="1840" height="230" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sys_ShowList_di" bpmnElement="Task_Sys_ShowList">
+        <dc:Bounds x="310" y="520" width="170" height="70" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sys_OpenForm_di" bpmnElement="Task_Sys_OpenForm">
+        <dc:Bounds x="530" y="520" width="170" height="70" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sys_ValidateCreate_di" bpmnElement="Task_Sys_ValidateCreate">
+        <dc:Bounds x="900" y="520" width="180" height="70" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sys_ShowRules_di" bpmnElement="Task_Sys_ShowRules">
+        <dc:Bounds x="1190" y="520" width="170" height="70" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sys_ProcessRule_di" bpmnElement="Task_Sys_ProcessRule">
+        <dc:Bounds x="1410" y="520" width="170" height="70" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sys_HideArchived_di" bpmnElement="Task_Sys_HideArchived">
+        <dc:Bounds x="1730" y="520" width="170" height="70" />
+      </bpmndi:BPMNShape>
+
+      <!-- ── Message Flow Edges ── -->
+      <bpmndi:BPMNEdge id="MF_Navigate_di" bpmnElement="MF_Navigate">
+        <di:waypoint x="390" y="275" />
+        <di:waypoint x="390" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_New_di" bpmnElement="MF_New">
+        <di:waypoint x="590" y="265" />
+        <di:waypoint x="590" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Save_di" bpmnElement="MF_Save">
+        <di:waypoint x="970" y="265" />
+        <di:waypoint x="970" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Rules_di" bpmnElement="MF_Rules">
+        <di:waypoint x="1275" y="275" />
+        <di:waypoint x="1275" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_RuleConfig_di" bpmnElement="MF_RuleConfig">
+        <di:waypoint x="1495" y="275" />
+        <di:waypoint x="1495" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_Archive_di" bpmnElement="MF_Archive">
+        <di:waypoint x="1810" y="360" />
+        <di:waypoint x="1810" y="520" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       DIAGRAM 2: Salary Rule Configuration (Level 1 Detail)
+       ══════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_RuleConfig" name="Level 1 — Salary Rule Configuration">
+    <bpmndi:BPMNPlane id="BPMNPlane_RuleConfig" bpmnElement="Process_RuleConfig">
+
+      <bpmndi:BPMNShape id="Start_RC_di" bpmnElement="Start_RC">
+        <dc:Bounds x="180" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="185" y="295" width="26" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_OpenForm_di" bpmnElement="Task_RC_OpenForm">
+        <dc:Bounds x="260" y="230" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_FillReq_di" bpmnElement="Task_RC_FillReq">
+        <dc:Bounds x="470" y="230" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_SelectType_di" bpmnElement="Task_RC_SelectType">
+        <dc:Bounds x="690" y="230" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_RC_Type_di" bpmnElement="GW_RC_Type" isMarkerVisible="true">
+        <dc:Bounds x="900" y="245" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="888" y="221" width="74" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Fixed_di" bpmnElement="Task_RC_Fixed">
+        <dc:Bounds x="1000" y="110" width="160" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Pct_di" bpmnElement="Task_RC_Pct">
+        <dc:Bounds x="1000" y="200" width="190" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Formula_di" bpmnElement="Task_RC_Formula">
+        <dc:Bounds x="1000" y="290" width="200" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Code_di" bpmnElement="Task_RC_Code">
+        <dc:Bounds x="1000" y="380" width="170" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Lookup_di" bpmnElement="Task_RC_Lookup">
+        <dc:Bounds x="1000" y="470" width="200" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_RC_Merge_di" bpmnElement="GW_RC_Merge" isMarkerVisible="true">
+        <dc:Bounds x="1250" y="245" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_RC_Condition_di" bpmnElement="GW_RC_Condition" isMarkerVisible="true">
+        <dc:Bounds x="1350" y="245" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1318" y="221" width="114" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_SetCondition_di" bpmnElement="Task_RC_SetCondition">
+        <dc:Bounds x="1440" y="340" width="180" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_RC_CondMerge_di" bpmnElement="GW_RC_CondMerge" isMarkerVisible="true">
+        <dc:Bounds x="1670" y="245" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Toggle_di" bpmnElement="Task_RC_Toggle">
+        <dc:Bounds x="1770" y="240" width="170" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RC_Save_di" bpmnElement="Task_RC_Save">
+        <dc:Bounds x="1990" y="240" width="120" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_RC_di" bpmnElement="End_RC">
+        <dc:Bounds x="2160" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="2148" y="295" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Sequence Flow Edges — Rule Config -->
+      <bpmndi:BPMNEdge id="SF_RC_1_di" bpmnElement="SF_RC_1">
+        <di:waypoint x="216" y="270" />
+        <di:waypoint x="260" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_2_di" bpmnElement="SF_RC_2">
+        <di:waypoint x="420" y="270" />
+        <di:waypoint x="470" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_3_di" bpmnElement="SF_RC_3">
+        <di:waypoint x="640" y="270" />
+        <di:waypoint x="690" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_4_di" bpmnElement="SF_RC_4">
+        <di:waypoint x="850" y="270" />
+        <di:waypoint x="900" y="270" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Gateway → 4 amount type branches -->
+      <bpmndi:BPMNEdge id="SF_RC_5a_di" bpmnElement="SF_RC_5a">
+        <di:waypoint x="925" y="245" />
+        <di:waypoint x="925" y="140" />
+        <di:waypoint x="1000" y="140" />
+        <bpmndi:BPMNLabel><dc:Bounds x="935" y="123" width="30" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_5b_di" bpmnElement="SF_RC_5b">
+        <di:waypoint x="950" y="260" />
+        <di:waypoint x="975" y="230" />
+        <di:waypoint x="1000" y="230" />
+        <bpmndi:BPMNLabel><dc:Bounds x="945" y="213" width="56" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_5c_di" bpmnElement="SF_RC_5c">
+        <di:waypoint x="950" y="280" />
+        <di:waypoint x="975" y="320" />
+        <di:waypoint x="1000" y="320" />
+        <bpmndi:BPMNLabel><dc:Bounds x="945" y="323" width="40" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_5d_di" bpmnElement="SF_RC_5d">
+        <di:waypoint x="925" y="295" />
+        <di:waypoint x="925" y="410" />
+        <di:waypoint x="1000" y="410" />
+        <bpmndi:BPMNLabel><dc:Bounds x="935" y="413" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Gateway → Lookup branch -->
+      <bpmndi:BPMNEdge id="SF_RC_5e_di" bpmnElement="SF_RC_5e">
+        <di:waypoint x="925" y="295" />
+        <di:waypoint x="925" y="500" />
+        <di:waypoint x="1000" y="500" />
+        <bpmndi:BPMNLabel><dc:Bounds x="935" y="503" width="40" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- 5 branches → merge gateway -->
+      <bpmndi:BPMNEdge id="SF_RC_6a_di" bpmnElement="SF_RC_6a">
+        <di:waypoint x="1160" y="140" />
+        <di:waypoint x="1275" y="140" />
+        <di:waypoint x="1275" y="245" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_6b_di" bpmnElement="SF_RC_6b">
+        <di:waypoint x="1190" y="230" />
+        <di:waypoint x="1275" y="230" />
+        <di:waypoint x="1275" y="245" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_6c_di" bpmnElement="SF_RC_6c">
+        <di:waypoint x="1200" y="320" />
+        <di:waypoint x="1275" y="320" />
+        <di:waypoint x="1275" y="295" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_6d_di" bpmnElement="SF_RC_6d">
+        <di:waypoint x="1170" y="410" />
+        <di:waypoint x="1275" y="410" />
+        <di:waypoint x="1275" y="295" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_6e_di" bpmnElement="SF_RC_6e">
+        <di:waypoint x="1200" y="500" />
+        <di:waypoint x="1275" y="500" />
+        <di:waypoint x="1275" y="295" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Merge → Condition check → Condition merge → Toggle → Save → End -->
+      <bpmndi:BPMNEdge id="SF_RC_7_di" bpmnElement="SF_RC_7">
+        <di:waypoint x="1300" y="270" />
+        <di:waypoint x="1350" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_8a_di" bpmnElement="SF_RC_8a">
+        <di:waypoint x="1375" y="295" />
+        <di:waypoint x="1375" y="370" />
+        <di:waypoint x="1440" y="370" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1383" y="323" width="18" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_8b_di" bpmnElement="SF_RC_8b">
+        <di:waypoint x="1400" y="270" />
+        <di:waypoint x="1670" y="270" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1530" y="252" width="15" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_9_di" bpmnElement="SF_RC_9">
+        <di:waypoint x="1620" y="370" />
+        <di:waypoint x="1695" y="370" />
+        <di:waypoint x="1695" y="295" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_10_di" bpmnElement="SF_RC_10">
+        <di:waypoint x="1720" y="270" />
+        <di:waypoint x="1770" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_11_di" bpmnElement="SF_RC_11">
+        <di:waypoint x="1940" y="270" />
+        <di:waypoint x="1990" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RC_12_di" bpmnElement="SF_RC_12">
+        <di:waypoint x="2110" y="270" />
+        <di:waypoint x="2160" y="270" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       DIAGRAM 3: Formula Computation Engine (Level 2 Detail)
+       ══════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_FormulaEngine" name="Level 2 — Formula Computation Engine">
+    <bpmndi:BPMNPlane id="BPMNPlane_FormulaEngine" bpmnElement="Process_FormulaEngine">
+
+      <bpmndi:BPMNShape id="Start_FE_di" bpmnElement="Start_FE">
+        <dc:Bounds x="180" y="132" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="153" y="175" width="90" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FE_Transpile_di" bpmnElement="Task_FE_Transpile">
+        <dc:Bounds x="270" y="110" width="200" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FE_Eval_di" bpmnElement="Task_FE_Eval">
+        <dc:Bounds x="520" y="115" width="170" height="70" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_FE_Result_di" bpmnElement="GW_FE_Result" isMarkerVisible="true">
+        <dc:Bounds x="740" y="125" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="726" y="101" width="78" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FE_Store_di" bpmnElement="Task_FE_Store">
+        <dc:Bounds x="850" y="80" width="190" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_FE_OK_di" bpmnElement="End_FE_OK">
+        <dc:Bounds x="1100" y="92" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1072" y="135" width="92" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FE_Log_di" bpmnElement="Task_FE_Log">
+        <dc:Bounds x="850" y="200" width="190" height="60" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_FE_Err_di" bpmnElement="End_FE_Err">
+        <dc:Bounds x="1100" y="212" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1070" y="255" width="96" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Sequence Flow Edges — Formula Engine -->
+      <bpmndi:BPMNEdge id="SF_FE_1_di" bpmnElement="SF_FE_1">
+        <di:waypoint x="216" y="150" />
+        <di:waypoint x="270" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_FE_2_di" bpmnElement="SF_FE_2">
+        <di:waypoint x="470" y="150" />
+        <di:waypoint x="520" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_FE_3_di" bpmnElement="SF_FE_3">
+        <di:waypoint x="690" y="150" />
+        <di:waypoint x="740" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_FE_4a_di" bpmnElement="SF_FE_4a">
+        <di:waypoint x="765" y="125" />
+        <di:waypoint x="765" y="110" />
+        <di:waypoint x="850" y="110" />
+        <bpmndi:BPMNLabel><dc:Bounds x="775" y="93" width="42" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_FE_4b_di" bpmnElement="SF_FE_4b">
+        <di:waypoint x="765" y="175" />
+        <di:waypoint x="765" y="230" />
+        <di:waypoint x="850" y="230" />
+        <bpmndi:BPMNLabel><dc:Bounds x="775" y="233" width="60" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_FE_5a_di" bpmnElement="SF_FE_5a">
+        <di:waypoint x="1040" y="110" />
+        <di:waypoint x="1100" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_FE_5b_di" bpmnElement="SF_FE_5b">
+        <di:waypoint x="1040" y="230" />
+        <di:waypoint x="1100" y="230" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

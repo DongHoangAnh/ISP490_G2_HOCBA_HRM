@@ -1,0 +1,354 @@
+# FS-PAY-004 -- Payslip Computation Engine
+
+| Field        | Value                                                            |
+|------------- |----------------------------------------------------------------- |
+| **Code**     | FS-PAY-004                                                       |
+| **Title**    | Payslip Computation Engine                                       |
+| **Module**   | hocba_payroll                                                    |
+| **Model**    | hb.payslip (inherited mail.thread)                               |
+| **Version**  | 1.0                                                              |
+| **Date**     | 2026-06-21                                                       |
+| **Status**   | Draft                                                            |
+| **Platform** | Odoo 19 Community                                                |
+
+---
+
+## 1. OVERVIEW
+
+The Payslip Computation Engine is the core salary calculation subsystem of the `hocba_payroll` module. It evaluates a set of data-driven salary rules against a payslip, producing payslip lines that represent every element of an employee's pay -- allowances, gross income, insurance deductions, personal income tax, and net pay.
+
+The engine is invoked through the `action_compute_sheet()` method on `hb.payslip`. It resolves the employee's contract and salary structure, builds an evaluation namespace with proxy objects, then iterates through salary rules in sequence order. Each rule's condition is checked, its amount is computed via one of four computation modes (`code`, `fixed`, `percentage`, `formula`), and the result is stored as a payslip line.
+
+| Concept               | Description                                                                                  |
+|----------------------- |--------------------------------------------------------------------------------------------- |
+| Entry point            | `hb.payslip.action_compute_sheet()` -- button on payslip form and batch action               |
+| Salary structure       | `hb.salary.structure` -- groups a set of ordered salary rules                                |
+| Salary rule            | `hb.salary.rule` -- defines one computation step (allowance, deduction, tax, net, etc.)      |
+| Payslip line           | `hb.payslip.line` -- stores the computed result of one salary rule                           |
+| Worked days            | `hb.payslip.worked_days` -- attendance/work-entry data consumed by rules                     |
+| Payslip input          | `hb.payslip.input` -- ad-hoc monetary inputs (advances, bonuses) consumed by rules           |
+| Proxy classes          | Module-level Python classes providing attribute-access syntax inside rule evaluation          |
+| Formula transpiler     | `_transpile_formula()` converts Excel-like expressions to Python for the `formula` amount type|
+| PIT calculator         | `_hocba_pit()` implements the 7-bracket Vietnam progressive personal income tax               |
+
+---
+
+## 2. FUNCTION FLOW
+
+### 2.1 Main Entry Point -- action_compute_sheet()
+
+| Step | Action                              | Detail                                                                                                                                                         |
+|----- |------------------------------------ |--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Iterate payslips                    | The method operates on `self` (one or more `hb.payslip` records). Each payslip is processed independently within a `for slip in self` loop.                    |
+| 2    | Call `_ensure_draft_state()`        | Raises `UserError` if `slip.state` is not in `('draft', 'verify')`. Prevents recomputation of confirmed or cancelled payslips.                                |
+| 3    | Call `_resolve_contract()`          | Resolves the employee's active contract for the payslip date range. See section 2.2.                                                                           |
+| 4    | Call `_resolve_structure(contract)` | Determines the salary structure to use for this payslip. See section 2.3.                                                                                      |
+| 5    | Clear existing lines                | Calls `slip.line_ids.unlink()` to remove all previously computed payslip lines before recomputation.                                                           |
+| 6    | Build evaluation namespace          | Calls `slip._build_localdict(contract)` to construct the Python namespace used by `safe_eval`. See section 2.4.                                               |
+| 7    | Collect active rules                | Retrieves `structure.rule_ids.filtered('active').sorted('sequence')` -- only active rules, sorted ascending by sequence number.                                |
+| 8    | Initialize warnings list            | Creates an empty `warnings = []` list to capture non-fatal rule evaluation errors.                                                                             |
+| 9    | Iterate rules in sequence order     | For each rule, performs steps 9a through 9d.                                                                                                                   |
+| 9a   | Evaluate condition                  | Calls `_evaluate_rule_condition(rule, localdict)`. If the condition returns `False`, the rule is skipped (`continue`).                                          |
+| 9b   | Evaluate amount                     | Calls `_evaluate_rule_amount(rule, localdict)`. Returns a tuple `(amount, qty, rate)`.                                                                         |
+| 9c   | Store result in namespace           | Sets `localdict['rules'][rule.code] = amount` and calls `localdict['categories'].accumulate(rule.category_id.code, amount)` so subsequent rules can reference. |
+| 9d   | Create payslip line                 | If `rule.appears_on_payslip` is True, creates an `hb.payslip.line` record with code, name, sequence, quantity, rate, and `round(amount)`.                      |
+| 9e   | Error handling (per rule)           | If any exception occurs during 9a/9b, the error is logged via `_logger.warning`, a user-facing warning is appended, and the rule produces `(0.0, 1.0, 0.0)`.  |
+| 10   | Finalize payslip                    | Writes `structure_id`, sets `x_teaching_computed = True`, and stores `x_compute_warnings` (joined warnings or `False` if none).                                |
+| 11   | Return                              | Returns `True`.                                                                                                                                                |
+
+### 2.2 Contract Resolution -- _resolve_contract()
+
+| Step | Action                                       | Detail                                                                                                                                 |
+|----- |--------------------------------------------- |--------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Check explicit contract                       | If `self.contract_id` is already set on the payslip, use it directly.                                                                  |
+| 2    | Search for active contract                    | Searches `hb.contract` with domain: `employee_id` matches, `state = 'open'`, `date_start <= payslip.date_to`, and (`date_end` unset OR `date_end >= payslip.date_from`). Limit 1. |
+| 3    | Assign if found                               | Sets `self.contract_id = contract` on the payslip record.                                                                              |
+| 4    | Raise if none                                 | Raises `ValidationError` with a message naming the employee and the date range if no contract is found.                                |
+
+### 2.3 Structure Resolution -- _resolve_structure(contract)
+
+| Step | Priority | Source                                 | Detail                                                                                                                        |
+|----- |--------- |--------------------------------------- |------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | Highest  | `self.structure_id`                    | Explicit structure set directly on the payslip record.                                                                        |
+| 2    | Medium   | `contract.x_structure_id`              | Structure linked on the employee's contract.                                                                                  |
+| 3    | Lowest   | Auto-detect by `employee.x_work_form`  | Reads `employee.x_work_form` (default `'offline'`). If `'online'` selects `STRUCT_ONLINE`; otherwise selects `STRUCT_OFFLINE`. Searches `hb.salary.structure` by code. |
+| 4    | --       | Raise if none                          | Raises `ValidationError` if no structure is found at any priority level.                                                      |
+
+### 2.4 Namespace Construction -- _build_localdict(contract)
+
+| Key              | Type / Class           | Description                                                                                                      |
+|----------------- |----------------------- |----------------------------------------------------------------------------------------------------------------- |
+| `payslip`        | `hb.payslip`           | The current payslip record (`self`).                                                                             |
+| `employee`       | `hr.employee`          | The payslip's employee record (`self.employee_id`).                                                              |
+| `contract`       | `hb.contract`          | The resolved contract passed as argument.                                                                        |
+| `worked_days`    | `WorkedDaysProxy`      | Proxy wrapping `self.worked_days_ids`. Access via `worked_days.WORK100.number_of_days`.                          |
+| `inputs`         | `InputsProxy`          | Proxy wrapping `self.input_ids`. Access via `inputs.ADVANCE.amount`.                                             |
+| `categories`     | `CategoryTotals`       | Running totals by category code. Access via `categories.BASIC`. Mutated via `accumulate(code, amount)`.          |
+| `rules`          | `dict`                 | Ordered dict of computed rule results keyed by rule code. Access via `rules.get('an_ca', 0)`.                    |
+| `_range_sum`     | `function`             | Closure: `_range_sum(start_code, end_code)` sums all rule amounts between two codes (inclusive) by insertion order.|
+| `_round_dir`     | `function`             | Closure: `_round_dir(value, direction)`. Direction `1` returns `math.ceil(value)`, direction `0` returns `math.floor(value)`. |
+| `result`         | `float`                | Placeholder initialized to `0.0`. Rules write their computed amount here.                                        |
+| `result_qty`     | `float`                | Placeholder initialized to `1.0`. Rules may override quantity.                                                   |
+| `result_rate`    | `float`                | Placeholder initialized to `0.0`. Rules may override rate.                                                       |
+| `round`          | built-in               | Python `round()`.                                                                                                |
+| `max`            | built-in               | Python `max()`.                                                                                                  |
+| `min`            | built-in               | Python `min()`.                                                                                                  |
+| `abs`            | built-in               | Python `abs()`.                                                                                                  |
+| `float`          | built-in               | Python `float()`.                                                                                                |
+| `int`            | built-in               | Python `int()`.                                                                                                  |
+
+### 2.5 Condition Evaluation -- _evaluate_rule_condition(rule, localdict)
+
+| Scenario                                           | Return Value                                         |
+|--------------------------------------------------- |----------------------------------------------------- |
+| `rule.condition_type != 'python'`                  | `True` (rule always executes)                        |
+| `rule.condition_python` is empty/falsy             | `True` (rule always executes)                        |
+| `rule.condition_type == 'python'` and code present | `bool(safe_eval(rule.condition_python, localdict))`  |
+
+This is a `@staticmethod`. It does not modify `localdict`.
+
+### 2.6 Amount Evaluation -- _evaluate_rule_amount(rule, localdict)
+
+Returns a tuple `(amount, qty, rate)`.
+
+| amount_type    | Evaluation Logic                                                                                                                                                                  |
+|--------------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code`         | Resets `result`, `result_qty`, `result_rate` in `localdict` to `0.0`, `1.0`, `0.0`. Executes `safe_eval(rule.amount_python_compute, localdict, mode='exec', nocopy=True)`. Reads back `result`, `result_qty`, `result_rate` from `localdict`. |
+| `fixed`        | Returns `(rule.amount_fixed, 1.0, 0.0)`.                                                                                                                                         |
+| `percentage`   | Evaluates `rule.amount_percentage_base` via `safe_eval` to get the base value. Computes `round(base * rule.amount_percentage / 100.0)`. Returns `(amount, 1.0, 0.0)`.            |
+| `formula`      | Collects `known` codes from `localdict['rules']`. Calls `_transpile_formula(rule.amount_formula, known)` to get a Python expression. Executes `result = <expr>` via `safe_eval`. Reads back `result`. Returns `(amount, 1.0, 0.0)`. |
+
+This is a `@staticmethod`.
+
+### 2.7 Formula Transpiler -- _transpile_formula(formula, known_codes)
+
+A `@staticmethod` that converts Excel-like formula syntax into a valid Python expression.
+
+| Input Syntax             | Output Python                           | Notes                                                            |
+|------------------------- |---------------------------------------- |----------------------------------------------------------------- |
+| `IF(cond, true, false)`  | `((true) if (cond) else (false))`       | Handles nested parentheses via manual depth tracking.            |
+| `SUM(a, b)`              | `_range_sum('a', 'b')`                 | Sums all rule amounts from code `a` to code `b` by sequence.    |
+| `ROUND(x, y)`            | `_round_dir(x, y)`                     | `y=1` means ceil, `y=0` means floor.                            |
+| Rule codes (identifiers) | `rules.get('code', 0)`                 | Only identifiers present in `known_codes` are replaced.          |
+| Python/math builtins     | Kept as-is                              | Skipped set includes: `IF`, `SUM`, `MAX`, `MIN`, `ABS`, `ROUND`, `True`, `False`, `if`, `else`, `and`, `or`, `not`, `in`, `is`, `max`, `min`, `abs`, `round`, `sum`, `float`, `int`, `true`, `false`, `_range_sum`, `_round_dir`. |
+
+Processing order: (1) replace `IF(...)`, (2) replace `SUM(...)`, (3) replace `ROUND` keyword, (4) replace rule-code identifiers.
+
+### 2.8 PIT Calculation -- _hocba_pit(taxable_income)
+
+Implements the 7-bracket Vietnam progressive Personal Income Tax (PIT) schedule.
+
+| Bracket | Taxable Income Range (VND) | Rate |
+|-------- |--------------------------- |----- |
+| 1       | 0 -- 5,000,000             | 5%   |
+| 2       | 5,000,001 -- 10,000,000    | 10%  |
+| 3       | 10,000,001 -- 18,000,000   | 15%  |
+| 4       | 18,000,001 -- 32,000,000   | 20%  |
+| 5       | 32,000,001 -- 52,000,000   | 25%  |
+| 6       | 52,000,001 -- 80,000,000   | 30%  |
+| 7       | 80,000,001+                | 35%  |
+
+Returns `0.0` if `taxable_income <= 0`. Result is rounded via `round()`. The bracket table is defined in the module-level constant `PIT_BRACKETS`.
+
+### 2.9 Dependent Count -- _get_dependent_count()
+
+Counts active dependents from `employee.x_dependent_ids` where `date_start <= today` and (`date_end` is unset OR `date_end >= today`). Returns `0` if the field is not present on the employee model.
+
+---
+
+## 3. FIELD SPECIFICATIONS
+
+### 3.1 hb.payslip -- Fields Relevant to Computation
+
+| Field                   | Type                     | Required | Default           | Description                                                  |
+|------------------------ |------------------------- |--------- |------------------ |------------------------------------------------------------- |
+| employee_id             | Many2one(hr.employee)    | Yes      | --                | The employee whose salary is being computed.                 |
+| contract_id             | Many2one(hb.contract)    | No       | --                | Resolved contract; set automatically if empty.               |
+| structure_id            | Many2one(hb.salary.structure) | No  | --                | Resolved salary structure; set during computation.           |
+| date_from               | Date                     | Yes      | --                | Start date of the pay period.                                |
+| date_to                 | Date                     | Yes      | --                | End date of the pay period.                                  |
+| state                   | Selection                | Yes      | `'draft'`         | Values: draft, verify, done, cancel.                         |
+| line_ids                | One2many(hb.payslip.line)| --       | --                | Computed payslip lines (cleared and rebuilt on each compute). |
+| worked_days_ids         | One2many(hb.payslip.worked_days) | -- | --             | Work-entry data consumed by rules.                           |
+| input_ids               | One2many(hb.payslip.input) | --     | --                | Ad-hoc inputs consumed by rules.                             |
+| gross_amount            | Float(16,0)              | --       | computed/stored   | Stored compute: reads `tong_thu_nhap` line amount.           |
+| net_amount              | Float(16,0)              | --       | computed/stored   | Stored compute: reads `thuc_lanh` line amount.               |
+| x_teaching_computed     | Boolean                  | --       | False             | Set to True after successful computation.                    |
+| x_compute_warnings      | Text                     | --       | --                | Newline-joined warning messages from rule errors.            |
+
+### 3.2 hb.salary.rule -- Rule Definition Fields
+
+| Field                    | Type         | Required | Default   | Description                                                           |
+|------------------------- |------------- |--------- |---------- |---------------------------------------------------------------------- |
+| name                     | Char         | Yes      | --        | Human-readable rule name.                                             |
+| code                     | Char         | Yes      | --        | Unique slug code used as key in `rules` dict.                         |
+| sequence                 | Integer      | Yes      | 10        | Execution order. Lower runs first.                                    |
+| structure_id             | Many2one     | Yes      | --        | Parent salary structure.                                              |
+| category_id              | Many2one     | Yes      | --        | Salary rule category for grouping and `categories` accumulator.       |
+| active                   | Boolean      | --       | True      | Inactive rules are excluded from computation.                         |
+| amount_type              | Selection    | Yes      | `'fixed'` | One of: `fixed`, `percentage`, `formula`, `code`.                     |
+| amount_python_compute    | Text         | No       | --        | Python code for `code` type. Must assign to `result`.                 |
+| amount_formula           | Text         | No       | --        | Excel-like formula for `formula` type. Transpiled by `_transpile_formula`. |
+| amount_fixed             | Float(16,0)  | No       | --        | Fixed monetary amount for `fixed` type.                               |
+| amount_percentage        | Float(8,4)   | No       | --        | Percentage value for `percentage` type.                               |
+| amount_percentage_base   | Char         | No       | --        | Python expression returning the base value for percentage computation.|
+| condition_type           | Selection    | --       | `'none'`  | Values: `none` (always true), `python` (evaluate expression).         |
+| condition_python         | Text         | No       | --        | Python boolean expression for `python` condition type.                |
+| appears_on_payslip       | Boolean      | --       | True      | If False, the rule computes but does not create a payslip line.       |
+
+---
+
+## 4. SUPPORTING MODELS AND PROXY CLASSES
+
+### 4.1 hb.payslip.line (ORM Model)
+
+| Field         | Type                            | Required | Default | Description                                             |
+|-------------- |-------------------------------- |--------- |-------- |-------------------------------------------------------- |
+| payslip_id    | Many2one(hb.payslip)            | Yes      | --      | Parent payslip. Cascade delete.                         |
+| rule_id       | Many2one(hb.salary.rule)        | No       | --      | Source salary rule. Set null on rule deletion.           |
+| category_id   | Many2one(hb.salary.rule.category)| No      | --      | Category from the source rule. Set null on deletion.    |
+| code          | Char                            | Yes      | --      | Rule code copied at creation time.                      |
+| name          | Char                            | Yes      | --      | Rule name copied at creation time.                      |
+| sequence      | Integer                         | --       | 10      | Display/sort order copied from the rule.                |
+| quantity      | Float(10,2)                     | --       | 1.0     | Quantity component from rule evaluation.                 |
+| rate          | Float(16,0)                     | --       | --      | Rate component from rule evaluation.                    |
+| amount        | Float(16,0)                     | --       | --      | `round(amount)` -- the primary computed monetary value. |
+
+**Order**: `sequence, id`.
+
+### 4.2 hb.payslip.worked_days (ORM Model)
+
+| Field           | Type                 | Required | Default | Description                                 |
+|---------------- |--------------------- |--------- |-------- |-------------------------------------------- |
+| payslip_id      | Many2one(hb.payslip) | Yes      | --      | Parent payslip. Cascade delete.             |
+| name            | Char                 | Yes      | --      | Descriptive label (e.g., "Normal Working Days"). |
+| code            | Char                 | Yes      | --      | Lookup code (e.g., `WORK100`).              |
+| sequence        | Integer              | --       | 10      | Display order.                              |
+| number_of_days  | Float(8,2)           | --       | --      | Number of worked days in the period.        |
+| number_of_hours | Float(8,2)           | --       | --      | Number of worked hours in the period.       |
+
+**Order**: `sequence, id`.
+
+### 4.3 hb.payslip.input (ORM Model)
+
+| Field        | Type                 | Required | Default | Description                                       |
+|------------- |--------------------- |--------- |-------- |-------------------------------------------------- |
+| payslip_id   | Many2one(hb.payslip) | Yes      | --      | Parent payslip. Cascade delete.                   |
+| name         | Char                 | Yes      | --      | Descriptive label (e.g., "Advance Payment").      |
+| code         | Char                 | Yes      | --      | Lookup code (e.g., `ADVANCE`, `XANG_XE`).         |
+| sequence     | Integer              | --       | 10      | Display order.                                    |
+| amount       | Float(16,0)          | --       | --      | Monetary value of the input.                      |
+
+**Order**: `sequence, id`.
+
+### 4.4 _EmptyRecord (Python Class -- Module Level)
+
+| Aspect        | Detail                                                                                       |
+|-------------- |--------------------------------------------------------------------------------------------- |
+| Type          | Plain Python class (not ORM model)                                                           |
+| Purpose       | Fallback object returned by `WorkedDaysProxy` and `InputsProxy` when a code is not found.    |
+| Attributes    | `number_of_days = 0.0`, `number_of_hours = 0.0`, `amount = 0.0`                             |
+| Boolean       | `__bool__` returns `False`. Allows `if inputs.ADVANCE:` guard patterns in rule code.         |
+| Instantiation | Created on-the-fly via `_EmptyRecord()` inside proxy `__getattr__`.                          |
+
+### 4.5 WorkedDaysProxy (Python Class -- Module Level)
+
+| Aspect          | Detail                                                                                                          |
+|---------------- |---------------------------------------------------------------------------------------------------------------- |
+| Type            | Plain Python class (not ORM model)                                                                              |
+| Constructor     | `WorkedDaysProxy(records)` -- takes `hb.payslip.worked_days` recordset, builds internal `_data` dict keyed by `code`. |
+| Attribute access| `__getattr__(code)` returns the `hb.payslip.worked_days` record matching `code`, or `_EmptyRecord()` if missing.|
+| Membership test | `__contains__(code)` returns `True` if `code` exists in `_data`.                                               |
+| Usage in rules  | `worked_days.WORK100.number_of_days` returns the number of worked days for code `WORK100`.                      |
+
+### 4.6 InputsProxy (Python Class -- Module Level)
+
+| Aspect          | Detail                                                                                                           |
+|---------------- |----------------------------------------------------------------------------------------------------------------- |
+| Type            | Plain Python class (not ORM model)                                                                               |
+| Constructor     | `InputsProxy(records)` -- takes `hb.payslip.input` recordset, builds internal `_data` dict keyed by `code`.      |
+| Attribute access| `__getattr__(code)` returns the `hb.payslip.input` record matching `code`, or `_EmptyRecord()` if missing.       |
+| Membership test | `__contains__(code)` returns `True` if `code` exists in `_data`.                                                |
+| Usage in rules  | `inputs.ADVANCE.amount` returns the amount for input code `ADVANCE`. `inputs.XANG_XE.amount` for fuel allowance. |
+
+### 4.7 CategoryTotals (Python Class -- Module Level)
+
+| Aspect          | Detail                                                                                                       |
+|---------------- |------------------------------------------------------------------------------------------------------------- |
+| Type            | Plain Python class (not ORM model)                                                                           |
+| Constructor     | `CategoryTotals()` -- initializes empty `_totals` dict.                                                      |
+| accumulate()    | `accumulate(code, amount)` adds `amount` to the running total for category `code`.                           |
+| Attribute access| `__getattr__(code)` returns the current total for category `code`, or `0.0` if not yet accumulated.          |
+| Usage in rules  | `categories.phu_cap` returns sum of all rule amounts in category `phu_cap`. Called after each rule evaluation.|
+
+---
+
+## 5. BUSINESS RULES
+
+| ID         | Rule                                                                                                                                                                  |
+|----------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BR-PAY-030 | The system must reject computation if the payslip state is not `draft` or `verify`. `_ensure_draft_state()` raises `UserError` for states `done` and `cancel`.        |
+| BR-PAY-031 | The system must resolve exactly one active contract (`state = 'open'`) overlapping the payslip date range `[date_from, date_to]`. `_resolve_contract()` raises `ValidationError` if none is found. |
+| BR-PAY-032 | Structure resolution follows a strict priority: (1) explicit `payslip.structure_id`, (2) `contract.x_structure_id`, (3) auto-detect from `employee.x_work_form` (`'online'` maps to `STRUCT_ONLINE`, all others map to `STRUCT_OFFLINE`). `_resolve_structure()` raises `ValidationError` if no structure is resolved. |
+| BR-PAY-033 | All existing payslip lines (`line_ids`) must be deleted (`unlink()`) before recomputation. The engine always produces a fresh, complete set of lines.                  |
+| BR-PAY-034 | Salary rules are evaluated strictly in ascending `sequence` order. A rule may reference any previously computed rule's result via `rules.get('code', 0)` or the `categories` accumulator. Forward references are not supported. |
+| BR-PAY-035 | A rule with `condition_type = 'none'` or empty `condition_python` always evaluates. A rule with `condition_type = 'python'` evaluates only if `safe_eval(condition_python, localdict)` returns a truthy value. |
+| BR-PAY-036 | The four amount computation modes must behave as follows: (a) `code` -- executes `amount_python_compute` via `safe_eval` in `exec` mode; reads `result`, `result_qty`, `result_rate` from the namespace. (b) `fixed` -- returns `amount_fixed` directly. (c) `percentage` -- evaluates `amount_percentage_base` to get a base, multiplies by `amount_percentage / 100`, rounds the result. (d) `formula` -- transpiles via `_transpile_formula()` then evaluates the resulting Python expression. |
+| BR-PAY-037 | If a rule evaluation raises any exception, the engine must not abort. It logs a warning, appends a user-visible message to `x_compute_warnings`, and defaults the failed rule to `(amount=0.0, qty=1.0, rate=0.0)`. Subsequent rules continue to execute. |
+| BR-PAY-038 | A payslip line is created only when `rule.appears_on_payslip` is `True`. Rules with `appears_on_payslip = False` still compute and store their result in `localdict['rules']` and `categories`, but produce no visible line. |
+| BR-PAY-039 | The `_hocba_pit(taxable_income)` method must implement the 7-bracket Vietnam progressive PIT table exactly as defined in `PIT_BRACKETS`. The result must be rounded to the nearest integer. If `taxable_income <= 0`, the method returns `0.0`. |
+
+---
+
+## 6. SEED DATA -- SALARY RULES
+
+### 6.1 Salary Rule Categories
+
+| XML ID            | Code              | Name            | Sequence |
+|------------------ |------------------ |---------------- |--------- |
+| rule_categ_alw    | phu_cap           | Phu cap         | 10       |
+| rule_categ_bonus  | thuong            | Thuong          | 20       |
+| rule_categ_gross  | tong_thu_nhap     | Tong thu nhap   | 30       |
+| rule_categ_deduct | giam_tru          | Giam tru        | 40       |
+| rule_categ_ded    | khau_tru_nv       | BH nhan vien    | 50       |
+| rule_categ_tax    | thue_tncn         | Thue TNCN       | 60       |
+| rule_categ_net    | thuc_lanh         | Thuc lanh       | 70       |
+| rule_categ_comp   | bh_phan_cong_ty   | BH phan cong ty | 80       |
+
+### 6.2 STRUCT_OFFLINE Rules (19 active rules)
+
+| Seq | Code            | Name                    | amount_type | Category        | Computation Summary                                                              |
+|---- |---------------- |------------------------ |------------ |---------------- |--------------------------------------------------------------------------------- |
+| 10  | an_ca           | An ca                   | code        | phu_cap         | `round(50000 * NCTT)` where NCTT = `worked_days.WORK100.number_of_days`          |
+| 11  | xang_xe         | Xang xe                 | code        | phu_cap         | `inputs.XANG_XE.amount` or `contract.x_pc_fuel`                                 |
+| 12  | dien_thoai      | Dien thoai              | code        | phu_cap         | `inputs.DIEN_THOAI.amount` or `contract.x_sp_phone`                             |
+| 13  | thuong_khac     | Thuong khac             | code        | thuong          | `inputs.THUONG_KHAC.amount or 0.0`                                               |
+| 14  | ho_tro_nuoi_con | Ho tro nuoi con nho     | code        | phu_cap         | `inputs.HO_TRO_NUOI_CON.amount or 0.0`                                          |
+| 20  | tong_thu_nhap   | Tong thu nhap           | code        | tong_thu_nhap   | `round((an_ca + xang_xe + dien_thoai + wage) / 25 * NCTT)`                      |
+| 21  | tn_mien_thue    | Thu nhap mien thue TNCN | code        | tong_thu_nhap   | `inputs.TN_MIEN_THUE.amount` or default `730000`                                |
+| 22  | tn_truoc_thue   | Tong TN truoc thue      | code        | tong_thu_nhap   | `tong_thu_nhap - tn_mien_thue`                                                  |
+| 30  | npt             | NPT                     | code        | giam_tru        | `inputs.NPT.amount` or `contract.x_dependent_count`                             |
+| 31  | giam_tru        | So tien giam tru        | code        | giam_tru        | `15,500,000 + int(npt) * 6,200,000`                                             |
+| 40  | bhxh_8_nv       | BHXH (8%)               | code        | khau_tru_nv     | `round(wage * 0.08)`                                                             |
+| 41  | bhyt_1_5_nv     | BHYT (1.5%)             | code        | khau_tru_nv     | `round(wage * 0.015)`                                                            |
+| 42  | bhtn_1_nv       | BHTN (1%)               | code        | khau_tru_nv     | `round(wage * 0.01)`                                                             |
+| 50  | tn_tinh_thue    | Tong TN tinh thue       | code        | thue_tncn       | `max(0, tn_truoc_thue - giam_tru - bhxh_8_nv - bhyt_1_5_nv - bhtn_1_nv)`       |
+| 60  | thue_tncn       | Thue TNCN               | code        | thue_tncn       | 5-bracket progressive PIT on `tn_tinh_thue`                                     |
+| 70  | thuc_lanh       | Tong luong thuc linh    | code        | thuc_lanh       | `round(tong_thu_nhap - bhxh_8_nv - bhyt_1_5_nv - bhtn_1_nv - thue_tncn)`       |
+| 80  | bhxh_17_5_ct    | BHXH (17.5%) CT         | code        | bh_phan_cong_ty | `round(wage * 0.175)` -- company portion                                        |
+| 81  | bhyt_3_ct       | BHYT (3%) CT            | code        | bh_phan_cong_ty | `round(wage * 0.03)` -- company portion                                         |
+| 82  | bhtn_1_ct       | BHTN (1%) CT            | code        | bh_phan_cong_ty | `round(wage * 0.01)` -- company portion                                         |
+
+### 6.3 STRUCT_ONLINE Rules (5 active rules)
+
+| Seq | Code             | Name                | amount_type | Category        | Computation Summary                                          |
+|---- |----------------- |-------------------- |------------ |---------------- |------------------------------------------------------------- |
+| 10  | luong            | Luong               | code        | phu_cap         | `inputs.WAGE_ONLINE.amount or contract.wage`                 |
+| 40  | thuong           | Thuong              | code        | thuong          | `inputs.BONUS_OTHER.amount or 0.0`                           |
+| 50  | tong_thu_nhap    | TONG THU NHAP       | code        | tong_thu_nhap   | `categories.phu_cap + categories.thuong`                     |
+| 90  | tam_ung_tru_khac | Tam ung, tru khac   | code        | khau_tru_nv     | `-(inputs.ADVANCE.amount or 0.0)`                            |
+| 99  | thuc_lanh        | THUC LINH           | code        | thuc_lanh       | `categories.tong_thu_nhap + categories.khau_tru_nv`          |
+
+---
+
+*End of FS-PAY-004 v1.0*

@@ -620,6 +620,10 @@ class HbPayslip(models.Model):
     x_email_sent = fields.Boolean(string='Đã gửi mail', default=False)
     x_email_sent_date = fields.Datetime(string='Ngày gửi mail')
     x_confirmed_date = fields.Datetime(string='Ngày xác nhận')
+    x_confirm_deadline = fields.Datetime(
+        string='Hạn xác nhận', copy=False,
+        help='Thời hạn nhân viên phản hồi. Quá hạn → hệ thống tự động xác nhận.',
+    )
 
     # ── Aggregated amounts ───────────────────────────────────────────────────
     gross_amount = fields.Float(
@@ -1336,6 +1340,48 @@ class HbPayslip(models.Model):
             ))
 
     # ═════════════════════════════════════════════════════════════════════════
+    # CRON — auto-confirm expired payslips
+    # ═════════════════════════════════════════════════════════════════════════
+    @api.model
+    def _cron_auto_confirm_expired(self):
+        """Cron job: auto-confirm payslips whose deadline has passed.
+
+        Business rule: if an employee does not respond within the
+        confirmation period, silence = acceptance.  HR can then close
+        the batch without being blocked by pending confirmations.
+        """
+        now = fields.Datetime.now()
+        expired = self.sudo().search([
+            ('x_employee_confirm', '=', 'pending'),
+            ('x_confirm_deadline', '<=', now),
+            ('x_confirm_deadline', '!=', False),
+            ('x_email_sent', '=', True),
+            ('state', 'in', ('draft', 'verify')),
+        ])
+        if not expired:
+            return
+
+        _logger.info(
+            'Payroll auto-confirm cron: %d payslip(s) past deadline.',
+            len(expired),
+        )
+        for slip in expired:
+            slip.write({
+                'x_employee_confirm': 'confirmed',
+                'x_confirmed_date': now,
+            })
+            slip.message_post(
+                body=_(
+                    'Hệ thống tự động xác nhận phiếu lương '
+                    '(nhân viên <b>%(name)s</b> không phản hồi trong thời hạn).',
+                    name=slip.employee_id.name,
+                ),
+                message_type='comment',
+                subtype_xmlid='mail.mt_note',
+            )
+        _logger.info('Payroll auto-confirm cron done: %d confirmed.', len(expired))
+
+    # ═════════════════════════════════════════════════════════════════════════
     # EMAIL — send payslip to employee
     # ═════════════════════════════════════════════════════════════════════════
     def action_send_payslip_mail(self):
@@ -1364,7 +1410,15 @@ class HbPayslip(models.Model):
                 'gross':         f'{slip.gross_amount:,.0f}',
                 'net':           f'{slip.net_amount:,.0f}',
                 'view_url':      view_url,
+                'deadline':      '',  # populated below
             }
+
+            # Calculate confirm deadline from config — BEFORE rendering
+            confirm_days = int(
+                ICP.get_param('hocba_payroll.confirm_period_days', '3')
+            )
+            deadline = fields.Datetime.now() + timedelta(days=confirm_days)
+            tpl_vars['deadline'] = deadline.strftime('%d/%m/%Y %H:%M')
 
             subject   = self._render_mail_tpl(
                 subject_tpl or 'Bảng lương tháng {month}/{year} — {employee_name}',
@@ -1385,8 +1439,9 @@ class HbPayslip(models.Model):
             mail.send()
 
             slip.write({
-                'x_email_sent':      True,
-                'x_email_sent_date': fields.Datetime.now(),
+                'x_email_sent':         True,
+                'x_email_sent_date':    fields.Datetime.now(),
+                'x_confirm_deadline':   deadline,
             })
 
             # Log to chatter for audit trail
@@ -1425,6 +1480,10 @@ class HbPayslip(models.Model):
             '</tr>'
             '</table>'
             '<p>Vui lòng nhấn nút bên dưới để xem chi tiết và xác nhận:</p>'
+            '<p style="font-size:13px;color:#b45309;background:#fef3c7;'
+            'padding:10px 14px;border-radius:6px;border:1px solid #fde68a;">'
+            '⏰ <strong>Hạn xác nhận:</strong> {deadline}. '
+            'Nếu không phản hồi trước thời hạn, hệ thống sẽ tự động coi như bạn đồng ý.</p>'
             '<a href="{view_url}" '
             'style="display:inline-block;padding:12px 24px;background:#2563eb;'
             'color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">'
@@ -1458,6 +1517,7 @@ class HbPayslip(models.Model):
             'employee_confirm': self.x_employee_confirm,
             'employee_feedback': self.x_employee_feedback or '',
             'email_sent':       self.x_email_sent,
+            'confirm_deadline': str(self.x_confirm_deadline) if self.x_confirm_deadline else None,
             'worked_days': [{
                 'code':            wd.code,
                 'name':            wd.name,
