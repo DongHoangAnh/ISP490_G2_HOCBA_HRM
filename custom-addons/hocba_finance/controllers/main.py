@@ -43,7 +43,9 @@ def _voucher_json(v, is_finance):
         'departmentId': v.department_id.id or None,
         'departmentName': v.department_id.name or None,
         'partnerName': v.partner_name or '',
+        'partnerAddress': v.partner_address or '',
         'memo': v.memo or '',
+        'attachmentCount': v.attachment_count or 0,
         'source': v.source,
         'state': v.state,
         'canApprove': is_finance and v.state == 'draft',
@@ -84,6 +86,11 @@ class FinanceSpaController(http.Controller):
         return (user.has_group('hocba_finance.group_finance_user'),
                 user.has_group('hocba_finance.group_finance_manager'))
 
+    def _check_finance(self):
+        """Chặn non-finance user truy cập CRUD config."""
+        if not request.env.user.has_group('hocba_finance.group_finance_user'):
+            raise AccessError('Chỉ Kế toán / Ban giám đốc được cấu hình.')
+
     def _err(self, ex, code, status):
         request.env.cr.rollback()
         return request.make_json_response(
@@ -98,15 +105,25 @@ class FinanceSpaController(http.Controller):
         funds = env['hocba.fund'].sudo().search([('active', '=', True)])
         cats = env['hocba.fin.category'].sudo().search([('active', '=', True)])
         depts = env['hr.department'].sudo().search([])
+        company = request.env.company
         return request.make_json_response({
             'isFinance': is_fin,
             'isFinanceManager': is_mgr,
+            'company': {
+                'name': company.name or '',
+                'address': ' '.join(filter(None, [
+                    company.street, company.street2, company.city,
+                ])) or '',
+                'phone': company.phone or '',
+                'taxId': company.vat or '',
+            },
             'funds': [{
                 'id': f.id, 'name': f.name, 'code': f.code,
                 'departmentId': f.department_id.id or None,
                 'departmentName': f.department_id.name or None,
                 'fundType': f.fund_type,
                 'currentBalance': f.current_balance,
+                'openingBalance': f.opening_balance,
             } for f in funds],
             'categories': {
                 'income': [{'id': c.id, 'name': c.name, 'code': c.code}
@@ -153,7 +170,9 @@ class FinanceSpaController(http.Controller):
             'fund_id': body.get('fundId'),
             'category_id': body.get('categoryId'),
             'partner_name': body.get('partnerName') or False,
+            'partner_address': body.get('partnerAddress') or False,
             'memo': body.get('memo') or False,
+            'attachment_count': body.get('attachmentCount') or 0,
             'source': 'manual',
         }
         try:
@@ -231,3 +250,155 @@ class FinanceSpaController(http.Controller):
             'funds': [{'id': f.id, 'name': f.name,
                        'balance': f.current_balance} for f in funds],
         })
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CRUD Quỹ (Fund) — chỉ Kế toán / BGĐ
+    # ══════════════════════════════════════════════════════════════════════
+
+    @http.route('/hocba-hrm/api/finance/fund', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_fund_create(self, **kw):
+        try:
+            self._check_finance()
+            body = request.get_json_data()
+            fund = request.env['hocba.fund'].create({
+                'name': body.get('name', ''),
+                'code': body.get('code', ''),
+                'fund_type': body.get('fundType', 'cash'),
+                'department_id': body.get('departmentId') or False,
+                'opening_balance': body.get('openingBalance', 0),
+            })
+            return request.make_json_response(self._fund_json(fund))
+        except AccessError as ex:
+            return self._err(ex, 'forbidden', 403)
+        except (ValidationError, UserError) as ex:
+            return self._err(ex, 'rejected', 400)
+
+    @http.route('/hocba-hrm/api/finance/fund/<int:fid>', auth='user',
+                type='http', methods=['PUT'], csrf=False)
+    def api_fund_update(self, fid, **kw):
+        try:
+            self._check_finance()
+            body = request.get_json_data()
+            fund = request.env['hocba.fund'].browse(fid)
+            if not fund.exists():
+                return request.make_json_response(
+                    {'error': 'not_found'}, status=404)
+            vals = {}
+            if 'name' in body:
+                vals['name'] = body['name']
+            if 'code' in body:
+                vals['code'] = body['code']
+            if 'fundType' in body:
+                vals['fund_type'] = body['fundType']
+            if 'departmentId' in body:
+                vals['department_id'] = body['departmentId'] or False
+            if 'openingBalance' in body:
+                vals['opening_balance'] = body['openingBalance']
+            if vals:
+                fund.write(vals)
+            return request.make_json_response(self._fund_json(fund))
+        except AccessError as ex:
+            return self._err(ex, 'forbidden', 403)
+        except (ValidationError, UserError) as ex:
+            return self._err(ex, 'rejected', 400)
+
+    @http.route('/hocba-hrm/api/finance/fund/<int:fid>', auth='user',
+                type='http', methods=['DELETE'], csrf=False)
+    def api_fund_delete(self, fid, **kw):
+        try:
+            self._check_finance()
+            fund = request.env['hocba.fund'].browse(fid)
+            if not fund.exists():
+                return request.make_json_response(
+                    {'error': 'not_found'}, status=404)
+            # Archive thay vì xóa (có phiếu liên quan thì không xóa được)
+            fund.write({'active': False})
+            return request.make_json_response({'ok': True})
+        except AccessError as ex:
+            return self._err(ex, 'forbidden', 403)
+        except (ValidationError, UserError) as ex:
+            return self._err(ex, 'rejected', 400)
+
+    def _fund_json(self, f):
+        return {
+            'id': f.id, 'name': f.name, 'code': f.code,
+            'fundType': f.fund_type,
+            'departmentId': f.department_id.id or None,
+            'departmentName': f.department_id.name or None,
+            'openingBalance': f.opening_balance,
+            'currentBalance': f.current_balance,
+        }
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CRUD Mục thu/chi (Category) — chỉ Kế toán / BGĐ
+    # ══════════════════════════════════════════════════════════════════════
+
+    @http.route('/hocba-hrm/api/finance/category', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_category_create(self, **kw):
+        try:
+            self._check_finance()
+            body = request.get_json_data()
+            cat = request.env['hocba.fin.category'].create({
+                'name': body.get('name', ''),
+                'code': body.get('code', ''),
+                'category_type': body.get('categoryType', 'income'),
+                'parent_id': body.get('parentId') or False,
+            })
+            return request.make_json_response(self._cat_json(cat))
+        except AccessError as ex:
+            return self._err(ex, 'forbidden', 403)
+        except (ValidationError, UserError) as ex:
+            return self._err(ex, 'rejected', 400)
+
+    @http.route('/hocba-hrm/api/finance/category/<int:cid>', auth='user',
+                type='http', methods=['PUT'], csrf=False)
+    def api_category_update(self, cid, **kw):
+        try:
+            self._check_finance()
+            body = request.get_json_data()
+            cat = request.env['hocba.fin.category'].browse(cid)
+            if not cat.exists():
+                return request.make_json_response(
+                    {'error': 'not_found'}, status=404)
+            vals = {}
+            if 'name' in body:
+                vals['name'] = body['name']
+            if 'code' in body:
+                vals['code'] = body['code']
+            if 'categoryType' in body:
+                vals['category_type'] = body['categoryType']
+            if 'parentId' in body:
+                vals['parent_id'] = body['parentId'] or False
+            if vals:
+                cat.write(vals)
+            return request.make_json_response(self._cat_json(cat))
+        except AccessError as ex:
+            return self._err(ex, 'forbidden', 403)
+        except (ValidationError, UserError) as ex:
+            return self._err(ex, 'rejected', 400)
+
+    @http.route('/hocba-hrm/api/finance/category/<int:cid>', auth='user',
+                type='http', methods=['DELETE'], csrf=False)
+    def api_category_delete(self, cid, **kw):
+        try:
+            self._check_finance()
+            cat = request.env['hocba.fin.category'].browse(cid)
+            if not cat.exists():
+                return request.make_json_response(
+                    {'error': 'not_found'}, status=404)
+            cat.write({'active': False})
+            return request.make_json_response({'ok': True})
+        except AccessError as ex:
+            return self._err(ex, 'forbidden', 403)
+        except (ValidationError, UserError) as ex:
+            return self._err(ex, 'rejected', 400)
+
+    def _cat_json(self, c):
+        return {
+            'id': c.id, 'name': c.name, 'code': c.code,
+            'categoryType': c.category_type,
+            'parentId': c.parent_id.id or None,
+            'parentName': c.parent_id.name or None,
+        }

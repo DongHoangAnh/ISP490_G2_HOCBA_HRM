@@ -1,0 +1,18 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ONLINE stack — DB Neon cloud. Project name: hocba_onl
+#   → Odoo: http://localhost:8070
+#   → Volumes: hocba_onl_odoo_data (TÁCH BIỆT hoàn toàn với local)
+#
+# Cách build + chạy (từ thư mục gốc dự án):
+#   docker compose -f docker-compose.yml -f docker-compose.onl.yml up -d --build
+# ═══════════════════════════════════════════════════════════════════════
+
+name: hocba_onl          # <-- project name riêng → volumes KHÔNG bị trộn với local
+
+services:
+  odoo:
+    ports:
+      - "8070:8069"      # host 8070 → http://localhost:8070
+
+# Không cần khai báo lại volume ở đây —
+# Docker tự tạo hocba_onl_odoo_data nhờ name: hocba_onl

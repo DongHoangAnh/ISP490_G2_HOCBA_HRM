@@ -3,8 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8069:8069"
+    # Ports được định nghĩa trong override files:
+    #   docker-compose.local.yml → 8069:8069 (http://localhost:8069)
+    #   docker-compose.onl.yml  → 8070:8069 (http://localhost:8070)
     environment:
       - HOST=${DB_HOST}
       - PORT=${DB_PORT:-5432}
@@ -29,6 +30,7 @@ services:
       bash -c "python3 /fix_stale_assets.py; exec odoo
       --database=${DB_NAME:-neondb}
       --addons-path=/mnt/extra-addons
+      --update=hocba_finance
       --dev=xml"
 
 volumes:

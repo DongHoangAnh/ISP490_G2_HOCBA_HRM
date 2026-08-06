@@ -55,3 +55,30 @@ export async function hbUpload(url, file, field = 'file') {
   if (!res.ok) throw new ApiError(res.status, await safeCode(res));
   return res.json();
 }
+
+export async function hbPut(url, payload) {
+  const res = await fetch(url, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload ?? {}),
+  });
+  if (!res.ok) {
+    const b = await errBody(res);
+    throw new ApiError(res.status, b.error, b.message);
+  }
+  return res.json();
+}
+
+export async function hbDelete(url) {
+  const res = await fetch(url, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    const b = await errBody(res);
+    throw new ApiError(res.status, b.error, b.message);
+  }
+  return res.json();
+}
+
