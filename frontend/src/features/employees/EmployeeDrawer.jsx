@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
+import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
 import { fetchEmployeeAllowances, saveEmployeeAllowance, deleteEmployeeAllowance } from '../../api/payroll';
 import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
