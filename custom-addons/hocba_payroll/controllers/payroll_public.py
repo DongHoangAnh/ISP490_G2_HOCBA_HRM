@@ -21,26 +21,30 @@ class PayrollPublicController(http.Controller):
         return slip if slip.exists() else None
 
     @http.route('/payslip/view/<string:token>', type='http',
-                auth='public', methods=['GET'], csrf=False)
+                auth='user', methods=['GET'], csrf=False)
     def view_payslip(self, token, **kw):
         slip = self._get_payslip_by_token(token)
         if not slip:
             return request.render('hocba_payroll.payslip_public_not_found')
 
-        lines = slip.line_ids.sorted('sequence')
-        month = slip.date_from.strftime('%m') if slip.date_from else ''
-        year = slip.date_from.strftime('%Y') if slip.date_from else ''
+        user = request.env.user
+        user_email = (user.partner_id.email or user.login or '').strip().lower()
+        emp_email = (slip.employee_id.work_email or '').strip().lower()
 
-        return request.render('hocba_payroll.payslip_public_view', {
-            'slip': slip,
-            'employee': slip.employee_id,
-            'lines': lines,
-            'month': month,
-            'year': year,
-            'gross': slip.gross_amount,
-            'net': slip.net_amount,
-            'token': token,
-        })
+        # Strict matching: currently logged-in user MUST be the payslip employee
+        is_owner = (slip.employee_id.user_id.id == user.id) or (emp_email and user_email == emp_email)
+
+        if not is_owner:
+            return request.render('hocba_payroll.payslip_unauthorized', {
+                'employee_name': slip.employee_id.name,
+                'employee_email': slip.employee_id.work_email or 'Chưa cập nhật',
+                'user_name': user.name or user.login,
+                'user_email': user_email,
+                'token': token,
+            })
+
+        # Authorized owner! Redirect to the real SPA app (http://localhost:8069/hocba-hrm)
+        return request.redirect(f'/hocba-hrm?payslip_id={slip.id}')
 
     @http.route('/payslip/view/<string:token>/confirm', type='http',
                 auth='public', methods=['POST'], csrf=False)
@@ -49,15 +53,16 @@ class PayrollPublicController(http.Controller):
         if not slip:
             return Response('Payslip not found.', status=404)
 
-        if slip.x_employee_confirm == 'confirmed':
-            return request.redirect(f'/payslip/view/{token}?msg=already_actioned')
+        now = fields.Datetime.now()
+        if slip.x_confirm_deadline and now > slip.x_confirm_deadline:
+            return request.redirect(f'/payslip/view/{token}?msg=expired')
 
         slip.sudo().write({
             'x_employee_confirm': 'confirmed',
-            'x_confirmed_date': fields.Datetime.now(),
+            'x_confirmed_date': now,
         })
         slip.sudo().message_post(
-            body=_('Nhân viên <b>%(name)s</b> đã <b>xác nhận</b> phiếu lương.', name=slip.employee_id.name),
+            body=_('Nhân viên <b>%(name)s</b> đã <b>xác nhận (đồng ý)</b> phiếu lương.', name=slip.employee_id.name),
             message_type='comment',
             subtype_xmlid='mail.mt_note',
         )
@@ -70,8 +75,9 @@ class PayrollPublicController(http.Controller):
         if not slip:
             return Response('Payslip not found.', status=404)
 
-        if slip.x_employee_confirm == 'confirmed':
-            return request.redirect(f'/payslip/view/{token}?msg=already_actioned')
+        now = fields.Datetime.now()
+        if slip.x_confirm_deadline and now > slip.x_confirm_deadline:
+            return request.redirect(f'/payslip/view/{token}?msg=expired')
 
         feedback = kw.get('feedback', '').strip()
         if not feedback:
@@ -80,11 +86,11 @@ class PayrollPublicController(http.Controller):
         slip.sudo().write({
             'x_employee_confirm': 'rejected',
             'x_employee_feedback': feedback,
-            'x_confirmed_date': fields.Datetime.now(),
+            'x_confirmed_date': now,
         })
         slip.sudo().message_post(
             body=_(
-                'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. Lý do: %(fb)s',
+                'Nhân viên <b>%(name)s</b> đã gửi <b>phản hồi / khiếu nại</b> phiếu lương. Lý do: %(fb)s',
                 name=slip.employee_id.name, fb=feedback,
             ),
             message_type='comment',

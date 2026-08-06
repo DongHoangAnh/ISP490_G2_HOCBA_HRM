@@ -269,11 +269,16 @@ class PayrollAPI(http.Controller):
                 lambda s: s.x_employee_confirm != 'confirmed'
             )
             if not_confirmed:
-                names = ', '.join(not_confirmed.mapped('employee_id.name')[:5])
-                remain = len(not_confirmed) - 5
-                msg = f'Còn {len(not_confirmed)} nhân viên chưa xác nhận: {names}'
-                if remain > 0:
-                    msg += f' và {remain} người khác'
+                rejected_slips = not_confirmed.filtered(lambda s: s.x_employee_confirm == 'rejected')
+                if rejected_slips:
+                    rej_names = ', '.join(rejected_slips.mapped('employee_id.name')[:5])
+                    msg = f'Không thể chốt sổ đóng kỳ lương vì có {len(rejected_slips)} nhân viên đang khiếu nại chưa giải quyết ({rej_names}). Vui lòng kiểm tra và xử lý khiếu nại trước khi lưu lịch sử.'
+                else:
+                    names = ', '.join(not_confirmed.mapped('employee_id.name')[:5])
+                    remain = len(not_confirmed) - 5
+                    msg = f'Còn {len(not_confirmed)} nhân viên chưa xác nhận hoặc chưa gửi mail: {names}'
+                    if remain > 0:
+                        msg += f' và {remain} người khác'
                 return _error_response(msg)
 
             # Close all related batches → payslips move to 'done', batch to 'close'
@@ -373,10 +378,11 @@ class PayrollAPI(http.Controller):
                 Slip.create(slip_vals_list)  # 1 DB trip duy nhất
             created = len(slip_vals_list)
 
-            # 3) Compute all draft/verify payslips in the batch
+            # 3) Compute all draft/verify payslips in the batch (skipping already confirmed slips)
             to_compute = Slip.search([
                 ('payslip_run_id', '=', batch.id),
                 ('state', 'in', ('draft', 'verify')),
+                '|', ('x_employee_confirm', '=', False), ('x_employee_confirm', '!=', 'confirmed'),
             ])
 
             # Pre-fetch rules 1 lần duy nhất — tất cả NV dùng chung bộ rule
@@ -392,47 +398,12 @@ class PayrollAPI(http.Controller):
 
 
 
-            # ── #2: Auto-send mail if config enabled ──
-            auto_mail = False
-            try:
-                ICP = env['ir.config_parameter'].sudo()
-                auto_mail = ICP.get_param(
-                    'hocba_payroll.auto_send_mail', 'false'
-                ) == 'true'
-            except Exception:
-                pass
-
-            mail_sent = 0
-            if auto_mail and to_compute:
-                confirm_days = int(
-                    ICP.get_param('hocba_payroll.confirm_period_days', '3')
-                )
-                from datetime import timedelta
-                deadline = fields.Datetime.now() + timedelta(days=confirm_days)
-                for slip in to_compute:
-                    try:
-                        slip.action_send_payslip_mail()
-                        # Ensure deadline is set (action_send_payslip_mail
-                        # already does this, but belt-and-suspenders)
-                        if not slip.x_confirm_deadline:
-                            slip.write({'x_confirm_deadline': deadline})
-                        mail_sent += 1
-                    except Exception as me:
-                        _logger.warning(
-                            'Auto-send mail failed for payslip %s: %s',
-                            slip.id, me,
-                        )
-
             return _success_response({
                 'batch_id': batch.id,
                 'created': created,
                 'computed': computed,
                 'errors': errors,
-                'auto_mail_sent': mail_sent,
-            }, message=(
-                f'Đã tính lương cho {computed} nhân viên.'
-                + (f' Tự động gửi {mail_sent} email.' if mail_sent else '')
-            ))
+            }, message=f'Đã tính lương xong cho {computed} nhân viên. HR chủ động bấm "Gửi mail" khi muốn phát hành phiếu lương.')
         except (ValidationError, UserError) as e:
             return _error_response(str(e))
         except Exception as e:
@@ -1753,6 +1724,69 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e), status=500)
 
     # ══════════════════════════════════════════════════════════
+    #  Send payslips mail (Backend Odoo engine + Confirmation window)
+    # ══════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/payslip/send-mail', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def send_payslip_mail(self, **kw):
+        """Send payslip emails via backend Odoo engine and update confirm deadline."""
+        try:
+            body = _get_json_body()
+            ids = body.get('payslip_ids', [])
+            if not ids:
+                return _error_response('Missing payslip_ids.')
+            slips = request.env['hb.payslip'].sudo().browse(ids)
+            now = fields.Datetime.now()
+            ICP = request.env['ir.config_parameter'].sudo()
+            confirm_days = int(
+                ICP.get_param('hocba_payroll.confirm_period_days', '3')
+            )
+            from datetime import timedelta
+            deadline = now + timedelta(days=confirm_days)
+
+            sent_count = 0
+            for slip in slips.filtered(lambda s: s.exists()):
+                vals = {
+                    'x_email_sent': True,
+                    'x_email_sent_date': now,
+                    'x_confirm_deadline': deadline,
+                }
+                if slip.x_employee_confirm == 'rejected':
+                    vals['x_employee_confirm'] = 'pending'
+                    vals['x_employee_feedback'] = False
+                slip.write(vals)
+
+                # Attempt sending via Odoo mail template if exists
+                try:
+                    if hasattr(slip, 'action_send_email'):
+                        slip.action_send_email()
+                except Exception:
+                    pass
+
+                month = slip.date_from.strftime('%m') if slip.date_from else ''
+                year = slip.date_from.strftime('%Y') if slip.date_from else ''
+                email_to = slip.employee_id.work_email or ''
+                slip.message_post(
+                    body=_(
+                        'Đã phát hành email phiếu lương tháng %(m)s/%(y)s tới <b>%(email)s</b>. '
+                        'Khung thời gian phản hồi đến %(dl)s.',
+                        m=month, y=year, email=email_to,
+                        dl=deadline.strftime('%d/%m/%Y %H:%M'),
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+                sent_count += 1
+
+            return _success_response({
+                'sent': sent_count,
+                'confirm_deadline': deadline.strftime('%Y-%m-%d %H:%M:%S'),
+            }, message=f'Đã gửi mail phát hành phiếu lương cho {sent_count} nhân viên.')
+        except Exception as e:
+            _logger.exception('send_payslip_mail error')
+            return _error_response(str(e), status=500)
+
+    # ══════════════════════════════════════════════════════════
     #  Mark payslips as sent (used by frontend EmailJS flow)
     # ══════════════════════════════════════════════════════════
     @http.route('/hocba-hrm/api/payroll/payslip/mark-sent', type='http',
@@ -1796,6 +1830,84 @@ class PayrollAPI(http.Controller):
             _logger.exception('mark_payslips_sent error')
             return _error_response(str(e), status=500)
 
+    # ══════════════════════════════════════════════════════════
+    # EMPLOYEE SELF-SERVICE PAYSLIPS (Authenticated)
+    # ══════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/my-payslips', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_my_payslips(self, **kw):
+        """Fetch payslips for the currently logged-in employee."""
+        try:
+            user = request.env.user
+            employee = request.env['hr.employee'].sudo().search([
+                '|', ('user_id', '=', user.id), ('work_email', '=ilike', user.partner_id.email or '')
+            ], limit=1)
+
+            if not employee:
+                return _success_response({'employee': None, 'payslips': []})
+
+            slips = request.env['hb.payslip'].sudo().search([
+                ('employee_id', '=', employee.id)
+            ], order='date_from desc')
+
+            now = fields.Datetime.now()
+            res = []
+            for s in slips:
+                lines = [{
+                    'id': l.id,
+                    'code': l.code,
+                    'name': l.name,
+                    'amount': l.amount,
+                    'category_code': l.category_id.code if l.category_id else (l.code or ''),
+                } for l in s.line_ids.sorted('sequence')]
+
+                worked_recs = request.env['hb.payslip.worked_days'].sudo().search([('payslip_id', '=', s.id)])
+                worked = [{
+                    'id': w.id,
+                    'code': w.code,
+                    'name': w.name,
+                    'number_of_days': w.number_of_days,
+                    'number_of_hours': w.number_of_hours,
+                    'amount': getattr(w, 'amount', 0),
+                } for w in worked_recs]
+
+                is_expired = bool(s.x_confirm_deadline and now > s.x_confirm_deadline)
+
+                res.append({
+                    'id': s.id,
+                    'number': s.number or f'#{s.id}',
+                    'month': s.date_from.strftime('%m') if s.date_from else '',
+                    'year': s.date_from.strftime('%Y') if s.date_from else '',
+                    'date_from': s.date_from.strftime('%Y-%m-%d') if s.date_from else '',
+                    'date_to': s.date_to.strftime('%Y-%m-%d') if s.date_to else '',
+                    'gross_amount': s.gross_amount,
+                    'net_amount': s.net_amount,
+                    'state': s.state,
+                    'email_sent': s.x_email_sent,
+                    'email_sent_date': s.x_email_sent_date.strftime('%Y-%m-%d %H:%M:%S') if s.x_email_sent_date else None,
+                    'confirm_deadline': s.x_confirm_deadline.strftime('%Y-%m-%d %H:%M:%S') if s.x_confirm_deadline else None,
+                    'employee_confirm': s.x_employee_confirm or 'pending',
+                    'employee_feedback': s.x_employee_feedback or '',
+                    'confirmed_date': s.x_confirmed_date.strftime('%Y-%m-%d %H:%M:%S') if s.x_confirmed_date else None,
+                    'is_expired': is_expired,
+                    'lines': lines,
+                    'worked_days': worked,
+                })
+
+            return _success_response({
+                'employee': {
+                    'id': employee.id,
+                    'name': employee.name,
+                    'code': employee.x_employee_code or '',
+                    'department': employee.department_id.name if employee.department_id else '',
+                    'job_title': employee.job_id.name if employee.job_id else '',
+                },
+                'payslips': res,
+            })
+        except Exception as e:
+            _logger.exception('get_my_payslips error')
+            return _error_response(str(e), status=500)
+
     # ═════════════════════════════════════════════════════════
     # EMPLOYEE SELF-CONFIRM (authenticated — requires login)
     # ═════════════════════════════════════════════════════════
@@ -1826,17 +1938,18 @@ class PayrollAPI(http.Controller):
                 return _error_response(
                     'Bạn không có quyền xác nhận phiếu lương này.', status=403)
 
-            if slip.x_employee_confirm == 'confirmed':
-                return _error_response('Phiếu lương đã được xác nhận rồi.')
+            now = fields.Datetime.now()
+            if slip.x_confirm_deadline and now > slip.x_confirm_deadline:
+                return _error_response('Đã hết thời hạn phản hồi phiếu lương.')
 
             if action == 'confirm':
                 slip.write({
                     'x_employee_confirm': 'confirmed',
-                    'x_confirmed_date': fields.Datetime.now(),
+                    'x_confirmed_date': now,
                 })
                 slip.message_post(
                     body=_(
-                        'Nhân viên <b>%(name)s</b> đã <b>xác nhận</b> phiếu lương.',
+                        'Nhân viên <b>%(name)s</b> đã <b>xác nhận (đồng ý)</b> phiếu lương.',
                         name=employee.name,
                     ),
                     message_type='comment',

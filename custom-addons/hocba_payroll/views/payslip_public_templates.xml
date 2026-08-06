@@ -170,16 +170,19 @@
             <div class="wrap">
                 <!-- Flash messages -->
                 <t t-if="request.params.get('msg') == 'confirmed'">
-                    <div class="msg msg-ok">&#10004; Bạn đã xác nhận phiếu lương thành công. Cảm ơn!</div>
+                    <div class="msg msg-ok">&#10004; Bạn đã xác nhận (đồng ý) phiếu lương thành công. Cảm ơn!</div>
                 </t>
                 <t t-if="request.params.get('msg') == 'rejected'">
-                    <div class="msg msg-err">&#10006; Bạn đã từ chối phiếu lương. Phản hồi đã được ghi nhận.</div>
+                    <div class="msg msg-err">&#10006; Bạn đã gửi phản hồi / khiếu nại phiếu lương. HR sẽ liên hệ kiểm tra.</div>
+                </t>
+                <t t-if="request.params.get('msg') == 'expired'">
+                    <div class="msg msg-err">&#9888; Đã hết thời hạn phản hồi phiếu lương. Hệ thống đã tự động khóa dữ liệu.</div>
                 </t>
                 <t t-if="request.params.get('msg') == 'already_actioned'">
                     <div class="msg msg-warn">&#9888; Phiếu lương này đã được xử lý trước đó.</div>
                 </t>
                 <t t-if="request.params.get('msg') == 'feedback_required'">
-                    <div class="msg msg-err">Vui lòng nhập lý do từ chối.</div>
+                    <div class="msg msg-err">Vui lòng nhập lý do từ chối / khiếu nại.</div>
                 </t>
 
                 <!-- Brand bar -->
@@ -208,11 +211,24 @@
                                     <span class="badge badge-confirmed">&#10004; Đã xác nhận</span>
                                 </t>
                                 <t t-if="slip.x_employee_confirm == 'rejected'">
-                                    <span class="badge badge-rejected">Từ chối</span>
+                                    <span class="badge badge-rejected">Từ chối / Khiếu nại</span>
                                 </t>
                             </div>
                         </div>
                     </div>
+
+                    <!-- Confirmation window banner -->
+                    <t t-if="slip.x_confirm_deadline">
+                        <div style="padding:10px 18px;background:#fef3c7;border-bottom:1px solid #fde68a;font-size:12.5px;color:#92400e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                            <span>⏰ <strong>Khung thời gian phản hồi:</strong> <t t-if="slip.x_email_sent_date">Từ <t t-esc="slip.x_email_sent_date.strftime('%d/%m/%Y')"/> </t>đến <strong><t t-esc="slip.x_confirm_deadline.strftime('%H:%M %d/%m/%Y')"/></strong></span>
+                            <t t-if="is_expired">
+                                <span style="font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 8px;border-radius:12px;">Đã hết hạn</span>
+                            </t>
+                            <t t-if="not is_expired">
+                                <span style="font-weight:700;color:#16a34a;background:#d1fae5;padding:2px 8px;border-radius:12px;">Đang mở phản hồi</span>
+                            </t>
+                        </div>
+                    </t>
 
                     <!-- Employee info grid -->
                     <div class="emp-info">
@@ -282,53 +298,61 @@
                         <span class="val"><t t-esc="'{:,.0f}'.format(net)"/> ₫</span>
                     </div>
 
-                    <!-- Action buttons — only if pending -->
-                    <t t-if="slip.x_employee_confirm == 'pending'">
+                    <!-- Current status banner if already actioned -->
+                    <t t-if="slip.x_employee_confirm == 'confirmed'">
+                        <div class="status-area" style="padding-bottom:8px;">
+                            <div class="status-box msg-ok">
+                                &#10004; <strong>Trạng thái hiện tại: Đã đồng ý</strong>
+                                <t t-if="slip.x_confirmed_date">
+                                    <span style="font-size:12px;opacity:.8;display:inline-block;margin-left:8px;">(Cập nhật lúc: <t t-esc="slip.x_confirmed_date.strftime('%H:%M %d/%m/%Y')"/>)</span>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <t t-if="slip.x_employee_confirm == 'rejected'">
+                        <div class="status-area" style="padding-bottom:8px;">
+                            <div class="status-box msg-err">
+                                &#10006; <strong>Trạng thái hiện tại: Phản hồi khiếu nại</strong>
+                                <t t-if="slip.x_employee_feedback">
+                                    <br/><span style="font-size:12px;margin-top:4px;display:block;">Lý do khiếu nại: <t t-esc="slip.x_employee_feedback"/></span>
+                                </t>
+                                <t t-if="slip.x_confirmed_date">
+                                    <span style="font-size:12px;opacity:.8;display:inline-block;margin-top:4px;">Cập nhật lúc: <t t-esc="slip.x_confirmed_date.strftime('%H:%M %d/%m/%Y')"/></span>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Action buttons — allowed while NOT expired -->
+                    <t t-if="not is_expired">
                         <div class="actions">
                             <p class="action-hint">
-                                Vui lòng kiểm tra kỹ các khoản lương bên trên, sau đó xác nhận hoặc gửi phản hồi nếu có sai sót.
+                                Bạn có thể bấm <strong>Xác nhận đồng ý</strong> hoặc <strong>Gửi phản hồi / Khiếu nại</strong> nhiều lần trong khoảng thời gian phản hồi còn hạn.
                             </p>
                             <div class="action-btns">
                                 <form t-attf-action="/payslip/view/#{token}/confirm" method="post" style="display:contents;">
-                                    <button type="submit" class="btn btn-confirm">&#10004; Xác nhận phiếu lương</button>
+                                    <button type="submit" class="btn btn-confirm">&#10004; <t t-esc="'Xác nhận đồng ý' if slip.x_employee_confirm != 'confirmed' else 'Xác nhận đồng ý lại'"/></button>
                                 </form>
-                                <button class="btn btn-reject-toggle" onclick="document.getElementById('reject-form').classList.toggle('show');this.textContent=this.textContent.includes('Từ chối')?'▲ Đóng':'&#10006; Từ chối';">
-                                    &#10006; Từ chối
+                                <button class="btn btn-reject-toggle" onclick="document.getElementById('reject-form').classList.toggle('show');this.textContent=this.textContent.includes('Phản hồi')?'▲ Đóng':'&#10006; Phản hồi khiếu nại';">
+                                    &#10006; Phản hồi khiếu nại
                                 </button>
                             </div>
                             <form id="reject-form" class="reject-form" t-attf-action="/payslip/view/#{token}/reject" method="post">
                                 <label style="font-weight:700;font-size:13px;color:#374151;display:block;margin-bottom:6px;">
-                                    Lý do từ chối <span style="color:#dc2626;">*</span>
+                                    Nội dung phản hồi / khiếu nại <span style="color:#dc2626;">*</span>
                                 </label>
-                                <textarea name="feedback" class="feedback-area" placeholder="Ví dụ: Sai số ngày công, thiếu phụ cấp..." required="required"/>
-                                <button type="submit" class="btn btn-submit-reject">Gửi phản hồi</button>
+                                <textarea name="feedback" class="feedback-area" placeholder="Ví dụ: Sai số ngày công, thiếu phụ cấp..." required="required"><t t-esc="slip.x_employee_feedback or ''"/></textarea>
+                                <button type="submit" class="btn btn-submit-reject">Gửi phản hồi khiếu nại</button>
                             </form>
                         </div>
                     </t>
 
-                    <!-- Already confirmed -->
-                    <t t-if="slip.x_employee_confirm == 'confirmed'">
+                    <!-- Expired status banner -->
+                    <t t-if="is_expired">
                         <div class="status-area">
-                            <div class="status-box msg-ok">
-                                &#10004; <strong>Đã xác nhận</strong> — Bạn đã xác nhận phiếu lương này.
-                                <t t-if="slip.x_confirmed_date">
-                                    <br/><span style="font-size:12px;opacity:.8;">Lúc: <t t-esc="slip.x_confirmed_date.strftime('%H:%M %d/%m/%Y')"/></span>
-                                </t>
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- Already rejected -->
-                    <t t-if="slip.x_employee_confirm == 'rejected'">
-                        <div class="status-area">
-                            <div class="status-box msg-err">
-                                &#10006; <strong>Đã từ chối</strong> — Phản hồi đã được ghi nhận.
-                                <t t-if="slip.x_employee_feedback">
-                                    <br/><span style="font-size:12px;margin-top:4px;display:block;">Lý do: <t t-esc="slip.x_employee_feedback"/></span>
-                                </t>
-                                <t t-if="slip.x_confirmed_date">
-                                    <br/><span style="font-size:12px;opacity:.8;">Lúc: <t t-esc="slip.x_confirmed_date.strftime('%H:%M %d/%m/%Y')"/></span>
-                                </t>
+                            <div class="status-box msg-warn">
+                                ⏰ <strong>Đã hết thời hạn phản hồi phiếu lương</strong> — Đường link phản hồi đã được đóng. Nếu nhân viên không gửi phản hồi, hệ thống coi như nhân viên mặc định đồng ý với số lương này để HR xuất file ngân hàng chi trả.
                             </div>
                         </div>
                     </t>
@@ -338,6 +362,44 @@
                     <p>&#169; Học Bá Education · Hệ thống HRM</p>
                     <p style="margin-top:4px;">Phiếu lương được tạo tự động. Mọi thắc mắc vui lòng liên hệ bộ phận Nhân sự.</p>
                 </div>
+            </div>
+        </body>
+        </html>
+    </template>
+
+    <!-- ─── Unauthorized page (Logged in as wrong account) ─── -->
+    <template id="payslip_unauthorized" name="Không có quyền xem phiếu lương">
+        <html>
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>Cảnh báo bảo mật — Học Bá HRM</title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+                .box { text-align: center; max-width: 540px; width: 100%; padding: 40px 36px; background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+                .brand { font-size: 24px; font-weight: 900; color: #b91c1c; margin-bottom: 20px; }
+                .icon { font-size: 52px; margin-bottom: 14px; }
+                .title { font-size: 18px; font-weight: 800; color: #991b1b; margin-bottom: 14px; text-transform: uppercase; letter-spacing: -.2px; }
+                .msg { color: #374151; font-size: 14px; line-height: 1.65; margin-bottom: 24px; text-align: left; background: #fef2f2; border: 1px solid #fecaca; padding: 16px 20px; border-radius: 12px; }
+                .btn { display: inline-block; padding: 13px 26px; background: #b91c1c; color: #fff; font-weight: 700; border-radius: 10px; text-decoration: none; font-size: 14px; transition: background .2s; }
+                .btn:hover { background: #991b1b; }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <div class="brand">Học Bá HRM</div>
+                <div class="icon">🔒</div>
+                <div class="title">BẠN KHÔNG CÓ QUYỀN XEM PHIẾU LƯƠNG NÀY</div>
+                <div class="msg">
+                    Để bảo vệ thông tin thu nhập cá nhân, phiếu lương này yêu cầu phải đăng nhập <strong>đúng tài khoản Email của nhân viên thụ hưởng</strong>:<br/><br/>
+                    • 👤 Phiếu lương thuộc về: <strong><t t-esc="employee_name"/></strong> (<t t-esc="employee_email"/>)<br/>
+                    • 🔑 Tài khoản bạn đang đăng nhập: <strong><t t-esc="user_name"/></strong> (<t t-esc="user_email"/>)<br/><br/>
+                    Vui lòng <strong>Đăng xuất</strong> tài khoản hiện tại và đăng nhập bằng tài khoản email chính chủ của nhân viên để xem và xác nhận phiếu lương.
+                </div>
+                <a t-attf-href="/web/session/logout?redirect=/web/login?redirect=/payslip/view/#{token}" class="btn">
+                    🔑 Đăng xuất &amp; Đăng nhập tài khoản <t t-esc="employee_name"/>
+                </a>
             </div>
         </body>
         </html>

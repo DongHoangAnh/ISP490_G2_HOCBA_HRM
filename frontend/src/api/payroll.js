@@ -94,7 +94,10 @@ export const sendPayslipMail = (payslipIds) =>
 export const markPayslipsSent = (payslipIds) =>
   p('/hocba-hrm/api/payroll/payslip/mark-sent', { payslip_ids: payslipIds });
 
-// ── Employee self-confirm (authenticated) ────────────────
+// ── Employee self-confirm & my payslips (authenticated) ──
+export const fetchMyPayslips = () =>
+  g('/hocba-hrm/api/payroll/my-payslips');
+
 export const employeeConfirmPayslip = (slipId, action, feedback) =>
   p(`/hocba-hrm/api/payroll/payslip/${slipId}/employee-confirm`, { action, feedback });
 

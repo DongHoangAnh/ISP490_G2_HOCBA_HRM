@@ -1,6 +1,5 @@
-/* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
@@ -154,12 +153,6 @@ const MS = {
 };
 
 /* ── Salary Detail — receipt-style, flex to screen ── */
-const CONFIRM_STYLE = {
-  pending:   { label: 'Chờ xác nhận', bg: '#fef3c7', color: '#92400e', icon: 'clock' },
-  confirmed: { label: 'Đã xác nhận',  bg: '#d1fae5', color: '#065f46', icon: 'checkCircle' },
-  rejected:  { label: 'Từ chối',      bg: '#fee2e2', color: '#991b1b', icon: 'xCircle' },
-};
-
 function SalaryDetail({ emp, columns, onClose, onChanged }) {
   const lastCode = columns.length > 0 ? columns[columns.length - 1].code : null;
   const NET_CODES = new Set(['thuc_lanh']);
@@ -170,7 +163,7 @@ function SalaryDetail({ emp, columns, onClose, onChanged }) {
   const [err, setErr] = useState(null);
   const [localStatus, setLocalStatus] = useState(emp.employee_confirm || 'pending');
 
-  const cs = CONFIRM_STYLE[localStatus] || CONFIRM_STYLE.pending;
+  const cs = CONFIRM_MAP[localStatus] || CONFIRM_MAP.pending;
   const canReset = emp.payslip_id && localStatus !== 'pending';
 
   const handleReset = async () => {
@@ -362,9 +355,10 @@ const CHK_W = 40;
 
 /* NV xac nhan badge styles */
 const CONFIRM_MAP = {
-  pending:   { label: 'Chờ',     bg: '#fef3c7', color: '#92400e' },
-  confirmed: { label: 'Đã XN',   bg: '#d1fae5', color: '#065f46' },
-  rejected:  { label: 'Từ chối', bg: '#fee2e2', color: '#991b1b' },
+  pending_sent:  { label: 'Đã gửi (Chờ XN)', bg: '#fef3c7', color: '#92400e' },
+  pending_unsent:{ label: 'Chưa gửi mail',   bg: '#f3f4f6', color: '#4b5563' },
+  confirmed:     { label: 'NV Đã đồng ý ✓', bg: '#dcfce7', color: '#15803d' },
+  rejected:      { label: 'NV Khiếu nại 💬', bg: '#fee2e2', color: '#991b1b' },
 };
 
 /* ── Main ── */
@@ -483,69 +477,88 @@ export default function BatchList({ search }) {
     if (checkedCount === 0 || sending) return;
     setSending(true);
     try {
-      // 1. Load EmailJS config
-      const cfg = await fetchEmailjsConfig();
-      if (!cfg.service_id || !cfg.template_id || !cfg.public_key) {
-        alert('Chưa cấu hình EmailJS.\nVào tab Cấu hình → Mẫu email → phần "Cấu hình EmailJS" để nhập Service ID, Template ID, Public Key.');
-        return;
-      }
+      let cfg = null;
+      try {
+        cfg = await fetchEmailjsConfig();
+      } catch { /* ignore fetch error */ }
 
-      // 2. Find employee rows for checked payslip IDs
-      const allEmps = data ? data.employees : [];
-      const checkedSet = new Set(checkedIds);
-      const targets = allEmps.filter((e) => e.payslip_id && checkedSet.has(e.payslip_id));
+      let emailJsSuccess = false;
 
-      const baseUrl = window.location.origin;
-      const sentIds = [];
-      const errors = [];
+      // 1. Try EmailJS if configured
+      if (cfg && cfg.service_id && cfg.template_id && cfg.public_key) {
+        const allEmps = data ? data.employees : [];
+        const checkedSet = new Set(checkedIds);
+        const targets = allEmps.filter((e) => e.payslip_id && checkedSet.has(e.payslip_id));
+        const baseUrl = window.location.origin;
+        const sentIds = [];
+        const errors = [];
 
-      for (const emp of targets) {
-        if (!emp.work_email) {
-          errors.push(`${emp.name}: không có work_email`);
-          continue;
+        for (const emp of targets) {
+          if (!emp.work_email) {
+            errors.push(`${emp.name}: không có work_email`);
+            continue;
+          }
+          const gross = emp.gross_amount ? emp.gross_amount.toLocaleString('vi-VN') : '0';
+          const net = emp.net_amount ? emp.net_amount.toLocaleString('vi-VN') : '0';
+          const viewUrl = emp.access_token
+            ? `${baseUrl}/payslip/view/${emp.access_token}`
+            : baseUrl;
+          try {
+            await emailjs.send(
+              cfg.service_id,
+              cfg.template_id,
+              {
+                to_email: emp.work_email,
+                employee_name: emp.name,
+                month: String(month).padStart(2, '0'),
+                year: String(year),
+                gross,
+                net,
+                view_url: viewUrl,
+              },
+              { publicKey: cfg.public_key },
+            );
+            sentIds.push(emp.payslip_id);
+          } catch (e) {
+            errors.push(`${emp.name}: ${e?.text || e?.message || JSON.stringify(e)}`);
+          }
         }
-        const gross = emp.gross_amount ? emp.gross_amount.toLocaleString('vi-VN') : '0';
-        const net = emp.net_amount ? emp.net_amount.toLocaleString('vi-VN') : '0';
-        const viewUrl = emp.access_token
-          ? `${baseUrl}/payslip/view/${emp.access_token}`
-          : baseUrl;
-        try {
-          await emailjs.send(
-            cfg.service_id,
-            cfg.template_id,
-            {
-              to_email: emp.work_email,
-              employee_name: emp.name,
-              month: String(month).padStart(2, '0'),
-              year: String(year),
-              gross,
-              net,
-              view_url: viewUrl,
-            },
-            { publicKey: cfg.public_key },
-          );
-          sentIds.push(emp.payslip_id);
-        } catch (e) {
-          errors.push(`${emp.name}: ${e?.text || e?.message || JSON.stringify(e)}`);
+
+        if (sentIds.length > 0) {
+          await markPayslipsSent(sentIds);
         }
-      }
 
-      // 3. Mark as sent on backend
-      if (sentIds.length > 0) {
-        await markPayslipsSent(sentIds);
-      }
+        if (errors.length === 0 && sentIds.length > 0) {
+          alert(`Đã gửi ${sentIds.length} email thành công qua EmailJS!`);
+          setChecked({});
+          load();
+          return;
+        }
 
-      const msg = `Đã gửi ${sentIds.length} email`
-        + (errors.length ? `\nLỗi (${errors.length}):\n${errors.join('\n')}` : '');
-      alert(msg);
-      setChecked({});
-      load();
+        // EmailJS failed (e.g., Template ID not found) → offer fallback to Odoo backend mail engine
+        const errDetail = errors.join('\n');
+        if (confirm(`Gửi mail qua EmailJS không thành công (${errors.length} lỗi):\n${errDetail}\n\nBạn có muốn chuyển sang phát hành mail trực tiếp qua Hệ thống Backend Odoo không?`)) {
+          await sendPayslipMail(checkedIds);
+          alert(`Đã phát hành email phiếu lương và khởi tạo thời hạn phản hồi cho ${checkedIds.length} nhân viên qua Hệ thống Backend!`);
+          setChecked({});
+          load();
+          return;
+        }
+      } else {
+        // Direct backend send if EmailJS is not configured
+        await sendPayslipMail(checkedIds);
+        alert(`Đã phát hành email phiếu lương và khởi tạo thời hạn phản hồi cho ${checkedIds.length} nhân viên!`);
+        setChecked({});
+        load();
+      }
     } catch (e) {
       alert('Lỗi gửi mail: ' + e.message);
     } finally {
       setSending(false);
     }
   };
+
+  if (err) return <ErrorState message={err} onRetry={load} />;
 
   /* ── save to history ── */
   const allConfirmed = allEmpsWithSlip.length > 0 &&
@@ -580,7 +593,47 @@ export default function BatchList({ search }) {
     }
   };
 
-  if (err) return <ErrorState message={err} onRetry={load} />;
+  /* ── single employee actions ── */
+  const handleSingleCompute = async (emp, e) => {
+    if (e) e.stopPropagation();
+    if (!emp.payslip_id || computing) return;
+    setComputing(true);
+    try {
+      await computePayslip(emp.payslip_id);
+      load();
+    } catch (err) {
+      alert('Lỗi tính lương: ' + err.message);
+    } finally {
+      setComputing(false);
+    }
+  };
+
+  const handleSingleSendMail = async (emp, e) => {
+    if (e) e.stopPropagation();
+    if (!emp.payslip_id || sending) return;
+    setSending(true);
+    try {
+      await sendPayslipMail([emp.payslip_id]);
+      alert(`Đã phát hành email phiếu lương và khởi tạo/gia hạn thời hạn phản hồi cho ${emp.name}!`);
+      load();
+    } catch (err) {
+      alert('Lỗi gửi mail: ' + err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSingleResetConfirm = async (emp, e) => {
+    if (e) e.stopPropagation();
+    if (!emp.payslip_id) return;
+    if (!confirm(`Reset trạng thái xác nhận của ${emp.name} về "Chờ xác nhận"?`)) return;
+    try {
+      await resetPayslipConfirm(emp.payslip_id);
+      load();
+    } catch (err) {
+      alert('Lỗi reset: ' + err.message);
+    }
+  };
 
   const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
@@ -710,6 +763,7 @@ export default function BatchList({ search }) {
             const pending = allEmpsWithSlip.filter((e) => e.employee_confirm === 'pending');
             const expired = pending.filter((e) => e.confirm_deadline && new Date(e.confirm_deadline) <= now);
             const confirmed = allEmpsWithSlip.filter((e) => e.employee_confirm === 'confirmed');
+            const rejected = allEmpsWithSlip.filter((e) => e.employee_confirm === 'rejected');
             if (allEmpsWithSlip.length === 0) return null;
             return (
               <>
@@ -720,6 +774,16 @@ export default function BatchList({ search }) {
                 {pending.length > 0 && (
                   <span style={{ fontSize: 11, color: '#d97706' }}>
                     ⏳ <b>{pending.length}</b> chờ
+                  </span>
+                )}
+                {rejected.length > 0 && (
+                  <span style={{
+                    fontSize: 10.5, fontWeight: 700, color: '#b91c1c',
+                    padding: '1px 7px', borderRadius: 4,
+                    background: '#fee2e2', border: '1px solid #fca5a5',
+                    cursor: 'pointer',
+                  }} onClick={() => setConfirmFilter('rejected')} title="Bấm để lọc danh sách khiếu nại">
+                    💬 {rejected.length} khiếu nại
                   </span>
                 )}
                 {expired.length > 0 && (
@@ -856,11 +920,23 @@ export default function BatchList({ search }) {
                   }}>
                     NV xác nhận
                   </th>
+                  {/* Thao tác header */}
+                  <th style={{
+                    ...P, position: 'sticky', top: 0, zIndex: 3,
+                    fontSize: 12, fontWeight: 600, color: '#6b7280',
+                    textAlign: 'center', background: '#fafbfd',
+                    borderBottom: '1px solid #e5e7eb', width: 90, minWidth: 90, maxWidth: 90,
+                  }}>
+                    Thao tác
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {emps.map((emp, idx) => {
-                  const cs = CONFIRM_MAP[emp.employee_confirm] || CONFIRM_MAP.pending;
+                  const statusKey = emp.employee_confirm === 'confirmed' ? 'confirmed'
+                    : emp.employee_confirm === 'rejected' ? 'rejected'
+                    : emp.email_sent ? 'pending_sent' : 'pending_unsent';
+                  const cs = CONFIRM_MAP[statusKey] || CONFIRM_MAP.pending_unsent;
                   const rowBg = emp.employee_confirm === 'confirmed' ? '#f0fdf4'
                     : emp.employee_confirm === 'rejected' ? '#fef2f2' : '#fff';
                   const rowHover = emp.employee_confirm === 'confirmed' ? '#dcfce7'
@@ -920,17 +996,35 @@ export default function BatchList({ search }) {
                     {/* NV xac nhan cell */}
                     <td style={{
                       ...P, textAlign: 'center', borderBottom: '1px solid #e5e7eb',
-                      width: 100, minWidth: 100, maxWidth: 100,
+                      width: 120, minWidth: 120, maxWidth: 120,
                     }}>
                       {emp.payslip_id && (
                         <span style={{
                           display: 'inline-block', padding: '3px 10px', borderRadius: 20,
-                          fontSize: 11.5, fontWeight: 600,
+                          fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
                           background: cs.bg, color: cs.color,
-                        }} title={emp.employee_feedback || ''}>
+                        }} title={emp.employee_feedback ? `Khiếu nại: ${emp.employee_feedback}` : ''}>
                           {cs.label}
-                          {emp.email_sent && <span style={{ marginLeft: 4, fontSize: 10 }}>✉</span>}
                         </span>
+                      )}
+                    </td>
+                    {/* Thao tác cell */}
+                    <td style={{
+                      ...P, textAlign: 'center', borderBottom: '1px solid #e5e7eb',
+                      width: 90, minWidth: 90, maxWidth: 90,
+                    }}>
+                      {emp.payslip_id && (
+                        <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                          <button className="icon-btn" title="Tính lại lương cho NV này" onClick={(e) => handleSingleCompute(emp, e)} disabled={computing}>
+                            <Icon name="calculator" size={14} style={{ color: '#f59e0b' }} />
+                          </button>
+                          <button className="icon-btn" title="Gửi / Phát hành lại mail cho NV này" onClick={(e) => handleSingleSendMail(emp, e)} disabled={sending}>
+                            <Icon name="mail" size={14} style={{ color: '#2563eb' }} />
+                          </button>
+                          <button className="icon-btn" title="Reset xác nhận NV này" onClick={(e) => handleSingleResetConfirm(emp, e)}>
+                            <Icon name="rotateCcw" size={14} style={{ color: '#6b7280' }} />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -975,6 +1069,12 @@ export default function BatchList({ search }) {
                     ...P, position: 'sticky', bottom: 0, zIndex: 3,
                     background: '#f8f9fb', borderTop: '1px solid #e5e7eb',
                     width: 100, minWidth: 100, maxWidth: 100,
+                  }} />
+                  {/* Thao tác footer */}
+                  <td style={{
+                    ...P, position: 'sticky', bottom: 0, zIndex: 3,
+                    background: '#f8f9fb', borderTop: '1px solid #e5e7eb',
+                    width: 90, minWidth: 90, maxWidth: 90,
                   }} />
                 </tr>
               </tfoot>

@@ -46,6 +46,7 @@ const NAV = [
     // Gửi yêu cầu/góp ý (kể cả ẩn danh) tới HR hoặc trưởng phòng.
     { id: 'service', label: 'Yêu cầu & Góp ý', icon: 'mail', need: 'self' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'self' },
+    { id: 'payroll', label: 'Phiếu lương cá nhân', icon: 'wallet', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
   ]},
 ];

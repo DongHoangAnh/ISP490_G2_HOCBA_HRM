@@ -770,6 +770,20 @@ class HbPayslip(models.Model):
             }
             if structure:
                 write_vals['structure_id'] = structure.id
+
+            # Payslip Revision Flow: Reset confirm status if recomputed
+            if slip.x_employee_confirm in ('rejected', 'confirmed'):
+                write_vals['x_employee_confirm'] = 'pending'
+                write_vals['x_employee_feedback'] = False
+                slip.message_post(
+                    body=_(
+                        'HR đã tính lại số liệu lương cho phiếu này (Kỳ lương điều chỉnh). '
+                        'Đã tự động reset trạng thái xác nhận về <b>Chờ phản hồi</b>.'
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+
             slip.write(write_vals)
 
         return True

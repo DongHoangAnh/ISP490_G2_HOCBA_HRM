@@ -499,29 +499,32 @@ export default function ConfigView() {
             <div style={{ padding: '20px 22px' }}>
               {/* Info banner */}
               <div style={{
-                padding: '12px 16px', marginBottom: 20, borderRadius: 8,
+                padding: '14px 18px', marginBottom: 20, borderRadius: 10,
                 background: 'linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%)',
                 border: '1px solid #bfdbfe',
-                display: 'flex', gap: 10, alignItems: 'flex-start',
+                display: 'flex', gap: 12, alignItems: 'flex-start',
               }}>
-                <span style={{ fontSize: 20, lineHeight: 1 }}>💡</span>
-                <div style={{ fontSize: 12.5, color: '#1e40af', lineHeight: 1.6 }}>
-                  <strong>Quy trình nghiệp vụ:</strong> Sau khi HR tính lương và gửi mail cho nhân viên, hệ thống sẽ đặt thời hạn phản hồi.
-                  Nếu nhân viên không xác nhận hoặc từ chối trong thời hạn, hệ thống sẽ <strong>tự động xác nhận</strong> (coi
-                  như nhân viên đồng ý). Điều này giúp HR không bị block khi cần lưu lịch sử lương.
+                <span style={{ fontSize: 22, lineHeight: 1 }}>💡</span>
+                <div style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.6 }}>
+                  <strong>Quy trình chốt lương & Phản hồi:</strong>
+                  <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                    <li>HR chủ động bấm <strong>"Gửi mail"</strong> cho nhân viên sau khi rà soát và tính toán lương xong (không tự động gửi ngay khi tính).</li>
+                    <li>Trong khoảng thời hạn phản hồi (Từ ngày gửi mail đến ngày hết hạn), nhân viên được phép truy cập phiếu lương cá nhân và có thể <strong>Xác nhận đồng ý</strong> hoặc <strong>Gửi phản hồi / Khiếu nại</strong> nhiều lần (vô số lần trong khoảng thời hạn).</li>
+                    <li>Nếu hết thời hạn mà nhân viên không có phản hồi gì, hệ thống sẽ <strong>tự động coi như nhân viên đồng ý</strong> (Auto-confirmed) để HR tiến hành <strong>Lưu lịch sử lương</strong> và <strong>Tạo file chi lương Ngân hàng</strong>.</li>
+                  </ul>
                 </div>
               </div>
 
               {/* Confirm period days */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20,
-                padding: '14px 18px', borderRadius: 10,
+                padding: '16px 20px', borderRadius: 10,
                 background: '#fafafa', border: '1px solid #f3f4f6',
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: '#111827' }}>Thời hạn xác nhận</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                    Số ngày dương lịch (bao gồm T7, CN) nhân viên có để phản hồi kể từ khi nhận mail
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Thời hạn phản hồi phiếu lương</div>
+                  <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
+                    Số ngày dương lịch (bao gồm T7, CN) nhân viên có quyền gửi/chỉnh sửa phản hồi khiếu nại kể từ khi HR bấm gửi mail
                   </div>
                 </div>
                 <select
@@ -529,62 +532,16 @@ export default function ConfigView() {
                   value={cfmDays}
                   onChange={(e) => { setCfmDays(Number(e.target.value)); setCfmMsg(''); }}
                   style={{
-                    width: 140, padding: '8px 12px', fontSize: 14,
-                    fontWeight: 600, borderRadius: 8,
-                    border: '2px solid #e5e7eb',
-                    background: '#fff',
+                    width: 150, padding: '8px 12px', fontSize: 14,
+                    fontWeight: 700, borderRadius: 8,
+                    border: '2px solid #cbd5e1',
+                    background: '#fff', color: '#0f172a',
                   }}
                 >
                   {[1, 2, 3, 5, 7, 10, 14, 30].map((d) => (
                     <option key={d} value={d}>{d} ngày</option>
                   ))}
                 </select>
-              </div>
-
-              {/* Auto send mail toggle */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 16,
-                padding: '14px 18px', borderRadius: 10,
-                background: '#fafafa', border: '1px solid #f3f4f6',
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: '#111827' }}>Tự động gửi mail khi tính lương</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                    Bật để hệ thống tự gửi email thông báo lương ngay khi nhấn "Tính lương"
-                  </div>
-                </div>
-                {/* Toggle switch */}
-                <label style={{
-                  position: 'relative', display: 'inline-block',
-                  width: 48, height: 26, flexShrink: 0,
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={cfmAutoMail}
-                    onChange={(e) => { setCfmAutoMail(e.target.checked); setCfmMsg(''); }}
-                    style={{
-                      opacity: 0, width: 0, height: 0,
-                      position: 'absolute',
-                    }}
-                  />
-                  <span style={{
-                    position: 'absolute', cursor: 'pointer',
-                    top: 0, left: 0, right: 0, bottom: 0,
-                    background: cfmAutoMail ? '#2563eb' : '#d1d5db',
-                    borderRadius: 26, transition: 'background .2s',
-                  }}>
-                    <span style={{
-                      position: 'absolute',
-                      content: '""',
-                      height: 20, width: 20,
-                      left: cfmAutoMail ? 24 : 4, bottom: 3,
-                      background: '#fff',
-                      borderRadius: '50%',
-                      transition: 'left .2s',
-                      boxShadow: '0 1px 3px rgba(0,0,0,.15)',
-                    }} />
-                  </span>
-                </label>
               </div>
             </div>
           </div>
@@ -611,17 +568,15 @@ export default function ConfigView() {
               </div>
               <div style={{
                 flex: 1, padding: '14px 18px', borderRadius: 10,
-                background: cfmAutoMail
-                  ? 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)'
-                  : 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
-                border: `1px solid ${cfmAutoMail ? '#93c5fd' : '#e5e7eb'}`,
+                background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                border: '1px solid #93c5fd',
               }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: cfmAutoMail ? '#2563eb' : '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>Auto gửi mail</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: cfmAutoMail ? '#1d4ed8' : '#9ca3af', marginTop: 4 }}>
-                  {cfmAutoMail ? 'BẬT' : 'TẮT'}
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: 0.5 }}>Hình thức gửi mail</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#1d4ed8', marginTop: 4 }}>
+                  HR CHỦ ĐỘNG
                 </div>
-                <div style={{ fontSize: 11.5, color: cfmAutoMail ? '#3b82f6' : '#9ca3af', marginTop: 2 }}>
-                  {cfmAutoMail ? 'Gửi ngay khi tính lương' : 'Gửi thủ công'}
+                <div style={{ fontSize: 11.5, color: '#3b82f6', marginTop: 2 }}>
+                  Bấm gửi mail sau khi tính & kiểm tra
                 </div>
               </div>
             </div>

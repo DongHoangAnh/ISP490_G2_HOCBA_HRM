@@ -1,10 +1,9 @@
-/* Màn Bảng lương — điều phối tab.
-   Owner: Hùng. API: /hocba-hrm/api/payroll/* */
 import { useState } from 'react';
 import BatchList from './BatchList';
 import BankFile from './BankFile';
 import ConfigView from './ConfigView';
 import SalaryHistory from './SalaryHistory';
+import MyPayslipsView from './MyPayslipsView';
 
 const TABS = [
   ['batches', 'Kỳ tính lương'],
@@ -13,10 +12,18 @@ const TABS = [
   ['config', 'Cấu hình lương'],
 ];
 
-export default function Payroll({ search }) {
+export default function Payroll({ search, me }) {
+  const params = new URLSearchParams(window.location.search);
+  const payslipIdFromUrl = params.get('payslip_id');
+
   const [tab, setTab] = useState(() => localStorage.getItem('hocba_payroll_tab') || 'batches');
 
   const select = (id) => { setTab(id); localStorage.setItem('hocba_payroll_tab', id); };
+
+  // Regular employees (teachers/staff) see their own payslips view
+  if (me && !me.canManage) {
+    return <MyPayslipsView targetSlipId={payslipIdFromUrl} />;
+  }
 
   return (
     <div className="content fade-in" style={{
