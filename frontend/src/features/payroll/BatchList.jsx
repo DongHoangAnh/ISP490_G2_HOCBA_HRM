@@ -1,6 +1,6 @@
 /* Bang luong nhan vien theo thang — Owner: Hung. */
 import { useState, useEffect, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig, resetPayslipConfirm } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
@@ -283,6 +283,46 @@ function SalaryDetail({ emp, columns, onClose, onChanged }) {
           </div>
         )}
 
+        {/* ─ confirm deadline info ─ */}
+        {emp.confirm_deadline && localStatus === 'pending' && (() => {
+          const dl = new Date(emp.confirm_deadline);
+          const now = new Date();
+          const expired = dl <= now;
+          const fmt = dl.toLocaleDateString('vi-VN', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+          return (
+            <div style={{
+              marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
+              background: expired
+                ? 'linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%)'
+                : 'linear-gradient(135deg, #fefce8 0%, #fef9c3 100%)',
+              border: `1px solid ${expired ? '#fecaca' : '#fde68a'}`,
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 12.5,
+            }}>
+              <Icon name={expired ? 'xCircle' : 'clock'} size={15}
+                style={{ color: expired ? '#dc2626' : '#d97706', flexShrink: 0 }} />
+              <div>
+                <span style={{ fontWeight: 600, color: expired ? '#991b1b' : '#92400e' }}>
+                  {expired ? 'Đã hết hạn xác nhận' : 'Hạn xác nhận:'}
+                </span>
+                <span style={{ marginLeft: 6, color: expired ? '#b91c1c' : '#78350f' }}>
+                  {fmt}
+                </span>
+                {expired && (
+                  <span style={{
+                    marginLeft: 8, fontSize: 11, fontWeight: 600,
+                    padding: '1px 7px', borderRadius: 4,
+                    background: '#fee2e2', color: '#dc2626',
+                  }}>Sẽ tự động xác nhận</span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {localStatus === 'confirmed' && (
           <div style={{
             marginTop: 10, padding: '10px 16px', borderRadius: 8, flexShrink: 0,
@@ -343,7 +383,36 @@ export default function BatchList({ search }) {
   const [saving, setSaving] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [confirmFilter, setConfirmFilter] = useState('');
-  const load = () => { setErr(null); setData(null); setChecked({}); fetchEmployeePayroll({ month, year }).then(setData).catch((e) => setErr(e.message)); };
+  const load = () => {
+    setErr(null); setData(null); setChecked({});
+    fetchEmployeePayroll({ month, year }).then(async (d) => {
+      // Fetch allowance columns and merge into data
+      try {
+        const empIds = (d.employees || []).map((e) => e.id).filter(Boolean);
+        if (empIds.length > 0) {
+          const bulk = await fetchBulkAllowances(empIds);
+          if (bulk && bulk.columns && bulk.columns.length > 0) {
+            // Add allowance columns (prefixed with _alw_ to avoid code collision)
+            const alwCols = bulk.columns.map((name) => ({
+              code: `_alw_${name}`, name: `💰 ${name}`, is_allowance: true,
+            }));
+            d.columns = [...(d.columns || []), ...alwCols];
+            // Merge amounts into each employee
+            (d.employees || []).forEach((e) => {
+              const empAlw = (bulk.data || {})[String(e.id)];
+              if (empAlw) {
+                if (!e.amounts) e.amounts = {};
+                Object.entries(empAlw).forEach(([name, amt]) => {
+                  e.amounts[`_alw_${name}`] = amt;
+                });
+              }
+            });
+          }
+        }
+      } catch { /* allowance fetch fail is non-critical */ }
+      setData(d);
+    }).catch((e) => setErr(e.message));
+  };
   useEffect(load, [month, year]);
   const applyCfg = useCallback((c) => { setCfg(c); saveCfg(c); }, []);
 
@@ -398,6 +467,7 @@ export default function BatchList({ search }) {
       const res = await computeAllPayslips(Number(month), Number(year));
       const msg = `Đã tính lương cho ${res.computed} nhân viên`
         + (res.created ? `, tạo mới ${res.created} phiếu` : '')
+        + (res.auto_mail_sent ? `\nTự động gửi ${res.auto_mail_sent} email thông báo lương.` : '')
         + (res.errors?.length ? `\nLỗi: ${res.errors.join('; ')}` : '');
       alert(msg);
       load();
@@ -481,8 +551,22 @@ export default function BatchList({ search }) {
   const allConfirmed = allEmpsWithSlip.length > 0 &&
     allEmpsWithSlip.every((e) => e.employee_confirm === 'confirmed');
 
+  // #1: Also allow saving if all pending slips have expired deadlines
+  const now = new Date();
+  const canSaveHistory = allConfirmed || (
+    allEmpsWithSlip.length > 0 &&
+    allEmpsWithSlip.every((e) => {
+      if (e.employee_confirm === 'confirmed') return true;
+      // pending with expired deadline → backend will auto-confirm
+      if (e.employee_confirm === 'pending' && e.confirm_deadline) {
+        return new Date(e.confirm_deadline) <= now;
+      }
+      return false;
+    })
+  );
+
   const handleSaveHistory = async () => {
-    if (!allConfirmed || saving) return;
+    if (!canSaveHistory || saving) return;
     if (!confirm(`Lưu lịch sử lương tháng ${month}/${year}? Sau khi lưu sẽ không thể chỉnh sửa.`)) return;
     setSaving(true);
     try {
@@ -620,6 +704,36 @@ export default function BatchList({ search }) {
               {l} <b style={{ color: '#111827' }}>{v}</b>
             </span>
           ))}
+          {/* #3: Deadline stats */}
+          {(() => {
+            const now = new Date();
+            const pending = allEmpsWithSlip.filter((e) => e.employee_confirm === 'pending');
+            const expired = pending.filter((e) => e.confirm_deadline && new Date(e.confirm_deadline) <= now);
+            const confirmed = allEmpsWithSlip.filter((e) => e.employee_confirm === 'confirmed');
+            if (allEmpsWithSlip.length === 0) return null;
+            return (
+              <>
+                <div style={{ width: 1, height: 18, background: '#e5e7eb', margin: '0 2px' }} />
+                <span style={{ fontSize: 11, color: '#16a34a' }}>
+                  ✅ <b>{confirmed.length}</b>
+                </span>
+                {pending.length > 0 && (
+                  <span style={{ fontSize: 11, color: '#d97706' }}>
+                    ⏳ <b>{pending.length}</b> chờ
+                  </span>
+                )}
+                {expired.length > 0 && (
+                  <span style={{
+                    fontSize: 10.5, fontWeight: 600, color: '#dc2626',
+                    padding: '1px 6px', borderRadius: 4,
+                    background: '#fee2e2',
+                  }}>
+                    ⚠ {expired.length} quá hạn
+                  </span>
+                )}
+              </>
+            );
+          })()}
         </>}
 
         <div style={{ flex: 1 }} />
@@ -650,15 +764,15 @@ export default function BatchList({ search }) {
           {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
         </button>
 
-        <button onClick={handleSaveHistory} disabled={saving || !allConfirmed}
-          title={allConfirmed ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận trước khi lưu'}
+        <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
+          title={canSaveHistory ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận hoặc hết hạn trước khi lưu'}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '4px 10px', borderRadius: 6,
-            border: 'none', background: allConfirmed ? '#16a34a' : '#9ca3af', color: '#fff',
+            border: 'none', background: canSaveHistory ? '#16a34a' : '#9ca3af', color: '#fff',
             fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            cursor: (saving || !allConfirmed) ? 'not-allowed' : 'pointer',
-            opacity: (saving || !allConfirmed) ? .6 : 1,
+            cursor: (saving || !canSaveHistory) ? 'not-allowed' : 'pointer',
+            opacity: (saving || !canSaveHistory) ? .6 : 1,
           }}>
           <Icon name="check" size={13} />
           {saving ? 'Đang lưu...' : 'Lưu lịch sử'}

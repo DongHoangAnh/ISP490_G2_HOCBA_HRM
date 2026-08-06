@@ -240,7 +240,31 @@ class PayrollAPI(http.Controller):
             if not slips:
                 return _error_response('Không có phiếu lương trong kỳ này.')
 
-            # Check all employees confirmed
+            # Check all employees confirmed — auto-confirm expired first
+            now = fields.Datetime.now()
+            pending = slips.filtered(
+                lambda s: s.x_employee_confirm != 'confirmed'
+            )
+            # Auto-confirm payslips that are past their deadline
+            for s in pending:
+                if (s.x_confirm_deadline and s.x_confirm_deadline <= now
+                        and s.x_email_sent):
+                    s.write({
+                        'x_employee_confirm': 'confirmed',
+                        'x_confirmed_date': now,
+                    })
+                    s.message_post(
+                        body=_(
+                            'Hệ thống tự động xác nhận phiếu lương '
+                            '(nhân viên <b>%(name)s</b> không phản hồi '
+                            'trong thời hạn — close-by-period).',
+                            name=s.employee_id.name,
+                        ),
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_note',
+                    )
+
+            # Re-check after auto-confirm
             not_confirmed = slips.filtered(
                 lambda s: s.x_employee_confirm != 'confirmed'
             )
@@ -366,12 +390,49 @@ class PayrollAPI(http.Controller):
             computed = result['computed']
             errors = result['errors']
 
+
+
+            # ── #2: Auto-send mail if config enabled ──
+            auto_mail = False
+            try:
+                ICP = env['ir.config_parameter'].sudo()
+                auto_mail = ICP.get_param(
+                    'hocba_payroll.auto_send_mail', 'false'
+                ) == 'true'
+            except Exception:
+                pass
+
+            mail_sent = 0
+            if auto_mail and to_compute:
+                confirm_days = int(
+                    ICP.get_param('hocba_payroll.confirm_period_days', '3')
+                )
+                from datetime import timedelta
+                deadline = fields.Datetime.now() + timedelta(days=confirm_days)
+                for slip in to_compute:
+                    try:
+                        slip.action_send_payslip_mail()
+                        # Ensure deadline is set (action_send_payslip_mail
+                        # already does this, but belt-and-suspenders)
+                        if not slip.x_confirm_deadline:
+                            slip.write({'x_confirm_deadline': deadline})
+                        mail_sent += 1
+                    except Exception as me:
+                        _logger.warning(
+                            'Auto-send mail failed for payslip %s: %s',
+                            slip.id, me,
+                        )
+
             return _success_response({
                 'batch_id': batch.id,
                 'created': created,
                 'computed': computed,
                 'errors': errors,
-            }, message=f'Đã tính lương cho {computed} nhân viên.')
+                'auto_mail_sent': mail_sent,
+            }, message=(
+                f'Đã tính lương cho {computed} nhân viên.'
+                + (f' Tự động gửi {mail_sent} email.' if mail_sent else '')
+            ))
         except (ValidationError, UserError) as e:
             return _error_response(str(e))
         except Exception as e:
@@ -486,6 +547,7 @@ class PayrollAPI(http.Controller):
                     'gross_amount': slip.gross_amount if slip else 0,
                     'net_amount': slip.net_amount if slip else 0,
                     'access_token': slip.x_access_token if slip else None,
+                    'confirm_deadline': str(slip.x_confirm_deadline) if slip and slip.x_confirm_deadline else None,
                     'amounts': amounts,
                 })
 
@@ -1648,6 +1710,49 @@ class PayrollAPI(http.Controller):
             return _error_response(str(e), status=500)
 
     # ══════════════════════════════════════════════════════════
+    #  Confirm Period Config
+    # ══════════════════════════════════════════════════════════
+    _CONFIRM_CFG_KEYS = {
+        'confirm_period_days': 'hocba_payroll.confirm_period_days',
+        'auto_send_mail':      'hocba_payroll.auto_send_mail',
+    }
+
+    @http.route('/hocba-hrm/api/payroll/confirm-config', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_confirm_config(self, **kw):
+        try:
+            ICP = request.env['ir.config_parameter'].sudo()
+            return _success_response({
+                'confirm_period_days': int(
+                    ICP.get_param('hocba_payroll.confirm_period_days', '3')
+                ),
+                'auto_send_mail': ICP.get_param(
+                    'hocba_payroll.auto_send_mail', 'false'
+                ) == 'true',
+            })
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/confirm-config', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def save_confirm_config(self, **kw):
+        try:
+            body = _get_json_body()
+            ICP = request.env['ir.config_parameter'].sudo()
+            if 'confirm_period_days' in body:
+                days = max(1, min(int(body['confirm_period_days']), 90))
+                ICP.set_param('hocba_payroll.confirm_period_days', str(days))
+            if 'auto_send_mail' in body:
+                ICP.set_param(
+                    'hocba_payroll.auto_send_mail',
+                    'true' if body['auto_send_mail'] else 'false',
+                )
+            return _success_response({'saved': True},
+                                     message='Đã lưu cấu hình xác nhận lương.')
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
+    # ══════════════════════════════════════════════════════════
     #  Mark payslips as sent (used by frontend EmailJS flow)
     # ══════════════════════════════════════════════════════════
     @http.route('/hocba-hrm/api/payroll/payslip/mark-sent', type='http',
@@ -1663,6 +1768,13 @@ class PayrollAPI(http.Controller):
             now = fields.Datetime.now()
             for slip in slips.filtered(lambda s: s.exists()):
                 vals = {'x_email_sent': True, 'x_email_sent_date': now}
+                # Calculate confirm deadline from config
+                ICP = request.env['ir.config_parameter'].sudo()
+                confirm_days = int(
+                    ICP.get_param('hocba_payroll.confirm_period_days', '3')
+                )
+                from datetime import timedelta
+                vals['x_confirm_deadline'] = now + timedelta(days=confirm_days)
                 # Reset rejected → pending so employee can re-confirm
                 if slip.x_employee_confirm == 'rejected':
                     vals['x_employee_confirm'] = 'pending'
@@ -1776,6 +1888,7 @@ class PayrollAPI(http.Controller):
             slip.write({
                 'x_employee_confirm': 'pending',
                 'x_employee_feedback': False,
+                'x_confirm_deadline': False,  # #6: clear deadline on reset
             })
             slip.message_post(
                 body=_(
@@ -2037,4 +2150,114 @@ class PayrollAPI(http.Controller):
                        f'Batch đã close → hiện trong lịch sử lương & chuyển khoản.')
         except Exception as e:
             _logger.exception('seed_salary_history error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════════════
+    # EMPLOYEE ALLOWANCE (standalone EAV per-employee amounts)
+    # ═════════════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/employee-allowance', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def list_employee_allowances(self, **kw):
+        """List allowances, optionally filtered by employee_id."""
+        try:
+            domain = [('active', '=', True)]
+            if kw.get('employee_id'):
+                domain.append(('employee_id', '=', int(kw['employee_id'])))
+            recs = request.env['hb.employee.allowance'].sudo().search(
+                domain, order='name')
+            data = [{
+                'id': r.id,
+                'employee_id': r.employee_id.id,
+                'name': r.name,
+                'amount': r.amount,
+                'note': r.note or '',
+            } for r in recs]
+            return _success_response(data)
+        except Exception as e:
+            _logger.exception('list_employee_allowances error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/employee-allowance', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def save_employee_allowance(self, **kw):
+        """Create or update an employee allowance."""
+        try:
+            body = _get_json_body()
+            allow_id = int(body.get('id', 0))
+            emp_id = int(body.get('employee_id', 0))
+            name = (body.get('name') or '').strip()
+            amount = float(body.get('amount', 0))
+            note = (body.get('note') or '').strip()
+            if not emp_id or not name:
+                return _error_response('employee_id và name là bắt buộc.')
+
+            Allowance = request.env['hb.employee.allowance'].sudo()
+            if allow_id:
+                rec = Allowance.browse(allow_id)
+                if not rec.exists():
+                    return _error_response('Không tìm thấy phụ cấp.', status=404)
+                rec.write({'name': name, 'amount': amount, 'note': note})
+            else:
+                rec = Allowance.create({
+                    'employee_id': emp_id,
+                    'name': name,
+                    'amount': amount,
+                    'note': note,
+                })
+            return _success_response({
+                'id': rec.id,
+                'employee_id': rec.employee_id.id,
+                'name': rec.name,
+                'amount': rec.amount,
+                'note': rec.note or '',
+            }, message='Đã lưu phụ cấp.')
+        except (ValidationError, UserError) as e:
+            return _error_response(str(e))
+        except Exception as e:
+            _logger.exception('save_employee_allowance error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/employee-allowance/<int:allow_id>/delete',
+                type='http', auth='user', methods=['POST'], csrf=False)
+    def delete_employee_allowance(self, allow_id, **kw):
+        """Delete an employee allowance."""
+        try:
+            rec = request.env['hb.employee.allowance'].sudo().browse(allow_id)
+            if not rec.exists():
+                return _error_response('Không tìm thấy.', status=404)
+            rec.unlink()
+            return _success_response({}, message='Đã xoá phụ cấp.')
+        except Exception as e:
+            _logger.exception('delete_employee_allowance error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/employee-allowance/bulk', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def bulk_employee_allowances(self, **kw):
+        """Get all allowances for a list of employees (for BatchList columns).
+
+        Query: employee_ids = comma-separated IDs.
+        Returns: { columns: ['PC Xăng xe', ...], data: { emp_id: { name: amount } } }
+        """
+        try:
+            raw = kw.get('employee_ids', '')
+            if not raw:
+                return _success_response({'columns': [], 'data': {}})
+            emp_ids = [int(x) for x in raw.split(',') if x.strip()]
+            recs = request.env['hb.employee.allowance'].sudo().search([
+                ('employee_id', 'in', emp_ids),
+                ('active', '=', True),
+            ], order='name')
+            columns_set = []
+            data = {}
+            for r in recs:
+                if r.name not in columns_set:
+                    columns_set.append(r.name)
+                data.setdefault(r.employee_id.id, {})[r.name] = r.amount
+            return _success_response({
+                'columns': columns_set,
+                'data': {str(k): v for k, v in data.items()},
+            })
+        except Exception as e:
+            _logger.exception('bulk_employee_allowances error')
             return _error_response(str(e), status=500)

@@ -31,6 +31,7 @@
         'data/ir_sequence_data.xml',
         'data/salary_rule_category_data.xml',
         'data/salary_structure_data.xml',
+        'data/confirm_cron.xml',
         # Views & Wizards
         'views/salary_structure_views.xml',
         'views/hr_contract_views.xml',

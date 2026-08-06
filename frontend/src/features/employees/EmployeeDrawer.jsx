@@ -1,7 +1,8 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
-import { useState, useEffect } from 'react';
-import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
+import { useState, useEffect, Fragment } from 'react';
+import { fetchEmployee, postGate, postTrial, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
+import { fetchEmployeeAllowances, saveEmployeeAllowance, deleteEmployeeAllowance } from '../../api/payroll';
 import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
@@ -216,6 +217,144 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
               onClose={() => setCertForm(null)}
               onSaved={(d) => { setCertForm(null); onUpdated && onUpdated(d); }} />
           )}
+        </div>
+      )}
+      {isMgr && <AllowanceSection empId={det.id} isMgr={isMgr} />}
+    </div>
+  );
+}
+
+/* ── Phụ cấp riêng (standalone CRUD, free-form name + amount) ── */
+function AllowanceSection({ empId, isMgr }) {
+  const [allowances, setAllowances] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ name: '', amount: '' });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    fetchEmployeeAllowances(empId).then(setAllowances).catch(() => {});
+  }, [empId]);
+
+  const reload = () => fetchEmployeeAllowances(empId).then(setAllowances).catch(() => {});
+  const resetForm = () => { setForm({ name: '', amount: '' }); setAdding(false); setEditId(null); };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || busy) return;
+    setBusy(true);
+    try {
+      await saveEmployeeAllowance({
+        id: editId || undefined,
+        employee_id: empId,
+        name: form.name.trim(),
+        amount: Number(form.amount) || 0,
+      });
+      resetForm();
+      reload();
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = async (a) => {
+    if (!window.confirm(`Xoá phụ cấp "${a.name}"?`)) return;
+    try { await deleteEmployeeAllowance(a.id); reload(); }
+    catch (e) { alert(e.message); }
+  };
+
+  const fmtAmt = (v) => v ? Number(v).toLocaleString('vi-VN') + ' ₫' : '0 ₫';
+  const inp = { border: '1px solid #d1d5db', borderRadius: 5, padding: '5px 10px', fontSize: 13 };
+
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div className="between" style={{ marginBottom: 8 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          💰 Phụ cấp riêng ({allowances.length})
+        </div>
+        {isMgr && !adding && !editId && (
+          <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={13} />Thêm phụ cấp
+          </button>
+        )}
+      </div>
+
+      {allowances.length > 0 && (
+        <div className="card" style={{ padding: 0 }}>
+          <table className="tbl">
+            <thead><tr>
+              <th>Khoản phụ cấp</th><th style={{ textAlign: 'right' }}>Số tiền</th>
+              {isMgr && <th style={{ width: 80 }}></th>}
+            </tr></thead>
+            <tbody>
+              {allowances.map((a) => (
+                editId === a.id ? (
+                  <tr key={a.id} style={{ background: '#fefce8' }}>
+                    <td>
+                      <input type="text" style={{ ...inp, width: '100%' }}
+                        value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                    </td>
+                    <td>
+                      <input type="number" style={{ ...inp, width: '100%', textAlign: 'right' }}
+                        value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                        autoFocus />
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={busy}>
+                        {busy ? '...' : 'Lưu'}
+                      </button>
+                      <button className="btn btn-ghost btn-sm" style={{ marginLeft: 4 }}
+                        onClick={resetForm}>Huỷ</button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={a.id}>
+                    <td>{a.name}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmtAmt(a.amount)}</td>
+                    {isMgr && (
+                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
+                        <button className="icon-btn" title="Sửa" onClick={() => {
+                          setEditId(a.id); setAdding(false);
+                          setForm({ name: a.name, amount: a.amount });
+                        }}><Icon name="edit" size={15} className="faint" /></button>
+                        <button className="icon-btn" title="Xoá" onClick={() => handleDelete(a)}>
+                          <Icon name="trash" size={15} className="faint" /></button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {allowances.length === 0 && !adding && (
+        <div className="muted" style={{ fontSize: 12.5 }}>Chưa có phụ cấp riêng.</div>
+      )}
+
+      {adding && (
+        <div style={{
+          marginTop: 10, padding: '12px 16px', borderRadius: 8,
+          background: '#f8fafc', border: '1px solid #e2e8f0',
+        }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 180px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#374151' }}>Tên khoản</div>
+              <input type="text" style={{ ...inp, width: '100%' }}
+                value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="VD: PC Xăng xe, PC Di chuyển..." autoFocus />
+            </div>
+            <div style={{ flex: '0 0 150px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#374151' }}>Số tiền (₫)</div>
+              <input type="number" style={{ ...inp, width: '100%' }}
+                value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                placeholder="0" />
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={busy || !form.name.trim()}>
+                {busy ? 'Đang lưu...' : 'Thêm'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={resetForm}>Huỷ</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
