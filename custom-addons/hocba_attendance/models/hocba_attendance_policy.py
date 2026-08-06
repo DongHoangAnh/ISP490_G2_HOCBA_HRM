@@ -31,6 +31,7 @@ class AttendancePolicy(models.Model):
     office_lat = fields.Float(string='Office latitude', digits=(10, 7))
     office_lng = fields.Float(string='Office longitude', digits=(10, 7))
     office_radius_m = fields.Float(string='Allowed radius (m)', default=150.0)
+    office_map_url = fields.Char(string='Google Maps Link')
 
     # Face matching: euclidean distance threshold; distance > threshold => suspect
     face_threshold = fields.Float(string='Face match threshold', default=0.6)
@@ -164,3 +165,26 @@ class AttendancePolicy(models.Model):
         if kind == 'in':
             return self.morning_start <= hour <= self.morning_end
         return self.evening_start <= hour <= self.evening_end
+
+
+class AttendancePeriodHistory(models.Model):
+    _name = 'hocba.attendance.period.history'
+    _description = 'Lịch sử cấu hình chu kỳ chấm công'
+    _order = 'apply_from desc'
+
+    apply_from = fields.Date(
+        string='Áp dụng từ ngày', required=True,
+        help='Cấu hình này sẽ có hiệu lực cho các tháng tính từ ngày này trở đi.')
+    period_start_day = fields.Integer(
+        string='Ngày bắt đầu kỳ (1..31)', default=1, required=True)
+
+    _sql_constraints = [
+        ('apply_from_unique', 'unique(apply_from)',
+         'Mỗi ngày chỉ có một cấu hình áp dụng.')
+    ]
+
+    @api.constrains('period_start_day')
+    def _check_start_day(self):
+        for rec in self:
+            if not 1 <= rec.period_start_day <= 31:
+                raise ValidationError('Ngày bắt đầu kỳ phải nằm trong 1..31.')

@@ -62,6 +62,9 @@ export const fetchManagerSummary = (month) =>
 export const fetchEmpHistory = (empId, month, type) =>
   hbGet(`/hocba-hrm/api/attendance/emp-history?empId=${empId}&month=${month}&type=${type}`);
 
+export const fetchAttendanceConfig = () => hbGet('/hocba-hrm/api/attendance/config');
+export const saveAttendanceConfig = (body) => hbPost('/hocba-hrm/api/attendance/config', body);
+
 // Teaching schedule (giáo viên — lịch từ CMS)
 export const fetchTeachingSchedule = (date) =>
   hbGet(`/hocba-hrm/api/teaching/schedule?date=${date}`);

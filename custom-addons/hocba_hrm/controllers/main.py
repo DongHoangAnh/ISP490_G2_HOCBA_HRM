@@ -1,7 +1,7 @@
 import calendar
 import hashlib
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from psycopg2 import IntegrityError
 from pytz import timezone, utc
@@ -208,8 +208,8 @@ def _teaching_session_row(session_dict, att_rec, policy, now_utc):
         'endTime': session_dict['endTime'],
         'status': session_dict['status'],
         'roleType': session_dict['roleType'],
-        'checkIn': att_rec.check_in.isoformat() if att_rec and att_rec.check_in else None,
-        'checkOut': att_rec.check_out.isoformat() if att_rec and att_rec.check_out else None,
+        'checkIn': _dt_local(att_rec, att_rec.check_in) if att_rec else None,
+        'checkOut': _dt_local(att_rec, att_rec.check_out) if att_rec else None,
         'workedHours': att_rec.worked_hours if att_rec else 0.0,
         'faceSuspect': att_rec.face_suspect if att_rec else False,
         'outOfZone': att_rec.out_of_zone if att_rec else False,
@@ -439,14 +439,16 @@ def _ot_table(env, month_str):
     else:
         today = fields.Date.context_today(user)
         y, m = today.year, today.month
+
+    first, last = _get_month_range(env, y, m)
+
     tz = timezone(user.tz or 'UTC')
-    start_local = tz.localize(datetime(y, m, 1))
-    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
-                 else tz.localize(datetime(y, m + 1, 1)))
-    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
-    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+    start_dt_local = tz.localize(datetime.combine(first, time.min))
+    end_dt_local = tz.localize(datetime.combine(last, time.max))
+    start_utc = start_dt_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_dt_local.astimezone(utc).replace(tzinfo=None)
     domain = [('state', '=', 'approved'),
-              ('start', '>=', start_utc), ('start', '<', end_utc)]
+              ('start', '>=', start_utc), ('start', '<=', end_utc)]
     if _user_can_manage(env):
         for field, op, val in _emp_scope_domain(env):
             if field == 'id':
@@ -554,6 +556,47 @@ def _shift_history_row(env, s, att, row_type):
     }
 
 
+def _get_month_range(env, y, m):
+    """Xác định khoảng [first, last] của tháng (y, m) dựa trên lịch sử cấu hình.
+    Ví dụ: m=9, start_day=15 -> 15/09 đến 14/10."""
+    ref_date = date(y, m, 1)
+    # Tìm cấu hình áp dụng tại thời điểm đầu tháng đó
+    history = env['hocba.attendance.period.history'].sudo().search([
+        ('apply_from', '<=', ref_date)
+    ], order='apply_from desc', limit=1)
+
+    if history:
+        start_day = history.period_start_day
+    else:
+        # Fallback về cấu hình mặc định trên policy
+        policy = env['hocba.attendance.policy'].sudo().get_policy()
+        start_day = policy.period_start_day or 1
+
+    if start_day == 1:
+        first = date(y, m, 1)
+        last = date(y, m, calendar.monthrange(y, m)[1])
+    else:
+        # Ví dụ: m=9, start_day=15 -> first=15/09, last=14/10
+        # Dùng min để tránh lỗi nếu tháng hiện tại không có ngày start_day (vd 31/02)
+        days_in_month = calendar.monthrange(y, m)[1]
+        first = date(y, m, min(start_day, days_in_month))
+
+        # Tính ngày cuối: cộng 1 tháng rồi trừ 1 ngày
+        if m == 12:
+            next_y, next_m = y + 1, 1
+        else:
+            next_y, next_m = y, m + 1
+
+        last_day_of_next_month = calendar.monthrange(next_y, next_m)[1]
+        target_last_day = start_day - 1
+        if target_last_day == 0:
+             target_last_day = last_day_of_next_month
+
+        last = date(next_y, next_m, min(target_last_day, last_day_of_next_month))
+
+    return first, last
+
+
 def _att_me_history(env, month_str):
     """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -565,8 +608,9 @@ def _att_me_history(env, month_str):
     else:
         today = fields.Date.context_today(env.user)
         y, m = today.year, today.month
-    first = date(y, m, 1)
-    last = date(y, m, calendar.monthrange(y, m)[1])
+
+    first, last = _get_month_range(env, y, m)
+
     recs = env['hocba.attendance'].sudo().search([
         ('employee_id', '=', emp.id),
         ('date', '>=', first), ('date', '<=', last),
@@ -610,16 +654,15 @@ def _att_me_history_full(env, month_str, att_type):
     else:
         today = fields.Date.context_today(env.user)
         y, m = today.year, today.month
-    first = date(y, m, 1)
-    last = date(y, m, calendar.monthrange(y, m)[1])
 
-    # UTC bounds for shift searches (mirrors _ot_table pattern)
+    first, last = _get_month_range(env, y, m)
+
+    # UTC bounds for shift searches
     tz = timezone(env.user.tz or 'UTC')
-    start_local = tz.localize(datetime(y, m, 1))
-    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
-                 else tz.localize(datetime(y, m + 1, 1)))
-    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
-    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+    start_dt_local = tz.localize(datetime.combine(first, time.min))
+    end_dt_local = tz.localize(datetime.combine(last, time.max))
+    start_utc = start_dt_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_dt_local.astimezone(utc).replace(tzinfo=None)
 
     # --- Regular rows ---
     regular_rows = []
@@ -710,14 +753,14 @@ def _att_manager_summary(env, month_str):
     else:
         today = fields.Date.context_today(env.user)
         y, m = today.year, today.month
-    first = date(y, m, 1)
-    last = date(y, m, calendar.monthrange(y, m)[1])
+
+    first, last = _get_month_range(env, y, m)
+
     tz = timezone(env.user.tz or 'UTC')
-    start_local = tz.localize(datetime(y, m, 1))
-    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
-                 else tz.localize(datetime(y, m + 1, 1)))
-    start_utc = start_local.astimezone(utc).replace(tzinfo=None)
-    end_utc = end_local.astimezone(utc).replace(tzinfo=None)
+    start_dt_local = tz.localize(datetime.combine(first, time.min))
+    end_dt_local = tz.localize(datetime.combine(last, time.max))
+    start_utc = start_dt_local.astimezone(utc).replace(tzinfo=None)
+    end_utc = end_dt_local.astimezone(utc).replace(tzinfo=None)
 
     policy = env['hocba.attendance.policy'].sudo().get_policy()
     emp_domain = _emp_scope_domain(env)
@@ -4006,6 +4049,92 @@ class HocBaHRM(http.Controller):
         if row is None:
             return request.make_json_response({'error': 'not_found'}, status=404)
         return request.make_json_response(row)
+
+    @http.route('/hocba-hrm/api/attendance/config', auth='user', type='http', methods=['GET'])
+    def api_attendance_config_get(self, **kw):
+        """Lấy cấu hình chấm công (Policy + History). Chỉ Admin."""
+        if not request.env.user.has_group('base.group_system'):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+
+        policy = request.env['hocba.attendance.policy'].sudo().get_policy()
+        histories = request.env['hocba.attendance.period.history'].sudo().search([], order='apply_from desc')
+
+        return request.make_json_response({
+            'periodStartDay': policy.period_start_day,
+            'periodEndDay': policy.period_end_day,
+            'morningStart': policy.morning_start,
+            'morningEnd': policy.morning_end,
+            'eveningStart': policy.evening_start,
+            'eveningEnd': policy.evening_end,
+            'officeLat': policy.office_lat,
+            'officeLng': policy.office_lng,
+            'officeRadiusM': policy.office_radius_m,
+            'officeMapUrl': policy.office_map_url,
+            'faceThreshold': policy.face_threshold,
+            'lateCutoff': policy.late_cutoff,
+            'morningCreditCutoff': policy.morning_credit_cutoff,
+            'stdWorkHours': policy.std_work_hours,
+            'afternoonMarginHours': policy.afternoon_margin_hours,
+            'violationFreeDays': policy.violation_free_days,
+            'shiftWindowMinutes': policy.shift_window_minutes,
+            'history': [{
+                'id': h.id,
+                'applyFrom': h.apply_from.isoformat(),
+                'periodStartDay': h.period_start_day
+            } for h in histories]
+        })
+
+    @http.route('/hocba-hrm/api/attendance/config', auth='user', type='http', methods=['POST'], csrf=False)
+    def api_attendance_config_set(self, **kw):
+        """Cập nhật cấu hình chấm công. Chỉ Admin."""
+        if not request.env.user.has_group('base.group_system'):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+
+        payload = request.get_json_data()
+        policy = request.env['hocba.attendance.policy'].sudo().get_policy()
+
+        try:
+            # Cập nhật các trường trên policy
+            policy_fields = [
+                'periodStartDay', 'morningStart', 'morningEnd', 'eveningStart', 'eveningEnd',
+                'officeLat', 'officeLng', 'officeRadiusM', 'officeMapUrl', 'faceThreshold', 'lateCutoff',
+                'morningCreditCutoff', 'stdWorkHours', 'afternoonMarginHours',
+                'violationFreeDays', 'shiftWindowMinutes'
+            ]
+            vals = {}
+            for pf in policy_fields:
+                if pf in payload:
+                    # Chuyển camelCase sang snake_case
+                    snake_f = re.sub(r'(?<!^)(?=[A-Z])', '_', pf).lower()
+                    vals[snake_f] = payload[pf]
+
+            if vals:
+                policy.write(vals)
+
+            # Cập nhật hoặc thêm lịch sử
+            if 'history' in payload:
+                History = request.env['hocba.attendance.period.history'].sudo()
+                for h_data in payload['history']:
+                    if h_data.get('id'):
+                        History.browse(h_data['id']).write({
+                            'apply_from': h_data['applyFrom'],
+                            'period_start_day': int(h_data['periodStartDay'])
+                        })
+                    else:
+                        History.create({
+                            'apply_from': h_data['applyFrom'],
+                            'period_start_day': int(h_data['periodStartDay'])
+                        })
+
+            # Xóa nếu có deleteIds
+            if 'deleteHistoryIds' in payload:
+                request.env['hocba.attendance.period.history'].sudo().browse(payload['deleteHistoryIds']).unlink()
+
+        except (ValidationError, UserError, ValueError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response({'error': 'rejected', 'message': str(ex)}, status=400)
+
+        return self.api_attendance_config_get()
 
     @http.route('/hocba-hrm/api/employees/search', auth='user',
                 type='http', methods=['GET'])

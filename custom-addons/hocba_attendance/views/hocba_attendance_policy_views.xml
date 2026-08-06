@@ -92,5 +92,23 @@
             <field name="res_model">hocba.attendance.policy</field>
             <field name="view_mode">list,form</field>
         </record>
+
+        <!-- Lịch sử chu kỳ chấm công -->
+        <record id="hocba_attendance_period_history_view_tree" model="ir.ui.view">
+            <field name="name">hocba.attendance.period.history.tree</field>
+            <field name="model">hocba.attendance.period.history</field>
+            <field name="arch" type="xml">
+                <list editable="bottom">
+                    <field name="apply_from"/>
+                    <field name="period_start_day"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="hocba_attendance_period_history_action" model="ir.actions.act_window">
+            <field name="name">Lịch sử Chu kỳ Chấm công</field>
+            <field name="res_model">hocba.attendance.period.history</field>
+            <field name="view_mode">list</field>
+        </record>
     </data>
 </odoo>

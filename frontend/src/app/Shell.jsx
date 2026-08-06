@@ -31,6 +31,7 @@ const NAV = [
   ]},
   { sec: 'Hệ thống', need: 'admin', items: [
     { id: 'timeoffConfig', label: 'Cấu hình nghỉ phép', icon: 'settings', need: 'admin' },
+    { id: 'attendanceConfig', label: 'Cấu hình chấm công', icon: 'settings', need: 'admin' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
@@ -91,6 +92,7 @@ export const PAGE_META = {
   'recruitment-config': { t: 'Cấu hình tuyển dụng', c: 'Quản lý nhân sự / Cấu hình quy trình' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
   timeoffConfig: { t: 'Cấu hình nghỉ phép', c: 'Hệ thống / Time Off' },
+  attendanceConfig: { t: 'Cấu hình chấm công', c: 'Hệ thống / Attendance' },
 };
 
 export function Sidebar({ view, setView, me }) {
