@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances, fetchComputeStatus } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
@@ -163,7 +163,10 @@ function SalaryDetail({ emp, columns, onClose, onChanged }) {
   const [err, setErr] = useState(null);
   const [localStatus, setLocalStatus] = useState(emp.employee_confirm || 'pending');
 
-  const cs = CONFIRM_MAP[localStatus] || CONFIRM_MAP.pending;
+  const statusKey = localStatus === 'confirmed' ? 'confirmed'
+    : localStatus === 'rejected' ? 'rejected'
+    : emp.email_sent ? 'pending_sent' : 'pending_unsent';
+  const cs = CONFIRM_MAP[statusKey] || CONFIRM_MAP.pending_unsent;
   const canReset = emp.payslip_id && localStatus !== 'pending';
 
   const handleReset = async () => {
@@ -355,10 +358,10 @@ const CHK_W = 40;
 
 /* NV xac nhan badge styles */
 const CONFIRM_MAP = {
-  pending_sent:  { label: 'Đã gửi (Chờ XN)', bg: '#fef3c7', color: '#92400e' },
-  pending_unsent:{ label: 'Chưa gửi mail',   bg: '#f3f4f6', color: '#4b5563' },
-  confirmed:     { label: 'NV Đã đồng ý ✓', bg: '#dcfce7', color: '#15803d' },
-  rejected:      { label: 'NV Khiếu nại 💬', bg: '#fee2e2', color: '#991b1b' },
+  pending_sent:  { label: 'Đã gửi (Chờ XN)', bg: '#fef3c7', color: '#92400e', icon: 'mail' },
+  pending_unsent:{ label: 'Chưa gửi mail',   bg: '#f3f4f6', color: '#4b5563', icon: 'clock' },
+  confirmed:     { label: 'NV Đã đồng ý ✓', bg: '#dcfce7', color: '#15803d', icon: 'checkCircle' },
+  rejected:      { label: 'NV Khiếu nại 💬', bg: '#fee2e2', color: '#991b1b', icon: 'alertCircle' },
 };
 
 /* ── Main ── */
@@ -373,10 +376,38 @@ export default function BatchList({ search }) {
   const [colWidths, setColWidths] = useState(() => loadWidths());
   const [checked, setChecked] = useState({});
   const [computing, setComputing] = useState(false);
+  const [computeProgress, setComputeProgress] = useState(null);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [confirmFilter, setConfirmFilter] = useState('');
+  const startPolling = useCallback((m, y) => {
+    setComputing(true);
+    const pollTimer = setInterval(async () => {
+      try {
+        const st = await fetchComputeStatus(Number(m), Number(y));
+        if (st.status === 'processing') {
+          const pct = st.total > 0 ? Math.round((st.computed / st.total) * 100) : 0;
+          setComputeProgress({ computed: st.computed, total: st.total, percent: pct });
+        } else if (st.status === 'completed') {
+          clearInterval(pollTimer);
+          setComputeProgress(null);
+          setComputing(false);
+          alert(`🎉 Đã tính toán lương hoàn tất cho ${st.computed || 0} nhân viên!`);
+          load();
+        } else if (st.status === 'failed') {
+          clearInterval(pollTimer);
+          setComputeProgress(null);
+          setComputing(false);
+          alert('Lỗi tính lương: ' + (st.error || 'Lỗi không xác định'));
+        }
+      } catch {
+        /* ignore transient poll network errors */
+      }
+    }, 1200);
+    return pollTimer;
+  }, [month, year]);
+
   const load = () => {
     setErr(null); setData(null); setChecked({});
     fetchEmployeePayroll({ month, year }).then(async (d) => {
@@ -405,6 +436,16 @@ export default function BatchList({ search }) {
         }
       } catch { /* allowance fetch fail is non-critical */ }
       setData(d);
+
+      // Check if background calculation is currently running
+      try {
+        const st = await fetchComputeStatus(Number(month), Number(year));
+        if (st.status === 'processing') {
+          const pct = st.total > 0 ? Math.round((st.computed / st.total) * 100) : 0;
+          setComputeProgress({ computed: st.computed, total: st.total, percent: pct });
+          startPolling(month, year);
+        }
+      } catch { /* ignore status check failure */ }
     }).catch((e) => setErr(e.message));
   };
   useEffect(load, [month, year]);
@@ -453,28 +494,62 @@ export default function BatchList({ search }) {
   const checkedCount = checkedIds.length;
   const toggleOne = (pid) => setChecked((p) => ({ ...p, [pid]: !p[pid] }));
 
-  /* ── compute all ── */
+  /* ── compute all with async background polling ── */
   const handleComputeAll = async () => {
     if (computing) return;
     setComputing(true);
+    setComputeProgress({ computed: 0, total: 0, percent: 0 });
+
     try {
       const res = await computeAllPayslips(Number(month), Number(year));
-      const msg = `Đã tính lương cho ${res.computed} nhân viên`
-        + (res.created ? `, tạo mới ${res.created} phiếu` : '')
-        + (res.auto_mail_sent ? `\nTự động gửi ${res.auto_mail_sent} email thông báo lương.` : '')
-        + (res.errors?.length ? `\nLỗi: ${res.errors.join('; ')}` : '');
-      alert(msg);
-      load();
+      
+      if (res.status === 'processing') {
+        const initialTotal = res.total || 0;
+        const initialComputed = res.computed || 0;
+        const initialPct = initialTotal > 0 ? Math.round((initialComputed / initialTotal) * 100) : 0;
+        setComputeProgress({ computed: initialComputed, total: initialTotal, percent: initialPct });
+        startPolling(month, year);
+      } else {
+        setComputeProgress(null);
+        setComputing(false);
+        const msg = `Đã tính lương cho ${res.computed || 0} nhân viên`
+          + (res.created ? `, tạo mới ${res.created} phiếu` : '');
+        alert(msg);
+        load();
+      }
     } catch (e) {
-      alert('Lỗi tính lương: ' + e.message);
-    } finally {
+      setComputeProgress(null);
       setComputing(false);
+      alert('Lỗi tính lương: ' + e.message);
     }
   };
 
-  /* ── send mail via EmailJS ── */
+  /* ── send mail via EmailJS / Backend ── */
   const handleSendMail = async () => {
     if (checkedCount === 0 || sending) return;
+
+    const allEmps = data ? data.employees : [];
+    const checkedSet = new Set(checkedIds);
+    const targets = allEmps.filter((e) => e.payslip_id && checkedSet.has(e.payslip_id));
+    const noEmailEmps = targets.filter((e) => !e.work_email);
+    const validEmps = targets.filter((e) => !!e.work_email);
+
+    if (noEmailEmps.length > 0) {
+      const sampleNames = noEmailEmps.slice(0, 10).map((e) => `• ${e.name}`).join('\n');
+      const moreCount = noEmailEmps.length > 10 ? `\n... và ${noEmailEmps.length - 10} nhân viên khác.` : '';
+      const confirmMsg = `Phát hiện ${noEmailEmps.length} nhân viên CHƯA CÓ EMAIL:\n${sampleNames}${moreCount}\n\nBạn có XÁC NHẬN GỬI MAIL cho ${validEmps.length} nhân viên CÓ EMAIL không?\n(Những nhân viên chưa có email sẽ tự động được bỏ qua).`;
+      if (!window.confirm(confirmMsg)) {
+        return;
+      }
+    }
+
+    if (validEmps.length === 0) {
+      alert('Không có nhân viên nào trong danh sách được chọn có địa chỉ email!');
+      return;
+    }
+
+    const validPayslipIds = validEmps.map((e) => e.payslip_id);
+
     setSending(true);
     try {
       let cfg = null;
@@ -482,22 +557,13 @@ export default function BatchList({ search }) {
         cfg = await fetchEmailjsConfig();
       } catch { /* ignore fetch error */ }
 
-      let emailJsSuccess = false;
-
       // 1. Try EmailJS if configured
       if (cfg && cfg.service_id && cfg.template_id && cfg.public_key) {
-        const allEmps = data ? data.employees : [];
-        const checkedSet = new Set(checkedIds);
-        const targets = allEmps.filter((e) => e.payslip_id && checkedSet.has(e.payslip_id));
         const baseUrl = window.location.origin;
         const sentIds = [];
         const errors = [];
 
-        for (const emp of targets) {
-          if (!emp.work_email) {
-            errors.push(`${emp.name}: không có work_email`);
-            continue;
-          }
+        for (const emp of validEmps) {
           const gross = emp.gross_amount ? emp.gross_amount.toLocaleString('vi-VN') : '0';
           const net = emp.net_amount ? emp.net_amount.toLocaleString('vi-VN') : '0';
           const viewUrl = emp.access_token
@@ -529,30 +595,29 @@ export default function BatchList({ search }) {
         }
 
         if (errors.length === 0 && sentIds.length > 0) {
-          alert(`Đã gửi ${sentIds.length} email thành công qua EmailJS!`);
+          alert(`🎉 Đã gửi thành công ${sentIds.length} email phiếu lương!`);
           setChecked({});
           load();
           return;
         }
 
-        // EmailJS failed (e.g., Template ID not found) → offer fallback to Odoo backend mail engine
-        const errDetail = errors.join('\n');
-        if (confirm(`Gửi mail qua EmailJS không thành công (${errors.length} lỗi):\n${errDetail}\n\nBạn có muốn chuyển sang phát hành mail trực tiếp qua Hệ thống Backend Odoo không?`)) {
-          await sendPayslipMail(checkedIds);
-          alert(`Đã phát hành email phiếu lương và khởi tạo thời hạn phản hồi cho ${checkedIds.length} nhân viên qua Hệ thống Backend!`);
+        // Fallback to Odoo backend mail engine
+        if (confirm(`Gửi mail qua EmailJS có ${errors.length} lỗi:\n${errors.join('\n')}\n\nBạn có muốn chuyển sang phát hành mail trực tiếp qua Backend Odoo cho ${validPayslipIds.length} phiếu lương không?`)) {
+          const res = await sendPayslipMail(validPayslipIds);
+          alert(res?.message || `Đã phát hành email phiếu lương thành công cho ${sentIds.length || validPayslipIds.length} nhân viên!`);
           setChecked({});
           load();
           return;
         }
       } else {
         // Direct backend send if EmailJS is not configured
-        await sendPayslipMail(checkedIds);
-        alert(`Đã phát hành email phiếu lương và khởi tạo thời hạn phản hồi cho ${checkedIds.length} nhân viên!`);
+        const res = await sendPayslipMail(validPayslipIds);
+        alert(res?.message || `Đã phát hành email phiếu lương thành công cho ${validPayslipIds.length} nhân viên!`);
         setChecked({});
         load();
       }
     } catch (e) {
-      alert('Lỗi gửi mail: ' + e.message);
+      alert(e.message || 'Lỗi gửi mail');
     } finally {
       setSending(false);
     }
@@ -637,7 +702,13 @@ export default function BatchList({ search }) {
 
   const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
-    if (confirmFilter && (e.employee_confirm || 'pending') !== confirmFilter) return false;
+    if (confirmFilter) {
+      const statusKey = e.employee_confirm === 'confirmed' ? 'confirmed'
+        : e.employee_confirm === 'rejected' ? 'rejected'
+        : e.email_sent ? 'pending_sent' : 'pending_unsent';
+
+      if (statusKey !== confirmFilter) return false;
+    }
     if (!q) return true;
     return (e.name || '').toLowerCase().includes(q)
       || (e.code || '').toLowerCase().includes(q)
@@ -736,15 +807,15 @@ export default function BatchList({ search }) {
           onChange={(e) => { setConfirmFilter(e.target.value); setChecked({}); }}
           style={{
             padding: '5px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: 600,
-            border: '1px solid #d1d5db', background: confirmFilter === 'rejected' ? '#fee2e2' : '#fff',
-            color: confirmFilter === 'rejected' ? '#991b1b' : '#374151',
+            border: '1px solid #d1d5db', background: '#fff', color: '#374151',
             cursor: 'pointer',
           }}
         >
           <option value="">Tất cả trạng thái</option>
-          <option value="pending">Chờ xác nhận</option>
+          <option value="pending_unsent">Chưa gửi mail</option>
+          <option value="pending_sent">Đã gửi (Chờ XN)</option>
           <option value="confirmed">Đã xác nhận</option>
-          <option value="rejected">Từ chối</option>
+          <option value="rejected">Từ chối / Khiếu nại</option>
         </select>
 
         {/* metrics inline */}
@@ -812,7 +883,7 @@ export default function BatchList({ search }) {
             opacity: computing ? .5 : 1,
           }}>
           <Icon name="zap" size={13} />
-          {computing ? 'Đang tính...' : 'Tính lương'}
+          {computing ? (computeProgress ? `Đang tính (${computeProgress.percent}%)...` : 'Đang khởi chạy...') : 'Tính lương'}
         </button>
 
         <button onClick={handleSendMail} disabled={sending || checkedCount === 0}
@@ -855,7 +926,44 @@ export default function BatchList({ search }) {
         </button>
       </div>
 
-      {/* table — shrink-wrap content, cap at available screen */}
+      {/* Progress banner for async payroll computation */}
+      {computeProgress && (
+        <div style={{
+          marginBottom: 10, padding: '10px 16px', borderRadius: 8,
+          background: 'linear-gradient(90deg, #eff6ff 0%, #dbeafe 100%)',
+          border: '1px solid #bfdbfe', display: 'flex', flexDirection: 'column', gap: 6,
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, fontWeight: 600, color: '#1e40af' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="zap" size={15} style={{ color: '#2563eb' }} />
+              ⚡ Đang tính toán lương ngầm theo Batch (Đã xử lý: {computeProgress.computed} / {computeProgress.total} phiếu)...
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <b style={{ fontSize: 13, color: '#1d4ed8' }}>{computeProgress.percent}%</b>
+              <button
+                onClick={() => { setComputeProgress(null); setComputing(false); handleComputeAll(); }}
+                style={{
+                  border: '1px solid #93c5fd', background: '#ffffff', color: '#1d4ed8',
+                  borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer', fontWeight: 600
+                }}
+                title="Bấm để khởi động lại tiến trình nếu bị đứng"
+              >
+                🔄 Khởi chạy lại
+              </button>
+            </div>
+          </div>
+          <div style={{ width: '100%', height: 7, background: '#cbd5e1', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{
+              width: `${computeProgress.percent}%`, height: '100%',
+              background: 'linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%)',
+              transition: 'width 0.3s ease-in-out',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* table container */}
       <div style={{
         flex: '0 1 auto', minHeight: 0,
         border: '1px solid var(--border,#e5e7eb)', borderRadius: 10,
@@ -1017,9 +1125,6 @@ export default function BatchList({ search }) {
                         <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                           <button className="icon-btn" title="Tính lại lương cho NV này" onClick={(e) => handleSingleCompute(emp, e)} disabled={computing}>
                             <Icon name="calculator" size={14} style={{ color: '#f59e0b' }} />
-                          </button>
-                          <button className="icon-btn" title="Gửi / Phát hành lại mail cho NV này" onClick={(e) => handleSingleSendMail(emp, e)} disabled={sending}>
-                            <Icon name="mail" size={14} style={{ color: '#2563eb' }} />
                           </button>
                           <button className="icon-btn" title="Reset xác nhận NV này" onClick={(e) => handleSingleResetConfirm(emp, e)}>
                             <Icon name="rotateCcw" size={14} style={{ color: '#6b7280' }} />

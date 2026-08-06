@@ -1,14 +1,14 @@
-# FS-PAY-004 -- Payslip Computation Engine
+# FS-PAY-002 -- Payslip Computation Engine
 
 | Field        | Value                                                            |
 |------------- |----------------------------------------------------------------- |
-| **Code**     | FS-PAY-004                                                       |
+| **Code**     | FS-PAY-002                                                       |
 | **Title**    | Payslip Computation Engine                                       |
 | **Module**   | hocba_payroll                                                    |
 | **Model**    | hb.payslip (inherited mail.thread)                               |
-| **Version**  | 1.0                                                              |
-| **Date**     | 2026-06-21                                                       |
-| **Status**   | Draft                                                            |
+| **Version**  | 1.1                                                              |
+| **Date**     | 2026-08-07                                                       |
+| **Status**   | Approved                                                         |
 | **Platform** | Odoo 19 Community                                                |
 
 ---
@@ -17,18 +17,23 @@
 
 The Payslip Computation Engine is the core salary calculation subsystem of the `hocba_payroll` module. It evaluates a set of data-driven salary rules against a payslip, producing payslip lines that represent every element of an employee's pay -- allowances, gross income, insurance deductions, personal income tax, and net pay.
 
-The engine is invoked through the `action_compute_sheet()` method on `hb.payslip`. It resolves the employee's contract and salary structure, builds an evaluation namespace with proxy objects, then iterates through salary rules in sequence order. Each rule's condition is checked, its amount is computed via one of four computation modes (`code`, `fixed`, `percentage`, `formula`), and the result is stored as a payslip line.
+The engine is invoked through `action_compute_sheet()` for individual payslips or `action_compute_batch()` for multi-employee batch calculations. In batch mode, the engine utilizes **High-Performance In-Memory Optimizations**:
+1. **$O(1)$ Bulk Lookup Caching (`_prefetch_lookups_bulk`)**: Fetches all attendance/work-entry/lookup data across ALL employees in 1 single pass per model before looping, eliminating $O(N \times R)$ database queries.
+2. **Process-Level AST Caching (`_AST_CACHE`)**: Caches compiled Abstract Syntax Trees (AST) for formula expressions in CPython memory, eliminating `ast.parse` overhead across repeated calculations.
+3. **Single Topological Rule Pre-Sorting**: Sorts rules once using Kahn's algorithm per batch execution pass instead of per-slip.
 
 | Concept               | Description                                                                                  |
 |----------------------- |--------------------------------------------------------------------------------------------- |
 | Entry point            | `hb.payslip.action_compute_sheet()` -- button on payslip form and batch action               |
+| Batch Entry point      | `hb.payslip.action_compute_batch()` -- optimized batch calculation pass                       |
 | Salary structure       | `hb.salary.structure` -- groups a set of ordered salary rules                                |
 | Salary rule            | `hb.salary.rule` -- defines one computation step (allowance, deduction, tax, net, etc.)      |
 | Payslip line           | `hb.payslip.line` -- stores the computed result of one salary rule                           |
 | Worked days            | `hb.payslip.worked_days` -- attendance/work-entry data consumed by rules                     |
 | Payslip input          | `hb.payslip.input` -- ad-hoc monetary inputs (advances, bonuses) consumed by rules           |
 | Proxy classes          | Module-level Python classes providing attribute-access syntax inside rule evaluation          |
-| Formula transpiler     | `_transpile_formula()` converts Excel-like expressions to Python for the `formula` amount type|
+| AST Cache              | Process-level `_AST_CACHE` dict caching parsed formula ASTs to avoid recompilation overhead  |
+| Bulk Lookup Prefetch   | `_prefetch_lookups_bulk()` pre-calculates lookup values for $N$ employees in 1 query pass    |
 | PIT calculator         | `_hocba_pit()` implements the 7-bracket Vietnam progressive personal income tax               |
 
 ---
@@ -351,4 +356,23 @@ Counts active dependents from `employee.x_dependent_ids` where `date_start <= to
 
 ---
 
-*End of FS-PAY-004 v1.0*
+---
+
+## 7. HIGH-SCALE ASYNC BATCH ENGINE & PROGRESS POLLING (1,000+ EMPLOYEES)
+
+| Requirement | Detail |
+|------------ |--------------------------------------------------------------------------------------------------------- |
+| **Async Execution** | `POST /hocba-hrm/api/payroll/compute-all` MUST launch a daemon background worker thread and return HTTP 200 in **< 100ms** to prevent socket/Gunicorn timeouts. |
+| **Chunked DB Transactions** | Background worker MUST process payslips in chunks of 50-100 records and execute `cr.commit()` per chunk to prevent long locks and cloud DB (`cursor already closed`) errors. |
+| **Progress Polling** | `GET /hocba-hrm/api/payroll/compute-status` MUST provide real-time progress updates (`computed`, `total`, `percent`, `status`). |
+| **UI Progress Bar** | Frontend SPA MUST poll status every 1.5s and display an animated real-time progress bar when `status === 'processing'`. |
+| **High Scalability** | Supports 1,000 to 50,000+ employees without browser timeout, socket disconnect, or `Failed to fetch` errors. |
+
+---
+
+- **v2.1 (2026-08-07)**: Refactored batch salary engine (`action_compute_batch` and `compute-all`) to iteratively invoke the single-employee computation engine (`action_compute_sheet`), eliminating ThreadPoolExecutor thread-safety issues and bulk prefetch cache divergence for 100% calculation consistency.
+- **v2.0 (2026-08-06)**: Upgraded to Async Job Queue & Chunked DB Transaction Architecture with real-time progress polling for 1,000+ employee scalability.
+- **v1.1 (2026-08-06)**: Integrated `action_compute_batch` high-performance engine for batch salary computation (`/hocba-hrm/api/payroll/compute-all`), eliminated N+1 queries in summary endpoints, and added confirmation reset logic.
+
+*End of FS-PAY-002 v2.1*
+

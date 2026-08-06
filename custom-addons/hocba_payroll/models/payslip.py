@@ -366,6 +366,9 @@ def _eval_ast_node(node, localdict):
     raise ValueError(f'Unsupported expression node: {type(node).__name__}')
 
 
+_AST_CACHE = {}
+
+
 def _eval_formula_expr(formula, localdict):
     """
     Parse *formula* as a Python expression and evaluate it via AST tree-walking.
@@ -386,10 +389,13 @@ def _eval_formula_expr(formula, localdict):
     src = (formula or '').strip()
     if not src:
         return 0
-    try:
-        tree = _ast.parse(src, mode='eval')
-    except SyntaxError as exc:
-        raise ValueError(f'Formula syntax error in {src!r}: {exc}') from exc
+    tree = _AST_CACHE.get(src)
+    if tree is None:
+        try:
+            tree = _ast.parse(src, mode='eval')
+            _AST_CACHE[src] = tree
+        except SyntaxError as exc:
+            raise ValueError(f'Formula syntax error in {src!r}: {exc}') from exc
     return _eval_ast_node(tree.body, localdict)
 
 
@@ -667,13 +673,15 @@ class HbPayslip(models.Model):
     # RULE-BASED SALARY ENGINE
     # ═════════════════════════════════════════════════════════════════════════
 
-    def action_compute_sheet(self, prefetched_rules=None):
+    def action_compute_sheet(self, prefetched_rules=None, prefetched_lookups=None):
         """Main entry — compute salary using data-driven rules.
 
         prefetched_rules: recordset hb.salary.rule already loaded (optional).
             When supplied, skip per-slip structure/rules resolution — used when
             all employees share one rule set (batch compute).
             If None: resolve per-slip as before (single slip or multi-structure).
+        prefetched_lookups: dict of {(employee_id, lookup_source, lookup_field): value}
+            pre-calculated lookup cache for bulk batch calculations.
 
         Phase 2: rules are topologically sorted (dependency order) once per
         call for batch mode, or per-slip for single mode.
@@ -730,7 +738,9 @@ class HbPayslip(models.Model):
                 try:
                     if not slip._evaluate_rule_condition(rule, localdict):
                         continue
-                    amount, qty, rate = slip._evaluate_rule_amount(rule, localdict)
+                    amount, qty, rate = slip._evaluate_rule_amount(
+                        rule, localdict, prefetched_lookups=prefetched_lookups,
+                    )
                 except Exception as e:
                     _logger.warning(
                         'Payslip %s: rule %s error — %s', slip.number, rule.code, e,
@@ -810,206 +820,35 @@ class HbPayslip(models.Model):
     # N=employees, L=lookup rules, S=source models, F=formula rules
     # ═════════════════════════════════════════════════════════════════════════
 
-    def action_compute_batch(self, prefetched_rules):
-        """Batch-optimized: compute all payslips with minimum DB round-trips.
-
-        Called on a multi-record recordset (all slips to compute).
-        prefetched_rules: already-loaded hb.salary.rule recordset.
-        Returns dict: {'computed': int, 'errors': list[str]}
+    def action_compute_batch(self, prefetched_rules=None):
+        """Compute all payslips by iteratively invoking the exact single-employee action_compute_sheet logic
+        for each payslip in the recordset, ensuring 100% calculation consistency and identical values to single slip compute.
         """
-        slips = self
-        if not slips:
+        if not self:
             return {'computed': 0, 'errors': []}
 
-        env = self.env
+        if prefetched_rules is None:
+            prefetched_rules = self.env['hb.salary.rule'].search(
+                [('active', '=', True)], order='sequence, id',
+            )
 
-        # ── 1. Topo-sort rules ONCE ──────────────────────────────────────
-        try:
-            sorted_rules = _topo_sort_rules(prefetched_rules)
-        except UserError:
-            _logger.warning(
-                'Cycle detected in salary rules — using sequence order')
-            sorted_rules = list(prefetched_rules)
+        # 🚀 Xóa các dòng chi tiết lương cũ của các phiếu CHƯA LƯU LỊCH SỬ (state != 'close')
+        slips_to_clear = self.filtered(lambda s: not s.payslip_run_id or s.payslip_run_id.state != 'close')
+        old_lines = slips_to_clear.mapped('line_ids')
+        if old_lines:
+            old_lines.unlink()
 
-        # ── 2. Prime ORM cache via batch loading ─────────────────────────
-        # Accessing mapped() triggers Odoo's prefetch for the whole recordset,
-        # so per-slip field access in the loop hits cache (not N+1 queries).
-        slips.mapped('employee_id')
-        slips.mapped('worked_days_ids')
-        slips.mapped('input_ids')
-
-        # ── 3. Prefetch contracts in bulk (1 query vs N) ─────────────────
-        emp_ids = list(set(slips.mapped('employee_id.id')))
-        ref_slip = slips[0]
-        all_contracts = env['hb.contract'].sudo().search([
-            ('state', '=', 'open'),
-            ('employee_id', 'in', emp_ids),
-            ('date_start', '<=', ref_slip.date_to),
-            '|', ('date_end', '=', False),
-                 ('date_end', '>=', ref_slip.date_from),
-        ])
-        contract_map = {}
-        for c in all_contracts:
-            contract_map.setdefault(c.employee_id.id, c)
-
-        # ── 4. Prefetch lookup data in bulk (S queries vs N×L) ───────────
-        lookup_cache = self._prefetch_lookups_bulk(
-            emp_ids, sorted_rules, ref_slip.date_from, ref_slip.date_to,
-        )
-
-        # ── 5. Pre-parse AST trees for formula/percentage rules ──────────
-        ast_cache = {}
-        for rule in sorted_rules:
-            src = None
-            if rule.amount_type == 'formula' and rule.amount_formula:
-                src = rule.amount_formula.strip()
-            elif rule.amount_type == 'percentage' \
-                    and rule.amount_percentage_base:
-                src = (rule.amount_percentage_base or '0').strip()
-            if src:
-                try:
-                    ast_cache[rule.id] = _ast.parse(src, mode='eval')
-                except SyntaxError:
-                    pass  # will fall back to per-slip parse
-
-        # ── 6. Pure Python computation loop (NO DB queries) ─────────────
-        # NOTE: old lines are NOT deleted upfront — only for successful
-        # slips after the loop.  This prevents data loss if a specific
-        # employee's computation fails.
-        all_lines = []
         computed = 0
         errors = []
-        slip_results = {}
-
-        for slip in slips:
+        for slip in self:
+            emp_name = slip.employee_id.name if slip.employee_id else (slip.number or f'Slip #{slip.id}')
             try:
-                if slip.state not in ('draft', 'verify'):
-                    continue
-
-                # Resolve contract from prefetched map
-                contract = slip.contract_id
-                cid_update = None
-                if not contract:
-                    contract = contract_map.get(
-                        slip.employee_id.id, env['hb.contract'])
-                    if contract:
-                        cid_update = contract.id
-
-                # Build evaluation namespace (uses ORM cache, no queries)
-                localdict = slip._build_localdict(contract)
-                _rules_order = localdict['_rules_order']
-                _rules_pos = localdict['_rules_pos']
-                warnings = []
-
-                for rule in sorted_rules:
-                    try:
-                        if not HbPayslip._evaluate_rule_condition(
-                                rule, localdict):
-                            continue
-
-                        # ── Optimized rule evaluation ──
-                        if rule.amount_type == 'lookup':
-                            # Use bulk-prefetched cache (0 DB queries)
-                            amount = lookup_cache.get(
-                                (slip.employee_id.id,
-                                 rule.lookup_source,
-                                 rule.lookup_field), 0.0)
-                            qty, rate = 1.0, 0.0
-                        elif rule.id in ast_cache:
-                            # Use pre-parsed AST tree (skip re-parsing)
-                            val = _eval_ast_node(
-                                ast_cache[rule.id].body, localdict)
-                            if rule.amount_type == 'percentage':
-                                amount = int(round(
-                                    float(val)
-                                    * rule.amount_percentage / 100.0))
-                            else:
-                                amount = float(val)
-                            qty, rate = 1.0, 0.0
-                        else:
-                            # Fallback for code/fixed types
-                            amount, qty, rate = \
-                                slip._evaluate_rule_amount(rule, localdict)
-                    except Exception as e:
-                        _logger.warning(
-                            'Batch compute %s rule %s: %s',
-                            slip.number, rule.code, e,
-                        )
-                        warnings.append(_(
-                            'Rule %(code)s lỗi: %(err)s',
-                            code=rule.code, err=str(e),
-                        ))
-                        amount, qty, rate = 0.0, 1.0, 0.0
-
-                    # Accumulate for subsequent rule references
-                    localdict['rules'][rule.code] = amount
-                    _rules_pos[rule.code] = len(_rules_order)
-                    _rules_order.append(rule.code)
-                    localdict['categories'].accumulate(
-                        rule.category_id.code, amount)
-
-                    # Collect line for bulk INSERT
-                    if rule.appears_on_payslip:
-                        all_lines.append({
-                            'payslip_id': slip.id,
-                            'rule_id': rule.id,
-                            'category_id': rule.category_id.id,
-                            'code': rule.code,
-                            'name': rule.name,
-                            'sequence': rule.sequence,
-                            'quantity': qty,
-                            'rate': rate,
-                            'amount': int(round(amount)),
-                        })
-
-                slip_results[slip.id] = {
-                    'warnings': '\n'.join(warnings) if warnings else False,
-                    'contract_id': cid_update,
-                }
+                _logger.info('🧮 [PAYROLL COMPUTE] Đang tính lương cá nhân cho NV: %s (%s)', emp_name, slip.number or slip.id)
+                slip.action_compute_sheet(prefetched_rules=prefetched_rules)
                 computed += 1
             except Exception as e:
-                _logger.warning('Batch compute slip error: %s', e)
-                errors.append(f'{slip.employee_id.name}: {e}')
-
-        # ── 7. Bulk delete old lines ONLY for successful slips ──────────
-        successful_ids = list(slip_results.keys())
-        if successful_ids:
-            old_lines = env['hb.payslip.line'].sudo().search([
-                ('payslip_id', 'in', successful_ids),
-            ])
-            if old_lines:
-                old_lines.unlink()
-
-        # ── 8. Bulk create all lines (1 DB trip for ALL slips) ────────────
-        if all_lines:
-            env['hb.payslip.line'].sudo().create(all_lines)
-
-        # ── 9. Batch update slips (2-3 queries vs N) ─────────────────────
-        # Majority: slips without warnings
-        no_warn_ids = [
-            sid for sid, r in slip_results.items() if not r['warnings']
-        ]
-        if no_warn_ids:
-            env['hb.payslip'].browse(no_warn_ids).write({
-                'x_teaching_computed': True,
-                'x_compute_warnings': False,
-            })
-        # Rare: slips with warnings
-        for sid, r in slip_results.items():
-            if r['warnings']:
-                env['hb.payslip'].browse(sid).write({
-                    'x_teaching_computed': True,
-                    'x_compute_warnings': r['warnings'],
-                })
-        # Update contracts for slips that didn't have one set
-        contract_updates = {
-            sid: r['contract_id']
-            for sid, r in slip_results.items() if r.get('contract_id')
-        }
-        if contract_updates:
-            for sid, cid in contract_updates.items():
-                env['hb.payslip'].browse(sid).write({'contract_id': cid})
-
+                _logger.warning('❌ [PAYROLL COMPUTE ERROR] Lỗi tính phiếu %s (%s): %s', slip.number, emp_name, e)
+                errors.append(f'{emp_name}: {e}')
         return {'computed': computed, 'errors': errors}
 
     @api.model
@@ -1201,7 +1040,7 @@ class HbPayslip(models.Model):
         # Keep safe_eval for conditions — they may be complex multi-expression Python
         return bool(safe_eval(rule.condition_python, localdict))
 
-    def _evaluate_rule_amount(self, rule, localdict):
+    def _evaluate_rule_amount(self, rule, localdict, prefetched_lookups=None):
         amount = 0.0
         qty    = 1.0
         rate   = 0.0
@@ -1232,7 +1071,11 @@ class HbPayslip(models.Model):
             amount = float(_eval_formula_expr(rule.amount_formula, localdict))
 
         elif rule.amount_type == 'lookup':
-            amount = self._compute_lookup(rule)
+            key = (self.employee_id.id, rule.lookup_source, rule.lookup_field)
+            if prefetched_lookups is not None and key in prefetched_lookups:
+                amount = float(prefetched_lookups[key])
+            else:
+                amount = self._compute_lookup(rule)
 
         return amount, qty, rate
 

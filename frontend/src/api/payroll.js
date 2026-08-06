@@ -36,6 +36,8 @@ export const resetPayslip = (id, reason) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/reset`, { reason });
 export const computeAllPayslips = (month, year) =>
   p('/hocba-hrm/api/payroll/compute-all', { month, year });
+export const fetchComputeStatus = (month, year) =>
+  g(`/hocba-hrm/api/payroll/compute-status?month=${month}&year=${year}`);
 
 // ── Bank File / Transfer ─────────────────────────────────
 export const fetchBankFiles = (params) =>

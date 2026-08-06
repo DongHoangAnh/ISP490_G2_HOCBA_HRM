@@ -29,8 +29,10 @@
 | 3 | 1.2 | Standardization of Vietnamese C&B Terminology | All | 06/08/2026 | Group G2 |
 | 4 | 1.3 | Updated business logic: HR manual mail issuance (removed auto-send on compute), Confirmation Date Window (Start to Deadline), multi-response allowance during open window, auto-confirmation on deadline expiration, and bank file generation flow | All | 06/08/2026 | Group G2 |
 | 5 | 1.4 | Added individual employee payslip recalculation, single-employee email resend & deadline extension, confirmation reset API, and dedicated "Thao tác" action column in SPA `BatchList.jsx` & `PayslipDrawer.jsx` | All | 06/08/2026 | Group G2 |
-| 6 | 1.5 | Security Enhancement: Mandatory Odoo user authentication (`auth='user'`) and email account ownership verification. Email links force login and redirect directly to the real SPA app (`http://localhost:8069/hocba-hrm`) with self-service `MyPayslipsView` component | All | 06/08/2026 | Group G2 |
-| 7 | 1.6 | UI/UX Redesign: Overhauled `MyPayslipsView` into a Senior-level categorized layout (Thu nhập, Các khoản trừ, Bảo hiểm công ty đóng tài trợ, Căn cứ tính thuế TNCN). Removed raw truncated code column ("Mã"), added feedback presets & enhanced confirmation action footer. | Frontend SPA | 06/08/2026 | Group G2 |
+| 6 | 1.6 | Security Enhancement: Mandatory Odoo user authentication (`auth='user'`) and email account ownership verification. Email links force login and redirect directly to the real SPA app (`http://localhost:8069/hocba-hrm`) with self-service `MyPayslipsView` component | All | 06/08/2026 | Group G2 |
+| 7 | 1.7 | Start & End Date Confirmation Window: Added configurable Start Day & End Day parameters. Enforced send-mail window validation (`start_day <= today <= end_day`), auto-confirmation of all pending slips past end date, and mail/recalculate lock past deadline unless extended in Config. | All | 07/08/2026 | Group G2 |
+| 8 | 1.8 | Pre-Send Confirmation Dialog: Implemented confirmation dialog listing employees missing work_email before sending mail, allowing HR to confirm sending to valid-email employees while skipping no-email employees. | Frontend SPA | 07/08/2026 | Group G2 |
+| 8 | 1.6 | UI/UX Redesign: Overhauled `MyPayslipsView` into a Senior-level categorized layout (Thu nhập, Các khoản trừ, Bảo hiểm công ty đóng tài trợ, Căn cứ tính thuế TNCN). Removed raw truncated code column ("Mã"), added feedback presets & enhanced confirmation action footer. | Frontend SPA | 06/08/2026 | Group G2 |
 
 ---
 

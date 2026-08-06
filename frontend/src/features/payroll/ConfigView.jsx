@@ -50,7 +50,9 @@ export default function ConfigView() {
   const [ejsMsg, setEjsMsg] = useState('');
 
   /* confirm config state */
-  const [cfmDays, setCfmDays] = useState(3);
+  const [cfmStartDay, setCfmStartDay] = useState(5);
+  const [cfmEndDay, setCfmEndDay] = useState(10);
+  const [cfmDays, setCfmDays] = useState(5);
   const [cfmAutoMail, setCfmAutoMail] = useState(false);
   const [cfmSaving, setCfmSaving] = useState(false);
   const [cfmMsg, setCfmMsg] = useState('');
@@ -74,7 +76,9 @@ export default function ConfigView() {
   };
   const loadCfmCfg = () => {
     fetchConfirmConfig().then((d) => {
-      setCfmDays(d.confirm_period_days || 3);
+      setCfmStartDay(d.confirm_start_day || 5);
+      setCfmEndDay(d.confirm_end_day || 10);
+      setCfmDays(d.confirm_period_days || 5);
       setCfmAutoMail(!!d.auto_send_mail);
     }).catch(() => {});
   };
@@ -264,7 +268,7 @@ export default function ConfigView() {
                           </span>
                         </td>
                         <td style={{ fontSize: 12.5, fontFamily: 'monospace', color: '#6b7280' }}>
-                          {r.amount_type === 'fixed' ? (r.amount_fixed ? Number(r.amount_fixed).toLocaleString('vi') + ' ₫' : '—')
+                          {r.amount_type === 'fixed' ? (r.amount_fixed != null && r.amount_fixed !== '' ? Number(r.amount_fixed).toLocaleString('vi') + ' ₫' : '—')
                             : r.amount_type === 'formula' ? (r.amount_formula || '—')
                             : r.amount_type === 'lookup' ? `${r.lookup_source || '?'}.${r.lookup_field || '?'}`
                             : '—'}
@@ -474,9 +478,16 @@ export default function ConfigView() {
                   disabled={cfmSaving}
                   onClick={async () => {
                     setCfmSaving(true); setCfmMsg('');
+                    if (cfmEndDay < cfmStartDay) {
+                      setCfmMsg('Lỗi: Ngày kết thúc không được nhỏ hơn Ngày bắt đầu!');
+                      setCfmSaving(false);
+                      return;
+                    }
                     try {
                       await saveConfirmConfig({
-                        confirm_period_days: cfmDays,
+                        confirm_start_day: cfmStartDay,
+                        confirm_end_day: cfmEndDay,
+                        confirm_period_days: cfmEndDay - cfmStartDay,
                         auto_send_mail: cfmAutoMail,
                       });
                       setCfmMsg('Đã lưu!');
@@ -506,42 +517,78 @@ export default function ConfigView() {
               }}>
                 <span style={{ fontSize: 22, lineHeight: 1 }}>💡</span>
                 <div style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.6 }}>
-                  <strong>Quy trình chốt lương & Phản hồi:</strong>
+                  <strong>Quy trình chốt lương & Khoảng thời gian phản hồi:</strong>
                   <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
-                    <li>HR chủ động bấm <strong>"Gửi mail"</strong> cho nhân viên sau khi rà soát và tính toán lương xong (không tự động gửi ngay khi tính).</li>
-                    <li>Trong khoảng thời hạn phản hồi (Từ ngày gửi mail đến ngày hết hạn), nhân viên được phép truy cập phiếu lương cá nhân và có thể <strong>Xác nhận đồng ý</strong> hoặc <strong>Gửi phản hồi / Khiếu nại</strong> nhiều lần (vô số lần trong khoảng thời hạn).</li>
-                    <li>Nếu hết thời hạn mà nhân viên không có phản hồi gì, hệ thống sẽ <strong>tự động coi như nhân viên đồng ý</strong> (Auto-confirmed) để HR tiến hành <strong>Lưu lịch sử lương</strong> và <strong>Tạo file chi lương Ngân hàng</strong>.</li>
+                    <li>HR chủ động bấm <strong>"Gửi mail"</strong> cho nhân viên trong khoảng từ <strong>Ngày bắt đầu</strong> đến <strong>Ngày kết thúc</strong>.</li>
+                    <li>Trong khoảng thời hạn từ <strong>Ngày bắt đầu đến Ngày kết thúc</strong>, nhân viên được truy cập phiếu lương cá nhân để <strong>Xác nhận đồng ý</strong> hoặc <strong>Gửi phản hồi / Khiếu nại</strong>.</li>
+                    <li>Nếu vượt quá <strong>Ngày kết thúc</strong>, hệ thống sẽ <strong>tự động xác nhận toàn bộ phiếu lương</strong> (Auto-confirmed) và khóa tính toán/gửi lại mail trừ khi HR nới rộng thêm Ngày kết thúc.</li>
                   </ul>
                 </div>
               </div>
 
-              {/* Confirm period days */}
+              {/* Confirm window start & end day inputs */}
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20,
-                padding: '16px 20px', borderRadius: 10,
-                background: '#fafafa', border: '1px solid #f3f4f6',
+                display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20,
+                padding: '18px 20px', borderRadius: 10,
+                background: '#fafafa', border: '1px solid #e5e7eb',
               }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Thời hạn phản hồi phiếu lương</div>
-                  <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
-                    Số ngày dương lịch (bao gồm T7, CN) nhân viên có quyền gửi/chỉnh sửa phản hồi khiếu nại kể từ khi HR bấm gửi mail
+                {/* Start day */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>📅 Ngày bắt đầu cho phép gửi mail</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
+                      Ngày trong tháng (dương lịch) bắt đầu cho phép HR bấm gửi mail phiếu lương cho nhân viên
+                    </div>
                   </div>
+                  <select
+                    className="sel"
+                    value={cfmStartDay}
+                    onChange={(e) => { setCfmStartDay(Number(e.target.value)); setCfmMsg(''); }}
+                    style={{
+                      width: 150, padding: '8px 12px', fontSize: 14,
+                      fontWeight: 700, borderRadius: 8,
+                      border: '2px solid #cbd5e1',
+                      background: '#fff', color: '#0f172a',
+                    }}
+                  >
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>Ngày {String(d).padStart(2, '0')}</option>
+                    ))}
+                  </select>
                 </div>
-                <select
-                  className="sel"
-                  value={cfmDays}
-                  onChange={(e) => { setCfmDays(Number(e.target.value)); setCfmMsg(''); }}
-                  style={{
-                    width: 150, padding: '8px 12px', fontSize: 14,
-                    fontWeight: 700, borderRadius: 8,
-                    border: '2px solid #cbd5e1',
-                    background: '#fff', color: '#0f172a',
-                  }}
-                >
-                  {[1, 2, 3, 5, 7, 10, 14, 30].map((d) => (
-                    <option key={d} value={d}>{d} ngày</option>
-                  ))}
-                </select>
+
+                <div style={{ height: 1, background: '#e5e7eb' }} />
+
+                {/* End day */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>⏰ Ngày kết thúc phản hồi (Hạn chót & Auto-confirm)</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
+                      Ngày trong tháng (dương lịch) kết thúc thời hạn phản hồi. Sau ngày này, toàn bộ phiếu lương sẽ tự động chuyển sang Đã xác nhận.
+                    </div>
+                  </div>
+                  <select
+                    className="sel"
+                    value={cfmEndDay}
+                    onChange={(e) => { setCfmEndDay(Number(e.target.value)); setCfmMsg(''); }}
+                    style={{
+                      width: 150, padding: '8px 12px', fontSize: 14,
+                      fontWeight: 700, borderRadius: 8,
+                      border: cfmEndDay < cfmStartDay ? '2px solid #dc2626' : '2px solid #cbd5e1',
+                      background: '#fff', color: cfmEndDay < cfmStartDay ? '#dc2626' : '#0f172a',
+                    }}
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>Ngày {String(d).padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {cfmEndDay < cfmStartDay && (
+                  <div style={{ color: '#dc2626', fontSize: 12.5, fontWeight: 600, marginTop: 4 }}>
+                    ⚠️ Lỗi validation: Ngày kết thúc (ngày {cfmEndDay}) phải lớn hơn hoặc bằng Ngày bắt đầu (ngày {cfmStartDay})!
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -554,7 +601,7 @@ export default function ConfigView() {
             <div style={{
               padding: '14px 22px', borderBottom: '1px solid #e5e7eb',
             }}>
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#374151' }}>Tóm tắt cấu hình hiện tại</h3>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#374151' }}>Tóm tắt khoảng thời gian hiện tại</h3>
             </div>
             <div style={{ padding: '16px 22px', display: 'flex', gap: 16 }}>
               <div style={{
@@ -562,9 +609,11 @@ export default function ConfigView() {
                 background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)',
                 border: '1px solid #bbf7d0',
               }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 0.5 }}>Thời hạn</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#065f46', marginTop: 4 }}>{cfmDays} ngày</div>
-                <div style={{ fontSize: 11.5, color: '#15803d', marginTop: 2 }}>sau khi gửi mail</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 0.5 }}>Khoảng thời gian phản hồi</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#065f46', marginTop: 4 }}>
+                  Từ ngày {String(cfmStartDay).padStart(2, '0')} đến {String(cfmEndDay).padStart(2, '0')} hàng tháng
+                </div>
+                <div style={{ fontSize: 11.5, color: '#15803d', marginTop: 2 }}>Sau ngày {String(cfmEndDay).padStart(2, '0')}: Tự động xác nhận 100%</div>
               </div>
               <div style={{
                 flex: 1, padding: '14px 18px', borderRadius: 10,
@@ -576,7 +625,7 @@ export default function ConfigView() {
                   HR CHỦ ĐỘNG
                 </div>
                 <div style={{ fontSize: 11.5, color: '#3b82f6', marginTop: 2 }}>
-                  Bấm gửi mail sau khi tính & kiểm tra
+                  Chỉ được gửi mail trong khoảng từ ngày {String(cfmStartDay).padStart(2, '0')} đến ngày {String(cfmEndDay).padStart(2, '0')}
                 </div>
               </div>
             </div>
