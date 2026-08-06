@@ -86,7 +86,7 @@ function FileList({ onSelect }) {
     <>
       {/* ── Toolbar ── */}
       <div className="filterbar" style={{ marginBottom: 14 }}>
-        <div style={{ fontWeight: 600, fontSize: 15 }}>Danh sách file chuyển khoản</div>
+        <div style={{ fontWeight: 600, fontSize: 15 }}>Danh sách file chi lương Bank</div>
         <div style={{ flex: 1 }} />
         <button
           onClick={() => setShowModal(true)}
@@ -98,7 +98,7 @@ function FileList({ onSelect }) {
           }}
         >
           <Icon name="plus" size={14} />
-          Tạo file chuyển khoản
+          Tạo file chi lương Bank
         </button>
       </div>
 

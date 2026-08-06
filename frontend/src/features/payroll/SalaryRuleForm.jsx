@@ -5,9 +5,9 @@ import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 
 const AMOUNT_TYPES = [
-  ['fixed', 'Số cố định'],
-  ['formula', 'Công thức'],
-  ['lookup', 'Tra cứu dữ liệu'],
+  ['fixed', 'Số tiền cố định'],
+  ['formula', 'Công thức tính toán'],
+  ['lookup', 'Tra bảng biểu / Định mức'],
 ];
 
 /* Vietnamese diacritics → ASCII slug */
@@ -102,9 +102,9 @@ export default function SalaryRuleForm({ item, structureId, nextSequence = 10, o
     <Modal onClose={onClose}>
       <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
         <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>{isEdit ? 'Sửa rule' : 'Thêm rule'}</h2>
+          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>{isEdit ? 'Sửa thành phần lương' : 'Thêm thành phần lương'}</h2>
           <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-            {isEdit ? `Đang sửa: ${item.name}` : 'Thêm quy tắc tính lương'}
+            {isEdit ? `Đang sửa: ${item.name}` : 'Thêm thành phần lương mới vào cấu trúc'}
           </div>
         </div>
         <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>

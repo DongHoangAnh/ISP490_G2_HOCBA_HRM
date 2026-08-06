@@ -7,10 +7,10 @@ import ConfigView from './ConfigView';
 import SalaryHistory from './SalaryHistory';
 
 const TABS = [
-  ['batches', 'Bảng lương'],
+  ['batches', 'Kỳ tính lương'],
   ['history', 'Lịch sử lương'],
-  ['bank', 'Chuyển khoản'],
-  ['config', 'Cấu hình'],
+  ['bank', 'File chi lương Bank'],
+  ['config', 'Cấu hình lương'],
 ];
 
 export default function Payroll({ search }) {

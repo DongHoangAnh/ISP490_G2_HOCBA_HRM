@@ -26,6 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 1.0 | Initial creation | All | 21/06/2026 | Group G2 |
 | 2 | 1.1 | Added React SPA component documentation (ConfigView, SalaryRuleForm, FormulaSection). Clarified SPA supports only 2 of 4 amount types (fixed, formula). Documented unused SalaryRuleCategoryForm. | 1, 2, 3, 5 | 21/06/2026 | Group G2 |
+| 3 | 1.2 | Standardized UI terminology according to enterprise C&B best practices: "Quy tắc tính lương" -> "Thành phần lương", "Bảng lương" -> "Kỳ tính lương", "Chuyển khoản" -> "File chi lương Bank", "Xác nhận lương" -> "Quy trình chốt & Phản hồi phiếu lương" (Keeping "Lịch sử lương" as requested). | All | 06/08/2026 | Group G2 |
 
 ---
 
