@@ -12,8 +12,8 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import SalaryRuleForm from './SalaryRuleForm';
 import TblWrap from '../../components/TblWrap';
 
-const TYPE_LABEL = { fixed: 'Số cố định', formula: 'Công thức', lookup: 'Tra cứu' };
-const SUB_TABS = [['rules', 'Quy tắc lương'], ['banks', 'Ngân hàng'], ['confirm', 'Xác nhận lương'], ['mail', 'Mẫu email']];
+const TYPE_LABEL = { fixed: 'Số tiền cố định', formula: 'Công thức tính toán', lookup: 'Tra bảng biểu / Định mức' };
+const SUB_TABS = [['rules', 'Thành phần lương'], ['banks', 'Mẫu file Bank'], ['confirm', 'Quy trình chốt lương'], ['mail', 'Mẫu Email gửi phiếu lương']];
 
 const segWrap = {
   display: 'inline-flex', gap: 0, background: 'var(--gray-100)',
@@ -184,15 +184,15 @@ export default function ConfigView() {
         }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Quy tắc lương (Salary Rules)</h3>
-              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>Kéo hoặc dùng mũi tên để sắp xếp thứ tự tính lương</div>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Thành phần lương (Pay Components)</h3>
+              <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>Kéo hoặc dùng mũi tên để sắp xếp thứ tự tính các thành phần lương</div>
             </div>
             <button className="btn btn-primary btn-sm" onClick={() => setRuleForm('new')}>
-              <Icon name="plus" size={14} />Thêm rule
+              <Icon name="plus" size={14} />Thêm thành phần
             </button>
           </div>
           {rules.length === 0 ? (
-            <div style={{ padding: 28, textAlign: 'center' }}><EmptyState>Chưa có quy tắc lương.</EmptyState></div>
+            <div style={{ padding: 28, textAlign: 'center' }}><EmptyState>Chưa có thành phần lương.</EmptyState></div>
           ) : (
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
             <TblWrap id="cfg-rules">
@@ -300,9 +300,9 @@ export default function ConfigView() {
         }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Danh sách ngân hàng</h3>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Danh sách mẫu file Bank</h3>
               <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 2 }}>
-                Ngân hàng dùng cho chuyển khoản lương
+                Mẫu file ngân hàng dùng cho chi trả lương
                 <span style={{ marginLeft: 6, fontWeight: 600 }}>({banks.length} ngân hàng)</span>
               </div>
             </div>
@@ -463,9 +463,9 @@ export default function ConfigView() {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Thời hạn xác nhận phiếu lương</h3>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Quy trình chốt & Phản hồi phiếu lương</h3>
                 <div style={{ fontSize: 12.5, color: '#6b7280', marginTop: 3 }}>
-                  Cấu hình khoảng thời gian nhân viên phản hồi bảng lương
+                  Cấu hình khoảng thời gian nhân viên phản hồi và chốt bảng lương
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
