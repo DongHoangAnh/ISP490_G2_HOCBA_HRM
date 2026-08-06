@@ -9,3 +9,4 @@ from . import test_check_lock
 from . import test_ot_shift
 from . import test_shift_attendance
 from . import test_shift_deadline
+from . import test_attendance_office_location

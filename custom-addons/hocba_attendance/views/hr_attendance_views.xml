@@ -72,6 +72,8 @@
                            decoration-info="status_code == 'on_leave_paid'"
                            decoration-muted="status_code == 'on_leave_unpaid'"/>
                     <field name="needs_review" widget="boolean_toggle" optional="show"/>
+                    <field name="check_in_map_url" widget="url" optional="show"/>
+                    <field name="check_out_map_url" widget="url" optional="show"/>
                     <field name="face_suspect" optional="hide"/>
                     <field name="out_of_zone" optional="hide"/>
                     <field name="out_of_window" optional="hide"/>

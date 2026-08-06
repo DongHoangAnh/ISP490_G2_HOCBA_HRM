@@ -199,11 +199,11 @@ class Attendance(models.Model):
     def _compute_map_urls(self):
         for rec in self:
             rec.check_in_map_url = (
-                'https://www.google.com/maps?q=%s,%s'
+                'https://www.google.com/maps/search/?api=1&query=%s,%s'
                 % (rec.check_in_lat, rec.check_in_lng)
                 if rec.check_in_lat and rec.check_in_lng else False)
             rec.check_out_map_url = (
-                'https://www.google.com/maps?q=%s,%s'
+                'https://www.google.com/maps/search/?api=1&query=%s,%s'
                 % (rec.check_out_lat, rec.check_out_lng)
                 if rec.check_out_lat and rec.check_out_lng else False)
 

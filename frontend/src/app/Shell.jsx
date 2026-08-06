@@ -35,6 +35,7 @@ const NAV = [
     { id: 'onboarding-config', label: 'Cấu hình nhận việc', icon: 'settings', need: 'hrm' },
     { id: 'recruitment-config', label: 'Cấu hình tuyển dụng', icon: 'settings', need: 'hrm' },
     { id: 'timeoffConfig', label: 'Cấu hình nghỉ phép', icon: 'settings', need: 'admin' },
+    { id: 'attendanceConfig', label: 'Cấu hình chấm công', icon: 'settings', need: 'admin' },
   ]},
   { sec: 'Cá nhân', need: 'self', items: [
     { id: 'attendance', label: 'Chấm công', icon: 'clock', need: 'self' },
@@ -100,6 +101,7 @@ export const PAGE_META = {
   // PAGE_META lại theo view nên "Cá nhân / Self-service" sẽ sai với HR.
   service: { t: 'Yêu cầu dịch vụ nhân sự', c: 'Nhân sự / Yêu cầu & Góp ý' },
   timeoffConfig: { t: 'Cấu hình nghỉ phép', c: 'Hệ thống / Time Off' },
+  attendanceConfig: { t: 'Cấu hình chấm công', c: 'Hệ thống / Attendance' },
 };
 
 export function Sidebar({ view, setView, me }) {

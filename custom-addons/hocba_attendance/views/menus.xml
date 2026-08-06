@@ -43,5 +43,9 @@
         <menuitem name="Attendance Policy" id="hocba_attendance_policy_menu_items"
                   parent="hocba_attendance_config_menu"
                   action="hocba_attendance_policy_action" sequence="20"/>
+
+        <menuitem name="Lịch sử Chu kỳ" id="hocba_attendance_period_history_menu_items"
+                  parent="hocba_attendance_config_menu"
+                  action="hocba_attendance_period_history_action" sequence="30"/>
     </data>
 </odoo>

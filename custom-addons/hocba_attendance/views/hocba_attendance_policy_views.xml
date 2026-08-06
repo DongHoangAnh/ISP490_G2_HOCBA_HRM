@@ -30,7 +30,26 @@
                             <field name="workday_sat"/>
                             <field name="workday_sun"/>
                         </group>
-                        <group string="Văn phòng (geofence)">
+                        <group string="Kỳ tính công">
+                            <field name="period_start_day"/>
+                            <field name="period_end_day"/>
+                            <field name="default_location_id"/>
+                            <field name="default_map_url" widget="url" readonly="1"/>
+                        </group>
+                        <group string="Vị trí chấm công hợp lệ (cơ sở)">
+                            <field name="office_location_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="lat"/>
+                                    <field name="lng"/>
+                                    <field name="radius_m"/>
+                                    <field name="active"/>
+                                    <field name="map_url" widget="url" readonly="1"/>
+                                </list>
+                            </field>
+                        </group>
+                        <group string="Văn phòng (legacy, fallback)">
                             <field name="office_lat"/>
                             <field name="office_lng"/>
                             <field name="office_radius_m"/>
@@ -57,7 +76,11 @@
             <field name="arch" type="xml">
                 <list>
                     <field name="name"/>
+                    <field name="period_start_day"/>
+                    <field name="period_end_day"/>
                     <field name="office_radius_m"/>
+                    <field name="default_location_id" optional="show"/>
+                    <field name="default_map_url" widget="url" optional="show"/>
                     <field name="face_threshold"/>
                     <field name="active"/>
                 </list>
@@ -68,6 +91,24 @@
             <field name="name">Attendance Policy</field>
             <field name="res_model">hocba.attendance.policy</field>
             <field name="view_mode">list,form</field>
+        </record>
+
+        <!-- Lịch sử chu kỳ chấm công -->
+        <record id="hocba_attendance_period_history_view_tree" model="ir.ui.view">
+            <field name="name">hocba.attendance.period.history.tree</field>
+            <field name="model">hocba.attendance.period.history</field>
+            <field name="arch" type="xml">
+                <list editable="bottom">
+                    <field name="apply_from"/>
+                    <field name="period_start_day"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="hocba_attendance_period_history_action" model="ir.actions.act_window">
+            <field name="name">Lịch sử Chu kỳ Chấm công</field>
+            <field name="res_model">hocba.attendance.period.history</field>
+            <field name="view_mode">list</field>
         </record>
     </data>
 </odoo>
