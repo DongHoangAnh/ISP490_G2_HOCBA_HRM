@@ -8,10 +8,12 @@ import {
   fetchFinanceContext, fetchVouchers, voucherAction, fetchSummary,
 } from '../../api/finance';
 import VoucherForm from './VoucherForm';
+import FundCategoryManager from './FundCategoryManager';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND, fmtDate } from '../../utils/format';
+import { printVoucher } from '../../utils/printVoucher';
 
 const STATE_BADGE = {
   draft: ['Nháp', 'gray'], approved: ['Đã duyệt', 'amber'],
@@ -58,11 +60,16 @@ export default function Finance({ search = '' }) {
       <div className="tabs">
         <button className={'tab' + (tab === 'vouchers' ? ' active' : '')} onClick={() => setTab('vouchers')}>Phiếu thu/chi</button>
         <button className={'tab' + (tab === 'reports' ? ' active' : '')} onClick={() => setTab('reports')}>Báo cáo</button>
+        {ctx.isFinance && (
+          <button className={'tab' + (tab === 'config' ? ' active' : '')} onClick={() => setTab('config')}>
+            Cấu hình
+          </button>
+        )}
       </div>
 
-      {tab === 'vouchers'
-        ? <VouchersTab ctx={ctx} month={month} search={search} onReloadCtx={loadCtx} />
-        : <ReportsTab month={month} />}
+      {tab === 'vouchers' && <VouchersTab ctx={ctx} month={month} search={search} onReloadCtx={loadCtx} />}
+      {tab === 'reports' && <ReportsTab month={month} />}
+      {tab === 'config' && ctx.isFinance && <FundCategoryManager ctx={ctx} onReloadCtx={loadCtx} />}
     </div>
   );
 }
@@ -166,6 +173,9 @@ function VouchersTab({ ctx, month, search, onReloadCtx }) {
                     <td style={nowrapCell}><Badge kind={kind} dot>{lbl}</Badge></td>
                     <td style={{ ...nowrapCell, textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {/* In phiếu — luôn hiển thị */}
+                        <ActBtn icon="printer" title="In phiếu (Mẫu TT200)"
+                          onClick={() => printVoucher(v, ctx.company)} />
                         {v.canApprove && (
                           <ActBtn icon="check" title="Duyệt" disabled={busyId === v.id}
                             onClick={() => doAction(v, 'approve')} />
@@ -178,7 +188,7 @@ function VouchersTab({ ctx, month, search, onReloadCtx }) {
                           <ActBtn icon="x" title="Huỷ" disabled={busyId === v.id}
                             onClick={() => doAction(v, 'cancel')} />
                         )}
-                        {!v.canApprove && !v.canPost && !(v.canCancel && v.state !== 'draft') && (
+                        {!v.canApprove && !v.canPost && !(v.canCancel && v.state !== 'draft') && v.state === 'cancel' && (
                           <span className="muted" style={{ fontSize: 12 }}>—</span>
                         )}
                       </div>

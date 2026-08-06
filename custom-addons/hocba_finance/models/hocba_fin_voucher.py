@@ -9,7 +9,8 @@ _logger = logging.getLogger(__name__)
 # Các field nội dung bị khoá sau khi phiếu đã ghi sổ (chỉ được Huỷ).
 _LOCKED_FIELDS = {
     'voucher_type', 'amount', 'voucher_date', 'fund_id', 'category_id',
-    'department_id', 'partner_name', 'memo', 'external_ref',
+    'department_id', 'partner_name', 'partner_address', 'memo',
+    'external_ref', 'attachment_count',
 }
 
 
@@ -40,7 +41,16 @@ class HocbaFinVoucher(models.Model):
         'hr.department', string='Phòng ban',
         compute='_compute_department_id', store=True, readonly=False, index=True)
     partner_name = fields.Char(string='Người nộp/nhận')
-    memo = fields.Text(string='Diễn giải')
+    partner_address = fields.Char(
+        string='Địa chỉ',
+        help='Địa chỉ người nộp/nhận tiền — theo Mẫu 01-TT/02-TT TT200.')
+    memo = fields.Text(
+        string='Lý do nộp/chi',
+        help='Lý do nộp tiền (phiếu thu) hoặc lý do chi (phiếu chi) — '
+             'theo chuẩn Mẫu 01-TT/02-TT Thông tư 200/2014/TT-BTC.')
+    attachment_count = fields.Integer(
+        string='Kèm theo chứng từ gốc', default=0,
+        help='Số lượng chứng từ gốc đính kèm (hóa đơn, quyết định, bảng kê…).')
 
     source = fields.Selection(
         [('manual', 'Nhập tay'), ('api', 'API')],
