@@ -127,7 +127,7 @@ def _policy_dict(p):
         'checkInEnd': _fmt_hm(p.morning_end),
         'checkOutStart': _fmt_hm(p.evening_start),
         'checkOutEnd': _fmt_hm(p.evening_end),
-        'geofenceOn': bool(p.office_lat and p.office_lng),
+        'geofenceOn': p.has_geofence,
     }
 
 
