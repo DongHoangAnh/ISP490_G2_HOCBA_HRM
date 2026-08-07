@@ -558,41 +558,31 @@ def _shift_history_row(env, s, att, row_type):
 
 def _get_month_range(env, y, m):
     """Xác định khoảng [first, last] của tháng (y, m) dựa trên lịch sử cấu hình.
-    Ví dụ: m=9, start_day=15 -> 15/09 đến 14/10."""
+    Logic chống trùng lặp: last = (ngày bắt đầu của tháng sau) - 1 ngày."""
     ref_date = date(y, m, 1)
     # Tìm cấu hình áp dụng tại thời điểm đầu tháng đó
     history = env['hocba.attendance.period.history'].sudo().search([
         ('apply_from', '<=', ref_date)
     ], order='apply_from desc', limit=1)
 
-    if history:
-        start_day = history.period_start_day
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    start_day = history.period_start_day if history else (policy.period_start_day or 1)
+
+    # Tính ngày bắt đầu của tháng hiện tại (first)
+    days_in_m = calendar.monthrange(y, m)[1]
+    first = date(y, m, min(start_day, days_in_m))
+
+    # Tính ngày bắt đầu của tháng tiếp theo để suy ra ngày kết thúc tháng này
+    if m == 12:
+        ny, nm = y + 1, 1
     else:
-        # Fallback về cấu hình mặc định trên policy
-        policy = env['hocba.attendance.policy'].sudo().get_policy()
-        start_day = policy.period_start_day or 1
+        ny, nm = y, m + 1
 
-    if start_day == 1:
-        first = date(y, m, 1)
-        last = date(y, m, calendar.monthrange(y, m)[1])
-    else:
-        # Ví dụ: m=9, start_day=15 -> first=15/09, last=14/10
-        # Dùng min để tránh lỗi nếu tháng hiện tại không có ngày start_day (vd 31/02)
-        days_in_month = calendar.monthrange(y, m)[1]
-        first = date(y, m, min(start_day, days_in_month))
+    days_in_nm = calendar.monthrange(ny, nm)[1]
+    next_first = date(ny, nm, min(start_day, days_in_nm))
 
-        # Tính ngày cuối: cộng 1 tháng rồi trừ 1 ngày
-        if m == 12:
-            next_y, next_m = y + 1, 1
-        else:
-            next_y, next_m = y, m + 1
-
-        last_day_of_next_month = calendar.monthrange(next_y, next_m)[1]
-        target_last_day = start_day - 1
-        if target_last_day == 0:
-             target_last_day = last_day_of_next_month
-
-        last = date(next_y, next_m, min(target_last_day, last_day_of_next_month))
+    # Ngày cuối cùng = Ngày đầu tháng sau - 1 ngày
+    last = next_first - timedelta(days=1)
 
     return first, last
 
@@ -4103,7 +4093,7 @@ class HocBaHRM(http.Controller):
         try:
             # Cập nhật các trường trên policy
             policy_fields = [
-                'periodStartDay', 'morningStart', 'morningEnd', 'eveningStart', 'eveningEnd',
+                'periodStartDay', 'periodEndDay', 'morningStart', 'morningEnd', 'eveningStart', 'eveningEnd',
                 'officeLat', 'officeLng', 'officeRadiusM', 'officeMapUrl', 'faceThreshold', 'lateCutoff',
                 'morningCreditCutoff', 'stdWorkHours', 'afternoonMarginHours',
                 'violationFreeDays', 'shiftWindowMinutes'
