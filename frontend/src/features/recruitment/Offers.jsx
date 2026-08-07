@@ -10,7 +10,9 @@ import Badge from '../../components/Badge';
 import { fetchCvList, fetchMailTemplates, updateApplicant, createEmployeeFromApplicant } from '../../api/recruitment';
 import MailSendModal from './MailSendModal';
 
-const OFFER_STAGES = ['Gửi Offer', 'Onboarding'];
+/* Lọc theo MÃ bước (xmlid) chứ không theo tên: tên bước sửa được trên màn Cấu
+   hình, so tên là tab này rỗng ngay khi ai đó đổi chữ. Giống CvList/InterviewSlots. */
+const OFFER_STAGE_REFS = ['hb_stage_offer', 'hb_stage_onboarding'];
 
 export default function Offers({ search }) {
   const [cv, setCv] = useState(null);
@@ -55,7 +57,7 @@ export default function Offers({ search }) {
 
   /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
   const rows = (cv ? cv.rows : [])
-    .filter((r) => OFFER_STAGES.includes(r.stage))
+    .filter((r) => OFFER_STAGE_REFS.includes(r.stageRef))
     .filter((r) => {
       if (!search) return true;
       const q = search.toLowerCase();
@@ -133,8 +135,13 @@ export default function Offers({ search }) {
                         <button className="btn btn-soft btn-sm" disabled={empBusyId === r.id} onClick={() => createEmployee(r)}>
                           <Icon name="user" size={14} />{empBusyId === r.id ? 'Đang tạo…' : 'Tạo hồ sơ NV'}</button>
                       ) : null}
-                      <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
-                        <Icon name="mail" size={14} />Gửi mail</button>
+                      {/* canSend từ payload mail mẫu — cùng luật với tab Mail mẫu:
+                          HR hoặc trưởng phòng. Tài khoản không được gửi thì
+                          không hiện nút (BE cũng đã chặn /preview + /log-sent). */}
+                      {tmpls && tmpls.canSend && (
+                        <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
+                          <Icon name="mail" size={14} />Gửi mail</button>
+                      )}
                     </div>
                   </td>
                 </tr>
