@@ -6,3 +6,4 @@ from . import test_request_notify
 from . import test_interview_slot
 from . import test_job_teaching_level
 from . import test_mail_acl
+from . import test_meta_scope

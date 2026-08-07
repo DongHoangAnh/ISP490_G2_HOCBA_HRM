@@ -267,10 +267,18 @@ class HocBaTuyenDung(http.Controller):
         return row
 
     def _meta(self):
-        """Stages + jobs + nhãn select — cho kanban và form Thêm/Sửa."""
+        """Stages + jobs + nhãn select — cho kanban và form Thêm/Sửa.
+
+        `jobs` lọc theo phạm vi phòng ban như _req_meta/_job_meta: ô "Vị trí ứng
+        tuyển" của trưởng phòng chỉ liệt kê vị trí phòng mình, khớp với guard
+        403 ở api_recruitment_cv_create. Bước (stages) là cấu hình quy trình
+        dùng chung toàn hệ thống nên KHÔNG lọc.
+        """
         env = request.env
+        scope = self._dept_scope_ids()
+        job_domain = [] if scope is None else [('department_id', 'in', scope)]
         stages = env['hr.recruitment.stage'].sudo().search([], order='sequence, id')
-        jobs = env['hr.job'].sudo().search([], order='name')
+        jobs = env['hr.job'].sudo().search(job_domain, order='name')
         return {
             'stages': [{'id': s.id, 'name': s.name, 'sequence': s.sequence,
                         'hiredStage': bool(s.hired_stage), 'slaDays': s.sla_days or 0,
@@ -843,8 +851,16 @@ class HocBaTuyenDung(http.Controller):
 
     def _req_meta(self):
         env = request.env
-        deps = env['hr.department'].sudo().search([], order='name')
-        jobs = env['hr.job'].sudo().search([], order='name')
+        # Cùng luật với _job_meta(): HR thấy mọi phòng, trưởng phòng chỉ thấy
+        # phòng mình quản lý (gồm phòng con) và vị trí thuộc các phòng đó.
+        # api_recruitment_request_create đã chặn 403 khi lưu phiếu ngoài phạm
+        # vi, nhưng liệt kê hết ở ô chọn thì TBP chọn xong mới ăn lỗi — chặn
+        # ngay từ ô chọn cho gọn.
+        scope = self._dept_scope_ids()
+        dep_domain = [] if scope is None else [('id', 'in', scope)]
+        job_domain = [] if scope is None else [('department_id', 'in', scope)]
+        deps = env['hr.department'].sudo().search(dep_domain, order='name')
+        jobs = env['hr.job'].sudo().search(job_domain, order='name')
         return {
             'departments': [{'id': d.id, 'name': d.name} for d in deps],
             'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id} for j in jobs],
