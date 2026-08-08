@@ -3455,7 +3455,11 @@ class HocBaHRM(http.Controller):
         except AccessError as ex:
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)
-        except ValidationError as ex:
+        except (ValidationError, UserError) as ex:
+            # UserError: res.users.write('active') có luật riêng của Odoo lõi.
+            # Các guard trong _account_set_active chặn trước hết những ca đã
+            # biết, nhưng bắt ở đây để nếu Odoo nâng cấp thêm luật thì SPA
+            # nhận 400 kèm thông điệp, thay vì 500 kèm traceback.
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
