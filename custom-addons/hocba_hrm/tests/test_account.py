@@ -150,9 +150,19 @@ class TestAccount(TransactionCase):
         self.assertEqual(out, {'hasAccount': True, 'login': 'lock1',
                                'active': False})
         self.assertFalse(self.emp.sudo().user_id.active)
+        # Audit log phải nêu tên người thao tác (spec §4.1), không được
+        # ghi vô danh.
+        msg = self.emp.sudo().message_ids[0]
+        self.assertIn(self.hr.name, msg.body)
+        msg_count = len(self.emp.sudo().message_ids)
+
         out = _account_set_active(self._env(self.hr), self.emp.id, True)
         self.assertTrue(out['active'])
         self.assertTrue(self.emp.sudo().user_id.active)
+
+        # No-op: khóa một tài khoản đã khóa lại không được ghi thêm chatter.
+        _account_set_active(self._env(self.hr), self.emp.id, True)
+        self.assertEqual(len(self.emp.sudo().message_ids), msg_count + 1)
 
     def test_set_active_forbidden_non_hr(self):
         self._mk_account('lock2')
@@ -160,8 +170,12 @@ class TestAccount(TransactionCase):
             _account_set_active(self._env(self.plain), self.emp.id, False)
 
     def test_set_active_no_account(self):
-        with self.assertRaises(ValidationError):
+        with self.assertRaisesRegex(ValidationError, 'chưa có tài khoản'):
             _account_set_active(self._env(self.hr), self.emp.id, False)
+
+    def test_set_active_employee_not_found(self):
+        with self.assertRaisesRegex(ValidationError, 'Không tìm thấy nhân viên'):
+            _account_set_active(self._env(self.hr), 999999, False)
 
     def test_set_active_cannot_lock_self(self):
         # NV gắn với chính user HR đang thao tác
@@ -172,19 +186,15 @@ class TestAccount(TransactionCase):
             _account_set_active(self._env(self.hr), me.id, False)
 
     def test_set_active_cannot_lock_system_admin(self):
-        admin_user = self.env.ref('base.user_admin')
-        # DB test đã có sẵn 1 hr.employee (archived) gắn với user_admin —
-        # dùng lại nó thay vì tạo mới, để không vỡ unique constraint
-        # hr_employee_user_uniq trên user_id.
-        admin_emp = self.env['hr.employee'].sudo().with_context(
-            active_test=False).search(
-            [('user_id', '=', admin_user.id)], limit=1)
-        if not admin_emp:
-            admin_emp = self.env['hr.employee'].create({
-                'name': 'Admin Emp', 'x_employee_code': 'EMP-ACCT-ADMIN',
-                'user_id': admin_user.id})
+        sysadmin = self.env['res.users'].create({
+            'name': 'Sys', 'login': 'sys_acct',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id,
+                                  self.env.ref('base.group_system').id])]})
+        emp = self.env['hr.employee'].create({
+            'name': 'Sys Emp', 'x_employee_code': 'EMP-ACCT-SYS',
+            'user_id': sysadmin.id})
         with self.assertRaisesRegex(ValidationError, 'quản trị hệ thống'):
-            _account_set_active(self._env(self.hr), admin_emp.id, False)
+            _account_set_active(self._env(self.hr), emp.id, False)
 
     def test_set_active_locks_archived_employee(self):
         # NV đã nghỉ (archived) vẫn phải khóa được — đó là lý do màn Tài
