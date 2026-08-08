@@ -1653,6 +1653,10 @@ def _account_list(env):
             'depName': e.department_id.name or '',
             'login': u.login, 'active': u.active, 'role': role,
             'empActive': e.active,
+            # _account_set_active từ chối đụng tài khoản quản trị hệ thống →
+            # FE ẩn nút thay vì bày ra chỉ để báo lỗi.
+            'isSystem': u.id == SUPERUSER_ID or u.has_group(
+                'base.group_system'),
         })
     depts = [{'id': d.id, 'name': d.name} for d in all_depts]
     return {'accounts': rows, 'departments': depts}

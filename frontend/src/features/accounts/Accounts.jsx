@@ -97,6 +97,8 @@ export default function Accounts({ search = '' }) {
             <tbody>
               {rows.map((r) => {
                 const resigned = r.empActive === false;
+                // BE từ chối khóa/mở tài khoản quản trị hệ thống.
+                const locked = !!r.isSystem;
                 return (
                   <tr key={r.employeeId}>
                     <td><div className="nm">{r.name}</div></td>
@@ -118,7 +120,8 @@ export default function Accounts({ search = '' }) {
                           archived (env.user.employee_id rỗng) → BE từ chối. Còn
                           cấp lại mật khẩu thì chạy trót lọt nhưng vô nghĩa. Ẩn
                           cả hai thay vì bày nút chỉ để báo lỗi. */}
-                      {!resigned && (
+                      {locked && <span className="faint" style={{ fontSize: 12 }}>Quản trị hệ thống</span>}
+                      {!locked && !resigned && (
                         <>
                           <button className="btn btn-ghost btn-sm"
                             onClick={() => setLock({ id: r.employeeId, name: r.name, active: r.active })}>
@@ -130,7 +133,7 @@ export default function Accounts({ search = '' }) {
                             <Icon name="rotateCcw" size={14} />Cấp lại MK</button>
                         </>
                       )}
-                      {resigned && r.active && (
+                      {!locked && resigned && r.active && (
                         <button className="btn btn-ghost btn-sm"
                           onClick={() => setLock({ id: r.employeeId, name: r.name, active: true })}>
                           <Icon name="lock" size={14} />Khóa
