@@ -515,6 +515,30 @@ class TestOnboardingIndependentStep(TransactionCase):
         self.assertEqual(s[2].state, 'skipped')
         self.assertEqual(s[3].state, 'skipped')
 
+    def test_snapshot_rejects_independent_on_evaluation(self):
+        """HR thường có quyền write thẳng hb.onboarding.step — ràng buộc
+        phải có ở cả snapshot chứ không chỉ trên bước mẫu."""
+        s = self._steps()
+        with self.assertRaisesRegex(ValidationError, 'Việc cần làm'):
+            s[0].sudo().write({'is_independent': True})   # s[0] là evaluation
+
+    def test_snapshot_rejects_independent_with_auto_action(self):
+        s = self._steps()
+        with self.assertRaisesRegex(ValidationError, 'Automation'):
+            s[1].sudo().write({'auto_action': 'grant_assets'})
+
+    def test_extend_ignores_independent_step(self):
+        """Gia hạn tại chỗ: bước kế trong CHUỖI là đánh giá tháng-1 (không
+        phải bước độc lập đứng giữa) nên không có bước gia hạn liền sau →
+        giữ open + tăng extend_count."""
+        s = self._steps()
+        s[0].action_evaluate('extend')
+        s = self._steps()
+        self.assertEqual(s[0].state, 'open')
+        self.assertEqual(s[0].extend_count, 1)
+        self.assertEqual(s[1].state, 'open')      # bước độc lập không đổi
+        self.assertEqual(s[2].state, 'waiting')
+
     def test_official_leaves_waiting_independent_alone(self):
         """Bước độc lập bình thường luôn ở 'open', nhưng gán lại quy trình
         hoặc migration có thể để nó ở 'waiting' — khi đó chốt lên chính

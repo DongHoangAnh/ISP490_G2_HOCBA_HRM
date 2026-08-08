@@ -135,6 +135,21 @@ class TestAccount(TransactionCase):
         self.assertIn('lst', logins)
         self.assertTrue(any(d['id'] == self.dept.id for d in out['departments']))
 
+    def test_list_flags_system_admin_row(self):
+        # FE ẩn nút khóa cho tài khoản quản trị hệ thống dựa vào cờ này.
+        self._mk_account('sysflag')
+        sysadmin = self.env['res.users'].create({
+            'name': 'Sys List', 'login': 'sys_list_acct',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id,
+                                  self.env.ref('base.group_system').id])]})
+        sys_emp = self.env['hr.employee'].create({
+            'name': 'Sys List Emp', 'x_employee_code': 'EMP-ACCT-SYSL',
+            'user_id': sysadmin.id})
+        rows = {r['employeeId']: r for r in _account_list(
+            self._env(self.hr))['accounts']}
+        self.assertTrue(rows[sys_emp.id]['isSystem'])
+        self.assertFalse(rows[self.emp.id]['isSystem'])
+
     def test_list_forbidden_non_hr(self):
         with self.assertRaises(AccessError):
             _account_list(self._env(self.plain))

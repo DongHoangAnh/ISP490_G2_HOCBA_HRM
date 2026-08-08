@@ -119,6 +119,9 @@ body: {"active": true|false}
 - Mỗi row thêm `depId` (`e.department_id.id or 0` — giữ kiểu JSON luôn là số)
   cho bộ lọc phòng ban, và `empActive` (`e.active`) để SPA phân biệt "khóa vì
   nghỉ việc" với "khóa thủ công".
+- Mỗi row thêm `isSystem` (`SUPERUSER_ID` hoặc `base.group_system`) — cùng
+  điều kiện guard của `_account_set_active`, để FE ẩn nút thay vì bày ra chỉ
+  để nhận lỗi.
 - Vòng lặp KHÔNG được `search_count` từng nhân viên để tìm trưởng phòng: hàm đã
   search toàn bộ phòng ban ở cuối, kéo lên trước rồi tra `set(...ids)`. Danh
   sách giờ gồm cả NV đã nghỉ nên tập chỉ có phình ra, mà DB production là Neon
@@ -147,6 +150,8 @@ body: {"active": true|false}
   `window.confirm`. Thành công thì `load()` lại danh sách.
 - Ẩn hẳn nút khi dòng đã khóa **và** `empActive === false` (NV đã nghỉ):
   backend từ chối mở khóa họ, nên bày nút chỉ để báo lỗi là bẫy người dùng.
+- Dòng có `isSystem` không hiện nút nào, chỉ ghi nhãn "Quản trị hệ thống" —
+  backend từ chối cả khóa lẫn mở khóa những tài khoản này.
 - Ẩn luôn **Cấp lại MK** khi `empActive === false`. `_account_reset` không có
   guard `emp.active`, nên đặt lại mật khẩu cho người đã nghỉ chạy trót lọt
   nhưng vô nghĩa (tài khoản đang khóa, Odoo chặn đăng nhập) — một thao tác
@@ -179,7 +184,12 @@ Thêm `is_independent = fields.Boolean(string='Không ràng buộc thứ tự')`
 - `hb.onboarding.template.step` (`hb_onboarding_template.py`)
 - `hb.onboarding.step` (`hb_onboarding_step.py`)
 
-Ràng buộc, bổ sung vào `_check_step_flags` của template step:
+Ràng buộc phải có ở **cả hai** model. Bước mẫu dùng `_check_step_flags`; bản
+snapshot cần `_check_independent_flags` riêng, vì `ir.model.access` cho
+`hr.group_hr_user` quyền ghi thẳng `hb.onboarding.step` — thiếu nó thì mọi bất
+biến dưới đây vá được bằng một lệnh `write`.
+
+Nội dung ràng buộc:
 
 - `is_independent` chỉ dùng cho `step_type = 'task'` — khách khẳng định các bước
   đánh giá vẫn tuần tự.

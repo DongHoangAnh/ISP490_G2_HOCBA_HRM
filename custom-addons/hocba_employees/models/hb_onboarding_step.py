@@ -48,6 +48,23 @@ class HbOnboardingStep(models.Model):
     done_by_id = fields.Many2one('res.users', string='Người thực hiện')
     result_note = fields.Text(string='Nhận xét')
 
+    @api.constrains('step_type', 'is_independent', 'auto_action')
+    def _check_independent_flags(self):
+        """Phản chiếu _check_step_flags của bước mẫu lên bản snapshot.
+
+        Snapshot không đi qua template khi ghi, mà ir.model.access cho
+        hr.group_hr_user quyền write thẳng model này — thiếu ràng buộc ở đây
+        thì mọi bất biến của spec §5.1 vá được bằng một lệnh write."""
+        for step in self:
+            if step.is_independent and step.step_type != 'task':
+                raise ValidationError(_(
+                    'Cờ "Không ràng buộc thứ tự" chỉ dùng cho bước Việc '
+                    'cần làm — các bước Đánh giá phải chạy tuần tự.'))
+            if step.is_independent and step.auto_action != 'none':
+                raise ValidationError(_(
+                    'Bước "không ràng buộc thứ tự" mở ngay từ đầu nên không '
+                    'được đặt Automation — nếu không nó sẽ tự chạy ngày đầu.'))
+
     # ------------------------------------------------------------------
     # Điều hướng chuỗi
     # ------------------------------------------------------------------
