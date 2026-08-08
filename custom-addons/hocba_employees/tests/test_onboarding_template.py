@@ -83,3 +83,38 @@ class TestOnboardingTemplate(TransactionCase):
         self.assertEqual(Tpl._match_for_employee(emp_gv), tpl_gv)
         self.assertEqual(Tpl._match_for_employee(emp_vp), tpl_vp)
         self.assertFalse(Tpl._match_for_employee(emp_none))
+
+
+@tagged('post_install', '-at_install')
+class TestIndependentStepFlags(TransactionCase):
+    """Cờ 'Không ràng buộc thứ tự' — spec 2026-08-08."""
+
+    def _tpl(self, step_vals):
+        return self.env['hb.onboarding.template'].create({
+            'name': 'TPL Indep', 'sequence': 1,
+            'apply_position_types': 'ctv',
+            'step_ids': [(0, 0, step_vals)]})
+
+    def test_independent_task_ok(self):
+        tpl = self._tpl({'name': 'Cấp thiết bị', 'step_type': 'task',
+                         'sequence': 1, 'is_independent': True})
+        self.assertTrue(tpl.step_ids.is_independent)
+
+    def test_independent_rejected_on_evaluation(self):
+        with self.assertRaisesRegex(ValidationError, 'Việc cần làm'):
+            self._tpl({'name': 'ĐG', 'step_type': 'evaluation',
+                       'sequence': 1, 'is_independent': True})
+
+    def test_independent_rejected_with_auto_action(self):
+        with self.assertRaisesRegex(ValidationError, 'Automation'):
+            self._tpl({'name': 'Cấp TB', 'step_type': 'task', 'sequence': 1,
+                       'is_independent': True,
+                       'auto_action': 'grant_assets'})
+
+    def test_independent_rejected_with_is_extension(self):
+        # is_extension chỉ hợp lệ trên evaluation, mà independent lại chỉ
+        # hợp lệ trên task → hai cờ không bao giờ đi cùng nhau
+        with self.assertRaisesRegex(ValidationError, 'Việc cần làm'):
+            self._tpl({'name': 'X', 'step_type': 'evaluation',
+                       'sequence': 1, 'is_independent': True,
+                       'is_extension': True})

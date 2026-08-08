@@ -153,6 +153,10 @@ class HbOnboardingTemplateStep(models.Model):
         string='Bước gia hạn',
         help='Chỉ bước Đánh giá: chỉ kích hoạt khi bước đánh giá liền '
              'trước chọn "Gia hạn".')
+    is_independent = fields.Boolean(
+        string='Không ràng buộc thứ tự',
+        help='Chỉ bước Việc cần làm: bước mở ngay từ lúc gán quy trình, làm '
+             'lúc nào cũng được, không chặn và không bị chặn bởi chuỗi.')
     auto_action = fields.Selection(
         [('none', 'Không'), ('grant_assets', 'Tự cấp tài sản mặc định')],
         string='Automation', default='none', required=True,
@@ -161,11 +165,19 @@ class HbOnboardingTemplateStep(models.Model):
     note = fields.Text(string='Hướng dẫn')
 
     @api.constrains('step_type', 'pass_completes', 'is_extension',
-                    'auto_action', 'due_days', 'sequence')
+                    'is_independent', 'auto_action', 'due_days', 'sequence')
     def _check_step_flags(self):
         for step in self:
             if step.due_days < 0:
                 raise ValidationError(_('Hạn (+N ngày) không được âm.'))
+            if step.is_independent and step.step_type != 'task':
+                raise ValidationError(_(
+                    'Cờ "Không ràng buộc thứ tự" chỉ dùng cho bước Việc '
+                    'cần làm — các bước Đánh giá phải chạy tuần tự.'))
+            if step.is_independent and step.auto_action != 'none':
+                raise ValidationError(_(
+                    'Bước "không ràng buộc thứ tự" mở ngay từ đầu nên không '
+                    'được đặt Automation — nếu không nó sẽ tự chạy ngày đầu.'))
             if step.step_type != 'evaluation' \
                     and (step.pass_completes or step.is_extension):
                 raise ValidationError(_(
