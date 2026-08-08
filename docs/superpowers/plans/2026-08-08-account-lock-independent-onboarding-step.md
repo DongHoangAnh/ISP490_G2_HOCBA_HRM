@@ -251,9 +251,12 @@ Chèn ngay sau `api_account_reset` (kết thúc ở dòng ~3396), trước `api_
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         try:
-            body = request.get_json_data()
-            data = _account_set_active(
-                request.env, emp_id, bool(body.get('active')))
+            active = request.get_json_data().get('active')
+            # Ép kiểu lỏng sẽ đảo ngược thao tác: bool('false') là True.
+            # Từ chối thẳng thay vì đoán ý.
+            if not isinstance(active, bool):
+                raise ValidationError('Tham số "active" phải là true/false.')
+            data = _account_set_active(request.env, emp_id, active)
         except AccessError as ex:
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)
