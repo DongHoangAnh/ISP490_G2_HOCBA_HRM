@@ -223,3 +223,24 @@ class TestAccount(TransactionCase):
         # Chỉ hồ sơ NV bị archive, tài khoản đăng nhập vẫn còn active —
         # hai khái niệm khác nhau, không được trộn.
         self.assertTrue(row['active'])
+
+    def test_list_role_ignores_archived_department(self):
+        # NV làm trưởng một phòng ban ĐÃ ARCHIVE thì không được gắn nhãn
+        # truongphong — bảo toàn ngữ nghĩa cũ của Dept.search_count (chỉ
+        # đếm phòng ban active) sau khi bỏ N+1 search_count.
+        self._mk_account('arch_dept')
+        self.dept.sudo().write({'manager_id': self.emp.id, 'active': False})
+        out = _account_list(self._env(self.hr))
+        row = next(r for r in out['accounts'] if r['login'] == 'arch_dept')
+        self.assertEqual(row['role'], 'employee')
+
+    def test_list_includes_fully_offboarded_employee(self):
+        self._mk_account('offb1')
+        # Trạng thái thật sau offboarding: archive CẢ hồ sơ NV lẫn tài khoản
+        self.emp.sudo().user_id.sudo().write({'active': False})
+        self.emp.sudo().write({'active': False})
+        out = _account_list(self._env(self.hr))
+        row = next((r for r in out['accounts'] if r['login'] == 'offb1'), None)
+        self.assertIsNotNone(row)
+        self.assertFalse(row['active'])
+        self.assertFalse(row['empActive'])

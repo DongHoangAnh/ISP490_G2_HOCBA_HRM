@@ -1634,10 +1634,16 @@ def _account_list(env):
     # phải rà soát được (nhóm bị khóa đông nhất).
     emps = env['hr.employee'].sudo().with_context(active_test=False).search(
         [('user_id', '!=', False)], order='x_employee_code, id')
+    # Lấy 1 lần, dùng lại cho cả role (trưởng phòng?) lẫn danh mục trả về —
+    # tránh N+1 search_count trên mỗi nhân viên (DB Neon: mỗi round-trip
+    # ~10-30ms). Chỉ tính phòng ban đang active, giữ đúng ngữ nghĩa cũ của
+    # Dept.search_count/Dept.search([]).
+    all_depts = Dept.search([], order='name')
+    manager_emp_ids = set(all_depts.mapped('manager_id').ids)
     rows = []
     for e in emps:
         u = e.user_id
-        is_tp = bool(Dept.search_count([('manager_id', '=', e.id)]))
+        is_tp = e.id in manager_emp_ids
         is_gv = u.has_group('hocba_employees.group_hocba_giaovu')
         role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
         rows.append({
@@ -1648,7 +1654,7 @@ def _account_list(env):
             'login': u.login, 'active': u.active, 'role': role,
             'empActive': e.active,
         })
-    depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
+    depts = [{'id': d.id, 'name': d.name} for d in all_depts]
     return {'accounts': rows, 'departments': depts}
 
 
