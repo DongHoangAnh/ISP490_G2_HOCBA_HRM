@@ -424,8 +424,13 @@ export default function Accounts({ search = '' }) {
                         {r.active ? 'Khóa' : 'Mở khóa'}
                       </button>
                     )}
-                    <button className="btn btn-ghost btn-sm" onClick={() => setReset({ id: r.employeeId, name: r.name })}>
-                      <Icon name="rotateCcw" size={14} />Cấp lại MK</button>
+                    {/* _account_reset không chặn NV đã nghỉ: đặt lại mật khẩu
+                        cho họ chạy trót lọt nhưng vô nghĩa (tài khoản đang
+                        khóa) — thao tác trông như có tác dụng mà không có. */}
+                    {r.empActive !== false && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => setReset({ id: r.employeeId, name: r.name })}>
+                        <Icon name="rotateCcw" size={14} />Cấp lại MK</button>
+                    )}
                   </td>
                 </tr>
               ))}
