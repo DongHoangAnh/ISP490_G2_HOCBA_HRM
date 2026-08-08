@@ -162,6 +162,7 @@ Bước độc lập nằm **ngoài** chuỗi. Các điểm sửa:
 |---|---|
 | Gán quy trình (`_hocba_assign_onboarding`, `hr_employee.py:724`) | Dict `create` copy thêm `is_independent` từ bước mẫu. Chỗ mở bước đầu (`steps.sorted(...)[0]._open()`) đổi thành: mở **mọi** bước độc lập, cộng bước **không độc lập** đầu tiên |
 | `_next_waiting()` | Bỏ qua bước `is_independent` → `_advance()` không bao giờ mở hay skip nó |
+| `_advance()` | Thoát ngay nếu chính nó là bước độc lập — nếu không, hoàn thành bước độc lập sẽ bị hiểu nhầm là "hết chuỗi" và bắn chuông *Hoàn tất quy trình nhận việc* sai |
 | `_advance()` khi hết chuỗi | Chỉ xét bước trong chuỗi; bước độc lập chưa xong không cản thông báo "hoàn tất quy trình" |
 | `action_evaluate` kết quả `pass` + `pass_completes` | Chỉ skip bước `waiting` **không độc lập**; bước độc lập đang mở giữ nguyên `open` |
 | `action_evaluate` kết quả `fail` | Tương tự — bước độc lập không bị chuyển `skipped` |
