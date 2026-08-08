@@ -3,7 +3,8 @@ from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
 
 from odoo.addons.hocba_hrm.controllers.main import (
-    _account_create, _account_reset, _account_list, _account_payload)
+    _account_create, _account_reset, _account_list, _account_payload,
+    _account_set_active)
 
 
 @tagged('post_install', '-at_install')
@@ -137,3 +138,35 @@ class TestAccount(TransactionCase):
     def test_list_forbidden_non_hr(self):
         with self.assertRaises(AccessError):
             _account_list(self._env(self.plain))
+
+    def _mk_account(self, login='lockme'):
+        _account_create(self._env(self.hr), self.emp.id, {
+            'login': login, 'password': '12345678',
+            'password_confirm': '12345678', 'role': 'employee'})
+
+    def test_set_active_lock_then_unlock(self):
+        self._mk_account('lock1')
+        out = _account_set_active(self._env(self.hr), self.emp.id, False)
+        self.assertEqual(out, {'hasAccount': True, 'login': 'lock1',
+                               'active': False})
+        self.assertFalse(self.emp.sudo().user_id.active)
+        out = _account_set_active(self._env(self.hr), self.emp.id, True)
+        self.assertTrue(out['active'])
+        self.assertTrue(self.emp.sudo().user_id.active)
+
+    def test_set_active_forbidden_non_hr(self):
+        self._mk_account('lock2')
+        with self.assertRaises(AccessError):
+            _account_set_active(self._env(self.plain), self.emp.id, False)
+
+    def test_set_active_no_account(self):
+        with self.assertRaises(ValidationError):
+            _account_set_active(self._env(self.hr), self.emp.id, False)
+
+    def test_set_active_cannot_lock_self(self):
+        # NV gắn với chính user HR đang thao tác
+        me = self.env['hr.employee'].create({
+            'name': 'HR Self', 'x_employee_code': 'EMP-ACCT-SELF',
+            'user_id': self.hr.id})
+        with self.assertRaises(ValidationError):
+            _account_set_active(self._env(self.hr), me.id, False)

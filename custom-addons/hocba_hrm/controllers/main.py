@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta
 from psycopg2 import IntegrityError
 from pytz import timezone, utc
 
-from odoo import http, fields
+from odoo import http, fields, SUPERUSER_ID
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request, Response
 from odoo.tools import file_open
@@ -1588,6 +1588,33 @@ def _account_reset(env, emp_id, body):
         raise ValidationError('Nhân viên chưa có tài khoản.')
     password = _validate_password(body)
     emp.user_id.sudo().write({'password': password})
+    return _account_payload(emp)
+
+
+def _account_set_active(env, emp_id, active):
+    """HR/Admin khóa (active=False) / mở khóa tài khoản đăng nhập.
+
+    Dùng thẳng res.users.active — Odoo tự chặn đăng nhập, và offboarding
+    cũng ghi vào đúng field này khi hoàn tất nghỉ việc.
+    active_test=False vì NV đã nghỉ bị archive nhưng vẫn phải rà được."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được khóa/mở tài khoản.')
+    emp = env['hr.employee'].sudo().with_context(
+        active_test=False).browse(emp_id)
+    if not emp.exists() or not emp.user_id:
+        raise ValidationError('Nhân viên chưa có tài khoản.')
+    user = emp.user_id
+    if user.id == env.user.id:
+        raise ValidationError(
+            'Không thể khóa tài khoản của chính bạn.')
+    admin = env.ref('base.user_admin', raise_if_not_found=False)
+    if user.id == SUPERUSER_ID or (admin and user.id == admin.id):
+        raise ValidationError(
+            'Không thể khóa tài khoản quản trị hệ thống.')
+    user.sudo().write({'active': bool(active)})
+    emp.sudo().message_post(body=(
+        '🔓 Mở khóa tài khoản đăng nhập.' if active
+        else '🔒 Khóa tài khoản đăng nhập.'))
     return _account_payload(emp)
 
 
