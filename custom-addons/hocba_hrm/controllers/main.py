@@ -3440,6 +3440,27 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(data)
 
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/active',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_account_active(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            active = request.get_json_data().get('active')
+            # Ép kiểu lỏng sẽ đảo ngược thao tác: bool('false') là True.
+            # Từ chối thẳng thay vì đoán ý.
+            if not isinstance(active, bool):
+                raise ValidationError('Tham số "active" phải là true/false.')
+            data = _account_set_active(request.env, emp_id, active)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
     @http.route('/hocba-hrm/api/accounts', auth='user', type='http',
                 methods=['GET'])
     def api_accounts(self, **kw):
