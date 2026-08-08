@@ -2464,9 +2464,13 @@ class HocBaHRM(http.Controller):
                 'note': s.note or '', 'resultNote': s.result_note or '',
                 'passCompletes': s.pass_completes,
                 'isExtension': s.is_extension,
+                'isIndependent': s.is_independent,
                 'canAct': can_act,
             }
-            if s.state == 'open' and current is None:
+            # "Bước hiện tại" là bước của CHUỖI — bước độc lập luôn mở nên
+            # nếu tính cả nó thì header lúc nào cũng hiện "Cấp thiết bị".
+            if (s.state == 'open' and not s.is_independent
+                    and current is None):
                 current = item
             steps.append(item)
         return {
@@ -2597,6 +2601,7 @@ class HocBaHRM(http.Controller):
                 'stepType': s.step_type, 'dueDays': s.due_days,
                 'passCompletes': s.pass_completes,
                 'isExtension': s.is_extension,
+                'isIndependent': s.is_independent,
                 'autoAction': s.auto_action, 'note': s.note or '',
             } for s in tpl.step_ids.sorted(lambda x: (x.sequence, x.id))],
         }
@@ -2611,6 +2616,7 @@ class HocBaHRM(http.Controller):
             'due_days': int(s.get('dueDays') or 0),
             'pass_completes': bool(s.get('passCompletes')),
             'is_extension': bool(s.get('isExtension')),
+            'is_independent': bool(s.get('isIndependent')),
             'auto_action': s.get('autoAction') or 'none',
             'note': (s.get('note') or '').strip() or False,
         }) for i, s in enumerate(payload_steps)]

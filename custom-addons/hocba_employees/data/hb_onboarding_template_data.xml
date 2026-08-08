@@ -34,12 +34,15 @@
     <field name="step_type">evaluation</field>
     <field name="due_days">14</field>
   </record>
+  <!-- Khách 2026-08-07: cấp thiết bị là luồng riêng, làm lúc nào cũng được.
+       Bỏ auto_action vì bước độc lập mở ngay từ đầu — để automation thì nó
+       tự cấp tài sản ngày đầu, HR mất quyền chọn thời điểm. -->
   <record id="onb_tpl_vp_step2" model="hb.onboarding.template.step">
     <field name="template_id" ref="onb_template_office"/>
     <field name="sequence">2</field>
     <field name="name">Cấp thiết bị làm việc</field>
     <field name="step_type">task</field>
-    <field name="auto_action">grant_assets</field>
+    <field name="is_independent" eval="True"/>
   </record>
   <record id="onb_tpl_vp_step3" model="hb.onboarding.template.step">
     <field name="template_id" ref="onb_template_office"/>

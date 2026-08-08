@@ -328,7 +328,10 @@ class TestOnboardingEngine(TransactionCase):
                          ['evaluation', 'task', 'evaluation', 'evaluation'])
         self.assertTrue(steps[2].pass_completes)
         self.assertTrue(steps[3].is_extension and steps[3].pass_completes)
-        self.assertEqual(steps[1].auto_action, 'grant_assets')
+        # Khách 2026-08-07: cấp thiết bị tách khỏi chuỗi, làm lúc nào cũng
+        # được → độc lập và KHÔNG automation (nếu không nó tự chạy ngày đầu).
+        self.assertTrue(steps[1].is_independent)
+        self.assertEqual(steps[1].auto_action, 'none')
         # thử giảng KHÔNG pass_completes (pass hiện không lên chính thức)
         gv_steps = gv.step_ids.sorted(lambda s: (s.sequence, s.id))
         self.assertFalse(gv_steps[0].pass_completes)

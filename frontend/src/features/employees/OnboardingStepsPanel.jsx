@@ -282,6 +282,11 @@ export default function OnboardingStepsPanel({ det, isMgr, onUpdated }) {
                         {s.stepType === 'evaluation' ? 'Đánh giá' : 'Việc cần làm'}
                         {s.extendCount > 0 ? ` · đã gia hạn ×${s.extendCount}` : ''}
                       </span>
+                      {s.isIndependent && (
+                        <span style={{ marginLeft: 8 }}>
+                          <Badge kind="teal">Không ràng buộc</Badge>
+                        </span>
+                      )}
                     </span>
                     <Badge kind={kind} dot>{lbl}</Badge>
                   </div>
