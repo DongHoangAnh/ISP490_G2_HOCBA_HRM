@@ -411,11 +411,16 @@ export default function Accounts({ search = '' }) {
                     </span>
                   </td>
                   <td style={nowrap}>
-                    <button className="btn btn-ghost btn-sm"
-                      onClick={() => setLock({ id: r.employeeId, name: r.name, active: r.active })}>
-                      <Icon name={r.active ? 'lock' : 'unlock'} size={14} />
-                      {r.active ? 'Khóa' : 'Mở khóa'}
-                    </button>
+                    {/* NV đã nghỉ: tài khoản do offboarding khóa, mở lại ở đây sẽ
+                        tạo user đăng nhập được trong khi hồ sơ NV vẫn archived
+                        (env.user.employee_id rỗng) → BE chặn, FE ẩn luôn nút. */}
+                    {(r.active || r.empActive !== false) && (
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => setLock({ id: r.employeeId, name: r.name, active: r.active })}>
+                        <Icon name={r.active ? 'lock' : 'unlock'} size={14} />
+                        {r.active ? 'Khóa' : 'Mở khóa'}
+                      </button>
+                    )}
                     <button className="btn btn-ghost btn-sm" onClick={() => setReset({ id: r.employeeId, name: r.name })}>
                       <Icon name="rotateCcw" size={14} />Cấp lại MK</button>
                   </td>

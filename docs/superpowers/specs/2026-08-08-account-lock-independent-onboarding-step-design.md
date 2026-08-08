@@ -84,14 +84,25 @@ bảng vinh danh/leaderboard trên dashboard chung.
 
 - `AccessError` nếu không phải HR (`_is_hr`, tức `hr.group_hr_user`) — cùng mức
   quyền với tạo tài khoản và cấp lại mật khẩu.
-- `ValidationError` nếu NV không tồn tại hoặc chưa có tài khoản.
+- `ValidationError` riêng cho "không tìm thấy nhân viên" và "chưa có tài
+  khoản" — hai tình huống khác nhau, `_account_create` đã phân biệt.
 - `ValidationError` nếu `emp.user_id == env.user` — không cho tự khóa chính
   mình (tự khóa xong là mất đường vào).
-- `ValidationError` nếu `emp.user_id.id in (SUPERUSER_ID, base.user_admin)` —
-  không cho khóa tài khoản quản trị hệ thống.
-- Browse bằng `.with_context(active_test=False)` vì NV đã nghỉ đang archived.
-- Ghi `emp.user_id.sudo().write({'active': bool(active)})`, `message_post` lên
-  hồ sơ NV để lưu vết ai khóa/mở, trả `_account_payload(emp)`.
+- `ValidationError` nếu tài khoản là quản trị hệ thống — kiểm `SUPERUSER_ID`
+  **và** `base.group_system`, không chỉ uid 1/2: chặn mỗi admin gốc thì một HR
+  thường vẫn khóa được mọi sysadmin khác. Thông điệp phải trung tính về hướng
+  vì guard này chặn cả chiều mở khóa.
+- `ValidationError` khi **mở khóa** nhân viên đã nghỉ (`hr.employee.active =
+  False`). Offboarding archive cả hồ sơ lẫn user; mở lại user trong khi hồ sơ
+  vẫn archived sẽ tạo "ma đăng nhập" — `env.user.employee_id` là computed
+  search nên trả rỗng, và hàng chục chỗ trong `main.py` làm
+  `emp = env.user.employee_id` sẽ âm thầm thấy "không có nhân viên". Chiều
+  **khóa** vẫn phải cho phép (đó là lý do danh sách gồm NV đã nghỉ).
+- Ghi `emp.user_id.sudo().write({'active': bool(active)})` và `message_post`
+  lên hồ sơ NV — chỉ khi trạng thái thực sự đổi, để log không đầy dòng vô
+  nghĩa. Body **phải nhúng `env.user.name`**: post chạy qua `emp.sudo()` nên
+  Odoo gán tác giả là OdooBot, mà "ai khóa" đúng là thứ duy nhất log này cần
+  ghi. Trả `_account_payload(emp)`.
 
 **Route mới**, theo đúng khuôn 2 route account hiện có:
 
@@ -125,6 +136,8 @@ body: {"active": true|false}
 - Cột thao tác: nút **Khóa** (khi đang hoạt động) / **Mở khóa** (khi đang khóa)
   cạnh "Cấp lại MK", đi qua `ConfirmModal` — quy ước SPA, không dùng
   `window.confirm`. Thành công thì `load()` lại danh sách.
+- Ẩn hẳn nút khi dòng đã khóa **và** `empActive === false` (NV đã nghỉ):
+  backend từ chối mở khóa họ, nên bày nút chỉ để báo lỗi là bẫy người dùng.
 
 ### 4.3 Kiểm thử
 
@@ -135,7 +148,13 @@ Test Odoo trong `hocba_employees/tests` (hoặc test controller sẵn có của
 2. HR khóa NV có tài khoản → `res.users.active` thành `False`; mở lại → `True`.
 3. HR tự khóa tài khoản của chính mình → `ValidationError`.
 4. NV chưa có tài khoản → `ValidationError`.
-5. `_account_list` trả cả NV đã archive, và mỗi row có `depId`, `empActive`.
+5. HR khóa tài khoản quản trị hệ thống → `ValidationError`.
+6. HR khóa NV **đã archive** → thành công (đây là lý do danh sách gồm họ).
+7. HR **mở khóa** NV đã archive → `ValidationError`.
+8. `_account_list` trả cả NV đã archive, và mỗi row có `depId`, `empActive`.
+
+Mỗi test dùng `assertRaisesRegex` chứ không `assertRaises` trần: bốn guard đều
+ném `ValidationError`, `assertRaises` trần sẽ xanh cả khi guard SAI bắn.
 
 ## 5. Phần 2 — Bước "không ràng buộc thứ tự"
 
