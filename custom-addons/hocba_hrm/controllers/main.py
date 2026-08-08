@@ -1595,26 +1595,33 @@ def _account_set_active(env, emp_id, active):
     """HR/Admin khóa (active=False) / mở khóa tài khoản đăng nhập.
 
     Dùng thẳng res.users.active — Odoo tự chặn đăng nhập, và offboarding
-    cũng ghi vào đúng field này khi hoàn tất nghỉ việc.
-    active_test=False vì NV đã nghỉ bị archive nhưng vẫn phải rà được."""
+    cũng ghi vào đúng field này khi hoàn tất nghỉ việc. browse()/exists()
+    vốn đã thấy được cả bản ghi archived (chỉ search() mới cần
+    active_test=False), nên không cần set context riêng ở đây."""
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được khóa/mở tài khoản.')
-    emp = env['hr.employee'].sudo().with_context(
-        active_test=False).browse(emp_id)
-    if not emp.exists() or not emp.user_id:
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if not emp.user_id:
         raise ValidationError('Nhân viên chưa có tài khoản.')
     user = emp.user_id
     if user.id == env.user.id:
         raise ValidationError(
             'Không thể khóa tài khoản của chính bạn.')
-    admin = env.ref('base.user_admin', raise_if_not_found=False)
-    if user.id == SUPERUSER_ID or (admin and user.id == admin.id):
+    if user.id == SUPERUSER_ID or user.sudo().has_group('base.group_system'):
         raise ValidationError(
-            'Không thể khóa tài khoản quản trị hệ thống.')
-    user.sudo().write({'active': bool(active)})
-    emp.sudo().message_post(body=(
-        '🔓 Mở khóa tài khoản đăng nhập.' if active
-        else '🔒 Khóa tài khoản đăng nhập.'))
+            'Tài khoản quản trị hệ thống không quản lý được từ đây.')
+    if active and not emp.active:
+        raise ValidationError(
+            'Nhân viên đã nghỉ việc — không mở lại tài khoản từ đây. '
+            'Nếu tuyển lại, khôi phục hồ sơ nhân viên trước.')
+    if user.active != bool(active):
+        user.sudo().write({'active': bool(active)})
+        emp.sudo().message_post(
+            body=('🔓 %s đã mở khóa tài khoản đăng nhập.' if active
+                  else '🔒 %s đã khóa tài khoản đăng nhập.') % env.user.name,
+            subtype_xmlid='mail.mt_note')
     return _account_payload(emp)
 
 

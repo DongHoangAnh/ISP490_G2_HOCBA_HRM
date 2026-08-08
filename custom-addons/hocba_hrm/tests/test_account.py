@@ -168,5 +168,35 @@ class TestAccount(TransactionCase):
         me = self.env['hr.employee'].create({
             'name': 'HR Self', 'x_employee_code': 'EMP-ACCT-SELF',
             'user_id': self.hr.id})
-        with self.assertRaises(ValidationError):
+        with self.assertRaisesRegex(ValidationError, 'chính bạn'):
             _account_set_active(self._env(self.hr), me.id, False)
+
+    def test_set_active_cannot_lock_system_admin(self):
+        admin_user = self.env.ref('base.user_admin')
+        # DB test đã có sẵn 1 hr.employee (archived) gắn với user_admin —
+        # dùng lại nó thay vì tạo mới, để không vỡ unique constraint
+        # hr_employee_user_uniq trên user_id.
+        admin_emp = self.env['hr.employee'].sudo().with_context(
+            active_test=False).search(
+            [('user_id', '=', admin_user.id)], limit=1)
+        if not admin_emp:
+            admin_emp = self.env['hr.employee'].create({
+                'name': 'Admin Emp', 'x_employee_code': 'EMP-ACCT-ADMIN',
+                'user_id': admin_user.id})
+        with self.assertRaisesRegex(ValidationError, 'quản trị hệ thống'):
+            _account_set_active(self._env(self.hr), admin_emp.id, False)
+
+    def test_set_active_locks_archived_employee(self):
+        # NV đã nghỉ (archived) vẫn phải khóa được — đó là lý do màn Tài
+        # khoản liệt kê cả họ.
+        self._mk_account('arch_lock')
+        self.emp.sudo().write({'active': False})
+        out = _account_set_active(self._env(self.hr), self.emp.id, False)
+        self.assertFalse(out['active'])
+
+    def test_set_active_cannot_unlock_resigned(self):
+        self._mk_account('arch_unlock')
+        self.emp.sudo().user_id.write({'active': False})
+        self.emp.sudo().write({'active': False})
+        with self.assertRaisesRegex(ValidationError, 'đã nghỉ việc'):
+            _account_set_active(self._env(self.hr), self.emp.id, True)
