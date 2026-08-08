@@ -210,3 +210,16 @@ class TestAccount(TransactionCase):
         self.emp.sudo().write({'active': False})
         with self.assertRaisesRegex(ValidationError, 'đã nghỉ việc'):
             _account_set_active(self._env(self.hr), self.emp.id, True)
+
+    def test_list_includes_archived_employee_with_dep_fields(self):
+        self._mk_account('arch1')
+        self.emp.sudo().write({'active': False})   # như sau offboarding
+        out = _account_list(self._env(self.hr))
+        row = next((r for r in out['accounts'] if r['login'] == 'arch1'),
+                   None)
+        self.assertIsNotNone(row, 'NV đã archive phải còn trong danh sách')
+        self.assertEqual(row['depId'], self.dept.id)
+        self.assertFalse(row['empActive'])
+        # Chỉ hồ sơ NV bị archive, tài khoản đăng nhập vẫn còn active —
+        # hai khái niệm khác nhau, không được trộn.
+        self.assertTrue(row['active'])

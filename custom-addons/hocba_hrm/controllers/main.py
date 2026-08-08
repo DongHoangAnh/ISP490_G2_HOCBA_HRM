@@ -1630,7 +1630,9 @@ def _account_list(env):
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được xem danh sách tài khoản.')
     Dept = env['hr.department'].sudo()
-    emps = env['hr.employee'].sudo().search(
+    # active_test=False: NV đã nghỉ bị archive nhưng tài khoản của họ vẫn
+    # phải rà soát được (nhóm bị khóa đông nhất).
+    emps = env['hr.employee'].sudo().with_context(active_test=False).search(
         [('user_id', '!=', False)], order='x_employee_code, id')
     rows = []
     for e in emps:
@@ -1640,8 +1642,11 @@ def _account_list(env):
         role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
         rows.append({
             'employeeId': e.id, 'name': e.name,
-            'code': e.x_employee_code or '', 'depName': e.department_id.name or '',
+            'code': e.x_employee_code or '',
+            'depId': e.department_id.id or 0,
+            'depName': e.department_id.name or '',
             'login': u.login, 'active': u.active, 'role': role,
+            'empActive': e.active,
         })
     depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
     return {'accounts': rows, 'departments': depts}
