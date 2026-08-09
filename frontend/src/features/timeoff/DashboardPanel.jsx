@@ -58,15 +58,18 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+        {/* Thứ tự theo vòng đời đơn: tổng → chờ → duyệt → từ chối → quá hạn →
+            đang nghỉ. "Đã từ chối" thay ô "Tuổi đơn cũ nhất" (BE vẫn trả
+            oldestAgeDays/avgAgeDays, chỉ không hiện ở đây). */}
         <Kpi label="Tổng đơn (năm)" value={k.total} />
         <Kpi label="Chờ duyệt" value={k.pending} color="var(--amber)" sub="cần xử lý" />
+        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)"
+          sub={`${k.approvedDays} ngày phép đã duyệt`} />
+        <Kpi label="Đã từ chối" value={k.refused} color="var(--red-600)"
+          sub="trong năm" />
         <Kpi label={`Đơn quá hạn (> ${k.slaDays} ngày)`} value={k.overdue}
           color={k.overdue > 0 ? 'var(--red-600)' : 'var(--ink)'}
           sub={k.overdue > 0 ? 'cần xử lý gấp' : 'trong SLA'} />
-        <Kpi label="Tuổi đơn cũ nhất" value={k.oldestAgeDays}
-          sub={`TB: ${k.avgAgeDays} ngày làm việc`} />
-        <Kpi label="Đã duyệt" value={k.approved} color="var(--green)"
-          sub={`${k.approvedDays} ngày phép đã duyệt`} />
         <Kpi label="Đang nghỉ hôm nay" value={k.onLeaveToday} color="var(--blue)" />
       </div>
 
