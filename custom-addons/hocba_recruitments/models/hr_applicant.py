@@ -3,6 +3,7 @@
 from markupsafe import Markup
 
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -56,6 +57,14 @@ class HrApplicantHocBaExt(models.Model):
     start_date = fields.Date(string='Ngày nhận việc')
     offer_note = fields.Text(string='Ghi chú offer')
     candidate_confirmed = fields.Char(string='UV xác nhận mail', help='VD: Đã xác nhận, Đã phản hồi')
+    # Cột "Kết quả nhận việc" của sheet 7.6. Bỏ trống = CHƯA XÁC ĐỊNH (đã gửi thư
+    # mời, đang chờ tới ngày hẹn) — đó là trạng thái mặc định nên không cần giá
+    # trị riêng. Thiếu ô này thì ứng viên bùng nằm lẫn với người đang chờ, và
+    # không đo được tỷ lệ nhận offer rồi bùng.
+    onboard_result = fields.Selection([
+        ('arrived', 'Đã đến'),
+        ('no_show', 'Không nhận việc'),
+    ], string='Kết quả nhận việc', tracking=True)
 
     # ── SLA theo bước (cấu hình sla_days trên hr.recruitment.stage) ──────────
 
@@ -232,6 +241,22 @@ class HrApplicantHocBaExt(models.Model):
             req = a._hb_open_request()
             if req:
                 a.hb_request_id = req.id
+
+    @api.constrains('onboard_result', 'stage_id')
+    def _check_onboard_result_vs_stage(self):
+        """Đã bàn giao nhân sự thì không thể "không nhận việc".
+
+        Vừa là mâu thuẫn dữ liệu, vừa phá bất biến của phễu theo dõi: ô "Nhận
+        việc" loại người bùng ra, nên nếu để trạng thái này tồn tại thì
+        "Đã tuyển" sẽ lớn hơn "Nhận việc" — người xem tưởng số liệu sai.
+        """
+        for a in self:
+            if a.onboard_result == 'no_show' and a.stage_id.hired_stage:
+                raise ValidationError(
+                    'Ứng viên "%s" đã ở bước "%s" (đã bàn giao nhân sự) nên '
+                    'không đánh "Không nhận việc" được. Nếu người này thực sự '
+                    'không đi làm, hãy kéo hồ sơ về bước trước rồi đánh lại.'
+                    % (a.partner_name or a.display_name, a.stage_id.name))
 
     def write(self, vals):
         res = super().write(vals)

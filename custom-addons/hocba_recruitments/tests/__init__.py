@@ -8,4 +8,5 @@ from . import test_job_teaching_level
 from . import test_mail_acl
 from . import test_mail_stage
 from . import test_meta_scope
+from . import test_offer_onboard_result
 from . import test_request_tracking

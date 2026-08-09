@@ -95,6 +95,8 @@ export default function Offers({ search }) {
   if (!cv) return <LoadingState label="Đang tải danh sách offer…" />;
 
   const isRecruiter = cv.isRecruiter;
+  // Nhãn "Đã đến / Không nhận việc" lấy từ payload, không hard-code tiếng Việt.
+  const onboardLabels = cv.onboardResultLabels || {};
 
   return (
     <div>
@@ -107,7 +109,8 @@ export default function Offers({ search }) {
           <table className="tbl">
             <thead><tr>
               <th>Họ tên ứng viên</th><th>Ngày ứng tuyển</th><th>Vị trí ứng tuyển</th>
-              <th>Bước hiện tại</th><th>Offer</th><th>Ngày nhận việc</th><th></th>
+              <th>Bước hiện tại</th><th>Offer</th><th>Ngày nhận việc</th>
+              <th>Kết quả nhận việc</th><th></th>
             </tr></thead>
             <tbody>
               {pg.rows.map((r) => (
@@ -156,6 +159,32 @@ export default function Offers({ search }) {
                       <span className="muted mono">{r.startDate ? fmtDate(r.startDate) : '—'}</span>
                     )}
                   </td>
+                  {/* Kết quả nhận việc (sheet 7.6) — chốt luồng cuối của tab này:
+                      gửi thư mời xong thì chờ tới ngày hẹn, đến thì đánh "Đã đến"
+                      rồi bấm Onboard, không đến thì đánh "Không nhận việc".
+                      Bỏ trống = chưa xác định, KHÔNG phải một giá trị riêng. */}
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {isRecruiter ? (
+                      <select className="sel" value={r.onboardResult || ''}
+                        disabled={savingId === r.id}
+                        onChange={(e) => saveField(r.id, { onboardResult: e.target.value })}
+                        style={{
+                          fontSize: 12.5, minWidth: 148,
+                          opacity: savingId === r.id ? 0.6 : 1,
+                          color: r.onboardResult === 'no_show' ? 'var(--red-600)'
+                            : r.onboardResult === 'arrived' ? 'var(--green)' : undefined,
+                          fontWeight: r.onboardResult ? 700 : 400,
+                        }}>
+                        <option value="">— Chưa xác định —</option>
+                        {Object.entries(onboardLabels).map(([k, l]) => (
+                          <option key={k} value={k}>{l}</option>
+                        ))}
+                      </select>
+                    ) : r.onboardResult ? (
+                      <Badge kind={r.onboardResult === 'arrived' ? 'green' : 'red'} dot>
+                        {onboardLabels[r.onboardResult] || r.onboardResult}</Badge>
+                    ) : <span className="muted">—</span>}
+                  </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                       {/* Gửi mail đứng trước: gửi offer là việc làm TRƯỚC, onboard
@@ -170,6 +199,10 @@ export default function Offers({ search }) {
                       {r.employeeId ? (
                         <Badge kind="teal">
                           <Icon name="check" size={12} /> Đã tạo hồ sơ{r.employeeCode ? ' · ' + r.employeeCode : ''}</Badge>
+                      ) : r.onboardResult === 'no_show' ? (
+                        // Bùng thì không còn hồ sơ nào để tạo — ẩn nút Onboard cho
+                        // khỏi bấm nhầm. BE cũng chặn (BR-OB-02), đây chỉ là lớp mềm.
+                        <span className="muted" style={{ fontSize: 12.5 }}>Đã dừng</span>
                       ) : isRecruiter ? (
                         <button className="btn btn-soft btn-sm" disabled={empBusyId === r.id} onClick={() => createEmployee(r)}>
                           <Icon name="user" size={14} />{empBusyId === r.id ? 'Đang tạo…' : 'Onboard'}</button>
@@ -216,6 +249,12 @@ const STEPS = [
    <>Ứng viên đồng ý thì ghi lại vào ô <b>Ghi chú Offer</b> / <b>UV xác nhận mail</b>
      ở hồ sơ ứng viên (tab Danh sách CV). Ứng viên từ chối thì kéo thẻ về bước phù
      hợp trên kanban — hệ thống không tự xử lý trường hợp từ chối.</>],
+  ['Tới ngày hẹn: chốt Kết quả nhận việc',
+   <>Gửi thư mời xong thì <b>chưa tạo hồ sơ</b> — chờ tới ngày hẹn xem ứng viên có
+     đến không, rồi điền cột <b>Kết quả nhận việc</b>. <b>Đã đến</b> → làm tiếp bước
+     dưới. <b>Không nhận việc</b> → dòng chuyển đỏ, nút Onboard biến mất, ứng viên
+     vẫn nằm lại đây để còn theo dõi; chọn nhầm thì đổi lại được. Bỏ trống nghĩa là
+     chưa xác định.</>],
   ['Onboard',
    <>Ứng viên nhận việc thì bấm <b>Onboard</b> để tạo hồ sơ nhân viên (trạng thái
      <b> Thử việc</b>), ứng viên tự chuyển sang bước <b>Onboarding</b>. Bấm nhầm 2
@@ -229,7 +268,7 @@ const STEPS = [
 ];
 
 const GUIDE_NOTE = (
-  <>Ba bước <b>3</b>, <b>5</b> và <b>6</b> tự đổi bước cho ứng viên, mỗi lần đều
+  <>Ba bước <b>3</b>, <b>6</b> và <b>7</b> tự đổi bước cho ứng viên, mỗi lần đều
     ghi một dòng vào lịch sử trao đổi của hồ sơ để truy lại được ai/khi nào. Hệ
     thống chỉ đẩy tới, không kéo lùi — ứng viên đã đi xa hơn thì đứng yên.</>
 );

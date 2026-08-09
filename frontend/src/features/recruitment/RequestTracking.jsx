@@ -73,7 +73,7 @@ const GROUP_HINT = {
   pv:      'Đã vào vòng phỏng vấn: sang bước Phỏng vấn trở đi, hoặc đã có lịch hẹn / tình trạng tham gia / kết quả PV',
   pv_pass: 'Kết quả phỏng vấn Pass',
   fail_pv: 'Kết quả phỏng vấn Fail',
-  onboard: 'Đã nhận việc: sang bước Onboarding trở đi, hoặc đã điền ngày nhận việc',
+  onboard: 'Đã nhận việc: sang bước Onboarding trở đi, hoặc đã điền ngày nhận việc, hoặc đánh "Đã đến" — đã trừ ai bị đánh "Không nhận việc"',
   hired:   'Đã bàn giao nhân sự — hoàn thiện thử việc và lên Chính thức',
 };
 

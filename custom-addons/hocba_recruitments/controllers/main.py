@@ -42,6 +42,7 @@ APP_FORM_FIELDS = {
     'startDate': ('start_date', 'str'),
     'offerNote': ('offer_note', 'str'),
     'candidateConfirmed': ('candidate_confirmed', 'str'),
+    'onboardResult': ('onboard_result', 'str'),
 }
 
 # Map key payload (camelCase) -> field hr.job cho form Thêm/Sửa vị trí.
@@ -290,6 +291,7 @@ class HocBaTuyenDung(http.Controller):
             'startDate': _d(a.start_date),
             'offerNote': a.offer_note or '',
             'candidateConfirmed': a.candidate_confirmed or '',
+            'onboardResult': a.onboard_result or '',
             # Liên kết hồ sơ nhân viên (sau khi nhận việc)
             'employeeId': a.employee_id.id or False,
             'employeeName': a.employee_id.name or '',
@@ -335,10 +337,17 @@ class HocBaTuyenDung(http.Controller):
             'callStatusLabels': self._sel_labels('hr.applicant', 'call_status'),
             'attendanceLabels': self._sel_labels('hr.applicant', 'attendance_status'),
             'interviewResultLabels': self._sel_labels('hr.applicant', 'interview_result'),
+            'onboardResultLabels': self._sel_labels('hr.applicant', 'onboard_result'),
         }
 
     def _app_vals(self, payload):
-        """Lọc payload -> vals hr.applicant (whitelist + ép kiểu)."""
+        """Lọc payload -> vals hr.applicant (whitelist + ép kiểu).
+
+        Giá trị Selection sai được chặn ngay ở đây thành UserError: hai endpoint
+        gọi hàm này đều bắt UserError trả 400, còn để ORM tự vỡ thì ra ValueError
+        → 500, SPA chỉ thấy "lỗi máy chủ" thay vì biết mình gửi sai.
+        """
+        model_fields = request.env['hr.applicant']._fields
         vals = {}
         for key, (field, typ) in APP_FORM_FIELDS.items():
             if key not in payload:
@@ -348,6 +357,12 @@ class HocBaTuyenDung(http.Controller):
                 vals[field] = int(v) if v else False
             else:
                 vals[field] = v if v not in ('', None) else False
+            f = model_fields.get(field)
+            if f and f.type == 'selection' and vals[field]:
+                allowed = [k for k, _l in (f.selection or [])]
+                if vals[field] not in allowed:
+                    raise UserError('Giá trị không hợp lệ cho "%s": %s (chấp nhận: %s).'
+                                    % (key, vals[field], ', '.join(allowed)))
         return vals
 
     @http.route('/hocba-hrm/api/recruitment/cv', auth='user',
@@ -393,7 +408,11 @@ class HocBaTuyenDung(http.Controller):
         if not self._is_recruiter():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data()
-        vals = self._app_vals(payload)
+        try:
+            vals = self._app_vals(payload)
+        except UserError as ex:
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': str(ex)}, status=400)
         if not (vals.get('partner_name') or '').strip():
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên ứng viên.'},
@@ -428,7 +447,11 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(self._applicant_dep_id(a)):
             return self._forbidden()
-        vals = self._app_vals(request.get_json_data())
+        try:
+            vals = self._app_vals(request.get_json_data())
+        except UserError as ex:
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': str(ex)}, status=400)
         if not self._is_hr() and vals.get('job_id'):
             new_dep = request.env['hr.job'].sudo().browse(vals['job_id']).department_id.id
             if not self._dep_in_scope(new_dep):
@@ -537,6 +560,15 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(self._applicant_dep_id(a)):
             return self._forbidden()
+        # BR-OB-02: ứng viên đã đánh "Không nhận việc" thì không có hồ sơ nào để
+        # tạo. SPA đã ẩn nút, nhưng ẩn nút chỉ là lớp mềm — gọi thẳng API vẫn vào.
+        if a.onboard_result == 'no_show':
+            return request.make_json_response({
+                'error': 'bad_request',
+                'message': 'Ứng viên này đang ghi "Không nhận việc" nên không '
+                           'tạo hồ sơ nhân viên được. Nếu người này đã đến, đổi '
+                           'ô Kết quả nhận việc thành "Đã đến" rồi tạo lại.',
+            }, status=400)
         # Đã tạo rồi → trả về hồ sơ hiện có (không tạo trùng).
         if a.employee_id:
             return request.make_json_response({
@@ -855,9 +887,13 @@ class HocBaTuyenDung(http.Controller):
                     ('interview_result', '!=', False)],
         'pv_pass': [('interview_result', '=', 'pass')],
         'fail_pv': [('interview_result', '=', 'fail')],
-        'onboard': ['|',
+        # Trừ hẳn người đã đánh "Không nhận việc": ngày nhận việc vẫn nằm trên hồ
+        # sơ sau khi ứng viên bùng, để nguyên luật cũ là đếm nhầm họ vào đây.
+        'onboard': ['&', ('onboard_result', '!=', 'no_show'),
+                    '|', '|',
                     ('stage_id.sequence', '>=', _STAGE_ONBOARD_SEQ),
-                    ('start_date', '!=', False)],
+                    ('start_date', '!=', False),
+                    ('onboard_result', '=', 'arrived')],
         'hired':   [('stage_id.hired_stage', '=', True)],
     }
 
