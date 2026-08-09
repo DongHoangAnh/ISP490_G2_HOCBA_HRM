@@ -1692,6 +1692,58 @@ def _career_resolve(env, emp_id):
     return emp, False
 
 
+STALE_PROMO_MONTHS = 12
+
+
+def _career_insights(evaluations, criteria_radar, months_since, onb):
+    """Vài câu đọc-là-hiểu rút từ chính dữ liệu trên trang.
+
+    KHÔNG nhắc tới lương ở đây: insight hiện cho mọi người xem được trang,
+    trong đó có vai trò không được xem lương (_cap_see_salary)."""
+    out = []
+    confirmed = [e for e in evaluations if e['state'] == 'confirmed']
+    if not confirmed:
+        out.append({'kind': 'info', 'text': 'Chưa có đợt đánh giá nào được '
+                                            'xác nhận.'})
+    else:
+        last = confirmed[-1]
+        if len(confirmed) > 1:
+            delta = round(last['totalScore'] - confirmed[-2]['totalScore'], 1)
+            if delta > 0:
+                out.append({'kind': 'up', 'text':
+                            'Điểm đánh giá tăng %s điểm so với đợt trước '
+                            '(%s%%).' % (delta, last['totalScore'])})
+            elif delta < 0:
+                out.append({'kind': 'down', 'text':
+                            'Điểm đánh giá giảm %s điểm so với đợt trước '
+                            '(%s%%).' % (abs(delta), last['totalScore'])})
+            else:
+                out.append({'kind': 'info', 'text':
+                            'Điểm đánh giá đi ngang ở %s%%.'
+                            % last['totalScore']})
+        else:
+            out.append({'kind': 'info', 'text':
+                        'Đợt đánh giá đầu tiên: %s%%.' % last['totalScore']})
+        scored = [c for c in criteria_radar if c['maxScore']]
+        if len(scored) > 1:
+            weakest = min(scored, key=lambda c: c['score'] / c['maxScore'])
+            strongest = max(scored, key=lambda c: c['score'] / c['maxScore'])
+            out.append({'kind': 'warn', 'text': 'Tiêu chí thấp nhất: %s '
+                        '(%s/%s).' % (weakest['name'], weakest['score'],
+                                      weakest['maxScore'])})
+            out.append({'kind': 'up', 'text': 'Tiêu chí cao nhất: %s '
+                        '(%s/%s).' % (strongest['name'], strongest['score'],
+                                      strongest['maxScore'])})
+    if months_since is not None and months_since >= STALE_PROMO_MONTHS:
+        out.append({'kind': 'warn', 'text':
+                    'Đã %s tháng chưa có thay đổi chức vụ.' % months_since})
+    if onb['total'] and onb['done'] + onb['skipped'] < onb['total']:
+        out.append({'kind': 'info', 'text':
+                    'Quy trình nhận việc: %s/%s bước đã xong.'
+                    % (onb['done'] + onb['skipped'], onb['total'])})
+    return out
+
+
 def _career_payload(env, emp_id):
     """Toàn bộ "album của đời" một nhân viên: mốc thăng tiến, đợt đánh giá
     (điểm + nhận xét), kết quả từng bước thử việc, và các lần được vinh danh."""
@@ -1786,10 +1838,37 @@ def _career_payload(env, emp_id):
                           else 'amber' if verdict == 'consider' else 'gray'),
             'lines': lines})
 
+    # Radar tiêu chí: đợt gần nhất, kèm điểm đợt LIỀN TRƯỚC của cùng tiêu chí
+    # để nhìn ra tiến bộ/thụt lùi từng mặt. Ghép theo TÊN tiêu chí (đợt cũ có
+    # thể chấm bộ tiêu chí khác); thiếu thì để None, không bịa 0 — 0 điểm và
+    # "chưa từng chấm" là hai chuyện khác nhau.
+    criteria_radar = []
+    if evaluations:
+        prev_by_name = {}
+        if len(evaluations) > 1:
+            prev_by_name = {l['name']: l['score']
+                            for l in evaluations[-2]['lines']}
+        for l in evaluations[-1]['lines']:
+            criteria_radar.append({
+                'name': l['name'], 'score': l['score'],
+                'maxScore': l['maxScore'],
+                'previous': prev_by_name.get(l['name']),
+            })
+
     # 4. Kết quả từng bước thử việc — đây là "nhận xét" khách đòi nhìn thấy.
-    steps = env['hb.onboarding.step'].sudo().search(
-        [('employee_id', '=', emp.id), ('state', 'in', ('done', 'skipped'))],
-        order='done_date, sequence, id')
+    # Đếm tiến độ trên TOÀN BỘ bước (kể cả chưa tới lượt) cho biểu đồ tiến độ.
+    all_steps = env['hb.onboarding.step'].sudo().search(
+        [('employee_id', '=', emp.id)])
+    onb_progress = {
+        'done': len(all_steps.filtered(lambda s: s.state == 'done')),
+        'skipped': len(all_steps.filtered(lambda s: s.state == 'skipped')),
+        'open': len(all_steps.filtered(lambda s: s.state == 'open')),
+        'waiting': len(all_steps.filtered(lambda s: s.state == 'waiting')),
+        'total': len(all_steps),
+    }
+    steps = all_steps.filtered(
+        lambda s: s.state in ('done', 'skipped')).sorted(
+            key=lambda s: (s.done_date or date.min, s.sequence, s.id))
     for s in steps:
         timeline.append({
             'kind': 'onboarding', 'date': _d(s.done_date), 'sort': 3,
@@ -1828,6 +1907,9 @@ def _career_payload(env, emp_id):
     if real_promos:
         last = max(real_promos, key=lambda p: p.date_effective)
         months_since = round((today - last.date_effective).days / 30.44, 1)
+
+    insights = _career_insights(evaluations, criteria_radar, months_since,
+                                onb_progress)
     status_labels = dict(
         env['hr.employee']._fields['x_employment_status']
         ._description_selection(env))
@@ -1856,9 +1938,12 @@ def _career_payload(env, emp_id):
             'avgScore': round(sum(scores) / len(scores), 1) if scores else None,
             'lastScore': scores[-1] if scores else None,
         },
+        'insights': insights,
         'timeline': timeline,
         'salaryJourney': salary_journey,
         'scoreTrend': score_trend,
+        'criteriaRadar': criteria_radar,
+        'onboardingProgress': onb_progress,
         'evaluations': evaluations,
         'honors': [{'id': h.id, 'date': _d(h.date_awarded),
                     'category': h.category, 'title': h.title,

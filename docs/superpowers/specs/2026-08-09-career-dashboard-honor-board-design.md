@@ -257,16 +257,47 @@ Payload:
 
 ### 5.4 SPA
 
-`frontend/src/components/HonorBoard.jsx` — khung ngang, đặt **trên cùng**:
-
-- `Dashboard.jsx` tab Tổng quan, trước `KpiRow` (file CHUNG — chèn đúng 1 dòng).
-- `Profile.jsx`, trước thẻ hồ sơ — vì nhân viên thường vào thẳng Profile, đây
-  mới là "cái nhìn thấy đầu tiên" của họ.
+`frontend/src/components/HonorBoard.jsx` — khung ngang, đặt **trên cùng màn
+`career`** (xem §5.5).
 
 Nội dung: nhãn kỳ, danh sách thẻ vinh danh (avatar + tên + danh hiệu + phòng ban
 + mô tả), cột ranking bên phải. HR có nút "Thêm vinh danh" (modal nhỏ ngay trong
 khung, không thêm màn hình mới) và nút gỡ trên từng thẻ. Bảng rỗng hoàn toàn →
-ẩn khung với nhân viên thường, hiện gợi ý thêm với HR.
+ẩn khung với nhân viên thường; với HR thu về **một dải mỏng** kèm nút thêm, chứ
+không để nguyên khung cao chiếm chỗ đắt nhất của trang.
+
+### 5.5 Gộp về MỘT màn (quyết định 2026-08-09, sau bản dựng đầu)
+
+Bản đầu đặt bảng vinh danh ở `Dashboard.jsx` + `Profile.jsx`, tách khỏi trang
+lộ trình. Người dùng yêu cầu **gộp cả hai vào một màn** và làm nó ra dáng
+dashboard. Đã bỏ khung khỏi hai chỗ cũ; toàn bộ nằm trong view `career`:
+
+| Khối | Nội dung |
+|---|---|
+| Dải vinh danh | Bảng vinh danh toàn công ty (dữ liệu chung, hiện cả khi chưa chọn ai) |
+| Thẻ nhân sự + KPI | avatar/chức danh/phòng ban + 6 ô: thâm niên, lần thăng chức, tháng từ thăng tiến, đợt đánh giá, điểm gần nhất (kèm TB), số lần vinh danh |
+| Insight | 3–5 câu tự sinh từ chính dữ liệu (§4.3) |
+| 5 biểu đồ | radar năng lực (2 đợt), đường xu hướng điểm (có mốc 80% "Đủ điều kiện"), thanh ngang chênh lệch từng tiêu chí, donut tiến độ nhận việc, vùng bậc thang lộ trình lương |
+| Bảng lịch sử | dòng thời gian gọn + chip điểm từng tiêu chí, lọc theo nhóm |
+
+**Đánh đổi đã biết**: khách muốn khung vinh danh nằm trên dashboard chung để
+"vào là nhìn thấy đầu tiên" (10:33). Gộp về một màn thì mất tính đó — người
+dùng đã chọn phương án gộp.
+
+### 4.3 Insight tự sinh (`_career_insights`)
+
+Rút thẳng từ dữ liệu đã có trên trang, **không nhắc tới lương** (insight hiện
+cho cả vai trò không được xem lương):
+
+- chưa có đợt đánh giá nào được xác nhận;
+- điểm tăng / giảm / đi ngang bao nhiêu so với đợt trước;
+- tiêu chí thấp nhất và cao nhất của đợt gần nhất (theo tỉ lệ điểm/thang);
+- cảnh báo khi đã ≥ `STALE_PROMO_MONTHS` (12) tháng chưa đổi chức vụ;
+- tiến độ quy trình nhận việc khi còn bước chưa xong.
+
+`criteriaRadar` ghép đợt gần nhất với đợt liền trước **theo TÊN tiêu chí** (bộ
+tiêu chí có thể đổi giữa hai đợt); tiêu chí đợt trước không có → `previous =
+None`, **không quy về 0** — "0 điểm" và "chưa từng chấm" là hai chuyện khác nhau.
 
 ## 6. Test
 

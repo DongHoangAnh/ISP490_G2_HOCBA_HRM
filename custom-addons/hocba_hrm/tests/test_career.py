@@ -216,6 +216,111 @@ class TestCareer(TransactionCase):
         self.assertAlmostEqual(st['avgScore'], 90.0, places=0)
         self.assertAlmostEqual(st['lastScore'], 100.0, places=0)
 
+    # --- dữ liệu cho biểu đồ (thiết kế lại 2026-08-09: 1 màn dashboard) ---
+    def test_criteria_radar_compares_latest_with_previous(self):
+        self._eval(when=date(2026, 6, 1), score=6)
+        self._eval(when=date(2026, 7, 1), score=9)
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        # 2 đợt dùng 2 tiêu chí khác nhau (code theo ngày) → radar phải gộp
+        # theo TÊN tiêu chí, đợt trước thiếu thì để None chứ không bịa 0.
+        rows = {r['name']: r for r in out['criteriaRadar']}
+        self.assertTrue(rows, 'Radar phải có dòng của đợt gần nhất')
+        latest = [r for r in out['criteriaRadar'] if r['score'] is not None]
+        self.assertTrue(latest)
+        self.assertTrue(all(r['maxScore'] > 0 for r in latest))
+
+    def test_criteria_radar_carries_previous_score_same_criterion(self):
+        crit = self.env['hr.promotion.criteria'].create({
+            'name': 'Tiêu chí chung', 'code': 'car_shared',
+            'weight': 100, 'max_score': 10})
+
+        def mk(when, score):
+            ev = self.env['hr.promotion.evaluation'].create({
+                'employee_id': self.emp.id, 'eval_date': when,
+                'verdict_final': 'qualified',
+                'line_ids': [(0, 0, {'criteria_id': crit.id, 'score': score})]})
+            ev.action_confirm()
+
+        mk(date(2026, 6, 1), 6)
+        mk(date(2026, 7, 1), 9)
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        row = next(r for r in out['criteriaRadar'] if r['name'] == 'Tiêu chí chung')
+        self.assertEqual(row['score'], 9)
+        self.assertEqual(row['previous'], 6)
+
+    def test_criteria_radar_empty_without_evaluation(self):
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        self.assertEqual(out['criteriaRadar'], [])
+
+    def test_onboarding_progress_counts_by_state(self):
+        Step = self.env['hb.onboarding.step']
+        for name, state in [('A', 'done'), ('B', 'done'), ('C', 'skipped'),
+                            ('D', 'open'), ('E', 'waiting')]:
+            Step.create({'employee_id': self.emp.id, 'name': name,
+                         'step_type': 'task', 'state': state})
+        p = _career_payload(self._env(self.hr_mgr),
+                            self.emp.id)['onboardingProgress']
+        self.assertEqual(
+            [p['done'], p['skipped'], p['open'], p['waiting'], p['total']],
+            [2, 1, 1, 1, 5])
+
+    def test_insight_score_improved(self):
+        self._eval(when=date(2026, 6, 1), score=6)
+        self._eval(when=date(2026, 7, 1), score=9)
+        texts = ' | '.join(i['text'] for i in _career_payload(
+            self._env(self.hr_mgr), self.emp.id)['insights'])
+        self.assertIn('tăng', texts)
+
+    def test_insight_score_dropped(self):
+        self._eval(when=date(2026, 6, 1), score=9)
+        self._eval(when=date(2026, 7, 1), score=5)
+        ins = _career_payload(self._env(self.hr_mgr), self.emp.id)['insights']
+        drop = next(i for i in ins if 'giảm' in i['text'])
+        self.assertEqual(drop['kind'], 'down')
+
+    def test_insight_weakest_criterion(self):
+        crit_lo = self.env['hr.promotion.criteria'].create({
+            'name': 'Kỹ năng yếu', 'code': 'car_lo', 'weight': 50,
+            'max_score': 10})
+        crit_hi = self.env['hr.promotion.criteria'].create({
+            'name': 'Kỹ năng mạnh', 'code': 'car_hi', 'weight': 50,
+            'max_score': 10})
+        ev = self.env['hr.promotion.evaluation'].create({
+            'employee_id': self.emp.id, 'eval_date': date(2026, 7, 1),
+            'verdict_final': 'qualified',
+            'line_ids': [(0, 0, {'criteria_id': crit_lo.id, 'score': 3}),
+                         (0, 0, {'criteria_id': crit_hi.id, 'score': 10})]})
+        ev.action_confirm()
+        texts = ' | '.join(i['text'] for i in _career_payload(
+            self._env(self.hr_mgr), self.emp.id)['insights'])
+        self.assertIn('Kỹ năng yếu', texts)
+        self.assertNotIn('Kỹ năng mạnh', texts.split('thấp nhất')[-1][:40])
+
+    def test_insight_no_evaluation_yet(self):
+        ins = _career_payload(self._env(self.hr_mgr), self.emp.id)['insights']
+        self.assertTrue(any('Chưa có đợt đánh giá' in i['text'] for i in ins))
+
+    def test_insight_long_time_without_promotion(self):
+        # Mốc thăng chức cách đây > 12 tháng → cảnh báo, để quản lý nhìn ra
+        # ngay người bị bỏ quên.
+        self._promo(date_effective=date(2024, 1, 1))
+        ins = _career_payload(self._env(self.hr_mgr), self.emp.id)['insights']
+        warn = next(i for i in ins if 'chưa có thay đổi chức vụ' in i['text'])
+        self.assertEqual(warn['kind'], 'warn')
+
+    def test_insight_salary_hidden_from_non_manager(self):
+        # Insight không được rò lương cho người không được xem lương.
+        hr_officer = self.env['res.users'].create({
+            'name': 'HR Officer Ins', 'login': 'hrofficer_ins',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id,
+                                  self.env.ref('hr.group_hr_user').id])]})
+        self._promo(from_wage=10000000, to_wage=15000000,
+                    x_evidence_url='http://kpi')
+        texts = ' '.join(i['text'] for i in _career_payload(
+            self._env(hr_officer), self.emp.id)['insights'])
+        self.assertNotIn('15.000.000', texts)
+        self.assertNotIn('15000000', texts)
+
     def test_career_score_trend_ascending(self):
         self._eval(when=date(2026, 7, 1), score=10)
         self._eval(when=date(2026, 6, 1), score=8)

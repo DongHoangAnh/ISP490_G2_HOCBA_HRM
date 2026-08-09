@@ -43,6 +43,30 @@ export default function HonorBoard() {
   const empty = board.entries.length === 0 && board.ranking.length === 0;
   // Bảng trống với nhân viên thường = một ô chết ngay đầu trang → ẩn hẳn.
   if (empty && !board.canManage) return null;
+  // Với HR thì vẫn phải có lối thêm, nhưng không được ngốn nguyên khung cao
+  // ở chỗ đắt nhất của trang — thu về một dải mỏng.
+  if (empty) {
+    return (
+      <div className="card" style={{
+        marginBottom: 16, padding: '10px 16px',
+        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        background: 'linear-gradient(120deg, var(--red-50), #fff 60%)',
+      }}>
+        <Icon name="award" size={16} />
+        <b style={{ fontSize: 13 }}>Bảng vinh danh</b>
+        <span className="sub">{board.periodLabel}</span>
+        <span className="muted" style={{ fontSize: 12.5, flex: 1 }}>
+          Kỳ này chưa vinh danh ai — bổ nhiệm chức vụ mới sẽ tự lên bảng.
+        </span>
+        <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
+          <Icon name="plus" size={13} />Thêm vinh danh</button>
+        {adding && (
+          <HonorForm onClose={() => setAdding(false)}
+            onSaved={(b) => { setBoard(b); setAdding(false); }} />
+        )}
+      </div>
+    );
+  }
 
   // Lỗi ném ra để ConfirmModal tự hiện — nó quản lý busy/err của chính nó.
   const doRemove = async () => {
