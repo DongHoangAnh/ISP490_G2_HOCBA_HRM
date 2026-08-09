@@ -79,8 +79,12 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
         <div className="card">
           <div className="card-head">
             <h3>Đơn quá hạn duyệt</h3>
+            {/* Bảng chỉ lấy top 5 quá hạn lâu nhất — số tổng lấy từ KPI, đừng
+                đếm số dòng đang hiện. */}
             <span className="sub">
-              {data.overdueRequests.length} đơn đã qua ngày bắt đầu nghỉ mà chưa duyệt
+              {k.overdue} đơn đã qua ngày bắt đầu nghỉ mà chưa duyệt
+              {k.overdue > data.overdueRequests.length
+                && ` · hiện ${data.overdueRequests.length} đơn quá hạn lâu nhất`}
             </span>
           </div>
           <div className="tbl-wrap">
@@ -125,7 +129,14 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
           <div style={{ padding: 16 }}><BarList rows={data.byType} /></div>
         </div>
         <div className="card">
-          <div className="card-head"><h3>Theo phòng ban</h3></div>
+          <div className="card-head">
+            <h3>Theo phòng ban</h3>
+            {data.byDeptTotal > data.byDept.length && (
+              <span className="sub">
+                {data.byDept.length} phòng nghỉ nhiều nhất / {data.byDeptTotal} phòng
+              </span>
+            )}
+          </div>
           <div style={{ padding: 16 }}><BarList rows={data.byDept} /></div>
         </div>
       </div>
@@ -137,7 +148,12 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
         </div>
         <div className="card">
           <div className="card-head">
-            <h3>Đơn chờ duyệt</h3><span className="sub">{data.pending.length} đơn mới nhất</span>
+            <h3>Đơn chờ duyệt</h3>
+            <span className="sub">
+              {k.pending > data.pending.length
+                ? `${data.pending.length} đơn mới nhất / ${k.pending} đơn`
+                : `${data.pending.length} đơn`}
+            </span>
           </div>
           <div className="tbl-wrap">
             <table className="tbl">
