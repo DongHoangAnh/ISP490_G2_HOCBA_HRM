@@ -97,6 +97,11 @@ OVERLAP_WARN = 3
 # Ngưỡng tô đậm dòng ở bảng "Đơn quá hạn duyệt" (dashboard).
 OVERDUE_DEEP_DAYS = 3
 
+# Dashboard "Tổng quan" là màn nhìn lướt: mỗi bảng/biểu đồ chỉ lấy TOP 5, số
+# tổng đã có ở KPI (và ở byDeptTotal). Xem đầy đủ thì sang tab chuyên trách
+# ("Kiểm duyệt phát sinh" / "Đơn chờ duyệt").
+DASHBOARD_TOP_N = 5
+
 
 def _carryover_expire_date(env, year):
     """Ngày hết hạn phép năm để hiển thị cảnh báo (Phase 3).
@@ -1981,7 +1986,8 @@ class HocBaTimeoff(http.Controller):
             'deepOverdueDays': OVERDUE_DEEP_DAYS,   # ngưỡng FE tô đậm dòng
         }
 
-        # _lapsed_table đã sắp giảm dần theo số ngày quá hạn.
+        # _lapsed_table đã sắp giảm dần theo số ngày quá hạn → cắt TOP 5 là
+        # 5 đơn quá hạn lâu nhất. Tổng vẫn ở kpi['overdue'].
         overdue_requests = [{
             'requestId': r['requestId'],
             'employee': r['employee'],
@@ -1995,7 +2001,7 @@ class HocBaTimeoff(http.Controller):
             'state': r['state'],
             'stateLabel': r['stateLabel'],
             'isEmergency': r['isEmergency'],
-        } for r in lapsed['items']]
+        } for r in lapsed['items'][:DASHBOARD_TOP_N]]
 
         def _bars(groups, get_id, get_name):
             rows = []
@@ -2023,13 +2029,18 @@ class HocBaTimeoff(http.Controller):
         top_emp = _bars(
             Leave._read_group(approved_dom, ['employee_id'],
                               ['number_of_days:sum', '__count']),
-            lambda r: r.id or False, lambda r: r.name or 'Không xác định')[:5]
+            lambda r: r.id or False,
+            lambda r: r.name or 'Không xác định')[:DASHBOARD_TOP_N]
 
-        pending = Leave.search(pending_dom, limit=10, order='create_date desc')
+        pending = Leave.search(pending_dom, limit=DASHBOARD_TOP_N,
+                               order='create_date desc')
         return {
             'kpi': kpi,
             'byType': by_type,
-            'byDept': by_dept,
+            # Top 5 phòng nghỉ nhiều nhất; byDeptTotal để FE nói rõ "5/N phòng"
+            # (by_dept đã sort giảm dần nên pct của top 5 vẫn đúng thang cũ).
+            'byDept': by_dept[:DASHBOARD_TOP_N],
+            'byDeptTotal': len(by_dept),
             'topEmployees': top_emp,
             'pending': [{
                 'id': l.id,
