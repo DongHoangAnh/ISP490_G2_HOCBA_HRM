@@ -185,6 +185,10 @@ export default function Offers({ search }) {
                         {onboardLabels[r.onboardResult] || r.onboardResult}</Badge>
                     ) : <span className="muted">—</span>}
                   </td>
+                  {/* Hai chỗ đứng CỐ ĐỊNH bề rộng. Trước đây ô căn phải mà phần tử
+                      thứ hai lúc là badge "Đã tạo hồ sơ · HB.357", lúc là nút
+                      Onboard, lúc là chữ "Đã dừng" — mỗi dòng một bề rộng nên nút
+                      Gửi mail bị đẩy so le, nhìn dọc cột thấy răng cưa. */}
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                       {/* Gửi mail đứng trước: gửi offer là việc làm TRƯỚC, onboard
@@ -192,21 +196,25 @@ export default function Offers({ search }) {
                           mẫu — cùng luật với tab Mail mẫu: HR hoặc trưởng phòng.
                           Tài khoản không được gửi thì không hiện nút (BE cũng đã
                           chặn /preview + /log-sent). */}
-                      {tmpls && tmpls.canSend && (
-                        <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
-                          <Icon name="mail" size={14} />Gửi mail</button>
-                      )}
-                      {r.employeeId ? (
-                        <Badge kind="teal">
-                          <Icon name="check" size={12} /> Đã tạo hồ sơ{r.employeeCode ? ' · ' + r.employeeCode : ''}</Badge>
-                      ) : r.onboardResult === 'no_show' ? (
-                        // Bùng thì không còn hồ sơ nào để tạo — ẩn nút Onboard cho
-                        // khỏi bấm nhầm. BE cũng chặn (BR-OB-02), đây chỉ là lớp mềm.
-                        <span className="muted" style={{ fontSize: 12.5 }}>Đã dừng</span>
-                      ) : isRecruiter ? (
-                        <button className="btn btn-soft btn-sm" disabled={empBusyId === r.id} onClick={() => createEmployee(r)}>
-                          <Icon name="user" size={14} />{empBusyId === r.id ? 'Đang tạo…' : 'Onboard'}</button>
-                      ) : null}
+                      <span style={{ display: 'inline-flex', justifyContent: 'flex-end', minWidth: 104 }}>
+                        {tmpls && tmpls.canSend && (
+                          <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
+                            <Icon name="mail" size={14} />Gửi mail</button>
+                        )}
+                      </span>
+                      <span style={{ display: 'inline-flex', justifyContent: 'flex-start', alignItems: 'center', minWidth: 172 }}>
+                        {r.employeeId ? (
+                          <Badge kind="teal">
+                            <Icon name="check" size={12} /> Đã tạo hồ sơ{r.employeeCode ? ' · ' + r.employeeCode : ''}</Badge>
+                        ) : r.onboardResult === 'no_show' ? (
+                          // Bùng thì không còn hồ sơ nào để tạo — ẩn nút Onboard cho
+                          // khỏi bấm nhầm. BE cũng chặn (BR-OB-02), đây chỉ là lớp mềm.
+                          <span className="muted" style={{ fontSize: 12.5 }}>Đã dừng</span>
+                        ) : isRecruiter ? (
+                          <button className="btn btn-soft btn-sm" disabled={empBusyId === r.id} onClick={() => createEmployee(r)}>
+                            <Icon name="user" size={14} />{empBusyId === r.id ? 'Đang tạo…' : 'Onboard'}</button>
+                        ) : null}
+                      </span>
                     </div>
                   </td>
                 </tr>
