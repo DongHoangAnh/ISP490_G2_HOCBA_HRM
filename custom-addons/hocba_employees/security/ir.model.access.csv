@@ -34,3 +34,6 @@ access_hb_onb_step_user,access.hb.onb.step.user,model_hb_onboarding_step,base.gr
 access_hb_onb_step_hr,access.hb.onb.step.hr,model_hb_onboarding_step,hr.group_hr_user,1,1,1,0
 access_hb_onb_step_manager,access.hb.onb.step.manager,model_hb_onboarding_step,hr.group_hr_manager,1,1,1,1
 access_hb_onb_step_giaovu,access.hb.onb.step.giaovu,model_hb_onboarding_step,hocba_employees.group_hocba_giaovu,1,1,0,0
+access_hb_honor_entry_user,access.hb.honor.entry.user,model_hb_honor_entry,base.group_user,1,0,0,0
+access_hb_honor_entry_hr,access.hb.honor.entry.hr,model_hb_honor_entry,hr.group_hr_user,1,1,1,0
+access_hb_honor_entry_manager,access.hb.honor.entry.manager,model_hb_honor_entry,hr.group_hr_manager,1,1,1,1
