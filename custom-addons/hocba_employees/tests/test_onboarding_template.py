@@ -118,3 +118,69 @@ class TestIndependentStepFlags(TransactionCase):
             self._tpl({'name': 'X', 'step_type': 'evaluation',
                        'sequence': 1, 'is_independent': True,
                        'is_extension': True})
+
+
+@tagged('post_install', '-at_install')
+class TestSyncIndependentEquip(TransactionCase):
+    """Vá bước "Cấp thiết bị" trên MỌI quy trình, kể cả bản sao không có
+    XML-ID (Neon có 2 cặp template trùng tên: bản 19/07 đang dùng thật và
+    bản seed 25/07 mang XML-ID). Migration 19.0.4.0.0 chỉ vá bản XML-ID nên
+    trên Neon nó là lệnh rỗng — spec §"Phát sinh khi lên Neon" 2026-08-09."""
+
+    def setUp(self):
+        super().setUp()
+        self.Tpl = self.env['hb.onboarding.template']
+        # Bản sao "mồ côi": KHÔNG XML-ID, vẫn còn auto_action như bản cũ.
+        self.tpl = self.Tpl.create({
+            'name': 'Bản sao VP', 'sequence': 99,
+            'apply_position_types': 'ctv',
+            'step_ids': [
+                (0, 0, {'name': 'Đánh giá tuần-2', 'sequence': 1,
+                        'step_type': 'evaluation'}),
+                (0, 0, {'name': 'Cấp thiết bị làm việc', 'sequence': 2,
+                        'step_type': 'task', 'auto_action': 'grant_assets'}),
+            ]})
+        self.equip = self.tpl.step_ids.filtered(
+            lambda s: s.name == 'Cấp thiết bị làm việc')
+
+    def _emp_step(self, state):
+        emp = self.env['hr.employee'].create({
+            'name': 'NV Sync %s' % state,
+            'x_employment_status': 'probation'})
+        return self.env['hb.onboarding.step'].create({
+            'employee_id': emp.id, 'template_id': self.tpl.id,
+            'sequence': 2, 'name': 'Cấp thiết bị làm việc',
+            'step_type': 'task', 'state': state})
+
+    def test_patches_orphan_template_step(self):
+        self.assertFalse(self.equip.is_independent)
+        self.Tpl._hocba_sync_independent_equip()
+        self.assertTrue(self.equip.is_independent)
+        # auto_action phải tắt cùng lúc, nếu không constrain sẽ chặn ngay
+        self.assertEqual(self.equip.auto_action, 'none')
+
+    def test_opens_waiting_employee_step(self):
+        waiting = self._emp_step('waiting')
+        self.Tpl._hocba_sync_independent_equip()
+        self.assertTrue(waiting.is_independent)
+        self.assertEqual(waiting.state, 'open')
+
+    def test_keeps_history_states(self):
+        done = self._emp_step('done')
+        skipped = self._emp_step('skipped')
+        self.Tpl._hocba_sync_independent_equip()
+        self.assertEqual(done.state, 'done')
+        self.assertEqual(skipped.state, 'skipped')
+        self.assertTrue(done.is_independent)
+
+    def test_idempotent(self):
+        first = self.Tpl._hocba_sync_independent_equip()
+        again = self.Tpl._hocba_sync_independent_equip()
+        self.assertTrue(first['templateSteps'] >= 1)
+        self.assertEqual(again, {'templateSteps': 0, 'steps': 0, 'opened': 0})
+
+    def test_ignores_other_step_names(self):
+        other = self.tpl.step_ids.filtered(
+            lambda s: s.name == 'Đánh giá tuần-2')
+        self.Tpl._hocba_sync_independent_equip()
+        self.assertFalse(other.is_independent)

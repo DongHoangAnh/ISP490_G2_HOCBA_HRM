@@ -109,6 +109,44 @@ class HbOnboardingTemplate(models.Model):
         return True
 
     @api.model
+    def _hocba_sync_independent_equip(self):
+        """Vá bước "Cấp thiết bị làm việc" thành bước không ràng buộc thứ tự
+        trên MỌI quy trình, tìm theo TÊN chứ không theo XML-ID.
+
+        Migration 19.0.4.0.0 sửa đúng một bản ghi tìm bằng `env.ref`. Trên
+        Neon có hai cặp quy trình trùng tên: cặp tạo 19/07 (không XML-ID) là
+        cặp thực sự thắng khi `_match_for_employee` chạy — cùng sequence thì
+        `_order = 'sequence, id'` lấy id nhỏ hơn — còn cặp mang XML-ID tạo
+        25/07 chưa NV nào dùng. Vá bằng ref nên trúng đúng bản chết.
+        Idempotent, chạy lại trả toàn 0."""
+        name = 'Cấp thiết bị làm việc'
+        ref = self.env.ref('hocba_employees.onb_tpl_vp_step2',
+                           raise_if_not_found=False)
+        if ref:
+            name = ref.name
+        # step_type='task': cờ độc lập chỉ hợp lệ trên bước Việc cần làm,
+        # ghi lên bước Đánh giá trùng tên sẽ vỡ constrain.
+        tpl_steps = self.env['hb.onboarding.template.step'].sudo(
+            ).with_context(active_test=False).search([
+                ('name', '=', name), ('step_type', '=', 'task'),
+                '|', ('is_independent', '=', False),
+                ('auto_action', '!=', 'none')])
+        tpl_steps.write({'is_independent': True, 'auto_action': 'none'})
+
+        steps = self.env['hb.onboarding.step'].sudo().with_context(
+            active_test=False).search([
+                ('name', '=', name), ('step_type', '=', 'task'),
+                '|', ('is_independent', '=', False),
+                ('auto_action', '!=', 'none')])
+        # done/skipped giữ nguyên: đó là lịch sử. Chỉ bước đang xếp hàng mới
+        # mở ra — bước độc lập không còn phải chờ tới lượt nữa.
+        waiting = steps.filtered(lambda s: s.state == 'waiting')
+        steps.write({'is_independent': True, 'auto_action': 'none'})
+        waiting.write({'state': 'open'})
+        return {'templateSteps': len(tpl_steps), 'steps': len(steps),
+                'opened': len(waiting)}
+
+    @api.model
     def action_assign_pending(self):
         """Gán quy trình cho mọi NV thử việc CHƯA có bước (tạo trước khi
         template phù hợp tồn tại). Trả bộ đếm cho FE báo kết quả:
