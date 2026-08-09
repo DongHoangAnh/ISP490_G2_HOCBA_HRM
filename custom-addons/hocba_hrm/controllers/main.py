@@ -1716,14 +1716,23 @@ def _career_insights(evaluations, criteria_radar, months_since, onb):
                         'Đợt đánh giá đầu tiên: %s%%.' % last['totalScore']})
         scored = [c for c in criteria_radar if c['maxScore']]
         if len(scored) > 1:
-            weakest = min(scored, key=lambda c: c['score'] / c['maxScore'])
-            strongest = max(scored, key=lambda c: c['score'] / c['maxScore'])
-            out.append({'kind': 'warn', 'text': 'Tiêu chí thấp nhất: %s '
-                        '(%s/%s).' % (weakest['name'], weakest['score'],
-                                      weakest['maxScore'])})
-            out.append({'kind': 'up', 'text': 'Tiêu chí cao nhất: %s '
-                        '(%s/%s).' % (strongest['name'], strongest['score'],
-                                      strongest['maxScore'])})
+            ratio = lambda c: c['score'] / c['maxScore']   # noqa: E731
+            weakest = min(scored, key=ratio)
+            strongest = max(scored, key=ratio)
+            # Hoà điểm hết thì weakest is strongest → in "thấp nhất X" ngay
+            # cạnh "cao nhất X", đọc như lỗi. Nói thẳng là đều nhau.
+            if ratio(weakest) == ratio(strongest):
+                out.append({'kind': 'info', 'text':
+                            'Các tiêu chí đều nhau (%s/%s).'
+                            % (weakest['score'], weakest['maxScore'])})
+            else:
+                out.append({'kind': 'warn', 'text': 'Tiêu chí thấp nhất: %s '
+                            '(%s/%s).' % (weakest['name'], weakest['score'],
+                                          weakest['maxScore'])})
+                out.append({'kind': 'up', 'text': 'Tiêu chí cao nhất: %s '
+                            '(%s/%s).' % (strongest['name'],
+                                          strongest['score'],
+                                          strongest['maxScore'])})
     if months_since is not None and months_since >= STALE_PROMO_MONTHS:
         out.append({'kind': 'warn', 'text':
                     'Đã %s tháng chưa có thay đổi chức vụ.' % months_since})

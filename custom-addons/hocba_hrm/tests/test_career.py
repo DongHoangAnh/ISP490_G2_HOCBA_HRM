@@ -296,6 +296,28 @@ class TestCareer(TransactionCase):
         self.assertIn('Kỹ năng yếu', texts)
         self.assertNotIn('Kỹ năng mạnh', texts.split('thấp nhất')[-1][:40])
 
+    def test_insight_tied_criteria_says_even(self):
+        # Điểm bằng nhau hết: min() và max() trả cùng một tiêu chí → hiện
+        # "thấp nhất X" ngay cạnh "cao nhất X" thì vô nghĩa (thấy trên Neon
+        # 2026-08-09, NV nào cũng 4/5 cả 4 tiêu chí).
+        crit_a = self.env['hr.promotion.criteria'].create({
+            'name': 'Tiêu chí A', 'code': 'car_tie_a', 'weight': 50,
+            'max_score': 10})
+        crit_b = self.env['hr.promotion.criteria'].create({
+            'name': 'Tiêu chí B', 'code': 'car_tie_b', 'weight': 50,
+            'max_score': 10})
+        ev = self.env['hr.promotion.evaluation'].create({
+            'employee_id': self.emp.id, 'eval_date': date(2026, 7, 1),
+            'verdict_final': 'qualified',
+            'line_ids': [(0, 0, {'criteria_id': crit_a.id, 'score': 8}),
+                         (0, 0, {'criteria_id': crit_b.id, 'score': 8})]})
+        ev.action_confirm()
+        texts = ' | '.join(i['text'] for i in _career_payload(
+            self._env(self.hr_mgr), self.emp.id)['insights'])
+        self.assertNotIn('thấp nhất', texts)
+        self.assertNotIn('cao nhất', texts)
+        self.assertIn('đều nhau', texts)
+
     def test_insight_no_evaluation_yet(self):
         ins = _career_payload(self._env(self.hr_mgr), self.emp.id)['insights']
         self.assertTrue(any('Chưa có đợt đánh giá' in i['text'] for i in ins))
