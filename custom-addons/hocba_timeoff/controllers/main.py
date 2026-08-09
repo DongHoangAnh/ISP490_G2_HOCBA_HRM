@@ -557,13 +557,15 @@ def _working_dates_env(env, start, end):
 def _lapsed_info(env, leave):
     """Thông tin 'lỡ hạn duyệt' của 1 đơn (BR-L01→L03) — None nếu chưa lỡ hạn.
 
-    Lỡ hạn = còn chờ duyệt mà ngày BẮT ĐẦU nghỉ đã qua. Đối chiếu
+    Lỡ hạn = còn chờ duyệt mà ngày BẮT ĐẦU nghỉ đã qua — TRỪ đơn "xin nghỉ bù"
+    (x_is_makeup): NV chủ động nộp muộn cho ngày đã nghỉ, không phải người
+    duyệt để trễ, nên không tính quá hạn. Đối chiếu
     hocba.attendance từng ngày nghỉ ĐÃ QUA (đến hết hôm qua): tổng work_credit
     trong ngày >= 0.5 là 'vẫn đi làm'; đơn NỬA NGÀY cần >= 1.0 mới tính (nửa
     làm + nửa nghỉ là khớp đơn). Loại 'Nghỉ Buổi Dạy' miễn đối chiếu — GV có
     thể vẫn chấm công ở trung tâm dù nghỉ 1 buổi dạy. Attendance đọc qua sudo:
     người duyệt không có ACL hocba.attendance; quyền phạm vi kiểm ở tầng gọi."""
-    if leave.state not in PENDING_STATES:
+    if leave.state not in PENDING_STATES or leave.x_is_makeup:
         return None
     d0, d1 = _leave_day_bounds(leave)
     today = fields.Date.context_today(env.user)
@@ -630,8 +632,11 @@ def _lapsed_table(env, scope, dept_id=False):
     """Dữ liệu màn 'Giám sát duyệt đơn' (BR-L06): KPI + bảng đơn lỡ hạn
     + đếm theo phòng. sudo + lọc phòng ban tường minh theo scope."""
     today = fields.Date.context_today(env.user)
+    # Loại đơn "xin nghỉ bù" ngay ở domain (_lapsed_info cũng trả None cho
+    # chúng) — khỏi tải về rồi bỏ.
     domain = [('state', 'in', list(PENDING_STATES)),
-              ('request_date_from', '<', today)] + _dept_domain(scope)
+              ('request_date_from', '<', today),
+              ('x_is_makeup', '=', False)] + _dept_domain(scope)
     if dept_id:
         domain.append(('department_id', '=', dept_id))
     leaves = env['hr.leave'].sudo().search(domain, order='request_date_from, id')
@@ -1279,8 +1284,11 @@ class HocBaTimeoff(http.Controller):
             'withdrawState': leave.x_withdraw_state,
             'withdrawReason': leave.x_withdraw_reason or '',
             'submittedAt': _d(leave.create_date.date() if leave.create_date else None),
+            # Đơn nộp bù cho ngày nghỉ đã qua (NV tự khai lúc tạo đơn) — luôn
+            # loại trừ khỏi 'lapsed' bên dưới.
+            'isMakeup': leave.x_is_makeup,
             # "Quá hạn duyệt": qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt, kèm
-            # đối chiếu chấm công (None nếu chưa quá hạn).
+            # đối chiếu chấm công (None nếu chưa quá hạn / là đơn nghỉ bù).
             'lapsed': _lapsed_info(request.env, leave),
         }
 
@@ -1543,6 +1551,11 @@ class HocBaTimeoff(http.Controller):
         period = (payload.get('period') or '').strip().lower()  # ''/'am'/'pm' (Phase 6)
         reason = (payload.get('reason') or '').strip()
         att = payload.get('attachment')
+        # NV tự khai "xin nghỉ bù" khi nộp đơn cho ngày nghỉ ĐÃ QUA. Chỉ nhận
+        # cờ này khi ngày bắt đầu thật sự ở quá khứ (model cũng chặn lại) —
+        # tránh biến nó thành lối thoát khỏi thống kê quá hạn duyệt.
+        is_makeup = bool(payload.get('isMakeup')) and date_from < str(
+            fields.Date.context_today(request.env.user))
 
         if not leave_type_id or not date_from or not date_to:
             return request.make_json_response({'error': 'bad_request'}, status=400)
@@ -1621,6 +1634,8 @@ class HocBaTimeoff(http.Controller):
             'request_date_to': date_to,
         }
         vals.update(period_vals)   # Phase 6 — nửa ngày (nếu có)
+        if is_makeup:
+            vals['x_is_makeup'] = True
         if reason:
             vals['name'] = reason
 

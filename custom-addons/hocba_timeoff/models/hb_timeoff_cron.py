@@ -98,6 +98,9 @@ class HbTimeoffCron(models.AbstractModel):
             ('state', 'in', list(PENDING_STATES)),
             ('request_date_from', '<', today),
             ('x_lapsed_notified', '=', False),
+            # Đơn "xin nghỉ bù": NV chủ động nộp muộn → không phải người duyệt
+            # để trễ, không bắn chuông quá hạn.
+            ('x_is_makeup', '=', False),
         ])
         for leave in leaves:
             title = 'Đơn nghỉ quá hạn duyệt'
