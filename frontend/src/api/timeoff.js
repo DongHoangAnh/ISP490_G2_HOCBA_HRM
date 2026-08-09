@@ -1,5 +1,5 @@
 /* API domain Nghỉ phép (timeoff) — Nhật Anh. Spec: docs/SPEC_API_TIMEOFF.md */
-import { hbGet, hbPost } from './client';
+import { hbGet, hbPost, hbUploadFields } from './client';
 
 /* Tab "Của tôi": số dư phép + loại nghỉ + đơn của chính mình. */
 export const fetchOverview = () => hbGet('/hocba-hrm/api/timeoff/overview');
@@ -95,10 +95,21 @@ export const fetchWorkdays = (year) => {
   return hbGet('/hocba-hrm/api/timeoff/workdays' + (q ? '?' + q : ''));
 };
 
-/* Thêm 1 hoặc nhiều ngày đi làm (HR). dates: mảng 'YYYY-MM-DD'.
+/* Thêm 1 hoặc nhiều ngày đi làm (HR). items: [{date:'YYYY-MM-DD', name?}] —
+   ngày nào không có `name` thì dùng chung ghi chú `name` của cả lô.
    Chỉ nhận ngày CHƯA ĐẾN (>= minDate); ngày đã qua → 400 'past_workday'. */
-export const addWorkdays = (dates, name, year) =>
-  hbPost('/hocba-hrm/api/timeoff/workdays/add', { dates, name, year });
+export const addWorkdays = (items, name, year) =>
+  hbPost('/hocba-hrm/api/timeoff/workdays/add', { items, name, year });
+
+/* URL tải file .xlsx mẫu (chỉ HR/Admin) — liệt kê sẵn Thứ 7/Chủ nhật CHƯA ĐẾN
+   của năm, HR chỉ điền 'x'. Dùng làm href cho thẻ <a download>. */
+export const workdayTemplateUrl = (year) =>
+  `/hocba-hrm/api/timeoff/workdays/template?year=${year}`;
+
+/* Tải file mẫu đã điền lên để KIỂM (chưa ghi gì). OK → {rows, skipped};
+   sai định dạng → ApiError có .message + .details (từng dòng sai). */
+export const importWorkdays = (file, year) =>
+  hbUploadFields('/hocba-hrm/api/timeoff/workdays/import', file, { year });
 
 /* Sửa 1 ngày đi làm (HR): đổi ngày và/hoặc ghi chú. Chỉ ngày CHƯA ĐẾN;
    ngày đã diễn ra → 400 'locked_workday'. */
