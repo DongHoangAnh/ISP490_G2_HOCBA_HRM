@@ -37,8 +37,8 @@ services:
     command: >
       odoo
       --database=hocba_hrm
-      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
-      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
       --addons-path=/mnt/extra-addons
       --dev=xml
 

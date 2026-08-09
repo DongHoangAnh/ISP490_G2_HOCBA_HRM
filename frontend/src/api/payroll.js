@@ -36,6 +36,8 @@ export const resetPayslip = (id, reason) =>
   p(`/hocba-hrm/api/payroll/payslip/${id}/reset`, { reason });
 export const computeAllPayslips = (month, year) =>
   p('/hocba-hrm/api/payroll/compute-all', { month, year });
+export const fetchComputeStatus = (month, year) =>
+  g(`/hocba-hrm/api/payroll/compute-status?month=${month}&year=${year}`);
 
 // ── Bank File / Transfer ─────────────────────────────────
 export const fetchBankFiles = (params) =>
@@ -94,7 +96,10 @@ export const sendPayslipMail = (payslipIds) =>
 export const markPayslipsSent = (payslipIds) =>
   p('/hocba-hrm/api/payroll/payslip/mark-sent', { payslip_ids: payslipIds });
 
-// ── Employee self-confirm (authenticated) ────────────────
+// ── Employee self-confirm & my payslips (authenticated) ──
+export const fetchMyPayslips = () =>
+  g('/hocba-hrm/api/payroll/my-payslips');
+
 export const employeeConfirmPayslip = (slipId, action, feedback) =>
   p(`/hocba-hrm/api/payroll/payslip/${slipId}/employee-confirm`, { action, feedback });
 

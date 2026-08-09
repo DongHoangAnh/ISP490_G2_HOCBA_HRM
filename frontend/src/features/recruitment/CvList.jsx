@@ -39,7 +39,11 @@ const TONE_PENDING = { bd: 'var(--amber)', bg: 'var(--amber-bg)' };
 const cardTone = (r) => CARD_TONE[r.interviewResult]
   || (r.cvResult === 'fail' ? CARD_TONE.fail : TONE_PENDING);
 
-export default function CvList({ search, stageNames, focus }) {
+/* Không có prop lọc theo bước. Bản cũ có `stageNames` lọc bằng TÊN bước nhưng
+   không màn nào truyền vào — mà tên bước sửa được trên màn Cấu hình nên hễ ai
+   dùng lại là hỏng đúng kiểu tab Offer trước đây. Cần lọc theo bước thì viết
+   lại bằng MÃ bước (`r.stageRef`), xem OFFER_STAGE_REFS ở Offers.jsx. */
+export default function CvList({ search, focus }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [cvFilter, setCvFilter] = useState('all');
@@ -100,16 +104,14 @@ export default function CvList({ search, stageNames, focus }) {
     const f = filters.find(([k]) => k === cvFilter);
     return !f || !f[2] || f[2](r);   // chip lạ (Selection đổi) → coi như Tất cả
   };
-  // Tập theo stage (tab PV/Offer) — dùng cho cả chip đếm lẫn bảng/kanban.
-  const stageRows = stageNames ? rows.filter((r) => stageNames.includes(r.stage)) : rows;
-  const filtered = stageRows.filter((r) => matchSearch(r) && matchCv(r));
+  const filtered = rows.filter((r) => matchSearch(r) && matchCv(r));
 
   return (
     <div>
       <div className="filterbar">
         {filters.map(([k, l, pred]) => (
           <button key={k} className={'chip' + (cvFilter === k ? ' active' : '')} onClick={() => setCvFilter(k)}>
-            {l} <span className="ct">{pred ? stageRows.filter(pred).length : stageRows.length}</span></button>
+            {l} <span className="ct">{pred ? rows.filter(pred).length : rows.length}</span></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
           {isRecruiter && (

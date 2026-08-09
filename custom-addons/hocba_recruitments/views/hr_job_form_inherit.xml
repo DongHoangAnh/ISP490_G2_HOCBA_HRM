@@ -27,11 +27,6 @@
                     groups="hr_recruitment.group_hr_recruitment_user"/>
             </header>
 
-            <!-- Khai báo field ẩn cần dùng trong computed/required logic -->
-            <field name="active" position="after">
-                <field name="x_requires_teaching_level" invisible="1"/>
-            </field>
-
             <!-- 7.8: Trạng thái tuyển + Link JD — sau department_id trong main form -->
             <field name="department_id" position="after">
                 <field name="recruitment_status"/>
@@ -41,13 +36,14 @@
 
             <!-- Thêm nhóm field Học Bá vào cuối Tab "Details" -->
             <page name="recruitment_page" position="inside">
-                <group string="Học Bá — Yêu cầu giảng dạy" name="hocba_teaching"
-                      invisible="not x_requires_teaching_level">
+                <!-- Cả hai field đều TUỲ CHỌN. Trước đây nhóm này ẩn/bắt buộc
+                     theo x_requires_teaching_level (suy từ tên phòng ban) —
+                     cờ đó luôn False trên dữ liệu thật nên nhóm không bao giờ
+                     hiện ra. Đã bỏ, xem ghi chú trong models/hr_job.py. -->
+                <group string="Học Bá — Yêu cầu giảng dạy (tuỳ chọn)" name="hocba_teaching">
                     <field name="x_teaching_level"
-                           required="x_requires_teaching_level"
-                           placeholder="VD: HSK4, HSK7-9, TOCFL Band B…"/>
-                    <field name="x_required_sessions_per_week"
-                           invisible="not x_requires_teaching_level"/>
+                           placeholder="VD: HSK4, HSK7-9, TOCFL Band B… (để trống nếu không yêu cầu)"/>
+                    <field name="x_required_sessions_per_week"/>
                 </group>
             </page>
 

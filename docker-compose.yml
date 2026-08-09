@@ -30,7 +30,6 @@ services:
       bash -c "python3 /fix_stale_assets.py; exec odoo
       --database=${DB_NAME:-neondb}
       --addons-path=/mnt/extra-addons
-      --update=hocba_finance
       --dev=xml"
 
 volumes:

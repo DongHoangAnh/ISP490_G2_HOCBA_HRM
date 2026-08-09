@@ -26,6 +26,13 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 1.0 | Initial creation from confirmation/email BE/FE implementation | All | 21/06/2026 | Group G2 |
 | 2 | 1.1 | Full rewrite with correct Function ID (FS-PAY-005), FS-PAY-001 format, detailed field specs, public controller routes, QWeb template documentation, email template system, and SPA component details derived from actual source code | All | 21/06/2026 | Group G2 |
+| 3 | 1.2 | Standardization of Vietnamese C&B Terminology | All | 06/08/2026 | Group G2 |
+| 4 | 1.3 | Updated business logic: HR manual mail issuance (removed auto-send on compute), Confirmation Date Window (Start to Deadline), multi-response allowance during open window, auto-confirmation on deadline expiration, and bank file generation flow | All | 06/08/2026 | Group G2 |
+| 5 | 1.4 | Added individual employee payslip recalculation, single-employee email resend & deadline extension, confirmation reset API, and dedicated "Thao tác" action column in SPA `BatchList.jsx` & `PayslipDrawer.jsx` | All | 06/08/2026 | Group G2 |
+| 6 | 1.6 | Security Enhancement: Mandatory Odoo user authentication (`auth='user'`) and email account ownership verification. Email links force login and redirect directly to the real SPA app (`http://localhost:8069/hocba-hrm`) with self-service `MyPayslipsView` component | All | 06/08/2026 | Group G2 |
+| 7 | 1.7 | Start & End Date Confirmation Window: Added configurable Start Day & End Day parameters. Enforced send-mail window validation (`start_day <= today <= end_day`), auto-confirmation of all pending slips past end date, and mail/recalculate lock past deadline unless extended in Config. | All | 07/08/2026 | Group G2 |
+| 8 | 1.8 | Pre-Send Confirmation Dialog: Implemented confirmation dialog listing employees missing work_email before sending mail, allowing HR to confirm sending to valid-email employees while skipping no-email employees. | Frontend SPA | 07/08/2026 | Group G2 |
+| 8 | 1.6 | UI/UX Redesign: Overhauled `MyPayslipsView` into a Senior-level categorized layout (Thu nhập, Các khoản trừ, Bảo hiểm công ty đóng tài trợ, Căn cứ tính thuế TNCN). Removed raw truncated code column ("Mã"), added feedback presets & enhanced confirmation action footer. | Frontend SPA | 06/08/2026 | Group G2 |
 
 ---
 
@@ -36,32 +43,41 @@
 | **Function ID** | FS-PAY-005 |
 | **Function Name** | Employee Payslip Confirmation & Email |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 21/06/2026 |
+| **Last Modified Date** | 06/08/2026 |
 
 | Attribute | Value |
 | --- | --- |
 | **Processing Time** | On-demand |
-| **Processing Type** | Interactive + REST API + Public Web |
-| **Function Type** | Communication / Workflow |
+| **Processing Type** | Interactive + REST API + Authenticated Web SPA |
+| **Function Type** | Communication / Workflow / Security |
 | **Multilingual** | No |
 
 ### Business Requirement & Function Overview
 
 **Overview:**
-This function provides the employee payslip confirmation workflow and email notification mechanism. It covers: sending payslip notification emails to employees with unique, token-secured public links; a public-facing web page (no login required) where employees view payslip details and confirm or reject; a configurable email template system stored in `ir.config_parameter`; REST API endpoints for bulk email dispatch and template management; and SPA frontend integration for confirmation status display and email template editing.
+This function provides the secure employee payslip confirmation workflow, email notification mechanism, and account-level security enforcement. It covers: manual email issuance by HR; a configurable confirmation date window (Start Date to End Date / Deadline); mandatory Odoo user authentication (`auth='user'`) and account ownership verification when accessing email links; direct redirection to the main Học Bá HRM SPA application (`http://localhost:8069/hocba-hrm`) rendering the authenticated `MyPayslipsView` component; multi-response allowance within the open window; automatic silent confirmation (`auto_confirmed`) when deadline expires without response; individual employee exception handling; REST API endpoints; and SPA frontend integration.
 
-**Business Context:**
-Hoc Ba Education requires employees to review and confirm their payslips before the payroll period can be closed. The system sends an email with a unique link to each employee. Employees access their payslip via the public link (no Odoo login required), view all salary lines, and either confirm or reject (with a mandatory reason). The HR team monitors confirmation status in the SPA dashboard. Only when all employees have confirmed can the period be closed and locked via the "Luu lich su" (Save History) action.
+**Security Context & Ownership Verification:**
+To prevent unauthorized access or token leakage where unauthenticated individuals could view or confirm another person's income statement, all payslip links require user authentication (`auth='user'`). When an employee clicks an email link (`/payslip/view/<token>`):
+1. If the user is unauthenticated, Odoo automatically redirects to `/web/login?redirect=/hocba-hrm`.
+2. The user must authenticate using the official Odoo user account corresponding to their employee work email.
+3. Upon login, the controller verifies account ownership: `slip.employee_id.user_id.id == user.id` or `user.partner_id.email == slip.employee_id.work_email` (or HR Admin).
+4. If unauthorized, access is denied with an explicit security alert template (`payslip_unauthorized`).
+5. If verified, the user is redirected into the official SPA app (`/hocba-hrm`) rendering `MyPayslipsView` (Image 3) to view their breakdown and submit confirmation or feedback.s.
 
 **Functional Scope:**
-- Unique access token (`x_access_token`, UUID v4) generated on payslip creation for public page access.
-- Employee confirmation state machine: `pending -> confirmed` or `pending -> rejected` (irreversible).
-- Email template system with `ir.config_parameter` storage and placeholder variable rendering.
-- Public web controller (`PayrollPublicController`) with token-based authentication.
-- QWeb template for public payslip view with salary lines, confirmation/rejection forms, and flash messages.
-- REST API endpoints: send-mail (bulk), mail-template (GET/POST), close-by-period.
-- SPA integration: confirmation badges in `BatchList.jsx`, email template editor in `ConfigView.jsx`.
-- Close-by-period guard: blocks batch closure until 100% employee confirmation.
+- HR manual mail dispatch (disabling `auto_send_mail` on calculation).
+- Unique access token (`x_access_token`, UUID v4) generated on email send.
+- Confirmation Date Window: Start date (`x_email_sent_date`) to End date/deadline (`x_confirm_deadline`).
+- Multi-response allowance: Employees can confirm or submit feedback multiple times while `now <= x_confirm_deadline`.
+- Auto-confirmation on deadline expiration (`x_confirm_deadline <= now`) for un-actioned slips.
+- Individual Employee Exception Handling:
+  - Single-employee payslip recalculation (`POST /hocba-hrm/api/payroll/payslip/<id>/compute`).
+  - Single-employee email resend & deadline extension (`POST /hocba-hrm/api/payroll/payslip/send-mail`).
+  - Single-employee confirmation reset (`POST /hocba-hrm/api/payroll/payslip/<id>/reset-confirm`).
+- Public web controller (`PayrollPublicController`) with token-based view and confirmation window banners.
+- SPA integration: "Thao tác" action column in `BatchList.jsx` table (🧮 Compute, ✉️ Resend Mail, 🔄 Reset Confirm) and action bar in `PayslipDrawer.jsx`.
+- Close-by-period & Bank File creation integration.
 
 **Users:**
 - **HR Manager** (`hr.group_hr_manager`): Sends payslip emails, views confirmation status, configures email templates, closes payroll periods.

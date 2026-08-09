@@ -1,8 +1,11 @@
+import logging
 import pytz
 from datetime import datetime, time as dt_time
 
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
+
+_logger = logging.getLogger(__name__)
 
 # Khung giờ 09:00–17:00, mỗi 30 phút — giá trị là string float để Selection lưu được
 _HOUR_SLOTS = [
@@ -87,6 +90,90 @@ class HbInterviewSlot(models.Model):
     def action_mark_available(self):
         """Trả slot về Còn trống = gỡ hết ứng viên (state tự tính lại)."""
         self.write({'applicant_ids': [(5, 0, 0)]})
+
+    # ── Tự chuyển bước theo lịch phỏng vấn ───────────────────────────────────
+    # Đặt ở tầng model (không phải controller) để form backend, import và SPA
+    # cùng chạy một luật. Bám xmlid bước qua _hb_advance_stage() nên admin đổi
+    # tên bước trên màn Cấu hình không làm chết tự động hoá.
+
+    def _slot_label(self):
+        """'20/08 lúc 10:00' theo giờ VN — để ghi chatter.
+
+        Fallback Asia/Ho_Chi_Minh chứ không dùng thẳng context_timestamp: cron
+        chạy dưới OdooBot (tz rỗng) ⇒ ghi chú sẽ lệch 7 tiếng so với giờ hẹn mà
+        HR nhìn thấy trên lịch.
+        """
+        self.ensure_one()
+        tz = pytz.timezone(self.env.user.tz or 'Asia/Ho_Chi_Minh')
+        local_dt = pytz.utc.localize(self.start_datetime).astimezone(tz)
+        return local_dt.strftime('%d/%m lúc %H:%M')
+
+    def _hb_advance_booked(self, applicants):
+        """Xếp ứng viên vào slot ⇒ Hẹn & mời phỏng vấn → Phỏng vấn.
+
+        CHỈ đẩy từ bước "Hẹn & mời phỏng vấn". Ứng viên còn ở "Lên lịch phỏng
+        vấn" mà được xếp slot thì dừng lại ở "Hẹn & mời phỏng vấn" (controller
+        ghi interview_date sau khi book ⇒ luật cũ đẩy schedule → invite), vì
+        khâu mời vẫn phải gửi thư cho ứng viên chứ không được nhảy cóc.
+        """
+        self.ensure_one()
+        if applicants:
+            applicants._hb_advance_stage(
+                'hb_stage_invite', 'hb_stage_interview',
+                'Do đã được xếp lịch phỏng vấn %s (người PV: %s).' % (
+                    self._slot_label(), self.user_id.name or '—'))
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        recs = super().create(vals_list)
+        for rec in recs:
+            rec._hb_advance_booked(rec.applicant_ids)
+        return recs
+
+    def write(self, vals):
+        # Chỉ ứng viên MỚI được thêm mới bị đẩy bước — gỡ ứng viên (unbook) hay
+        # sửa giờ slot thì không đụng tới bước của ai.
+        before = {rec.id: rec.applicant_ids for rec in self} if 'applicant_ids' in vals else {}
+        res = super().write(vals)
+        for rec in self:
+            added = rec.applicant_ids - before.get(rec.id, rec.applicant_ids.browse())
+            if added:
+                rec._hb_advance_booked(added)
+        return res
+
+    @api.model
+    def _cron_advance_past_interviews(self):
+        """CRON-REC-002: qua giờ phỏng vấn ⇒ Phỏng vấn → Kết quả phỏng vấn.
+
+        Chạy mỗi 30 phút (bằng đúng độ dài 1 slot). Chỉ đụng ứng viên CÒN ở
+        bước "Phỏng vấn": ai đã được điền kết quả và đi tiếp (Pass → Gửi Offer)
+        hoặc bị HR kéo đi bước khác thì bỏ qua — _hb_advance_stage() không kéo lùi.
+
+        Không lọc theo "Tham gia PV": ứng viên vắng mặt vẫn cần vào bước Kết quả
+        để HR ghi nhận (fail / hẹn lại), chứ không phải kẹt ở bước Phỏng vấn.
+        """
+        st_interview = self.env.ref(
+            'hocba_recruitments.hb_stage_interview', raise_if_not_found=False)
+        if not st_interview:
+            return 0
+        now = fields.Datetime.now()
+        slots = self.sudo().search([
+            ('stop_datetime', '<', now),
+            ('applicant_ids', '!=', False),
+        ])
+        moved = 0
+        for slot in slots:
+            todo = slot.applicant_ids.filtered(
+                lambda a: a.stage_id == st_interview)
+            if not todo:
+                continue
+            todo._hb_advance_stage(
+                'hb_stage_interview', 'hb_stage_result',
+                'Do đã qua khung giờ phỏng vấn %s.' % slot._slot_label())
+            moved += len(todo)
+        if moved:
+            _logger.info('CRON-REC-002: %s ứng viên chuyển sang bước Kết quả phỏng vấn.', moved)
+        return moved
 
 
 class HbInterviewSlotWizard(models.TransientModel):

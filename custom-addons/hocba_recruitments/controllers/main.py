@@ -267,10 +267,18 @@ class HocBaTuyenDung(http.Controller):
         return row
 
     def _meta(self):
-        """Stages + jobs + nhãn select — cho kanban và form Thêm/Sửa."""
+        """Stages + jobs + nhãn select — cho kanban và form Thêm/Sửa.
+
+        `jobs` lọc theo phạm vi phòng ban như _req_meta/_job_meta: ô "Vị trí ứng
+        tuyển" của trưởng phòng chỉ liệt kê vị trí phòng mình, khớp với guard
+        403 ở api_recruitment_cv_create. Bước (stages) là cấu hình quy trình
+        dùng chung toàn hệ thống nên KHÔNG lọc.
+        """
         env = request.env
+        scope = self._dept_scope_ids()
+        job_domain = [] if scope is None else [('department_id', 'in', scope)]
         stages = env['hr.recruitment.stage'].sudo().search([], order='sequence, id')
-        jobs = env['hr.job'].sudo().search([], order='name')
+        jobs = env['hr.job'].sudo().search(job_domain, order='name')
         return {
             'stages': [{'id': s.id, 'name': s.name, 'sequence': s.sequence,
                         'hiredStage': bool(s.hired_stage), 'slaDays': s.sla_days or 0,
@@ -557,8 +565,9 @@ class HocBaTuyenDung(http.Controller):
             'applications': j.application_count or 0,
             'newApplications': j.new_application_count or 0,
             'location': j.address_id.name or '',
+            # Không còn 'requiresTeaching': Trình độ là ô tuỳ chọn, khách không
+            # thu thập dữ liệu này ở khâu tuyển dụng (xem models/hr_job.py).
             'teachingLevel': j.x_teaching_level or '',
-            'requiresTeaching': bool(j.x_requires_teaching_level),
             'sessionsPerWeek': j.x_required_sessions_per_week or 0,
         }
         if detail:
@@ -842,8 +851,16 @@ class HocBaTuyenDung(http.Controller):
 
     def _req_meta(self):
         env = request.env
-        deps = env['hr.department'].sudo().search([], order='name')
-        jobs = env['hr.job'].sudo().search([], order='name')
+        # Cùng luật với _job_meta(): HR thấy mọi phòng, trưởng phòng chỉ thấy
+        # phòng mình quản lý (gồm phòng con) và vị trí thuộc các phòng đó.
+        # api_recruitment_request_create đã chặn 403 khi lưu phiếu ngoài phạm
+        # vi, nhưng liệt kê hết ở ô chọn thì TBP chọn xong mới ăn lỗi — chặn
+        # ngay từ ô chọn cho gọn.
+        scope = self._dept_scope_ids()
+        dep_domain = [] if scope is None else [('id', 'in', scope)]
+        job_domain = [] if scope is None else [('department_id', 'in', scope)]
+        deps = env['hr.department'].sudo().search(dep_domain, order='name')
+        jobs = env['hr.job'].sudo().search(job_domain, order='name')
         return {
             'departments': [{'id': d.id, 'name': d.name} for d in deps],
             'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id} for j in jobs],
@@ -989,9 +1006,20 @@ class HocBaTuyenDung(http.Controller):
         return data
 
     def _applicant_recipients(self):
-        """Ứng viên có email để chọn làm người nhận."""
+        """Ứng viên có email để chọn làm người nhận.
+
+        Giới hạn theo phạm vi phòng ban như tab Danh sách CV: trưởng phòng chỉ
+        thấy (và chỉ gửi được cho) ứng viên phòng mình. Trước đây search không
+        điều kiện nên payload lộ họ tên · email · vị trí · bước của TOÀN BỘ
+        ứng viên.
+        """
+        domain = [('email_from', '!=', False)]
+        scope = self._dept_scope_ids()
+        if scope is not None:
+            domain += ['|', ('department_id', 'in', scope),
+                       ('job_id.department_id', 'in', scope)]
         apps = request.env['hr.applicant'].sudo().search(
-            [('email_from', '!=', False)], order='date_received desc, id desc')
+            domain, order='date_received desc, id desc')
         return [{
             'id': a.id, 'name': a.partner_name or '(Chưa có tên)',
             'email': a.email_from or '', 'jobName': a.job_id.name or '',
@@ -1002,15 +1030,29 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/mail-templates', auth='user',
                 type='http', methods=['GET'])
     def api_recruitment_mail_templates(self, **kw):
-        """Danh sách mail mẫu (model hr.applicant) + ứng viên để gửi."""
+        """Danh sách mail mẫu (model hr.applicant) + ứng viên để gửi.
+
+        Chỉ nhóm tuyển dụng (HR hoặc trưởng phòng) — payload kèm danh sách ứng
+        viên (họ tên · email) nên user thường không được đọc.
+        """
+        if not self._is_recruiter():
+            return self._forbidden('Chỉ bộ phận tuyển dụng mới xem được mail mẫu.')
         env = request.env
         applicant_model = env.ref('hr_recruitment.model_hr_applicant')
         tmpls = env['mail.template'].sudo().search(
             [('model_id', '=', applicant_model.id)], order='name')
         return request.make_json_response({
-            # Mail mẫu là cấu hình email toàn hệ thống (không theo phòng ban) →
-            # chỉ HR toàn quyền quản lý; trưởng phòng không thấy nút thêm/sửa/gửi.
-            'isRecruiter': self._is_hr(),
+            # HAI quyền khác nhau, đừng gộp lại thành một cờ (bug C1 #5, QA 2026-08-07):
+            #   canEdit — thêm/sửa/xoá/import mẫu. Mail mẫu là cấu hình email
+            #             TOÀN HỆ THỐNG (không theo phòng ban) ⇒ chỉ HR.
+            #   canSend — gửi mail cho ứng viên. Trưởng phòng được gửi, nhưng
+            #             chỉ tới ứng viên phòng mình vì `recipients` và
+            #             /preview đều đã lọc theo _dept_scope_ids().
+            # Trước đây cả hai dùng chung khoá 'isRecruiter' = _is_hr(), trong
+            # khi /mail/log-sent lại cho _is_recruiter() ⇒ nút "Gửi mail" của
+            # trưởng phòng chạy được mà nhìn code không ai biết là cố ý hay lọt.
+            'canEdit': self._is_hr(),
+            'canSend': self._is_recruiter(),
             'rows': [self._tmpl_row(t) for t in tmpls],
             'recipients': self._applicant_recipients(),
         })
@@ -1018,6 +1060,8 @@ class HocBaTuyenDung(http.Controller):
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>',
                 auth='user', type='http', methods=['GET'])
     def api_recruitment_mail_template(self, tmpl_id, **kw):
+        if not self._is_recruiter():
+            return self._forbidden('Chỉ bộ phận tuyển dụng mới xem được mail mẫu.')
         t = request.env['mail.template'].sudo().browse(tmpl_id)
         if not t.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
@@ -1144,7 +1188,13 @@ class HocBaTuyenDung(http.Controller):
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_recruitment_mail_template_preview(self, tmpl_id, **kw):
         """Render mail mẫu theo 1 ứng viên để XEM TRƯỚC (không gửi) — kiểm tra
-        thông tin đã điền đúng chưa, không cần SMTP."""
+        thông tin đã điền đúng chưa, không cần SMTP.
+
+        Bản render chứa dữ liệu cá nhân của ứng viên ⇒ chặn như tab CV: phải là
+        nhóm tuyển dụng VÀ ứng viên phải nằm trong phạm vi phòng ban.
+        """
+        if not self._is_recruiter():
+            return self._forbidden('Chỉ bộ phận tuyển dụng mới xem trước được mail.')
         t = request.env['mail.template'].sudo().browse(tmpl_id)
         if not t.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
@@ -1156,6 +1206,8 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(aid)
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(self._applicant_dep_id(a)):
+            return self._forbidden()
         try:
             rendered = self._render_tmpl(t, aid)
         except Exception as ex:  # noqa: BLE001 - render lỗi cú pháp template
@@ -1184,13 +1236,25 @@ class HocBaTuyenDung(http.Controller):
                 type='http', methods=['GET'])
     def api_recruitment_mail_logs(self, **kw):
         """Lịch sử email đã gửi cho ứng viên (nguồn: mail.message, bền vững vì
-        template auto_delete xoá mail.mail sau khi gửi). Trạng thái lấy từ notification."""
+        template auto_delete xoá mail.mail sau khi gửi). Trạng thái lấy từ notification.
+
+        Chặn như tab CV: chỉ nhóm tuyển dụng, và trưởng phòng chỉ thấy lịch sử
+        của ứng viên thuộc phòng mình (bản ghi kèm họ tên · email ứng viên).
+        """
+        if not self._is_recruiter():
+            return self._forbidden('Chỉ bộ phận tuyển dụng mới xem được lịch sử mail.')
         env = request.env
         tz = self._user_tz()
+        domain = [('model', '=', 'hr.applicant'),
+                  ('message_type', 'in', ['email', 'email_outgoing'])]
+        scope = self._dept_scope_ids()
+        if scope is not None:
+            in_scope = env['hr.applicant'].sudo().search(
+                ['|', ('department_id', 'in', scope),
+                 ('job_id.department_id', 'in', scope)])
+            domain.append(('res_id', 'in', in_scope.ids))
         msgs = env['mail.message'].sudo().search(
-            [('model', '=', 'hr.applicant'),
-             ('message_type', 'in', ['email', 'email_outgoing'])],
-            order='date desc', limit=500)
+            domain, order='date desc', limit=500)
         Applicant = env['hr.applicant'].sudo()
         rows = []
         for m in msgs:
@@ -1241,6 +1305,10 @@ class HocBaTuyenDung(http.Controller):
                 continue
             a = Applicant.browse(int(aid))
             if not a.exists():
+                continue
+            # Trưởng phòng chỉ ghi lịch sử cho ứng viên phòng mình (ghi chatter
+            # lên hồ sơ ứng viên = thao tác ghi, phải cùng phạm vi với tab CV).
+            if not self._dep_in_scope(self._applicant_dep_id(a)):
                 continue
             subject = (item.get('subject') or 'Email tuyển dụng').strip() or 'Email tuyển dụng'
             a.message_post(
@@ -1396,6 +1464,12 @@ class HocBaTuyenDung(http.Controller):
                  'message': 'Ứng viên này đã có trong slot.'}, status=400)
         try:
             start_local = pytz.utc.localize(s.start_datetime).astimezone(self._user_tz())
+            # ⚠️ THỨ TỰ CÓ Ý NGHĨA — đừng đảo:
+            #   1) book slot  → luật "Hẹn & mời phỏng vấn → Phỏng vấn"
+            #                   (hb_interview_slot._hb_advance_booked)
+            #   2) ghi ngày PV → luật "Lên lịch phỏng vấn → Hẹn & mời phỏng vấn"
+            # Nhờ vậy ứng viên đang ở "Lên lịch" chỉ tiến 1 nấc tới "Hẹn & mời"
+            # (còn phải gửi thư mời), không nhảy thẳng vào "Phỏng vấn".
             s.write({'applicant_ids': [(4, a.id)]})
             a.write({
                 'interview_date': start_local.date(),

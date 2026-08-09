@@ -21,15 +21,41 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
 
   const loadDet = () => {
     setDerr(null);
-    fetchBatch(batch.id).then(setDet).catch((e) => setDerr(e.message));
+    return fetchBatch(batch.id).then((data) => {
+      setDet(data);
+      return data;
+    }).catch((e) => {
+      setDerr(e.message);
+      return null;
+    });
   };
-  useEffect(loadDet, [batch.id]);
+
+  useEffect(() => {
+    loadDet();
+  }, [batch.id]);
+
+  // Polling while backend is processing batch calculation
+  useEffect(() => {
+    if (det?.compute_status !== 'processing') return;
+
+    const timer = setInterval(() => {
+      loadDet().then((updated) => {
+        if (updated && updated.compute_status !== 'processing') {
+          clearInterval(timer);
+          if (onChanged) onChanged();
+        }
+      });
+    }, 1500);
+
+    return () => clearInterval(timer);
+  }, [det?.compute_status, batch.id]);
 
   const doAction = async (fn, label) => {
     setBusy(true); setActionErr(null);
     try {
       await fn();
-      loadDet();
+      await loadDet();
+      if (onChanged) onChanged();
     } catch (e) {
       setActionErr(`${label} thất bại: ${e.message}`);
     } finally {
@@ -37,29 +63,17 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
     }
   };
 
-  const handleGenerate = () => doAction(() => generatePayslips(batch.id), 'Sinh phiếu');
+  const handleGenerate = () => doAction(() => generatePayslips(batch.id), 'Sinh phiếu & Tính toán');
+  const handleComputeAll = () => doAction(() => generatePayslips(batch.id), 'Tính toán lại toàn bộ');
   const handleClose = () => doAction(() => closeBatch(batch.id), 'Đóng bảng');
-
-  const handleComputeAll = async () => {
-    if (!det?.payslips?.length) return;
-    setBusy(true); setActionErr(null);
-    const slips = det.payslips.filter((s) => s.state === 'draft');
-    for (let i = 0; i < slips.length; i++) {
-      setProgress(`Đang tính ${i + 1}/${slips.length}...`);
-      try {
-        await computePayslip(slips[i].id);
-      } catch (e) {
-        setActionErr(`Lỗi phiếu ${slips[i].employee_name}: ${e.message}`);
-        break;
-      }
-    }
-    setProgress(null);
-    setBusy(false);
-    loadDet();
-  };
 
   const [stLabel, stKind] = batchState(batch.state);
   const slipCount = det?.payslips?.length || batch.payslip_count || 0;
+  const isProcessing = det?.compute_status === 'processing';
+  const computedCount = det?.computed_count || 0;
+  const totalCount = det?.total_count || slipCount;
+  const percent = totalCount > 0 ? Math.round((computedCount / totalCount) * 100) : 0;
+
   const tabs = [
     ['payslips', `Phiếu lương (${slipCount})`],
   ];
@@ -71,6 +85,7 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-.4px' }}>{batch.name}</h2>
             <Badge kind={stKind} dot>{stLabel}</Badge>
+            {isProcessing && <Badge kind="warning" dot>Đang tính ngầm ({percent}%)</Badge>}
           </div>
           <div className="muted" style={{ fontSize: 13.5, marginTop: 3 }}>
             {fmtDate(batch.date_start)} — {fmtDate(batch.date_end)} · {slipCount} phiếu lương
@@ -86,6 +101,25 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
           ))}
         </div>
       </div>
+
+      {/* Realtime Batch Compute Progress Bar */}
+      {isProcessing && (
+        <div style={{ padding: '12px 24px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 6 }}>
+            <span>⚡ Đang tính toán lương ngầm trong hệ thống...</span>
+            <span>{computedCount} / {totalCount} phiếu ({percent}%)</span>
+          </div>
+          <div style={{ width: '100%', height: 8, background: '#d0e1fd', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ width: `${percent}%`, height: '100%', background: 'var(--blue-600)', transition: 'width 0.3s ease' }} />
+          </div>
+        </div>
+      )}
+
+      {det?.compute_error && (
+        <div style={{ padding: '10px 24px', background: '#fef2f2', color: '#dc2626', fontSize: 13, borderBottom: '1px solid #fecaca' }}>
+          ⚠️ Lỗi khi tính lương batch: {det.compute_error}
+        </div>
+      )}
 
       <div style={{ padding: '16px 24px', maxHeight: '52vh', overflowY: 'auto' }}>
         {derr && <EmptyState>Không tải được dữ liệu ({derr}).</EmptyState>}
@@ -129,20 +163,19 @@ export default function BatchDrawer({ batch, onClose, onChanged }) {
       {/* Action bar */}
       <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {actionErr && <div style={{ color: 'var(--red-600)', fontSize: 13, flex: '1 1 100%', marginBottom: 6 }}>{actionErr}</div>}
-        {progress && <div style={{ fontSize: 13, color: 'var(--blue)', flex: '1 1 100%', marginBottom: 6 }}>{progress}</div>}
 
         {det && det.payslips.length === 0 && (batch.state === 'draft' || det.state === 'draft') && (
-          <button className="btn btn-primary" onClick={handleGenerate} disabled={busy}>
-            <Icon name="users" size={15} />Sinh phiếu lương
+          <button className="btn btn-primary" onClick={handleGenerate} disabled={busy || isProcessing}>
+            <Icon name="users" size={15} />Sinh phiếu & Tính toán
           </button>
         )}
-        {det && det.payslips.length > 0 && det.payslips.some((s) => s.state === 'draft') && (
-          <button className="btn btn-primary" onClick={handleComputeAll} disabled={busy}>
-            <Icon name="calculator" size={15} />{busy && progress ? progress : 'Tính tất cả'}
+        {det && det.payslips.length > 0 && (
+          <button className="btn btn-primary" onClick={handleComputeAll} disabled={busy || isProcessing}>
+            <Icon name="calculator" size={15} />{isProcessing ? `Đang tính toán (${percent}%)...` : 'Tính lại tất cả'}
           </button>
         )}
         {det && (det.state === 'draft' || det.state === 'computed') && det.payslips.length > 0 && (
-          <button className="btn btn-ghost" onClick={handleClose} disabled={busy}>
+          <button className="btn btn-ghost" onClick={handleClose} disabled={busy || isProcessing}>
             <Icon name="lock" size={15} />Đóng bảng lương
           </button>
         )}

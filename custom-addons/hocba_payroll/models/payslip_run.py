@@ -30,6 +30,15 @@ class HbPayslipRun(models.Model):
     payslip_count = fields.Integer(
         string='Số phiếu lương', compute='_compute_payslip_count',
     )
+    compute_status = fields.Selection([
+        ('idle', 'Chờ tính'),
+        ('processing', 'Đang tính ngầm'),
+        ('completed', 'Đã tính xong'),
+        ('failed', 'Lỗi tính'),
+    ], string='Trạng thái tính lương', default='idle')
+    computed_count = fields.Integer(string='Số phiếu đã tính', default=0)
+    total_count = fields.Integer(string='Tổng số phiếu cần tính', default=0)
+    compute_error = fields.Text(string='Lỗi tính toán')
 
     @api.depends('slip_ids')
     def _compute_payslip_count(self):

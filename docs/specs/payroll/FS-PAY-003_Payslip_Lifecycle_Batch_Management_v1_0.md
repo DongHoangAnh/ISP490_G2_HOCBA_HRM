@@ -26,6 +26,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 1.0 | Initial formatted version from payroll BE/FE implementation | All | 21/06/2026 | Group G2 |
 | 2 | 1.1 | Full rewrite with detailed field specs, screen layouts, API endpoints, SPA component documentation, and business rules derived from actual source code | All | 21/06/2026 | Group G2 |
+| 3 | 1.2 | Added Async Batch Compute architecture, chunking strategy (50/chunk), polling status fields (`compute_status`, `computed_count`, `total_count`), and SPA progress bar integration | All | 07/08/2026 | Group G2 |
 
 ---
 
@@ -36,30 +37,33 @@
 | **Function ID** | FS-PAY-003 |
 | **Function Name** | Payslip Lifecycle & Batch Management |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 21/06/2026 |
+| **Last Modified Date** | 07/08/2026 |
 
 | Attribute | Value |
 | --- | --- |
 | **Processing Time** | On-demand |
-| **Processing Type** | Interactive + REST API |
+| **Processing Type** | Interactive + REST API + Async Worker |
 | **Function Type** | Transaction / Workflow |
 | **Multilingual** | No |
 
 ### Business Requirement & Function Overview
 
 **Overview:**
-This function manages the full lifecycle of payslip batches and individual payslips: create batch, generate payslips, compute salary, verify/finalize, and close period. It is the central workflow module that orchestrates payslip creation and state transitions, connecting the computation engine (FS-PAY-002), bank payment file generation (FS-PAY-004), and employee confirmation flow (FS-PAY-005).
+This function manages the full lifecycle of payslip batches and individual payslips: create batch, generate payslips, compute salary in background worker threads, verify/finalize, and close period. It is the central workflow module that orchestrates payslip creation and state transitions, connecting the computation engine (FS-PAY-002), bank payment file generation (FS-PAY-004), and employee confirmation flow (FS-PAY-005).
 
 **Business Context:**
-Hoc Ba Education processes payroll monthly. Each month, the HR Manager creates a payslip batch (period), generates payslips for all active employees, computes salary using data-driven rules, verifies results, and closes the batch. Individual payslips follow a state machine (`draft -> verify -> done`) while batches follow a parallel state machine (`draft -> verify -> close`). The system supports both Odoo backend UI and a React SPA frontend.
+Hoc Ba Education processes payroll monthly. Each month, the HR Manager creates a payslip batch (period), generates payslips for all active employees, computes salary using data-driven rules asynchronously in non-blocking background workers, verifies results, and closes the batch. Individual payslips follow a state machine (`draft -> verify -> done`) while batches follow a parallel state machine (`draft -> verify -> close`) with progress tracking (`idle -> processing -> completed / failed`). The system supports both Odoo backend UI and a React SPA frontend.
 
 **Core State Machines:**
 - `hb.payslip.run` (Batch): `draft -> verify -> close` (with `action_reset_draft` back to draft)
+- Batch Compute Progress: `idle -> processing -> completed / failed`
 - `hb.payslip` (Payslip): `draft -> verify -> done` (with `cancel` from draft/verify, and `action_reset_to_draft` from done by HR Manager only)
 
 **Functional Scope:**
 - CRUD operations on payslip batches (`hb.payslip.run`) with period dates.
 - Batch-level payslip generation for all active employees with open contracts.
+- Asynchronous background worker calculation (`_run_async_batch_compute`) with 50-slip chunking and DB commit intervals.
+- Real-time progress tracking polling (`computed_count / total_count`) in React SPA (`BatchDrawer.jsx`).
 - Individual payslip state transitions: compute, verify, finalize, cancel, reset.
 - Batch-level state transitions: verify, close (finalizes all child payslips), reset.
 - Close-by-period workflow: verifies all employees confirmed before locking the month.
@@ -75,19 +79,21 @@ Hoc Ba Education processes payroll monthly. Each month, the HR Manager creates a
 
 ## 2. FUNCTION FLOW
 
-### Main Flow 1 -- Batch Creation & Payslip Generation
+### Main Flow 1 -- Batch Creation & Asynchronous Payslip Generation & Computation
 
 | Step | Actor | Action | System Response |
 | --- | --- | --- | --- |
-| 1 | HR Manager | Creates a batch via SPA `BatchForm.jsx` or Odoo backend | `POST /batch` creates `hb.payslip.run` with `name`, `date_start`, `date_end`. State defaults to `draft`. |
-| 2 | HR Manager | Clicks "Tao phieu luong" (Generate Payslips) in batch detail | `POST /batch/<id>/generate` searches all active employees (`hr.employee`) with an open contract (`hb.contract`, `state='open'`) overlapping the batch period. Creates one `hb.payslip` per matched employee. Employees without a matching contract are collected in a `skipped` list. Auto-assigns `structure_id` from `contract.x_structure_id` if present. |
-| 3 | System | Returns generation summary | Response includes `created` count and `skipped` employee names. |
+| 1 | HR Manager | Creates a batch via SPA `BatchForm.jsx` or Odoo backend | `POST /batch` creates `hb.payslip.run` with `name`, `date_start`, `date_end`. State defaults to `draft`, `compute_status` to `idle`. |
+| 2 | HR Manager | Clicks "Tao & Tinh phieu luong" (Generate & Compute Payslips) in batch detail | `POST /batch/<id>/generate` searches all active employees (`hr.employee`) with an open contract (`hb.contract`, `state='open'`) overlapping the batch period. Bulk-inserts missing `hb.payslip` records. |
+| 3 | System | Spawns Background Worker Thread & Returns Immediate Response | Spawns daemon thread `_run_async_batch_compute`. Sets `compute_status='processing'`, `total_count=N`, `computed_count=0`. Immediately returns HTTP 200 response (`< 500ms`) with `{ batch_id, status: 'processing', created, total }`. |
+| 4 | Background Worker | Computes payslips in chunks of 50 | Processes payslips using `action_compute_batch(prefetched_rules=rules)` on a single DB cursor. Commits DB transaction after every 50 slips and updates `batch.computed_count`. Sets `compute_status='completed'` (or `'failed'` on error). |
+| 5 | React SPA | Polls batch progress (`GET /batch/<id>`) | Polls batch detail every 1.5 seconds while `compute_status === 'processing'`. Displays progress bar: `Đang tính toán ngầm: {computed_count}/{total_count} ({percent}%)`. Clears polling on `completed` or `failed`. |
 
-**REST API (Batch CRUD):**
+**REST API (Batch CRUD & Progress):**
 - `POST /hocba-hrm/api/payroll/batch` -- Create batch. Required: `name`, `date_start`, `date_end`. Returns `{ id, name, state }`.
 - `GET /hocba-hrm/api/payroll/batch` -- List batches ordered by `date_start desc`. Optional: `limit` (default 50). Returns array of `{ id, name, date_start, date_end, state, payslip_count }`.
-- `GET /hocba-hrm/api/payroll/batch/<id>` -- Get batch detail with nested payslip list.
-- `POST /hocba-hrm/api/payroll/batch/<id>/generate` -- Generate payslips for batch.
+- `GET /hocba-hrm/api/payroll/batch/<id>` -- Get batch detail with nested payslip list, `compute_status`, `computed_count`, `total_count`, `compute_error`.
+- `POST /hocba-hrm/api/payroll/batch/<id>/generate` -- Generate payslips and trigger background async computation.
 
 **React SPA -- BatchForm.jsx:**
 Modal form with fields: "Ten ky luong" (auto-filled `Luong T{month}/{year}`), "Tu ngay" (first of month), "Den ngay" (last of month). Changing `date_start` auto-updates `name` and `date_end`. Calls `createBatch(form)` on submit.

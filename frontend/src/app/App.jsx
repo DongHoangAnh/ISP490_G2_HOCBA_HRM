@@ -73,9 +73,23 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('hocba_view', view); setSearch(''); }, [view]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payslip_id')) {
+      setView('payroll');
+    }
+  }, []);
+
   // Tách tài khoản: nhân viên thường không được mở các view quản lý.
   useEffect(() => {
-    if (me && !allowedViews(me).has(view)) setView(defaultView(me));
+    if (me) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payslip_id') && allowedViews(me).has('payroll')) {
+        setView('payroll');
+      } else if (!allowedViews(me).has(view)) {
+        setView(defaultView(me));
+      }
+    }
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (unauthenticated) return <Login onSuccess={loadRoles} />;
@@ -99,7 +113,7 @@ export default function App() {
         {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
         {view === 'service' && <Service search={search} focus={focus} />}
         {view === 'offboarding' && <Offboarding search={search} />}
-        {view === 'payroll' && canManage && <Payroll search={search} />}
+        {view === 'payroll' && <Payroll search={search} me={me} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
         {view === 'reviews' && canManage && <Reviews search={search} />}
         {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}

@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+<data noupdate="1">
 
     <!-- ══════════════════════════════════════════════════════════════════
          Sheet 7.5 — Kết quả phỏng vấn
          Cập nhật attendance_status, interview_result, offer_content,
          start_date, offer_note, candidate_confirmed lên hồ sơ ứng viên.
-         Không noupdate → áp dụng mỗi lần nâng cấp module.
+
+         noupdate="1" (đổi 2026-08-07): trước đây cố ý áp lại mỗi lần nâng cấp
+         để reset dữ liệu demo. Không dùng được nữa vì từ khi có luật tự chuyển
+         bước, ghi lại `interview_result='pass'` lúc nâng cấp sẽ kích hoạt
+         "Kết quả PV Pass → Gửi Offer" ⇒ mỗi lần `-u` là 10 ứng viên seed tự
+         nhảy bước kèm ghi chú chatter, và kết quả tester vừa chỉnh tay bị đè.
+         Muốn dựng lại dữ liệu demo thì cài mới / seed lại DB.
          ══════════════════════════════════════════════════════════════════ -->
 
     <record id="hb_cv_001" model="hr.applicant">
@@ -64,4 +71,5 @@
         <field name="interview_result">fail</field>
     </record>
 
+</data>
 </odoo>

@@ -1,5 +1,6 @@
 /* ============================================================
-   Màn "Cấu hình tuyển dụng" (sidebar riêng, CHỈ Admin) — chỉnh quy trình
+   Màn "Cấu hình tuyển dụng" (sidebar riêng, Admin hoặc HR Manager — spec v1.2,
+   backend gate _can_config()) — chỉnh quy trình
    stages (kéo-thả thứ tự, SLA từng bước, bước hired) + chế độ tự đóng tuyển.
    Owner: Việt. Pattern theo OnboardingConfig (kéo-thả + editor modal).
    Spec: docs/superpowers/specs/2026-07-23-recruitment-config-design.md
@@ -380,7 +381,7 @@ export default function RecruitmentConfig() {
           </InfoNote>
           <InfoNote title="Badge đỏ &quot;Quá hạn N ngày&quot; trên thẻ">
             Chỉ hiện khi ứng viên ở bước lâu hơn hạn xử lý; <b>N là số ngày
-            vượt</b> chứ không phải số ngày đã nằm ở bước. Ví dụ bước "Lọc CV"
+              vượt</b> chứ không phải số ngày đã nằm ở bước. Ví dụ bước "Lọc CV"
             hạn 1 ngày, ứng viên nằm đó 4 ngày ⇒ badge ghi "Quá hạn 3 ngày".
             Ứng viên <b>Fail PV không hiện badge</b> — đã dừng thì giục vô nghĩa.
           </InfoNote>
@@ -431,131 +432,133 @@ export default function RecruitmentConfig() {
             thì chỉ HR nhận — không phải lỗi, chỉ là phòng đó thiếu người phụ trách.
           </InfoNote>
           <InfoNote title="Ai sửa được màn này?">
-            Chỉ tài khoản <b>Admin hệ thống</b>. Cấu hình dùng chung toàn hệ thống
-            nên thay đổi ảnh hưởng tới mọi phòng ban và mọi vị trí đang tuyển —
-            sửa xong nên báo bộ phận tuyển dụng.
+            Tài khoản <b>Admin hệ thống</b> và <b>HR Manager</b> .
+            Nhóm <b>Tuyển dụng</b> dùng quy trình hằng ngày nhưng không đổi được
+            quy trình/hạn xử lý. Cấu hình dùng chung toàn hệ thống nên thay đổi
+            ảnh hưởng tới mọi phòng ban và mọi vị trí đang tuyển — sửa xong nên
+            báo bộ phận tuyển dụng.
           </InfoNote>
         </div>
       )}
 
       {activeTab === 'stages' && (
         <>
-      <InfoNote title="Cần biết trước khi sửa">
-        Mỗi bước là một cột trên kanban CV, thứ tự ở đây là thứ tự cột.
-        <b> Hạn xử lý </b>là số ngày tối đa ứng viên được ở bước đó, đếm theo ngày
-        lịch từ lúc chuyển vào bước — vượt hạn thì thẻ ứng viên hiện badge đỏ
-        "Quá hạn N ngày". Đặt hạn = 0 để không áp hạn. Chi tiết xem tab
-        <b> Cách hoạt động</b>.
-      </InfoNote>
+          <InfoNote title="Cần biết trước khi sửa">
+            Mỗi bước là một cột trên kanban CV, thứ tự ở đây là thứ tự cột.
+            <b> Hạn xử lý </b>là số ngày tối đa ứng viên được ở bước đó, đếm theo ngày
+            lịch từ lúc chuyển vào bước — vượt hạn thì thẻ ứng viên hiện badge đỏ
+            "Quá hạn N ngày". Đặt hạn = 0 để không áp hạn. Chi tiết xem tab
+            <b> Cách hoạt động</b>.
+          </InfoNote>
 
-      <div className="between" style={{ marginBottom: 10, maxWidth: 760 }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 13.5 }}>
-            Quy trình tuyển dụng ({stages.length} bước)
-          </div>
-          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-            Kéo thẻ (hoặc bấm ▲▼) đổi thứ tự cột kanban; click thẻ để sửa/ẩn/xoá.
-          </p>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>
-          <Icon name="plus" size={15} />Thêm bước</button>
-      </div>
-
-      {noHired && (
-        <div style={{ maxWidth: 760, padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginBottom: 12, fontSize: 12.5 }}>
-          ⚠ Chưa có bước nào đánh dấu <b>"Đã tuyển" (hired)</b> — thống kê đã tuyển
-          và tự đóng tuyển sẽ không hoạt động. Hãy bật cờ hired cho bước cuối quy trình.
-        </div>
-      )}
-
-      {!stages.length && <EmptyState>Chưa có bước nào — bấm "Thêm bước".</EmptyState>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 760 }}>
-        {stages.map((s, i) => (
-          <div key={s.id} className="card" draggable={!reordering}
-            onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(s.id)); setDragIdx(i); }}
-            onDragOver={(e) => { e.preventDefault(); if (overIdx !== i) setOverIdx(i); }}
-            onDrop={(e) => { e.preventDefault(); dropOn(i); dragDone.current = true; }}
-            onDragEnd={() => {
-              setDragIdx(null); setOverIdx(null);
-              setTimeout(() => { dragDone.current = false; }, 0);
-            }}
-            onClick={() => { if (dragDone.current) return; setEditing(s); }}
-            style={{
-              padding: '11px 14px', cursor: 'pointer', display: 'flex', gap: 12,
-              alignItems: 'center',
-              outline: overIdx === i && dragIdx !== null && dragIdx !== i
-                ? '2px dashed var(--red-600)' : 'none',
-              opacity: dragIdx === i ? 0.5 : 1,
-            }}>
-            <div onClick={(e) => e.stopPropagation()}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0, cursor: 'grab' }}>
-              <span className="mono" style={{ fontWeight: 800, fontSize: 14, color: 'var(--red-600)' }}>
-                #{i + 1}
-              </span>
-              <span style={{ display: 'flex', gap: 0 }}>
-                <button type="button" title="Đưa lên" disabled={reordering || i === 0}
-                  onClick={() => moveStage(i, -1)}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: i === 0 ? 'var(--border-strong)' : 'var(--muted)' }}>
-                  <Icon name="arrowUp" size={14} />
-                </button>
-                <button type="button" title="Đưa xuống" disabled={reordering || i === stages.length - 1}
-                  onClick={() => moveStage(i, 1)}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: i === stages.length - 1 ? 'var(--border-strong)' : 'var(--muted)' }}>
-                  <Icon name="arrowDown" size={14} />
-                </button>
-              </span>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{s.name}</span>
-                {s.hiredStage && <Badge kind="green" dot>Đã tuyển</Badge>}
-                {s.slaDays > 0 && <Badge kind="gold">Hạn {s.slaDays} ngày</Badge>}
+          <div className="between" style={{ marginBottom: 10, maxWidth: 760 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                Quy trình tuyển dụng ({stages.length} bước)
               </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
-                {s.supportPerson ? `Hỗ trợ: ${s.supportPerson} · ` : ''}
-                {s.applicantCount} ứng viên đang ở bước này
-              </div>
+              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                Kéo thẻ (hoặc bấm ▲▼) đổi thứ tự cột kanban; click thẻ để sửa/ẩn/xoá.
+              </p>
             </div>
+            <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>
+              <Icon name="plus" size={15} />Thêm bước</button>
           </div>
-        ))}
-      </div>
 
-      {hiddenStages.length > 0 && (
-        <div style={{ maxWidth: 760, marginTop: 22 }}>
-          <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 2 }}>
-            Bước đã ẩn ({hiddenStages.length})
-          </div>
-          <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
-            Không hiển thị trên kanban CV và form chọn bước — dữ liệu ứng viên cũ
-            giữ nguyên; bấm "Hiện lại" để đưa về quy trình.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {hiddenStages.map((s) => (
-              <div key={s.id} className="card"
-                onClick={() => setEditing(s)}
+          {noHired && (
+            <div style={{ maxWidth: 760, padding: '10px 14px', background: 'var(--gold-50)', border: '1px solid var(--gold-200)', borderRadius: 11, marginBottom: 12, fontSize: 12.5 }}>
+              ⚠ Chưa có bước nào đánh dấu <b>"Đã tuyển" (hired)</b> — thống kê đã tuyển
+              và tự đóng tuyển sẽ không hoạt động. Hãy bật cờ hired cho bước cuối quy trình.
+            </div>
+          )}
+
+          {!stages.length && <EmptyState>Chưa có bước nào — bấm "Thêm bước".</EmptyState>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 760 }}>
+            {stages.map((s, i) => (
+              <div key={s.id} className="card" draggable={!reordering}
+                onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(s.id)); setDragIdx(i); }}
+                onDragOver={(e) => { e.preventDefault(); if (overIdx !== i) setOverIdx(i); }}
+                onDrop={(e) => { e.preventDefault(); dropOn(i); dragDone.current = true; }}
+                onDragEnd={() => {
+                  setDragIdx(null); setOverIdx(null);
+                  setTimeout(() => { dragDone.current = false; }, 0);
+                }}
+                onClick={() => { if (dragDone.current) return; setEditing(s); }}
                 style={{
-                  padding: '11px 14px', cursor: 'pointer', display: 'flex',
-                  gap: 12, alignItems: 'center', opacity: 0.72,
+                  padding: '11px 14px', cursor: 'pointer', display: 'flex', gap: 12,
+                  alignItems: 'center',
+                  outline: overIdx === i && dragIdx !== null && dragIdx !== i
+                    ? '2px dashed var(--red-600)' : 'none',
+                  opacity: dragIdx === i ? 0.5 : 1,
                 }}>
-                <Icon name="eye-off" size={16} className="muted" />
+                <div onClick={(e) => e.stopPropagation()}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0, cursor: 'grab' }}>
+                  <span className="mono" style={{ fontWeight: 800, fontSize: 14, color: 'var(--red-600)' }}>
+                    #{i + 1}
+                  </span>
+                  <span style={{ display: 'flex', gap: 0 }}>
+                    <button type="button" title="Đưa lên" disabled={reordering || i === 0}
+                      onClick={() => moveStage(i, -1)}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: i === 0 ? 'var(--border-strong)' : 'var(--muted)' }}>
+                      <Icon name="arrowUp" size={14} />
+                    </button>
+                    <button type="button" title="Đưa xuống" disabled={reordering || i === stages.length - 1}
+                      onClick={() => moveStage(i, 1)}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: i === stages.length - 1 ? 'var(--border-strong)' : 'var(--muted)' }}>
+                      <Icon name="arrowDown" size={14} />
+                    </button>
+                  </span>
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 13.5 }}>{s.name}</span>
-                    <Badge kind="gray">Đã ẩn</Badge>
                     {s.hiredStage && <Badge kind="green" dot>Đã tuyển</Badge>}
+                    {s.slaDays > 0 && <Badge kind="gold">Hạn {s.slaDays} ngày</Badge>}
                   </div>
                   <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
-                    {s.applicantCount} ứng viên (kể cả lưu trữ) từng ở bước này
+                    {s.supportPerson ? `Hỗ trợ: ${s.supportPerson} · ` : ''}
+                    {s.applicantCount} ứng viên đang ở bước này
                   </div>
                 </div>
-                <button className="btn btn-ghost btn-sm"
-                  onClick={(e) => { e.stopPropagation(); unhide(s); }}>
-                  <Icon name="eye" size={14} />Hiện lại</button>
               </div>
             ))}
           </div>
-        </div>
-      )}
+
+          {hiddenStages.length > 0 && (
+            <div style={{ maxWidth: 760, marginTop: 22 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 2 }}>
+                Bước đã ẩn ({hiddenStages.length})
+              </div>
+              <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+                Không hiển thị trên kanban CV và form chọn bước — dữ liệu ứng viên cũ
+                giữ nguyên; bấm "Hiện lại" để đưa về quy trình.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {hiddenStages.map((s) => (
+                  <div key={s.id} className="card"
+                    onClick={() => setEditing(s)}
+                    style={{
+                      padding: '11px 14px', cursor: 'pointer', display: 'flex',
+                      gap: 12, alignItems: 'center', opacity: 0.72,
+                    }}>
+                    <Icon name="eye-off" size={16} className="muted" />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13.5 }}>{s.name}</span>
+                        <Badge kind="gray">Đã ẩn</Badge>
+                        {s.hiredStage && <Badge kind="green" dot>Đã tuyển</Badge>}
+                      </div>
+                      <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                        {s.applicantCount} ứng viên (kể cả lưu trữ) từng ở bước này
+                      </div>
+                    </div>
+                    <button className="btn btn-ghost btn-sm"
+                      onClick={(e) => { e.stopPropagation(); unhide(s); }}>
+                      <Icon name="eye" size={14} />Hiện lại</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 

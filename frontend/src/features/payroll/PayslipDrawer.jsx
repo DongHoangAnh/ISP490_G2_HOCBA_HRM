@@ -1,6 +1,6 @@
 /* Chi tiết phiếu lương — Owner: Hùng. */
 import { useState, useEffect } from 'react';
-import { fetchPayslip, computePayslip, confirmPayslip, resetPayslip, fetchPayslipMessages } from '../../api/payroll';
+import { fetchPayslip, computePayslip, confirmPayslip, resetPayslip, fetchPayslipMessages, sendPayslipMail, resetPayslipConfirm } from '../../api/payroll';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
@@ -44,7 +44,7 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
     }
   };
 
-  const handleCompute = () => doAction(() => computePayslip(slip.id), 'Tính lương');
+  const handleCompute = () => doAction(() => computePayslip(slip.id), 'Tính lại lương phiếu này');
   const handleConfirm = () => doAction(() => confirmPayslip(slip.id), 'Xác nhận');
   const handleReset = () => {
     if (!resetReason.trim()) return;
@@ -52,6 +52,8 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
     setShowReset(false);
     setResetReason('');
   };
+  const handleResendMail = () => doAction(() => sendPayslipMail([slip.id]), 'Gửi lại mail');
+  const handleResetConfirm = () => doAction(() => resetPayslipConfirm(slip.id), 'Reset xác nhận NV');
 
   const [stLabel, stKind] = slipState((det || slip).state);
   const tabs = [
@@ -272,23 +274,39 @@ export default function PayslipDrawer({ slip, onClose, onChanged }) {
           </div>
         )}
 
-        {det && det.state === 'draft' && (
-          <button className="btn btn-primary" onClick={handleCompute} disabled={busy}>
-            <Icon name="calculator" size={15} />Tính lương
+        {/* Nút Tính lại phiếu lương cho riêng NV này */}
+        {det && det.state !== 'cancel' && (
+          <button className="btn btn-primary btn-sm" onClick={handleCompute} disabled={busy} title="Tính toán lại các khoản lương cho riêng nhân viên này">
+            <Icon name="calculator" size={14} />Tính lại phiếu này
           </button>
         )}
+
+        {/* Nút Gửi lại mail cho riêng NV này */}
+        {det && det.state !== 'cancel' && (
+          <button className="btn btn-outline btn-sm" onClick={handleResendMail} disabled={busy} title="Gửi mail thông báo và gia hạn thời hạn phản hồi cho riêng nhân viên này">
+            <Icon name="mail" size={14} />Gửi mail phiếu lương
+          </button>
+        )}
+
+        {/* Nút Reset xác nhận NV */}
+        {det && (det.employee_confirm === 'confirmed' || det.employee_confirm === 'rejected' || det.email_sent) && (
+          <button className="btn btn-ghost btn-sm" onClick={handleResetConfirm} disabled={busy} title="Reset trạng thái xác nhận của nhân viên về Chờ xác nhận để mở lại phản hồi">
+            <Icon name="rotateCcw" size={14} />Reset xác nhận NV
+          </button>
+        )}
+
         {det && det.state === 'draft' && det.lines?.length > 0 && (
-          <button className="btn btn-ghost" onClick={handleConfirm} disabled={busy}>
-            <Icon name="check" size={15} />Xác nhận
+          <button className="btn btn-ghost btn-sm" onClick={handleConfirm} disabled={busy}>
+            <Icon name="check" size={14} />Duyệt phiếu
           </button>
         )}
         {det && det.state === 'done' && !showReset && (
-          <button className="btn btn-ghost" onClick={() => setShowReset(true)} disabled={busy}>
-            <Icon name="rotateCcw" size={15} />Reset về nháp
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowReset(true)} disabled={busy}>
+            <Icon name="rotateCcw" size={14} />Reset về nháp
           </button>
         )}
         <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={onClose}>Đóng</button>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Đóng</button>
       </div>
     </Modal>
   );

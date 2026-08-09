@@ -156,7 +156,8 @@ export default function InterviewSlots() {
         })}
       </div>
 
-      <InterviewApplicants cv={cv} setCv={setCv} templates={(tmpls && tmpls.rows) || []} />
+      <InterviewApplicants cv={cv} setCv={setCv} templates={(tmpls && tmpls.rows) || []}
+        canSend={!!(tmpls && tmpls.canSend)} />
 
       {creating && (
         <SlotForm interviewers={interviewers} meId={meId} weekDates={weekDates} defaultDate={creating}
@@ -253,7 +254,9 @@ function SlotBookModal({ slot, candidates, onClose }) {
 
 /* Danh sách ứng viên đang ở trạng thái "Phỏng vấn" (Sheet 7.1 bước 6).
    Recruiter chỉnh trực tiếp Ngày/Giờ/Người PV/Có mặt + gửi mail tại bảng. */
-function InterviewApplicants({ cv, setCv, templates }) {
+/* canSend đi kèm danh sách mẫu (không suy ra từ cv.isRecruiter): quyền gửi mail
+   do endpoint mail mẫu quyết — HR hoặc trưởng phòng, người nhận đã lọc theo phòng. */
+function InterviewApplicants({ cv, setCv, templates, canSend }) {
   const [savingId, setSavingId] = useState(null);
   const [mailFor, setMailFor] = useState(null);
   const isRecruiter = cv?.isRecruiter;
@@ -381,8 +384,10 @@ function InterviewApplicants({ cv, setCv, templates }) {
                           : <span className="muted">—</span>)}
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
-                          <Icon name="mail" size={14} />Gửi mail</button>
+                        {canSend && (
+                          <button className="btn btn-primary btn-sm" onClick={() => setMailFor(r)}>
+                            <Icon name="mail" size={14} />Gửi mail</button>
+                        )}
                       </td>
                     </tr>
                     );
