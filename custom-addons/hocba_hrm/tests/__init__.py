@@ -18,3 +18,4 @@ from . import test_offboarding_api
 from . import test_dashboard_stats
 from . import test_permissions_tpgv
 from . import test_onboarding_api
+from . import test_honor_board

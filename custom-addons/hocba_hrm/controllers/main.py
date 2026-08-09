@@ -1662,6 +1662,129 @@ def _account_list(env):
     return {'accounts': rows, 'departments': depts}
 
 
+# ----------------------------------------------------------------------
+# Bảng vinh danh (ý D họp 2026-08-07) — khung "nhìn thấy đầu tiên" trên
+# dashboard chung. Spec: docs/superpowers/specs/
+# 2026-08-09-career-dashboard-honor-board-design.md §5.3
+# ----------------------------------------------------------------------
+HONOR_RANK_LIMIT = 5
+
+
+def _honor_period_key(d):
+    return '%04d-%02d' % (d.year, d.month)
+
+
+def _honor_period_label(key):
+    y, m = key.split('-')
+    return 'Tháng %d/%s' % (int(m), y)
+
+
+def _honor_row(e, labels):
+    emp = e.employee_id
+    return {
+        'id': e.id,
+        'empId': emp.id,
+        'empName': emp.name,
+        'empCode': emp.x_employee_code or '',
+        'dep': emp.department_id.name or '',
+        'hasImg': bool(emp.image_128),
+        'category': e.category,
+        'categoryLabel': labels.get(e.category, e.category),
+        'title': e.title,
+        'description': e.description or '',
+        'date': _d(e.date_awarded),
+        'rank': e.rank,
+        'source': e.source,
+    }
+
+
+def _honor_board(env):
+    """Bảng vinh danh của kỳ hiện tại — MỌI user đăng nhập đều đọc được.
+
+    Kỳ = tháng. Nếu kỳ hiện tại chưa vinh danh ai thì lùi về kỳ gần nhất còn
+    dữ liệu (isCurrent=False): khung này là thứ người dùng nhìn thấy đầu tiên,
+    để trống ngay đầu tháng thì thành ô chết."""
+    Honor = env['hb.honor.entry'].sudo()
+    current = _honor_period_key(fields.Date.context_today(Honor))
+    period = current
+    if not Honor.search_count([('period_key', '=', current)]):
+        newest = Honor.search([], order='date_awarded desc', limit=1)
+        if newest:
+            period = newest.period_key
+    entries = Honor.search([('period_key', '=', period)])
+    # rank=0 nghĩa là "không xếp hạng" → đẩy xuống cuối, không để nó leo lên
+    # trên hạng 1 (lý do _order của model không đụng tới rank).
+    entries = entries.sorted(
+        key=lambda e: (e.rank == 0, e.rank, -(e.date_awarded.toordinal()), -e.id))
+    labels = dict(Honor._fields['category']._description_selection(env))
+    can_manage = _user_can_manage(env)
+
+    evals = env['hr.promotion.evaluation'].sudo().search([
+        ('state', '=', 'confirmed'),
+        ('verdict_final', '=', 'qualified'),
+    ]).filtered(lambda ev: ev.eval_date
+                and _honor_period_key(ev.eval_date) == period)
+    ranking = []
+    for ev in evals.sorted(key=lambda e: -e.total_score)[:HONOR_RANK_LIMIT]:
+        emp = ev.employee_id
+        row = {'empId': emp.id, 'empName': emp.name,
+               'dep': emp.department_id.name or '',
+               'hasImg': bool(emp.image_128)}
+        # Điểm đánh giá cá nhân không bày cho toàn công ty — vinh danh là
+        # nêu tên, không phải công bố bảng điểm.
+        if can_manage:
+            row['score'] = round(ev.total_score, 1)
+        ranking.append(row)
+
+    return {
+        'period': period,
+        'periodLabel': _honor_period_label(period),
+        'isCurrent': period == current,
+        'canManage': can_manage,
+        'entries': [_honor_row(e, labels) for e in entries],
+        'ranking': ranking,
+    }
+
+
+def _honor_create(env, body):
+    """HR thêm một mục vinh danh (khách: 'có cái vinh danh gì thì mình cho
+    lên đấy thôi')."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được thêm mục vinh danh.')
+    emp_id = int(body.get('employeeId') or 0)
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp_id or not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    title = (body.get('title') or '').strip()
+    if not title:
+        raise ValidationError('Danh hiệu không được để trống.')
+    category = body.get('category') or 'achievement'
+    valid = dict(env['hb.honor.entry']._fields['category'].selection)
+    if category not in valid:
+        raise ValidationError('Nhóm vinh danh không hợp lệ.')
+    env['hb.honor.entry'].sudo().create({
+        'employee_id': emp.id,
+        'category': category,
+        'title': title,
+        'description': (body.get('description') or '').strip() or False,
+        'date_awarded': body.get('date') or fields.Date.context_today(emp),
+        'rank': int(body.get('rank') or 0),
+        'source': 'manual',
+    })
+    return _honor_board(env)
+
+
+def _honor_archive(env, entry_id):
+    """Gỡ khỏi bảng = archive, KHÔNG xoá — giữ vết ai từng được vinh danh."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được gỡ mục vinh danh.')
+    entry = env['hb.honor.entry'].sudo().browse(entry_id)
+    if not entry.exists():
+        raise ValidationError('Không tìm thấy mục vinh danh.')
+    entry.write({'active': False})
+    return _honor_board(env)
+
+
 def _dept_payload(dept):
     """Một dòng phòng ban cho SPA. employeeCount đếm trực tiếp member_ids
     (chắc chắn, không phụ thuộc tên field computed của Odoo)."""
@@ -3120,6 +3243,42 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self.api_eval_get(emp_id)
+
+    # ------------------------------------------------------------------
+    # Bảng vinh danh (ý D họp 2026-08-07) — đọc: mọi user; ghi: HR.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/honor/board', auth='user', type='http',
+                methods=['GET'], csrf=False)
+    def api_honor_board(self, **kw):
+        return request.make_json_response(_honor_board(request.env))
+
+    @http.route('/hocba-hrm/api/honor/entry', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_honor_create(self, **kw):
+        try:
+            out = _honor_create(request.env, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(out)
+
+    @http.route('/hocba-hrm/api/honor/entry/<int:entry_id>/archive',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_honor_archive(self, entry_id, **kw):
+        try:
+            out = _honor_archive(request.env, entry_id)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(out)
 
     # ------------------------------------------------------------------
     # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
