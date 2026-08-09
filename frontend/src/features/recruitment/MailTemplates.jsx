@@ -49,13 +49,16 @@ export default function MailTemplates({ search }) {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải mail mẫu…" />;
 
-  const { rows, recipients, isRecruiter } = data;
+  /* canEdit = quản mẫu (chỉ HR) · canSend = gửi mail cho ứng viên (HR hoặc
+     trưởng phòng, người nhận đã được BE lọc theo phòng ban). Hai quyền tách
+     rời — xem ghi chú ở controller api_recruitment_mail_templates. */
+  const { rows, recipients, canEdit, canSend } = data;
 
   return (
     <div>
       <div className="filterbar">
         <span className="muted" style={{ fontSize: 13 }}>{rows.length} mẫu · {recipients.length} ứng viên có email</span>
-        {isRecruiter && (
+        {canEdit && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
             <button className="btn btn-soft" onClick={() => setImporting(true)}>
               <Icon name="upload" size={16} />Import mẫu</button>
@@ -84,13 +87,15 @@ export default function MailTemplates({ search }) {
             {/* marginTop:auto — hàng nút bám đáy thẻ, không bị tiêu đề dài đẩy lệch */}
             <div className="divider" style={{ margin: '6px 0', marginTop: 'auto' }}></div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => setSending(t)}>
-                <Icon name="mail" size={14} />Gửi mail</button>
-              {isRecruiter && (
+              {canSend && (
+                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => setSending(t)}>
+                  <Icon name="mail" size={14} />Gửi mail</button>
+              )}
+              {canEdit && (
                 <button className="btn btn-ghost btn-sm" onClick={() => setEditing(t)}>
                   <Icon name="edit" size={14} />Sửa</button>
               )}
-              {isRecruiter && (
+              {canEdit && (
                 <button className="btn btn-ghost btn-sm" title="Xoá mẫu"
                   style={{ color: 'var(--red-600)' }}
                   disabled={deletingId === t.id} onClick={() => remove(t)}>

@@ -50,6 +50,7 @@
                             </field>
                         </group>
                         <group string="Văn phòng (legacy, fallback)">
+                            <field name="office_map_url" widget="url"/>
                             <field name="office_lat"/>
                             <field name="office_lng"/>
                             <field name="office_radius_m"/>

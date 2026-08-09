@@ -17,3 +17,5 @@ access_hocba_teaching_attendance_user,access.hocba.teaching.attendance.user,mode
 access_hocba_teaching_attendance_manager,access.hocba.teaching.attendance.manager,model_hocba_teaching_attendance,hr.group_hr_manager,1,1,1,1
 access_hocba_attendance_office_location_user,access.hocba.attendance.office.location.user,model_hocba_attendance_office_location,hr.group_hr_user,1,0,0,0
 access_hocba_attendance_office_location_manager,access.hocba.attendance.office.location.manager,model_hocba_attendance_office_location,hr.group_hr_manager,1,1,1,1
+access_hocba_attendance_period_history_user,access.hocba.attendance.period.history.user,model_hocba_attendance_period_history,hr.group_hr_user,1,0,0,0
+access_hocba_attendance_period_history_manager,access.hocba.attendance.period.history.manager,model_hocba_attendance_period_history,hr.group_hr_manager,1,1,1,1

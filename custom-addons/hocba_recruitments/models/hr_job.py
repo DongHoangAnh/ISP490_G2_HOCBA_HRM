@@ -1,8 +1,6 @@
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
-_TEACHING_DEPTS = frozenset(['Giảng viên', 'Trợ giảng'])
-
 # Gợi ý trình độ cho ô "Trình độ" của vị trí tuyển dụng. Đây chỉ là DANH SÁCH
 # GỢI Ý (field là Char, không phải Selection) — trung tâm gặp chứng chỉ lạ thì
 # gõ thẳng, không phải chờ sửa code. Gồm đủ các cấp đang lưu hành trên thị
@@ -37,27 +35,17 @@ class HrJobHocBaExt(models.Model):
         string='Link JD',
         help='Google Docs / Drive link chứa Job Description.',
     )
+    # TUỲ CHỌN, không có ràng buộc bắt buộc — xem ghi chú "Vì sao bỏ ràng buộc
+    # trình độ" ở cuối file trước khi định thêm lại @api.constrains vào đây.
     x_teaching_level = fields.Char(
         string='Trình độ',
-        help='Yêu cầu trình độ tiếng Trung với vị trí Giảng viên / Trợ giảng. '
-             'Chọn trong danh sách gợi ý hoặc gõ trình độ khác nếu cần. '
-             'Để trống = không yêu cầu.',
+        help='Yêu cầu trình độ tiếng Trung của vị trí (nếu có). Chọn trong '
+             'danh sách gợi ý hoặc gõ trình độ khác. Để trống = không yêu cầu.',
     )
     x_required_sessions_per_week = fields.Integer(
         string='Số buổi/tuần tối thiểu',
         default=0,
     )
-    x_requires_teaching_level = fields.Boolean(
-        compute='_compute_x_requires_teaching_level',
-        store=False,
-    )
-
-    @api.depends('department_id', 'department_id.name')
-    def _compute_x_requires_teaching_level(self):
-        for rec in self:
-            rec.x_requires_teaching_level = bool(
-                rec.department_id and rec.department_id.name in _TEACHING_DEPTS
-            )
 
     def action_toggle_published(self):
         for rec in self:
@@ -101,16 +89,23 @@ class HrJobHocBaExt(models.Model):
                     )
                 )
 
-    # ── Logic 3: Phòng Giảng viên / Trợ giảng bắt buộc điền trình độ ─────────
-    # Field là Char nên "chưa điền" = rỗng, hoặc người dùng gõ N/A cho có lệ.
-    @api.constrains('x_teaching_level', 'department_id')
-    def _check_teaching_level_required(self):
-        for rec in self:
-            level = (rec.x_teaching_level or '').strip()
-            if (rec.department_id
-                    and rec.department_id.name in _TEACHING_DEPTS
-                    and level.lower() in ('', 'na', 'n/a')):
-                raise ValidationError(
-                    'Phòng ban "%s" yêu cầu điền Trình độ cụ thể '
-                    '(VD: HSK4, HSK7-9, TOCFL Band B…).' % rec.department_id.name
-                )
+    # ── Vì sao KHÔNG có ràng buộc "bắt buộc điền Trình độ" ───────────────────
+    # Bỏ ngày 2026-08-07 sau khi đối chiếu file quy trình gốc của khách
+    # ("Học bá education.xlsx", 59 sheet):
+    #
+    #  · Cụm 7.x (tuyển dụng) KHÔNG có cột trình độ ở bất kỳ sheet nào.
+    #    "7.8 Danh sách vị trí JD" chỉ gồm 4 cột: Vị trí | Trạng thái |
+    #    Số lượng | JD công việc. "7.2 Phiếu yêu cầu tuyển dụng" cũng không có.
+    #  · "Trình độ tiếng Trung" chỉ tồn tại ở sheet "2.1 Quản lý nhân sự"
+    #    (HỒ SƠ NHÂN VIÊN, không phải vị trí tuyển dụng) và 165/168 nhân sự
+    #    để trống; trong 29 người làm nghề dạy/đào tạo chỉ 2 người có điền,
+    #    còn người duy nhất mang chức danh "Giáo viên" thì bỏ trống.
+    #  · Mọi chỗ HSK còn lại trong file là trình độ của HỌC VIÊN (test đầu vào,
+    #    học thử, kịch bản bán hàng), không liên quan tuyển dụng.
+    #
+    # ⇒ Bắt buộc trường này là tự nhóm nghĩ ra, và nó chặn HR lưu vị trí vì một
+    # dữ liệu mà chính khách không thu thập. Ràng buộc cũ còn so TÊN phòng ban
+    # ('Giảng viên'/'Trợ giảng') — hai phòng không tồn tại trong 6 phòng chuẩn,
+    # nên nó chưa từng chạy trên dữ liệu thật (QA 2026-08-07, vấn đề #1).
+    # Muốn theo dõi trình độ tiếng Trung thì chỗ đúng là hồ sơ nhân viên
+    # (hocba_employees), và nên hỏi khách trước vì dữ liệu gần như trống.

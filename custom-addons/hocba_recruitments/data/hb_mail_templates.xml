@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+<data noupdate="1">
 
     <!-- ══════════════════════════════════════════════════════════════════
          Sheet 7.7 — Mail mẫu tuyển dụng (4 templates)
          model: hr.applicant
          Odoo 17+: dùng {{ expr }} (inline_template / Jinja2 chuẩn)
+
+         noupdate="1": HR sửa/thêm mail mẫu ngay trong app (tab "Mail mẫu
+         tuyển dụng") ⇒ DB là nguồn sự thật. Thiếu cờ này thì mỗi lần
+         `-u hocba_recruitments` là 4 mẫu bị trả về nội dung seed, xoá sạch
+         chỉnh sửa của cả nhóm. Cài mới vẫn tạo đủ 4 mẫu như thường.
          ══════════════════════════════════════════════════════════════════ -->
 
     <!-- ── Template 1: Thư mời tham gia phỏng vấn ── -->
@@ -179,4 +185,5 @@
         </field>
     </record>
 
+</data>
 </odoo>

@@ -234,7 +234,7 @@ class Attendance(models.Model):
             face_suspect = dist > policy.face_threshold
         lat = payload.get('latitude') or 0.0
         lng = payload.get('longitude') or 0.0
-        if policy.office_lat and policy.office_lng:
+        if policy.has_geofence:
             out_of_zone = not policy.is_within_office(lat, lng)
         else:
             out_of_zone = False
