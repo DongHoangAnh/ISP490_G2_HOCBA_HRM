@@ -32,10 +32,10 @@ export default function TimeOff({ search, focus }) {
   const [creating, setCreating] = useState(false);
   const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
   const [cancelling, setCancelling] = useState(null); // đơn đang chờ xác nhận hủy
-  const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
+  const [pendingCount, setPendingCount] = useState(0); // badge tab "Đơn chờ duyệt"
   const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
-  const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Giám sát duyệt → mở modal ở tab Chờ duyệt
+  const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Kiểm duyệt phát sinh → mở modal ở tab Đơn chờ duyệt
   const [year, setYear] = useState(new Date().getFullYear()); // filter chung xuyên tab
   const [dept, setDept] = useState('');                        // '' = mọi phòng ban
 
@@ -73,15 +73,18 @@ export default function TimeOff({ search, focus }) {
   if (!data) return <LoadingState label="Đang tải dữ liệu nghỉ phép…" />;
 
   // Tách luồng cá nhân / quản lý theo phân quyền:
-  //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
+  //  - Quản lý (officer): Tổng quan · Đơn chờ duyệt · Đơn đã duyệt · Lịch ·
+  //    Kiểm duyệt phát sinh · Theo dõi nghỉ phép · Quỹ phép.
   //    KHÔNG có tab "Đơn của tôi" (luồng quản lý thuần).
   //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Đơn của tôi" + "Lịch".
   const tabs = [];
   if (data.isOfficer) {
-    tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
-              ['approvals', 'Chờ duyệt'], ['lapsed', 'Giám sát duyệt'],
-              ['health', 'Sức khỏe NV'],
+    tabs.push(['overview', 'Tổng quan'],
+              ['approvals', 'Đơn chờ duyệt'],
               ['approved', 'Đơn đã duyệt'],
+              ['calendar', 'Lịch'],
+              ['lapsed', 'Kiểm duyệt phát sinh'],
+              ['health', 'Theo dõi nghỉ phép'],
               ['balances', 'Quỹ phép']);
   } else {
     tabs.push(['summary', 'Tổng hợp'], ['me', 'Đơn của tôi'], ['calendar', 'Lịch']);
