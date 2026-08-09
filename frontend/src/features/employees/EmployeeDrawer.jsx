@@ -2,6 +2,7 @@
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
 import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
+import { fetchCareer } from '../../api/career';
 import { fetchEmployeeAllowances, saveEmployeeAllowance, deleteEmployeeAllowance } from '../../api/payroll';
 import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
@@ -20,7 +21,8 @@ import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_CERT } from '../../utils/format';
 
 export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
-  canEdit = isHr, canManageAccount = isHr, canSeeSalary = isMgr, initialTab = 'info' }) {
+  canEdit = isHr, canManageAccount = isHr, canSeeSalary = isMgr,
+  initialTab = 'info', onOpenCareer }) {
   const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
@@ -78,7 +80,8 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
         {det && tab === 'info' && <InfoTab det={det} isHr={canEdit} isMgr={canSeeSalary} editable={canEdit} onUpdated={update} />}
         {det && tab === 'probation' && <ProbationTab det={det} isHr={canEdit} isMgr={isMgr} onUpdated={update} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={canEdit} onUpdated={update} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update} />}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update}
+          onOpenCareer={onOpenCareer && (() => { onOpenCareer(det.id); onClose(); })} />}
         {det && tab === 'account' && canManageAccount && <AccountTab det={det} emp={emp} onUpdated={update} />}
       </div>
 
@@ -420,7 +423,7 @@ export function AssetsTab({ det, editable, onUpdated }) {
   );
 }
 
-export function PromoTab({ det, isMgr, editable, onUpdated }) {
+export function PromoTab({ det, isMgr, editable, onUpdated, onOpenCareer }) {
   const [adding, setAdding] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [evalData, setEvalData] = useState(null);
@@ -428,7 +431,14 @@ export function PromoTab({ det, isMgr, editable, onUpdated }) {
 
   useEffect(() => {
     setEvalData(null); // tránh nháy dữ liệu NV cũ khi đổi hồ sơ
-    if (canAct) fetchEvaluations(det.id).then(setEvalData).catch(() => setEvalData(null));
+    // Người chấm được: /promotion/eval trả kèm criteria cho form đánh giá.
+    // Người chỉ xem (nhân viên tự xem hồ sơ mình, giáo vụ/trưởng phòng):
+    // route đó gác _can_eval_emp nên phải lấy qua /career — khách yêu cầu
+    // "họ vẫn sẽ xem được cái đánh giá của họ" (08:13).
+    const p = canAct
+      ? fetchEvaluations(det.id)
+      : fetchCareer(det.id).then((d) => ({ evaluations: d.evaluations }));
+    p.then(setEvalData).catch(() => setEvalData(null));
   }, [det.id, canAct]);
 
   const latest = evalData?.evaluations?.[evalData.evaluations.length - 1];
@@ -436,6 +446,12 @@ export function PromoTab({ det, isMgr, editable, onUpdated }) {
 
   return (
     <div>
+      {onOpenCareer && (
+        <div style={{ marginBottom: 14 }}>
+          <button className="btn btn-soft btn-sm" onClick={onOpenCareer}>
+            <Icon name="trend" size={13} />Mở trang lộ trình đầy đủ</button>
+        </div>
+      )}
       {am && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
           <MetricCard label="Thâm niên (tháng)" value={am.tenureMonths} />

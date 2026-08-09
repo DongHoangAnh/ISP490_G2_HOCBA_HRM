@@ -58,15 +58,20 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+        {/* Thứ tự theo vòng đời đơn: tổng → chờ → duyệt → từ chối → quá hạn →
+            đang nghỉ. "Quá hạn" = qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt
+            (cùng nguồn với tab "Kiểm duyệt phát sinh"). */}
         <Kpi label="Tổng đơn (năm)" value={k.total} />
         <Kpi label="Chờ duyệt" value={k.pending} color="var(--amber)" sub="cần xử lý" />
-        <Kpi label={`Đơn quá hạn (> ${k.slaDays} ngày)`} value={k.overdue}
-          color={k.overdue > 0 ? 'var(--red-600)' : 'var(--ink)'}
-          sub={k.overdue > 0 ? 'cần xử lý gấp' : 'trong SLA'} />
-        <Kpi label="Tuổi đơn cũ nhất" value={k.oldestAgeDays}
-          sub={`TB: ${k.avgAgeDays} ngày làm việc`} />
         <Kpi label="Đã duyệt" value={k.approved} color="var(--green)"
           sub={`${k.approvedDays} ngày phép đã duyệt`} />
+        <Kpi label="Đã từ chối" value={k.refused} color="var(--red-600)"
+          sub="trong năm" />
+        <Kpi label="Đơn quá hạn duyệt" value={k.overdue}
+          color={k.overdue > 0 ? 'var(--red-600)' : 'var(--ink)'}
+          sub={k.overdue > 0
+            ? `cần xử lý gấp · lâu nhất ${k.oldestOverdueDays} ngày`
+            : 'không có đơn quá hạn'} />
         <Kpi label="Đang nghỉ hôm nay" value={k.onLeaveToday} color="var(--blue)" />
       </div>
 
@@ -74,20 +79,26 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
         <div className="card">
           <div className="card-head">
             <h3>Đơn quá hạn duyệt</h3>
-            <span className="sub">{data.overdueRequests.length} đơn vượt SLA {k.slaDays} ngày làm việc</span>
+            {/* Bảng chỉ lấy top 5 quá hạn lâu nhất — số tổng lấy từ KPI, đừng
+                đếm số dòng đang hiện. */}
+            <span className="sub">
+              {k.overdue} đơn đã qua ngày bắt đầu nghỉ mà chưa duyệt
+              {k.overdue > data.overdueRequests.length
+                && ` · hiện ${data.overdueRequests.length} đơn quá hạn lâu nhất`}
+            </span>
           </div>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr>
                 <th>Nhân viên</th><th>Phòng ban</th><th>Loại</th>
                 <th>Ngày tạo</th><th>Từ</th><th>Đến</th>
-                <th className="tbl-num">Ngày</th><th className="tbl-num">Tuổi đơn</th>
+                <th className="tbl-num">Ngày</th><th className="tbl-num">Quá hạn</th>
                 <th>Trạng thái</th>
               </tr></thead>
               <tbody>
                 {data.overdueRequests.map((r) => (
                   <tr key={r.requestId} style={{
-                    background: r.ageDays > k.slaDays * 2
+                    background: r.overdueDays > k.deepOverdueDays
                       ? 'var(--red-50)' : 'var(--amber-bg,#fff7ed)',
                   }}>
                     <td style={{ fontWeight: 600 }}>{r.employee}
@@ -100,8 +111,9 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
                     <td className="tbl-num mono">{r.days}</td>
                     <td className="tbl-num mono" style={{
                       fontWeight: 700,
-                      color: r.ageDays > k.slaDays * 2 ? 'var(--red-700)' : 'var(--amber-700,#b45309)',
-                    }}>{r.ageDays} ngày</td>
+                      color: r.overdueDays > k.deepOverdueDays
+                        ? 'var(--red-700)' : 'var(--amber-700,#b45309)',
+                    }}>{r.overdueDays} ngày</td>
                     <td><Badge kind="amber" dot>{r.stateLabel}</Badge></td>
                   </tr>
                 ))}
@@ -117,7 +129,14 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
           <div style={{ padding: 16 }}><BarList rows={data.byType} /></div>
         </div>
         <div className="card">
-          <div className="card-head"><h3>Theo phòng ban</h3></div>
+          <div className="card-head">
+            <h3>Theo phòng ban</h3>
+            {data.byDeptTotal > data.byDept.length && (
+              <span className="sub">
+                {data.byDept.length} phòng nghỉ nhiều nhất / {data.byDeptTotal} phòng
+              </span>
+            )}
+          </div>
           <div style={{ padding: 16 }}><BarList rows={data.byDept} /></div>
         </div>
       </div>
@@ -129,7 +148,12 @@ function ManagerView({ data, dept, onDeptChange, nav }) {
         </div>
         <div className="card">
           <div className="card-head">
-            <h3>Đơn chờ duyệt</h3><span className="sub">{data.pending.length} đơn mới nhất</span>
+            <h3>Đơn chờ duyệt</h3>
+            <span className="sub">
+              {k.pending > data.pending.length
+                ? `${data.pending.length} đơn mới nhất / ${k.pending} đơn`
+                : `${data.pending.length} đơn`}
+            </span>
           </div>
           <div className="tbl-wrap">
             <table className="tbl">

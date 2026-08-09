@@ -12,3 +12,4 @@ from . import hr_promotion_evaluation
 from . import hocba_offboarding
 from . import hb_onboarding_template
 from . import hb_onboarding_step
+from . import hb_honor_entry

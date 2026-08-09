@@ -1,5 +1,7 @@
-/* Tab "Giám sát duyệt đơn" (Phase 12) — đơn lỡ hạn duyệt + đối chiếu chấm
-   công + KPI. Chỉ officer (HR/Admin mọi phòng, Trưởng phòng phòng mình).
+/* Tab "Kiểm duyệt phát sinh" (Phase 12) — đơn QUÁ HẠN duyệt (qua ngày bắt đầu
+   nghỉ mà vẫn chờ duyệt) + đối chiếu chấm công + KPI. Payload vẫn dùng tên
+   lapsed* của spec gốc; nhãn hiển thị thống nhất là "quá hạn".
+   Chỉ officer (HR/Admin mọi phòng, Trưởng phòng phòng mình).
    Spec: docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
    Owner: Nhật Anh. */
 import { useState } from 'react';
@@ -34,7 +36,7 @@ export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
       )}
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))' }}>
-        <Kpi label="Đơn lỡ hạn duyệt" value={k.total}
+        <Kpi label="Đơn quá hạn duyệt" value={k.total}
           color={k.total > 0 ? 'var(--red-600)' : 'var(--ink)'}
           sub="qua ngày nghỉ, chưa duyệt" />
         <Kpi label="Đề xuất duyệt trễ" value={k.suggestApprove} color="var(--green)"
@@ -42,12 +44,12 @@ export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
         <Kpi label="Mâu thuẫn chấm công" value={k.suggestRefuse} color="var(--amber)"
           sub="xin nghỉ nhưng vẫn đi làm" />
         <Kpi label="Cần xem tay" value={k.needsReview} sub="lẫn lộn / chưa đủ dữ liệu" />
-        <Kpi label="Lỡ hạn lâu nhất" value={k.oldestLapsedDays} sub="ngày làm việc" />
+        <Kpi label="Quá hạn lâu nhất" value={k.oldestLapsedDays} sub="ngày làm việc" />
       </div>
 
       {data.byDepartment.length > 0 && (
         <div className="card">
-          <div className="card-head"><h3>Đơn lỡ hạn theo phòng ban</h3></div>
+          <div className="card-head"><h3>Đơn quá hạn theo phòng ban</h3></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 13, padding: 16 }}>
             {data.byDepartment.map((r) => (
               <div key={r.id || r.name}>
@@ -66,14 +68,14 @@ export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
 
       <div className="card">
         <div className="card-head">
-          <h3>Chi tiết đơn lỡ hạn</h3>
+          <h3>Chi tiết đơn quá hạn</h3>
           <span className="sub">{data.items.length} đơn — đối chiếu bảng chấm công các ngày nghỉ đã qua</span>
         </div>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
               <th>Nhân viên</th><th>Phòng ban</th><th>Loại nghỉ</th>
-              <th>Từ</th><th>Đến</th><th className="tbl-num">Lỡ hạn</th>
+              <th>Từ</th><th>Đến</th><th className="tbl-num">Quá hạn</th>
               <th>Đối chiếu chấm công</th><th>Đề xuất</th><th></th>
             </tr></thead>
             <tbody>
@@ -109,7 +111,7 @@ export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
           </table>
         </div>
         {data.items.length === 0 && (
-          <EmptyState>Không có đơn nào lỡ hạn duyệt. 🎉</EmptyState>
+          <EmptyState>Không có đơn nào quá hạn duyệt. 🎉</EmptyState>
         )}
       </div>
 

@@ -110,6 +110,13 @@ class AttendancePolicy(models.Model):
             policy = self.create({'name': 'Default Policy'})
         return policy
 
+    @property
+    def has_geofence(self):
+        """True if any geofencing (legacy or multi-location) is active."""
+        self.ensure_one()
+        return bool((self.office_lat and self.office_lng)
+                    or self.office_location_ids.filtered('active'))
+
     @staticmethod
     def _haversine_m(lat1, lng1, lat2, lng2):
         """Great-circle distance between two WGS84 points, in meters."""

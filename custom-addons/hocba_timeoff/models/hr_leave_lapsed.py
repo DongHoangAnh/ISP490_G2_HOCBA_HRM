@@ -11,8 +11,8 @@ class HrLeaveLapsed(models.Model):
     _inherit = 'hr.leave'
 
     x_lapsed_notified = fields.Boolean(
-        string='Đã báo lỡ hạn duyệt', default=False,
-        help='Cron đã bắn chuông "đơn lỡ hạn" cho người duyệt (chỉ báo 1 lần).',
+        string='Đã báo quá hạn duyệt', default=False,
+        help='Cron đã bắn chuông "đơn quá hạn" cho người duyệt (chỉ báo 1 lần).',
     )
     # Chuông đã hợp nhất sang hb.notification (module hocba_notify): 'kind' là
     # Char tự do nên KHÔNG cần selection_add cho 'lapsed'. Level map ở

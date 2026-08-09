@@ -6,10 +6,13 @@
 export class ApiError extends Error {
   // detail = thông điệp người-đọc do BE trả ({"message": "..."}); nếu không có
   // thì rơi về "<status> <code>". `.code` luôn giữ mã máy để xử lý theo nhánh.
-  constructor(status, code, detail) {
+  // details = danh sách dòng lỗi chi tiết (BE trả {"details": [...]}), dùng cho
+  // các luồng import file: message là câu tóm tắt, details liệt kê từng dòng sai.
+  constructor(status, code, detail, details) {
     super(detail || (code ? `${status} ${code}` : `HTTP ${status}`));
     this.status = status;
     this.code = code;
+    this.details = details || [];
   }
 }
 
@@ -53,6 +56,20 @@ export async function hbUpload(url, file, field = 'file') {
   fd.append(field, file);
   const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: fd });
   if (!res.ok) throw new ApiError(res.status, await safeCode(res));
+  return res.json();
+}
+
+/* Upload kèm field phụ + giữ nguyên message/details lỗi của BE (luồng import
+   file Excel: cần liệt kê từng dòng sai cho người dùng sửa). */
+export async function hbUploadFields(url, file, fields = {}, field = 'file') {
+  const fd = new FormData();
+  fd.append(field, file);
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+  const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: fd });
+  if (!res.ok) {
+    const b = await errBody(res);
+    throw new ApiError(res.status, b.error, b.message, b.details);
+  }
   return res.json();
 }
 

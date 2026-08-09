@@ -22,6 +22,9 @@ const NAV = [
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     // Đánh giá định kỳ (giảng viên / văn phòng) — HR, trưởng phòng, giáo vụ
     { id: 'reviews', label: 'Đánh giá', icon: 'star', need: 'manage' },
+    // Trang lịch sử từng người (họp 2026-08-07): thăng tiến + đánh giá +
+    // nhận xét thử việc + vinh danh gộp trong một dòng thời gian.
+    { id: 'career', label: 'Lộ trình sự nghiệp', icon: 'trend', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
     { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
@@ -48,6 +51,9 @@ const NAV = [
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'self' },
     { id: 'payroll', label: 'Phiếu lương cá nhân', icon: 'wallet', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
+    // Cùng view 'career', tự ghim vào bản thân — khách muốn nhân viên xem
+    // được "họ được đánh giá như thế nào, thăng tiến như thế nào" (08:13).
+    { id: 'career', label: 'Lộ trình của tôi', icon: 'trend', need: 'self' },
   ]},
 ];
 
@@ -98,6 +104,8 @@ export const PAGE_META = {
   'onboarding-config': { t: 'Cấu hình nhận việc', c: 'Hệ thống / Cấu hình quy trình' },
   'recruitment-config': { t: 'Cấu hình tuyển dụng', c: 'Hệ thống / Cấu hình quy trình' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
+  // Crumb trung tính: view này ở CẢ 2 mục nav (quản lý + cá nhân).
+  career: { t: 'Lộ trình sự nghiệp', c: 'Nhân sự / Thăng tiến & Đánh giá' },
   // Crumb trung tính: view này xuất hiện ở CẢ 2 mục nav (quản lý + cá nhân),
   // PAGE_META lại theo view nên "Cá nhân / Self-service" sẽ sai với HR.
   service: { t: 'Yêu cầu dịch vụ nhân sự', c: 'Nhân sự / Yêu cầu & Góp ý' },
@@ -105,7 +113,9 @@ export const PAGE_META = {
   attendanceConfig: { t: 'Cấu hình chấm công', c: 'Hệ thống / Attendance' },
 };
 
-export function Sidebar({ view, setView, me }) {
+/* badges: { [viewId]: number } — số việc cần xử lý hiện cạnh tên mục menu
+   (vd Nghỉ phép: số đơn chờ duyệt). 0 / thiếu key = không hiện. */
+export function Sidebar({ view, setView, me, badges }) {
   const groups = visibleNav(me);
   return (
     <aside className="sidebar">
@@ -120,14 +130,22 @@ export function Sidebar({ view, setView, me }) {
         {groups.map((grp) => (
           <div key={grp.sec}>
             <div className="nav-label">{grp.sec}</div>
-            {grp.items.map((it) => (
-              <button key={it.id}
-                className={'nav-item' + (view === it.id ? ' active' : '')}
-                onClick={() => setView(it.id)}>
-                <Icon name={it.icon} size={19} className="ico" />
-                <span>{it.label}</span>
-              </button>
-            ))}
+            {grp.items.map((it) => {
+              const n = (badges && badges[it.id]) || 0;
+              return (
+                <button key={it.id}
+                  className={'nav-item' + (view === it.id ? ' active' : '')}
+                  onClick={() => setView(it.id)}>
+                  <Icon name={it.icon} size={19} className="ico" />
+                  <span>{it.label}</span>
+                  {n > 0 && (
+                    <span className="nav-badge" title={`${n} việc cần xử lý`}>
+                      {n > 99 ? '99+' : n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         ))}
       </nav>

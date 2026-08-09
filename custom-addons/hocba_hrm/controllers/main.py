@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta
 from psycopg2 import IntegrityError
 from pytz import timezone, utc
 
-from odoo import http, fields
+from odoo import http, fields, SUPERUSER_ID
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request, Response
 from odoo.tools import file_open
@@ -127,7 +127,7 @@ def _policy_dict(p):
         'checkInEnd': _fmt_hm(p.morning_end),
         'checkOutStart': _fmt_hm(p.evening_start),
         'checkOutEnd': _fmt_hm(p.evening_end),
-        'geofenceOn': bool(p.office_lat and p.office_lng),
+        'geofenceOn': p.has_geofence,
     }
 
 
@@ -558,41 +558,31 @@ def _shift_history_row(env, s, att, row_type):
 
 def _get_month_range(env, y, m):
     """Xác định khoảng [first, last] của tháng (y, m) dựa trên lịch sử cấu hình.
-    Ví dụ: m=9, start_day=15 -> 15/09 đến 14/10."""
+    Logic chống trùng lặp: last = (ngày bắt đầu của tháng sau) - 1 ngày."""
     ref_date = date(y, m, 1)
     # Tìm cấu hình áp dụng tại thời điểm đầu tháng đó
     history = env['hocba.attendance.period.history'].sudo().search([
         ('apply_from', '<=', ref_date)
     ], order='apply_from desc', limit=1)
 
-    if history:
-        start_day = history.period_start_day
+    policy = env['hocba.attendance.policy'].sudo().get_policy()
+    start_day = history.period_start_day if history else (policy.period_start_day or 1)
+
+    # Tính ngày bắt đầu của tháng hiện tại (first)
+    days_in_m = calendar.monthrange(y, m)[1]
+    first = date(y, m, min(start_day, days_in_m))
+
+    # Tính ngày bắt đầu của tháng tiếp theo để suy ra ngày kết thúc tháng này
+    if m == 12:
+        ny, nm = y + 1, 1
     else:
-        # Fallback về cấu hình mặc định trên policy
-        policy = env['hocba.attendance.policy'].sudo().get_policy()
-        start_day = policy.period_start_day or 1
+        ny, nm = y, m + 1
 
-    if start_day == 1:
-        first = date(y, m, 1)
-        last = date(y, m, calendar.monthrange(y, m)[1])
-    else:
-        # Ví dụ: m=9, start_day=15 -> first=15/09, last=14/10
-        # Dùng min để tránh lỗi nếu tháng hiện tại không có ngày start_day (vd 31/02)
-        days_in_month = calendar.monthrange(y, m)[1]
-        first = date(y, m, min(start_day, days_in_month))
+    days_in_nm = calendar.monthrange(ny, nm)[1]
+    next_first = date(ny, nm, min(start_day, days_in_nm))
 
-        # Tính ngày cuối: cộng 1 tháng rồi trừ 1 ngày
-        if m == 12:
-            next_y, next_m = y + 1, 1
-        else:
-            next_y, next_m = y, m + 1
-
-        last_day_of_next_month = calendar.monthrange(next_y, next_m)[1]
-        target_last_day = start_day - 1
-        if target_last_day == 0:
-             target_last_day = last_day_of_next_month
-
-        last = date(next_y, next_m, min(target_last_day, last_day_of_next_month))
+    # Ngày cuối cùng = Ngày đầu tháng sau - 1 ngày
+    last = next_first - timedelta(days=1)
 
     return first, last
 
@@ -1591,26 +1581,508 @@ def _account_reset(env, emp_id, body):
     return _account_payload(emp)
 
 
+def _account_set_active(env, emp_id, active):
+    """HR/Admin khóa (active=False) / mở khóa tài khoản đăng nhập.
+
+    Dùng thẳng res.users.active — Odoo tự chặn đăng nhập, và offboarding
+    cũng ghi vào đúng field này khi hoàn tất nghỉ việc. browse()/exists()
+    vốn đã thấy được cả bản ghi archived (chỉ search() mới cần
+    active_test=False), nên không cần set context riêng ở đây."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được khóa/mở tài khoản.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if not emp.user_id:
+        raise ValidationError('Nhân viên chưa có tài khoản.')
+    user = emp.user_id
+    if user.id == env.user.id:
+        raise ValidationError(
+            'Không thể khóa tài khoản của chính bạn.')
+    if user.id == SUPERUSER_ID or user.sudo().has_group('base.group_system'):
+        raise ValidationError(
+            'Tài khoản quản trị hệ thống không quản lý được từ đây.')
+    if active and not emp.active:
+        raise ValidationError(
+            'Nhân viên đã nghỉ việc — không mở lại tài khoản từ đây. '
+            'Nếu tuyển lại, khôi phục hồ sơ nhân viên trước.')
+    if user.active != bool(active):
+        user.sudo().write({'active': bool(active)})
+        emp.sudo().message_post(
+            body=('🔓 %s đã mở khóa tài khoản đăng nhập.' if active
+                  else '🔒 %s đã khóa tài khoản đăng nhập.') % env.user.name,
+            subtype_xmlid='mail.mt_note')
+    return _account_payload(emp)
+
+
 def _account_list(env):
     """Danh sách NV đã có tài khoản + danh mục phòng ban (cho form). Chỉ HR."""
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được xem danh sách tài khoản.')
     Dept = env['hr.department'].sudo()
-    emps = env['hr.employee'].sudo().search(
+    # active_test=False: NV đã nghỉ bị archive nhưng tài khoản của họ vẫn
+    # phải rà soát được (nhóm bị khóa đông nhất).
+    emps = env['hr.employee'].sudo().with_context(active_test=False).search(
         [('user_id', '!=', False)], order='x_employee_code, id')
+    # Lấy 1 lần, dùng lại cho cả role (trưởng phòng?) lẫn danh mục trả về —
+    # tránh N+1 search_count trên mỗi nhân viên (DB Neon: mỗi round-trip
+    # ~10-30ms). Chỉ tính phòng ban đang active, giữ đúng ngữ nghĩa cũ của
+    # Dept.search_count/Dept.search([]).
+    all_depts = Dept.search([], order='name')
+    manager_emp_ids = set(all_depts.mapped('manager_id').ids)
     rows = []
     for e in emps:
         u = e.user_id
-        is_tp = bool(Dept.search_count([('manager_id', '=', e.id)]))
+        is_tp = e.id in manager_emp_ids
         is_gv = u.has_group('hocba_employees.group_hocba_giaovu')
         role = 'truongphong' if is_tp else ('giaovu' if is_gv else 'employee')
         rows.append({
             'employeeId': e.id, 'name': e.name,
-            'code': e.x_employee_code or '', 'depName': e.department_id.name or '',
+            'code': e.x_employee_code or '',
+            'depId': e.department_id.id or 0,
+            'depName': e.department_id.name or '',
             'login': u.login, 'active': u.active, 'role': role,
+            'empActive': e.active,
+            # _account_set_active từ chối đụng tài khoản quản trị hệ thống →
+            # FE ẩn nút thay vì bày ra chỉ để báo lỗi.
+            'isSystem': u.id == SUPERUSER_ID or u.has_group(
+                'base.group_system'),
         })
-    depts = [{'id': d.id, 'name': d.name} for d in Dept.search([], order='name')]
+    depts = [{'id': d.id, 'name': d.name} for d in all_depts]
     return {'accounts': rows, 'departments': depts}
+
+
+# ----------------------------------------------------------------------
+# Trang Lộ trình sự nghiệp (ý C họp 2026-08-07) — khách: "dashboard thống
+# kê cho từng người… đầy đủ thông tin, cả nhận xét… chứ không phải là theo
+# kiểu phải click nhiều". Gộp 4 nguồn có sẵn thành MỘT dòng thời gian.
+# Spec: docs/superpowers/specs/
+# 2026-08-09-career-dashboard-honor-board-design.md §4
+# ----------------------------------------------------------------------
+VERDICT_LABELS = {'qualified': 'Đủ điều kiện', 'consider': 'Cân nhắc',
+                  'not_yet': 'Chưa đủ'}
+ONB_RESULT_LABELS = {'pass': 'Đạt', 'extend': 'Gia hạn', 'fail': 'Không đạt'}
+
+
+def _career_resolve(env, emp_id):
+    """Trả (emp, is_self) sau khi kiểm quyền. emp_id=0 → chính mình."""
+    me = env.user.employee_id
+    if not emp_id:
+        if not me:
+            raise ValidationError(
+                'Tài khoản của bạn chưa được gắn với hồ sơ nhân viên nào.')
+        return me.sudo(), True
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    if me and emp.id == me.id:
+        return emp, True
+    if not _emp_in_scope(env, emp):
+        raise AccessError('Bạn không có quyền xem lộ trình của nhân viên này.')
+    return emp, False
+
+
+STALE_PROMO_MONTHS = 12
+
+
+def _career_insights(evaluations, criteria_radar, months_since, onb):
+    """Vài câu đọc-là-hiểu rút từ chính dữ liệu trên trang.
+
+    KHÔNG nhắc tới lương ở đây: insight hiện cho mọi người xem được trang,
+    trong đó có vai trò không được xem lương (_cap_see_salary)."""
+    out = []
+    confirmed = [e for e in evaluations if e['state'] == 'confirmed']
+    if not confirmed:
+        out.append({'kind': 'info', 'text': 'Chưa có đợt đánh giá nào được '
+                                            'xác nhận.'})
+    else:
+        last = confirmed[-1]
+        if len(confirmed) > 1:
+            delta = round(last['totalScore'] - confirmed[-2]['totalScore'], 1)
+            if delta > 0:
+                out.append({'kind': 'up', 'text':
+                            'Điểm đánh giá tăng %s điểm so với đợt trước '
+                            '(%s%%).' % (delta, last['totalScore'])})
+            elif delta < 0:
+                out.append({'kind': 'down', 'text':
+                            'Điểm đánh giá giảm %s điểm so với đợt trước '
+                            '(%s%%).' % (abs(delta), last['totalScore'])})
+            else:
+                out.append({'kind': 'info', 'text':
+                            'Điểm đánh giá đi ngang ở %s%%.'
+                            % last['totalScore']})
+        else:
+            out.append({'kind': 'info', 'text':
+                        'Đợt đánh giá đầu tiên: %s%%.' % last['totalScore']})
+        scored = [c for c in criteria_radar if c['maxScore']]
+        if len(scored) > 1:
+            ratio = lambda c: c['score'] / c['maxScore']   # noqa: E731
+            weakest = min(scored, key=ratio)
+            strongest = max(scored, key=ratio)
+            # Hoà điểm hết thì weakest is strongest → in "thấp nhất X" ngay
+            # cạnh "cao nhất X", đọc như lỗi. Nói thẳng là đều nhau.
+            if ratio(weakest) == ratio(strongest):
+                out.append({'kind': 'info', 'text':
+                            'Các tiêu chí đều nhau (%s/%s).'
+                            % (weakest['score'], weakest['maxScore'])})
+            else:
+                out.append({'kind': 'warn', 'text': 'Tiêu chí thấp nhất: %s '
+                            '(%s/%s).' % (weakest['name'], weakest['score'],
+                                          weakest['maxScore'])})
+                out.append({'kind': 'up', 'text': 'Tiêu chí cao nhất: %s '
+                            '(%s/%s).' % (strongest['name'],
+                                          strongest['score'],
+                                          strongest['maxScore'])})
+    if months_since is not None and months_since >= STALE_PROMO_MONTHS:
+        out.append({'kind': 'warn', 'text':
+                    'Đã %s tháng chưa có thay đổi chức vụ.' % months_since})
+    if onb['total'] and onb['done'] + onb['skipped'] < onb['total']:
+        out.append({'kind': 'info', 'text':
+                    'Quy trình nhận việc: %s/%s bước đã xong.'
+                    % (onb['done'] + onb['skipped'], onb['total'])})
+    return out
+
+
+def _career_payload(env, emp_id):
+    """Toàn bộ "album của đời" một nhân viên: mốc thăng tiến, đợt đánh giá
+    (điểm + nhận xét), kết quả từng bước thử việc, và các lần được vinh danh."""
+    emp, is_self = _career_resolve(env, emp_id)
+    can_manage = _user_can_manage(env)
+    # Tự xem lương của chính mình vốn đã mở ở /api/me — giữ nhất quán, đừng
+    # để trang mới chặt hơn trang cũ với cùng một dữ liệu.
+    see_salary = is_self or _cap_see_salary(env)
+
+    timeline = []
+
+    # 1. Mốc thăng tiến / biến động hồ sơ
+    change_labels = dict(
+        env['hr.promotion.history']._fields['x_change_type'].selection)
+    promos = env['hr.promotion.history'].sudo().search(
+        [('employee_id', '=', emp.id)], order='date_effective, id')
+
+    # 2. Vào làm việc — để NV mới toanh vẫn thấy một mốc. hr.employee.create
+    # đã tự ghi snapshot 'join' vào hr.promotion.history, nên chỉ dựng mốc
+    # tổng hợp khi snapshot đó KHÔNG có (hồ sơ cũ, hoặc tạo với
+    # hocba_no_join_log) — nếu không dòng thời gian sẽ có 2 mốc nhận việc.
+    start = emp.x_probation_start or (
+        emp.create_date and emp.create_date.date())
+    if start and not any(p.x_change_type == 'join' for p in promos):
+        timeline.append({
+            'kind': 'join', 'date': _d(start), 'sort': 0,
+            'title': 'Vào làm việc',
+            'detail': emp.job_id.name or '',
+            'badge': '', 'badgeKind': 'gray'})
+    salary_journey = []
+    for p in promos:
+        bits = []
+        if p.reason:
+            bits.append(p.reason)
+        if p.decision_ref:
+            bits.append('QĐ: %s' % p.decision_ref)
+        # Snapshot 'join' chưa có chức vụ trước/sau → "— → —" vô nghĩa với
+        # người đọc; dòng đó chính là mốc vào làm.
+        if p.x_change_type == 'join':
+            title = 'Vào làm việc'
+            if p.to_job_id:
+                bits.insert(0, p.to_job_id.name)
+        else:
+            title = '%s → %s' % (p.from_job_id.name or '—',
+                                 p.to_job_id.name or '—')
+        item = {
+            'kind': 'promotion', 'date': _d(p.date_effective), 'sort': 1,
+            'title': title,
+            'detail': ' · '.join(bits),
+            'badge': change_labels.get(p.x_change_type, ''),
+            'badgeKind': 'gold' if p.x_change_type == 'promotion' else 'gray',
+            'dep': p.to_department_id.name or ''}
+        if see_salary:
+            item['fromWage'] = p.from_wage or 0
+            item['toWage'] = p.to_wage or 0
+            if p.to_wage:
+                salary_journey.append({
+                    'date': _d(p.date_effective), 'wage': p.to_wage,
+                    'label': p.to_job_id.name or ''})
+        timeline.append(item)
+
+    # 3. Đợt đánh giá thăng tiến — bản nháp chỉ người quản lý thấy.
+    ev_domain = [('employee_id', '=', emp.id)]
+    if not can_manage:
+        ev_domain.append(('state', '=', 'confirmed'))
+    evals = env['hr.promotion.evaluation'].sudo().search(
+        ev_domain, order='eval_date, id')
+    evaluations = []
+    score_trend = []
+    for ev in evals:
+        lines = [{'name': l.criteria_id.name, 'score': l.score,
+                  'maxScore': l.max_score, 'weight': l.weight,
+                  'note': l.note or ''} for l in ev.line_ids]
+        verdict = ev.verdict_final or ev.verdict_auto or ''
+        evaluations.append({
+            'id': ev.id, 'date': _d(ev.eval_date),
+            'evaluator': ev.evaluator_id.name or '',
+            'state': ev.state, 'totalScore': round(ev.total_score, 1),
+            'verdictFinal': verdict,
+            'verdictLabel': VERDICT_LABELS.get(verdict, ''),
+            'note': ev.conclusion_note or '', 'lines': lines})
+        score_trend.append({'date': _d(ev.eval_date),
+                            'score': round(ev.total_score, 1),
+                            'verdict': verdict})
+        timeline.append({
+            'kind': 'evaluation', 'date': _d(ev.eval_date), 'sort': 2,
+            'title': 'Đợt đánh giá — %.0f%%' % ev.total_score,
+            'detail': ev.conclusion_note or '',
+            'badge': (VERDICT_LABELS.get(verdict, '') if ev.state == 'confirmed'
+                      else 'Nháp'),
+            'badgeKind': ('green' if verdict == 'qualified'
+                          else 'amber' if verdict == 'consider' else 'gray'),
+            'lines': lines})
+
+    # Radar tiêu chí: đợt gần nhất, kèm điểm đợt LIỀN TRƯỚC của cùng tiêu chí
+    # để nhìn ra tiến bộ/thụt lùi từng mặt. Ghép theo TÊN tiêu chí (đợt cũ có
+    # thể chấm bộ tiêu chí khác); thiếu thì để None, không bịa 0 — 0 điểm và
+    # "chưa từng chấm" là hai chuyện khác nhau.
+    criteria_radar = []
+    if evaluations:
+        prev_by_name = {}
+        if len(evaluations) > 1:
+            prev_by_name = {l['name']: l['score']
+                            for l in evaluations[-2]['lines']}
+        for l in evaluations[-1]['lines']:
+            criteria_radar.append({
+                'name': l['name'], 'score': l['score'],
+                'maxScore': l['maxScore'],
+                'previous': prev_by_name.get(l['name']),
+            })
+
+    # 4. Kết quả từng bước thử việc — đây là "nhận xét" khách đòi nhìn thấy.
+    # Đếm tiến độ trên TOÀN BỘ bước (kể cả chưa tới lượt) cho biểu đồ tiến độ.
+    all_steps = env['hb.onboarding.step'].sudo().search(
+        [('employee_id', '=', emp.id)])
+    onb_progress = {
+        'done': len(all_steps.filtered(lambda s: s.state == 'done')),
+        'skipped': len(all_steps.filtered(lambda s: s.state == 'skipped')),
+        'open': len(all_steps.filtered(lambda s: s.state == 'open')),
+        'waiting': len(all_steps.filtered(lambda s: s.state == 'waiting')),
+        'total': len(all_steps),
+    }
+    steps = all_steps.filtered(
+        lambda s: s.state in ('done', 'skipped')).sorted(
+            key=lambda s: (s.done_date or date.min, s.sequence, s.id))
+    for s in steps:
+        timeline.append({
+            'kind': 'onboarding', 'date': _d(s.done_date), 'sort': 3,
+            'title': s.name,
+            'detail': s.result_note or '',
+            'badge': (ONB_RESULT_LABELS.get(s.result, '')
+                      or ('Bỏ qua' if s.state == 'skipped' else 'Hoàn thành')),
+            'badgeKind': ('green' if s.result == 'pass'
+                          else 'amber' if s.result == 'extend'
+                          else 'red' if s.result == 'fail' else 'gray')})
+
+    # 5. Vinh danh
+    honor_labels = dict(
+        env['hb.honor.entry']._fields['category']._description_selection(env))
+    honors = env['hb.honor.entry'].sudo().search(
+        [('employee_id', '=', emp.id)], order='date_awarded, id')
+    for h in honors:
+        timeline.append({
+            'kind': 'honor', 'date': _d(h.date_awarded), 'sort': 4,
+            'title': h.title, 'detail': h.description or '',
+            'badge': honor_labels.get(h.category, ''), 'badgeKind': 'gold'})
+
+    # Mới nhất trên cùng; cùng ngày thì theo sort/kind để kết quả ổn định.
+    timeline.sort(key=lambda t: (t['date'] or '', t['sort']), reverse=True)
+
+    scores = [e['totalScore'] for e in evaluations if e['state'] == 'confirmed']
+    # KHÔNG dùng emp._promo_auto_metrics(): nó kéo thêm tổng hợp chấm công 90
+    # ngày (module khác) mà trang này không dùng, và tính "tháng từ thăng
+    # tiến" theo bản ghi gần nhất BẤT KỲ LOẠI — hồ sơ nào cũng có snapshot
+    # 'join' nên người chưa từng thăng chức vẫn hiện một con số, chửi nhau với
+    # ô "Lần thăng chức: 0" ngay cạnh.
+    today = fields.Date.context_today(emp)
+    tenure_months = round((today - start).days / 30.44, 1) if start else 0
+    real_promos = promos.filtered(lambda p: p.x_change_type == 'promotion')
+    months_since = None
+    if real_promos:
+        last = max(real_promos, key=lambda p: p.date_effective)
+        months_since = round((today - last.date_effective).days / 30.44, 1)
+
+    insights = _career_insights(evaluations, criteria_radar, months_since,
+                                onb_progress)
+    status_labels = dict(
+        env['hr.employee']._fields['x_employment_status']
+        ._description_selection(env))
+    return {
+        'employee': {
+            'id': emp.id, 'name': emp.name,
+            'code': emp.x_employee_code or '',
+            'jobTitle': emp.job_id.name or '—',
+            'depName': emp.department_id.name or '—',
+            'hasImg': bool(emp.image_128),
+            'start': _d(start),
+            'status': status_labels.get(emp.x_employment_status, ''),
+            'statusKey': emp.x_employment_status or '',
+        },
+        'isSelf': is_self,
+        'canManage': can_manage,
+        'canSeeSalary': see_salary,
+        'stats': {
+            'tenureMonths': tenure_months,
+            'monthsSincePromo': months_since,
+            # Chỉ thăng chức thật: hồ sơ nào cũng có snapshot 'join', đếm cả
+            # nó thì ai vừa vào làm cũng thành "đã có 1 mốc thăng tiến".
+            'promoCount': len(real_promos),
+            'evalCount': len(evaluations),
+            'honorCount': len(honors),
+            'avgScore': round(sum(scores) / len(scores), 1) if scores else None,
+            'lastScore': scores[-1] if scores else None,
+        },
+        'insights': insights,
+        'timeline': timeline,
+        'salaryJourney': salary_journey,
+        'scoreTrend': score_trend,
+        'criteriaRadar': criteria_radar,
+        'onboardingProgress': onb_progress,
+        'evaluations': evaluations,
+        'honors': [{'id': h.id, 'date': _d(h.date_awarded),
+                    'category': h.category, 'title': h.title,
+                    'description': h.description or ''} for h in honors],
+    }
+
+
+# ----------------------------------------------------------------------
+# Bảng vinh danh (ý D họp 2026-08-07) — khung "nhìn thấy đầu tiên" trên
+# dashboard chung. Spec: docs/superpowers/specs/
+# 2026-08-09-career-dashboard-honor-board-design.md §5.3
+# ----------------------------------------------------------------------
+HONOR_RANK_LIMIT = 5
+
+
+def _honor_period_key(d):
+    return '%04d-%02d' % (d.year, d.month)
+
+
+def _honor_period_label(key):
+    y, m = key.split('-')
+    return 'Tháng %d/%s' % (int(m), y)
+
+
+def _honor_row(e, labels):
+    emp = e.employee_id
+    return {
+        'id': e.id,
+        'empId': emp.id,
+        'empName': emp.name,
+        'empCode': emp.x_employee_code or '',
+        'dep': emp.department_id.name or '',
+        'hasImg': bool(emp.image_128),
+        'category': e.category,
+        'categoryLabel': labels.get(e.category, e.category),
+        'title': e.title,
+        'description': e.description or '',
+        'date': _d(e.date_awarded),
+        'rank': e.rank,
+        'source': e.source,
+    }
+
+
+def _honor_board(env):
+    """Bảng vinh danh của kỳ hiện tại — MỌI user đăng nhập đều đọc được.
+
+    Kỳ = tháng. Nếu kỳ hiện tại chưa vinh danh ai thì lùi về kỳ gần nhất còn
+    dữ liệu (isCurrent=False): khung này là thứ người dùng nhìn thấy đầu tiên,
+    để trống ngay đầu tháng thì thành ô chết."""
+    Honor = env['hb.honor.entry'].sudo()
+    current = _honor_period_key(fields.Date.context_today(Honor))
+    period = current
+    if not Honor.search_count([('period_key', '=', current)]):
+        newest = Honor.search([], order='date_awarded desc', limit=1)
+        if newest:
+            period = newest.period_key
+    entries = Honor.search([('period_key', '=', period)])
+    # rank=0 nghĩa là "không xếp hạng" → đẩy xuống cuối, không để nó leo lên
+    # trên hạng 1 (lý do _order của model không đụng tới rank).
+    entries = entries.sorted(
+        key=lambda e: (e.rank == 0, e.rank, -(e.date_awarded.toordinal()), -e.id))
+    labels = dict(Honor._fields['category']._description_selection(env))
+    can_manage = _user_can_manage(env)
+
+    # Lọc khoảng ngày ngay trong domain: kéo hết đợt đánh giá đã xác nhận về
+    # rồi mới lọc bằng Python là đọc cả lịch sử nhiều năm cho một tháng.
+    y, m = (int(x) for x in period.split('-'))
+    first = date(y, m, 1)
+    last_day = date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)
+    evals = env['hr.promotion.evaluation'].sudo().search([
+        ('state', '=', 'confirmed'),
+        ('verdict_final', '=', 'qualified'),
+        ('eval_date', '>=', first),
+        ('eval_date', '<=', last_day),
+    ])
+    ranking = []
+    for ev in evals.sorted(key=lambda e: -e.total_score)[:HONOR_RANK_LIMIT]:
+        emp = ev.employee_id
+        row = {'empId': emp.id, 'empName': emp.name,
+               'dep': emp.department_id.name or '',
+               'hasImg': bool(emp.image_128)}
+        # Điểm đánh giá cá nhân không bày cho toàn công ty — vinh danh là
+        # nêu tên, không phải công bố bảng điểm.
+        if can_manage:
+            row['score'] = round(ev.total_score, 1)
+        ranking.append(row)
+
+    return {
+        'period': period,
+        'periodLabel': _honor_period_label(period),
+        'isCurrent': period == current,
+        'canManage': can_manage,
+        'entries': [_honor_row(e, labels) for e in entries],
+        'ranking': ranking,
+    }
+
+
+def _honor_create(env, body):
+    """HR thêm một mục vinh danh (khách: 'có cái vinh danh gì thì mình cho
+    lên đấy thôi')."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được thêm mục vinh danh.')
+    # Payload rác không được thành 500: int() trên chuỗi bậy ném ValueError,
+    # mà route chỉ bắt AccessError/ValidationError/UserError.
+    try:
+        emp_id = int(body.get('employeeId') or 0)
+        rank = int(body.get('rank') or 0)
+    except (TypeError, ValueError):
+        raise ValidationError('Dữ liệu gửi lên không hợp lệ.')
+    emp = env['hr.employee'].sudo().browse(emp_id)
+    if not emp_id or not emp.exists():
+        raise ValidationError('Không tìm thấy nhân viên.')
+    title = (body.get('title') or '').strip()
+    if not title:
+        raise ValidationError('Danh hiệu không được để trống.')
+    category = body.get('category') or 'achievement'
+    valid = dict(env['hb.honor.entry']._fields['category'].selection)
+    if category not in valid:
+        raise ValidationError('Nhóm vinh danh không hợp lệ.')
+    env['hb.honor.entry'].sudo().create({
+        'employee_id': emp.id,
+        'category': category,
+        'title': title,
+        'description': (body.get('description') or '').strip() or False,
+        'date_awarded': body.get('date') or fields.Date.context_today(emp),
+        'rank': rank,
+        'source': 'manual',
+    })
+    return _honor_board(env)
+
+
+def _honor_archive(env, entry_id):
+    """Gỡ khỏi bảng = archive, KHÔNG xoá — giữ vết ai từng được vinh danh."""
+    if not _is_hr(env):
+        raise AccessError('Chỉ HR/Admin được gỡ mục vinh danh.')
+    entry = env['hb.honor.entry'].sudo().browse(entry_id)
+    if not entry.exists():
+        raise ValidationError('Không tìm thấy mục vinh danh.')
+    entry.write({'active': False})
+    return _honor_board(env)
 
 
 def _dept_payload(dept):
@@ -2419,9 +2891,13 @@ class HocBaHRM(http.Controller):
                 'note': s.note or '', 'resultNote': s.result_note or '',
                 'passCompletes': s.pass_completes,
                 'isExtension': s.is_extension,
+                'isIndependent': s.is_independent,
                 'canAct': can_act,
             }
-            if s.state == 'open' and current is None:
+            # "Bước hiện tại" là bước của CHUỖI — bước độc lập luôn mở nên
+            # nếu tính cả nó thì header lúc nào cũng hiện "Cấp thiết bị".
+            if (s.state == 'open' and not s.is_independent
+                    and current is None):
                 current = item
             steps.append(item)
         return {
@@ -2552,6 +3028,7 @@ class HocBaHRM(http.Controller):
                 'stepType': s.step_type, 'dueDays': s.due_days,
                 'passCompletes': s.pass_completes,
                 'isExtension': s.is_extension,
+                'isIndependent': s.is_independent,
                 'autoAction': s.auto_action, 'note': s.note or '',
             } for s in tpl.step_ids.sorted(lambda x: (x.sequence, x.id))],
         }
@@ -2566,6 +3043,7 @@ class HocBaHRM(http.Controller):
             'due_days': int(s.get('dueDays') or 0),
             'pass_completes': bool(s.get('passCompletes')),
             'is_extension': bool(s.get('isExtension')),
+            'is_independent': bool(s.get('isIndependent')),
             'auto_action': s.get('autoAction') or 'none',
             'note': (s.get('note') or '').strip() or False,
         }) for i, s in enumerate(payload_steps)]
@@ -3067,6 +3545,58 @@ class HocBaHRM(http.Controller):
         return self.api_eval_get(emp_id)
 
     # ------------------------------------------------------------------
+    # Lộ trình sự nghiệp (ý C họp 2026-08-07). emp_id = 0 → chính mình.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/career/<int:emp_id>', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_career(self, emp_id, **kw):
+        try:
+            out = _career_payload(request.env, emp_id)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except (ValidationError, UserError) as ex:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(out)
+
+    # ------------------------------------------------------------------
+    # Bảng vinh danh (ý D họp 2026-08-07) — đọc: mọi user; ghi: HR.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/honor/board', auth='user', type='http',
+                methods=['GET'], csrf=False)
+    def api_honor_board(self, **kw):
+        return request.make_json_response(_honor_board(request.env))
+
+    @http.route('/hocba-hrm/api/honor/entry', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_honor_create(self, **kw):
+        try:
+            out = _honor_create(request.env, request.get_json_data())
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(out)
+
+    @http.route('/hocba-hrm/api/honor/entry/<int:entry_id>/archive',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_honor_archive(self, entry_id, **kw):
+        try:
+            out = _honor_archive(request.env, entry_id)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except (ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(out)
+
+    # ------------------------------------------------------------------
     # Chứng chỉ (F-008) — thêm / sửa / xác minh / xoá inline (chỉ HR).
     # Bản ghi nằm trên hr.employee.skill (đã gắn x_cert_* của hocba).
     # ------------------------------------------------------------------
@@ -3390,6 +3920,31 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'forbidden', 'message': str(ex)}, status=403)
         except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/active',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_account_active(self, emp_id, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            active = request.get_json_data().get('active')
+            # Ép kiểu lỏng sẽ đảo ngược thao tác: bool('false') là True.
+            # Từ chối thẳng thay vì đoán ý.
+            if not isinstance(active, bool):
+                raise ValidationError('Tham số "active" phải là true/false.')
+            data = _account_set_active(request.env, emp_id, active)
+        except AccessError as ex:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': str(ex)}, status=403)
+        except (ValidationError, UserError) as ex:
+            # UserError: res.users.write('active') có luật riêng của Odoo lõi.
+            # Các guard trong _account_set_active chặn trước hết những ca đã
+            # biết, nhưng bắt ở đây để nếu Odoo nâng cấp thêm luật thì SPA
+            # nhận 400 kèm thông điệp, thay vì 500 kèm traceback.
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
@@ -4103,7 +4658,7 @@ class HocBaHRM(http.Controller):
         try:
             # Cập nhật các trường trên policy
             policy_fields = [
-                'periodStartDay', 'morningStart', 'morningEnd', 'eveningStart', 'eveningEnd',
+                'periodStartDay', 'periodEndDay', 'morningStart', 'morningEnd', 'eveningStart', 'eveningEnd',
                 'officeLat', 'officeLng', 'officeRadiusM', 'officeMapUrl', 'faceThreshold', 'lateCutoff',
                 'morningCreditCutoff', 'stdWorkHours', 'afternoonMarginHours',
                 'violationFreeDays', 'shiftWindowMinutes'

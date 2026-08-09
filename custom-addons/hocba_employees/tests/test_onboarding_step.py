@@ -328,7 +328,10 @@ class TestOnboardingEngine(TransactionCase):
                          ['evaluation', 'task', 'evaluation', 'evaluation'])
         self.assertTrue(steps[2].pass_completes)
         self.assertTrue(steps[3].is_extension and steps[3].pass_completes)
-        self.assertEqual(steps[1].auto_action, 'grant_assets')
+        # Khách 2026-08-07: cấp thiết bị tách khỏi chuỗi, làm lúc nào cũng
+        # được → độc lập và KHÔNG automation (nếu không nó tự chạy ngày đầu).
+        self.assertTrue(steps[1].is_independent)
+        self.assertEqual(steps[1].auto_action, 'none')
         # thử giảng KHÔNG pass_completes (pass hiện không lên chính thức)
         gv_steps = gv.step_ids.sorted(lambda s: (s.sequence, s.id))
         self.assertFalse(gv_steps[0].pass_completes)
@@ -430,3 +433,119 @@ class TestOnboardingMigration(TransactionCase):
         self.assertFalse(emp.x_onboarding_step_ids)
         self.env['hr.employee']._hocba_migrate_legacy_gates()
         self.assertTrue(emp.x_onboarding_step_ids)
+
+
+@tagged('post_install', '-at_install')
+class TestOnboardingIndependentStep(TransactionCase):
+    """Bước 'không ràng buộc thứ tự' nằm ngoài chuỗi — spec 2026-08-08.
+    Khách 2026-08-07: cấp thiết bị làm lúc nào cũng được, không phải chờ
+    đánh giá tuần-2; còn các bước đánh giá thì vẫn tuần tự."""
+
+    def setUp(self):
+        super().setUp()
+        self.tpl = self.env['hb.onboarding.template'].create({
+            'name': 'TPL Indep Engine', 'apply_position_types': 'staff',
+            'apply_work_form': 'offline', 'sequence': 1,
+            'step_ids': [
+                (0, 0, {'name': 'ĐG tuần-2', 'step_type': 'evaluation',
+                        'sequence': 1, 'due_days': 14}),
+                (0, 0, {'name': 'Cấp thiết bị', 'step_type': 'task',
+                        'sequence': 2, 'is_independent': True}),
+                (0, 0, {'name': 'ĐG tháng-1', 'step_type': 'evaluation',
+                        'sequence': 3, 'due_days': 30,
+                        'pass_completes': True}),
+                (0, 0, {'name': 'ĐG tháng-2', 'step_type': 'evaluation',
+                        'sequence': 4, 'due_days': 60,
+                        'is_extension': True, 'pass_completes': True}),
+            ]})
+        # BR-010: NV lên official phải có CCCD 12 số riêng + MST + BHXH
+        self.emp = self.env['hr.employee'].create({
+            'name': 'NV Indep', 'x_position_type': 'staff',
+            'x_work_form': 'offline',
+            'identification_id': '017788990201',
+            'x_pit_code': '8017788992',
+            'x_social_insurance_no': '0117788992',
+            'x_employment_status': 'probation',
+            'x_probation_start': fields.Date.today() - timedelta(days=10)})
+
+    def _steps(self):
+        return self.emp.x_onboarding_step_ids.sorted(
+            lambda s: (s.sequence, s.id))
+
+    def test_independent_open_at_assign_alongside_first_step(self):
+        s = self._steps()
+        self.assertTrue(s[1].is_independent)
+        self.assertEqual(s.mapped('state'),
+                         ['open', 'open', 'waiting', 'waiting'])
+
+    def test_completing_independent_does_not_advance_chain(self):
+        s = self._steps()
+        s[1].action_complete()
+        s = self._steps()
+        self.assertEqual(s[1].state, 'done')
+        self.assertEqual(s[0].state, 'open')     # chuỗi đứng yên
+        self.assertEqual(s[2].state, 'waiting')
+        # và KHÔNG được bắn chuông "hoàn tất quy trình" — chuỗi còn dở
+        notif = self.env['hb.notification'].sudo().search([
+            ('kind', '=', 'onboarding_chain_done'),
+            ('target_ref', '=', self.emp.id)])
+        self.assertFalse(notif)
+
+    def test_chain_pass_skips_independent_step(self):
+        s = self._steps()
+        s[0].action_evaluate('pass')
+        s = self._steps()
+        self.assertEqual(s[1].state, 'open')     # vẫn mở, không bị nuốt lượt
+        self.assertEqual(s[2].state, 'open')     # chuỗi nhảy thẳng tháng-1
+
+    def test_official_leaves_independent_open(self):
+        s = self._steps()
+        s[0].action_evaluate('pass')
+        self._steps()[2].action_evaluate('pass')  # pass_completes
+        self.assertEqual(self.emp.x_employment_status, 'official')
+        s = self._steps()
+        self.assertEqual(s[1].state, 'open')      # cấp thiết bị vẫn còn việc
+        self.assertEqual(s[3].state, 'skipped')   # bước chuỗi thì bị bỏ
+
+    def test_fail_leaves_independent_open(self):
+        s = self._steps()
+        s[0].action_evaluate('fail', note='Không đáp ứng')
+        s = self._steps()
+        self.assertEqual(s[1].state, 'open')
+        self.assertEqual(s[2].state, 'skipped')
+        self.assertEqual(s[3].state, 'skipped')
+
+    def test_snapshot_rejects_independent_on_evaluation(self):
+        """HR thường có quyền write thẳng hb.onboarding.step — ràng buộc
+        phải có ở cả snapshot chứ không chỉ trên bước mẫu."""
+        s = self._steps()
+        with self.assertRaisesRegex(ValidationError, 'Việc cần làm'):
+            s[0].sudo().write({'is_independent': True})   # s[0] là evaluation
+
+    def test_snapshot_rejects_independent_with_auto_action(self):
+        s = self._steps()
+        with self.assertRaisesRegex(ValidationError, 'Automation'):
+            s[1].sudo().write({'auto_action': 'grant_assets'})
+
+    def test_extend_ignores_independent_step(self):
+        """Gia hạn tại chỗ: bước kế trong CHUỖI là đánh giá tháng-1 (không
+        phải bước độc lập đứng giữa) nên không có bước gia hạn liền sau →
+        giữ open + tăng extend_count."""
+        s = self._steps()
+        s[0].action_evaluate('extend')
+        s = self._steps()
+        self.assertEqual(s[0].state, 'open')
+        self.assertEqual(s[0].extend_count, 1)
+        self.assertEqual(s[1].state, 'open')      # bước độc lập không đổi
+        self.assertEqual(s[2].state, 'waiting')
+
+    def test_official_leaves_waiting_independent_alone(self):
+        """Bước độc lập bình thường luôn ở 'open', nhưng gán lại quy trình
+        hoặc migration có thể để nó ở 'waiting' — khi đó chốt lên chính
+        thức vẫn không được nuốt nó."""
+        s = self._steps()
+        s[1].sudo().write({'state': 'waiting'})
+        s[0].action_evaluate('pass')
+        self._steps()[2].action_evaluate('pass')  # pass_completes
+        self.assertEqual(self.emp.x_employment_status, 'official')
+        self.assertEqual(self._steps()[1].state, 'waiting')

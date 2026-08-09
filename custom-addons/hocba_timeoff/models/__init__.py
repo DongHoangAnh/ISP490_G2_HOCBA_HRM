@@ -12,6 +12,7 @@ from . import hr_employee
 from . import hr_leave_type
 from . import hr_leave_emergency
 from . import hr_leave_lapsed
+from . import hr_leave_makeup
 from . import hr_leave_medical
 from . import hr_leave_withdraw
 from . import hb_timeoff_cron

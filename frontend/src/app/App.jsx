@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Sidebar, Topbar, allowedViews, defaultView } from './Shell';
 import { fetchRoles } from '../api/employees';
+import { fetchPendingCount } from '../api/timeoff';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
+import Career from '../features/employees/Career';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
 import Reviews from '../features/reviews/Reviews';
@@ -30,6 +32,15 @@ export default function App() {
   const [search, setSearch] = useState('');
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
   const [focus, setFocus] = useState(null);
+  // NV cần mở trên trang Lộ trình sự nghiệp (0 = chính mình). Đặt khi bấm
+  // "Mở trang đầy đủ" từ drawer hồ sơ.
+  const [careerEmp, setCareerEmp] = useState(0);
+
+  const openCareer = (empId) => { setCareerEmp(empId || 0); setView('career'); };
+
+  // Badge "việc cần xử lý" cạnh tên mục menu (hiện chỉ Nghỉ phép: đơn chờ duyệt).
+  const [navBadges, setNavBadges] = useState({});
+  const setTimeoffBadge = (n) => setNavBadges((b) => ({ ...b, timeoff: n }));
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -67,6 +78,16 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('hocba_view', view); setSearch(''); }, [view]);
 
+  // Số đơn chờ duyệt cho badge sidebar: nạp 1 lần sau khi biết vai trò. Người
+  // không có quyền duyệt vẫn nhận count 0 → badge tự ẩn. Màn Nghỉ phép sẽ đẩy
+  // số mới về (onPendingCount) mỗi khi duyệt/từ chối, khỏi phải F5.
+  useEffect(() => {
+    if (!me) return;
+    fetchPendingCount()
+      .then((d) => setTimeoffBadge(d.count || 0))
+      .catch(() => {});
+  }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('payslip_id')) {
@@ -93,14 +114,20 @@ export default function App() {
   const canManage = me.canManage;
   return (
     <div className="app">
-      <Sidebar view={view} setView={setView} me={me} />
+      <Sidebar view={view} setView={setView} me={me} badges={navBadges} />
       <div className="main">
         <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
-        {view === 'employees' && canManage && <Employees search={search} />}
+        {view === 'employees' && canManage && <Employees search={search} onOpenCareer={openCareer} />}
+        {view === 'career' && (
+          <Career canManage={canManage} focusEmpId={careerEmp}
+            onBack={canManage ? () => setView('employees') : null} />
+        )}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
-        {view === 'timeoff' && <TimeOff search={search} focus={focus} />}
+        {view === 'timeoff' && (
+          <TimeOff search={search} focus={focus} onPendingCount={setTimeoffBadge} />
+        )}
         {view === 'service' && <Service search={search} focus={focus} />}
         {view === 'offboarding' && <Offboarding search={search} />}
         {view === 'payroll' && <Payroll search={search} me={me} />}

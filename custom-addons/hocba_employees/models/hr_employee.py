@@ -751,6 +751,7 @@ class HrEmployee(models.Model):
             'step_type': ts.step_type,
             'pass_completes': ts.pass_completes,
             'is_extension': ts.is_extension,
+            'is_independent': ts.is_independent,
             'auto_action': ts.auto_action,
             'note': ts.note,
             'due_date': (start + timedelta(days=ts.due_days)
@@ -758,8 +759,14 @@ class HrEmployee(models.Model):
         } for ts in tpl.step_ids.sorted(lambda s: (s.sequence, s.id))])
         self.sudo().with_context(hocba_onb_assigning=True).write(
             {'x_onboarding_template_id': tpl.id})
-        if steps:
-            steps.sorted(lambda s: (s.sequence, s.id))[0]._open()
+        # Bước độc lập nằm ngoài chuỗi → mở hết ngay. Chuỗi tuần tự vẫn
+        # chỉ mở bước KHÔNG độc lập đầu tiên.
+        ordered = steps.sorted(lambda s: (s.sequence, s.id))
+        for step in ordered.filtered('is_independent'):
+            step._open()
+        chain = ordered.filtered(lambda s: not s.is_independent)
+        if chain:
+            chain[0]._open()
         return steps
 
     def _hocba_maybe_assign_onboarding(self):

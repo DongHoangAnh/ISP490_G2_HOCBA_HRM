@@ -10,9 +10,12 @@ from . import test_teacher_approval
 from . import test_substitution
 from . import test_handover_chain
 from . import test_lapsed
+from . import test_makeup
 from . import test_burnout
 from . import test_approvals_domain
+from . import test_dashboard_kpi
 from . import test_attendance_integration
 from . import test_work_day_lock
 from . import test_work_day_unique
+from . import test_work_day_import
 from . import test_admin_config

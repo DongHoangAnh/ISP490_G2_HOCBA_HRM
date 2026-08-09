@@ -109,6 +109,7 @@ class HrPromotionHistory(models.Model):
                     emp_vals['department_id'] = rec.to_department_id.id
                 if emp_vals:
                     emp.sudo().write(emp_vals)
+            rec._hocba_award_honor()
             emp.message_post(body=_(
                 '📈 %(kind)s: %(old)s → %(new)s từ %(date)s '
                 '(QĐ: %(ref)s, duyệt bởi %(by)s).') % {
@@ -121,6 +122,27 @@ class HrPromotionHistory(models.Model):
                     'by': rec.approved_by.name,
                 })
         return records
+
+    def _hocba_award_honor(self):
+        """Bổ nhiệm chức danh mới → lên bảng vinh danh chung (spec §5.2).
+
+        Chỉ 'promotion' có ĐỔI chức vụ mới được vinh danh: 'join'/'probation'
+        là snapshot vòng đời, còn 'salary' (và promotion chỉ tăng lương) không
+        có chức danh mới để công bố trước toàn công ty."""
+        self.ensure_one()
+        if self.x_change_type != 'promotion':
+            return
+        if not self.to_job_id or self.to_job_id == self.from_job_id:
+            return
+        self.env['hb.honor.entry'].sudo().create({
+            'employee_id': self.employee_id.id,
+            'category': 'promotion',
+            'source': 'auto',
+            'title': _('Bổ nhiệm %s') % self.to_job_id.name,
+            'description': self.reason or False,
+            'date_awarded': self.date_effective,
+            'promotion_id': self.id,
+        })
 
     def write(self, vals):
         # BR-060: sau 24h chỉ HR Manager được sửa

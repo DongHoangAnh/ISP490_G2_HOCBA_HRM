@@ -13,6 +13,7 @@ import ShiftAttendance from './ShiftAttendance';
 import AttendanceHistory from './AttendanceHistory';
 import TeachingSchedule from './TeachingSchedule';
 import TeachingCalendar from './TeachingCalendar';
+import OtTable from './OtTable';
 
 export default function Attendance({ search, onNavigate }) {
   const [me, setMe] = useState(null);
@@ -50,7 +51,7 @@ export default function Attendance({ search, onNavigate }) {
   const isTeacher = !isManager && !!me.isTeacher;
   const isCtv = !isManager && !me.isOfficial && !isTeacher;
   const tabs = isManager
-    ? [['mgr', 'Bảng chấm công'], ['requests', 'Đơn chấm công'], ['ot', 'Ca làm việc (CTV/OT)']]
+    ? [['mgr', 'Bảng tổng hợp'], ['day', 'Chấm công ngày'], ['requests', 'Đơn chấm công'], ['ot', 'Lịch ca (OT/CTV)'], ['ot_list', 'Xử lý OT']]
     : isTeacher
       ? [['teaching', 'Chấm công hôm nay'], ['cal', 'Lịch tuần'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi']]
       : isCtv
@@ -91,6 +92,7 @@ export default function Attendance({ search, onNavigate }) {
       )}
       {activeTab === 'mgr' && <ManagerAttendanceBoard search={search} />}
       {activeTab === 'day' && <AttendanceTable search={search} />}
+      {activeTab === 'ot_list' && <OtTable />}
       {activeTab === 'requests' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {!isManager && (
