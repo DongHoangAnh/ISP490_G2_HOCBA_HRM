@@ -1,8 +1,11 @@
-/* Tab "Lịch" — lịch nghỉ phép (toggle Năm/Tháng), giống màn Time Off của Odoo.
+/* Tab "Lịch" — lịch NGÀY NGHỈ/LÀM của công ty (toggle Năm/Tháng).
+   Chỉ tô 3 loại ngày: nghỉ cố định (T7/CN) · nghỉ lễ · ngày làm bù; cộng cảnh
+   báo ngày trùng lịch (>= 3 người nghỉ đã duyệt). KHÔNG tô từng loại nghỉ phép
+   nữa — quá nhiều đơn 1 ngày, tô lên lịch không đọc được.
    Owner: Nhật Anh. Spec §3.7. */
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Icon from '../../components/Icon';
-import { ErrorState, EmptyState, TableSkeleton } from '../../components/states';
+import { ErrorState, TableSkeleton } from '../../components/states';
 import useFetch from '../../hooks/useFetch';
 import DeptSelect from './DeptSelect';
 import { fmtDate } from '../../utils/format';
@@ -17,30 +20,35 @@ const pad = (n) => String(n).padStart(2, '0');
 const isoOf = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;        // m: 0-based
 const parseISO = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 
-/* Thứ hạng trạng thái để chọn "đơn mạnh nhất" khi 1 ngày trùng nhiều đơn. */
-const RANK = { validate: 3, validate1: 2, confirm: 2, draft: 1, refuse: 1, cancel: 0 };
-
 /* Ngưỡng cảnh báo trùng lịch (Phase 4) — khớp OVERLAP_WARN của backend.
    Ngày có >= ngần này người nghỉ (đã duyệt) tô cảnh báo "quá tải". */
 const OVERLAP_WARN = 3;
 
-/* Bản đồ ngày → thông tin nghỉ (sau khi lọc loại). count = số người đã DUYỆT
-   nghỉ trong ngày (Phase 4: cảnh báo ngày trùng lịch khi xem "Cả đội"). */
-function buildDayMap(leaves, activeIds) {
+/* Màu cảnh báo trùng lịch — cam NHẠT, để không lấn át 3 màu ngày bên dưới.
+   Badge dùng nền cam nhạt hơn + chữ nâu đậm cho đủ tương phản ở cỡ 9px. */
+const OVERLAP_CLR = { line: '#F59E0B', badgeBg: '#FDBA74', badgeInk: '#7C2D12' };
+
+/* 3 loại NGÀY được tô trên lịch. Lịch KHÔNG còn tô từng loại nghỉ phép
+   (quá nhiều đơn 1 ngày, tô lên không đọc được) — chỉ còn khung ngày nghỉ/làm
+   của công ty + cảnh báo trùng lịch. Ưu tiên: lễ > làm bù > nghỉ cố định. */
+const DAY_KIND = {
+  holiday: { label: 'Nghỉ lễ', bg: 'var(--red-50)', line: 'var(--red-600)', fg: 'var(--red-700)' },
+  workday: { label: 'Ngày làm bù', bg: 'var(--green-bg)', line: 'var(--green)', fg: 'var(--green)' },
+  weekend: { label: 'Nghỉ cố định (T7 / CN)', bg: 'var(--border)', line: 'var(--border-strong)', fg: 'var(--faint)' },
+};
+
+/* Bản đồ ngày → { count, names } của các đơn ĐÃ DUYỆT, chỉ để cảnh báo ngày
+   trùng lịch (>= OVERLAP_WARN người nghỉ). Không dùng để tô màu ngày nữa. */
+function buildLeaveLoad(leaves) {
   const map = {};
   for (const lv of leaves) {
-    if (lv.state === 'cancel' || !lv.from || !lv.to) continue;
-    if (activeIds && !activeIds.has(lv.leaveTypeId)) continue;
+    if (lv.state !== 'validate' || !lv.from || !lv.to) continue;
     const end = parseISO(lv.to);
     for (let cur = parseISO(lv.from); cur <= end; cur.setDate(cur.getDate() + 1)) {
       const key = isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate());
-      const r = RANK[lv.state] ?? 1;
-      const slot = map[key] || (map[key] = { rank: -1, count: 0 });
-      if (lv.state === 'validate') slot.count += 1;
-      if (r > slot.rank) {
-        slot.rank = r; slot.color = lv.color; slot.state = lv.state;
-        slot.leaveType = lv.leaveType; slot.employee = lv.employee;
-      }
+      const slot = map[key] || (map[key] = { count: 0, names: [] });
+      slot.count += 1;
+      if (lv.employee && slot.names.length < 8) slot.names.push(lv.employee);
     }
   }
   return map;
@@ -59,34 +67,30 @@ function buildMandatory(mdays) {
   return set;
 }
 
-/* Tập ngày đi làm thêm (date string) → nhãn. */
+/* Tập ngày làm bù (date string) → nhãn. */
 function buildWorkdays(workDays) {
   const set = new Map();
   for (const w of (workDays || [])) {
-    if (w.date) set.set(w.date, w.name || 'Ngày đi làm');
+    if (w.date) set.set(w.date, w.name || 'Ngày làm bù');
   }
   return set;
 }
 
-function cellStyle(info, big) {
+function cellStyle(kind, big) {
   const base = {
     aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center',
     borderRadius: big ? 8 : 5, fontSize: big ? 14 : 11, fontWeight: 600,
     color: 'var(--ink)', position: 'relative',
   };
-  if (!info) return base;
-  if (info.state === 'validate') {
-    // đã duyệt: nền tint nhẹ + viền mảnh + chữ đậm (dịu hơn nền tô đặc cũ)
-    return { ...base, background: info.color + '22', boxShadow: `inset 0 0 0 1px ${info.color}`, fontWeight: 700 };
-  }
-  if (info.state === 'refuse') {
-    return { ...base, color: 'var(--muted)', textDecoration: 'line-through' };
-  }
-  // chờ duyệt: nền trắng + viền màu + chữ màu
-  return { ...base, color: info.color, boxShadow: `inset 0 0 0 1.5px ${info.color}` };
+  if (!kind) return base;
+  const k = DAY_KIND[kind];
+  return {
+    ...base, background: k.bg, color: k.fg, fontWeight: 700,
+    boxShadow: kind === 'weekend' ? undefined : `inset 0 0 0 1.5px ${k.line}`,
+  };
 }
 
-function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacherView, big }) {
+function MonthGrid({ year, month, load, mandatory, workdays, teaching, teacherView, big }) {
   const firstDow = new Date(year, month, 1).getDay(); // 0 = CN
   const nDays = new Date(year, month + 1, 0).getDate();
   const cells = [];
@@ -105,43 +109,35 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacher
         {cells.map((d, i) => {
           if (d === null) return <div key={'e' + i}></div>;
           const key = isoOf(year, month, d);
-          const info = dayMap[key];
           const mdName = mandatory.get(key);
-          // GV (xem "Của tôi"): bỏ ngày đi làm văn phòng, thay bằng lịch dạy.
+          // GV (xem lịch cá nhân): bỏ ngày làm bù văn phòng, thay bằng lịch dạy.
           const wdName = teacherView ? null : workdays.get(key);
           const teachCount = teacherView ? (teaching.get(key) || 0) : 0;
           const dow = (firstDow + d - 1) % 7;
-          const st = cellStyle(info, big);
-          if (!info) {
-            if (wdName) { st.background = 'rgba(16,185,129,.12)'; st.boxShadow = 'inset 0 0 0 1.5px var(--green)'; }
-            else if (teacherView) {
-              if (teachCount) st.background = 'var(--blue-bg)';
-              else if (dow === 0 || dow === 6) st.color = 'var(--faint)';
-            }
-            else if (dow === 0 || dow === 6) st.background = st.background || 'var(--surface-2)';
-          }
-          const overloaded = info && info.count >= OVERLAP_WARN;
-          if (overloaded) st.boxShadow = 'inset 0 0 0 2px var(--amber-600,#d97706)';
+          // Ưu tiên: nghỉ lễ > ngày làm bù > nghỉ cố định (T7/CN) > ngày thường.
+          const kind = mdName ? 'holiday'
+            : wdName ? 'workday'
+              : (dow === 0 || dow === 6) ? 'weekend' : null;
+          const st = cellStyle(kind, big);
+          if (!kind && teachCount) st.background = 'var(--blue-bg)';
+          const slot = load[key];
+          const overloaded = slot && slot.count >= OVERLAP_WARN;
+          if (overloaded) st.boxShadow = `inset 0 0 0 2px ${OVERLAP_CLR.line}`;
           return (
             <div key={key} style={st} title={[
-              info && `${info.leaveType}${info.employee ? ' — ' + info.employee : ''}`,
-              info && info.count > 1 && (info.count + ' người nghỉ ngày này'),
+              mdName && ('Nghỉ lễ: ' + mdName),
+              wdName && ('Ngày làm bù: ' + wdName),
+              !mdName && !wdName && (dow === 0 || dow === 6) && 'Nghỉ cố định',
               teachCount > 0 && (teachCount + ' buổi dạy'),
-              wdName && ('Đi làm: ' + wdName),
-              mdName,
+              overloaded && (`${slot.count} người nghỉ ngày này`
+                + (slot.names.length ? ': ' + slot.names.join(', ') : '')),
             ].filter(Boolean).join(' · ')}>
               {d}
               {teachCount > 0 && (
                 <span style={{ position: 'absolute', left: 2, top: 4, bottom: 4, width: 3, borderRadius: 2, background: 'var(--blue)' }}></span>
               )}
               {overloaded && (
-                <span style={{ position: 'absolute', top: 2, left: 2, minWidth: 13, height: 13, padding: '0 3px', borderRadius: 7, background: 'var(--amber-600,#d97706)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'grid', placeItems: 'center', lineHeight: 1 }}>{info.count}</span>
-              )}
-              {mdName && (
-                <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--red-600)' }}></span>
-              )}
-              {wdName && (
-                <span style={{ position: 'absolute', bottom: 2, left: 2, width: 6, height: 6, borderRadius: 3, background: 'var(--green)' }}></span>
+                <span style={{ position: 'absolute', top: 2, left: 2, minWidth: 13, height: 13, padding: '0 3px', borderRadius: 7, background: OVERLAP_CLR.badgeBg, color: OVERLAP_CLR.badgeInk, fontSize: 9, fontWeight: 800, display: 'grid', placeItems: 'center', lineHeight: 1 }}>{slot.count}</span>
               )}
             </div>
           );
@@ -154,28 +150,10 @@ function MonthGrid({ year, month, dayMap, mandatory, workdays, teaching, teacher
 export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYearChange, dept, onDeptChange }) {
   const [month, setMonth] = useState(NOW.getMonth());
   const [mode, setMode] = useState('year');   // 'year' | 'month'
-  const [active, setActive] = useState(null);   // Set id loại đang bật (null = tất cả)
   const [teaching, setTeaching] = useState(new Map()); // ngày dạy → số buổi (GV)
   const { data, err, loading, reload } = useFetch(
     () => fetchCalendar(year, seeAll ? (dept || undefined) : undefined),
     [year, dept, seeAll], `timeoff:calendar:${year}:${seeAll ? dept : 'mine'}`);
-
-  // Query đổi (năm/phòng ban) và data MỚI về → bật tất cả loại nghỉ. Hai điều
-  // kiện qua ref: (1) cùng query mà revalidate trả payload mới → không reset,
-  // khỏi xóa toggle user đang chỉnh; (2) query vừa đổi nhưng data còn của query
-  // cũ (effect chạy trước khi useFetch kịp setState) → chờ payload mới rồi mới
-  // reset, không chốt nhầm danh sách loại của query trước.
-  const activeKeyRef = useRef(null);
-  const prevDataRef = useRef(null);
-  useEffect(() => {
-    if (!data) return;
-    const key = `${year}:${seeAll ? dept : 'mine'}`;
-    const dataChanged = prevDataRef.current !== data;
-    prevDataRef.current = data;
-    if (activeKeyRef.current === key || !dataChanged) return;
-    activeKeyRef.current = key;
-    setActive(new Set(data.leaveTypes.map((t) => t.id)));
-  }, [data, year, dept, seeAll]);
 
   // GV xem lịch cá nhân: đánh dấu ngày có lịch dạy cả năm. Lỗi gọi API lịch dạy
   // KHÔNG chặn render lịch nghỉ — chỉ bỏ qua đánh dấu. (Officer xem lịch đội → tắt.)
@@ -189,19 +167,13 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYe
     return () => { cancelled = true; };
   }, [teacherView, year]);
 
-  const dayMap = useMemo(() => data ? buildDayMap(data.leaves, active) : {}, [data, active]);
+  const load = useMemo(() => data ? buildLeaveLoad(data.leaves) : {}, [data]);
   const mandatory = useMemo(() => data ? buildMandatory(data.mandatoryDays) : new Map(), [data]);
   const workdays = useMemo(() => data ? buildWorkdays(data.workDays) : new Map(), [data]);
   const teachTotal = useMemo(() => [...teaching.values()].reduce((a, b) => a + b, 0), [teaching]);
 
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <TableSkeleton rows={8} />;
-
-  const toggleType = (id) => setActive((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
 
   const stepBack = () => mode === 'year' ? onYearChange(year - 1)
     : (month === 0 ? (setMonth(11), onYearChange(year - 1)) : setMonth((m) => m - 1));
@@ -230,11 +202,11 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYe
         {mode === 'year' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(230px,1fr))', gap: 12 }}>
             {Array.from({ length: 12 }, (_, m) => (
-              <MonthGrid key={m} year={year} month={m} dayMap={dayMap} mandatory={mandatory} workdays={workdays} teaching={teaching} teacherView={teacherView} />
+              <MonthGrid key={m} year={year} month={m} load={load} mandatory={mandatory} workdays={workdays} teaching={teaching} teacherView={teacherView} />
             ))}
           </div>
         ) : (
-          <MonthGrid year={year} month={month} dayMap={dayMap} mandatory={mandatory} workdays={workdays} teaching={teaching} teacherView={teacherView} big />
+          <MonthGrid year={year} month={month} load={load} mandatory={mandatory} workdays={workdays} teaching={teaching} teacherView={teacherView} big />
         )}
       </div>
 
@@ -249,27 +221,20 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYe
         )}
 
         <div className="card" style={{ padding: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Loại nghỉ</div>
-          {data.leaveTypes.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>Không có đơn nào trong năm.</div>}
-          {data.leaveTypes.map((t) => (
-            <label key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', fontSize: 13, cursor: 'pointer' }}>
-              <input type="checkbox" checked={active?.has(t.id) || false} onChange={() => toggleType(t.id)} />
-              <span style={{ width: 11, height: 11, borderRadius: 3, background: t.color }}></span>
-              {t.name}
-            </label>
-          ))}
-        </div>
-
-        <div className="card" style={{ padding: 14 }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Chú thích</div>
-          <LegendRow swatch={{ background: 'rgba(200,16,46,.13)', boxShadow: 'inset 0 0 0 1px var(--red-600)' }} label="Đã duyệt" />
-          <LegendRow swatch={{ boxShadow: 'inset 0 0 0 1.5px var(--red-600)' }} label="Chờ duyệt" />
-          <LegendRow swatch={{ border: '1px solid var(--border-strong)' }} label="Từ chối (gạch ngang)" />
-          {teacherView
-            ? <LegendRow swatch={{ background: 'var(--blue-bg)', boxShadow: 'inset 3px 0 0 var(--blue)' }} label="Ngày có lịch dạy" />
-            : <LegendRow swatch={{ background: 'rgba(16,185,129,.12)', boxShadow: 'inset 0 0 0 1.5px var(--green)' }} label="Ngày đi làm (Thứ 7)" />}
-          <LegendRow swatch={{ boxShadow: 'inset 0 0 0 2px var(--amber-600,#d97706)' }} label={`Trùng lịch (≥ ${OVERLAP_WARN} người nghỉ)`} />
-          <LegendRow dot label="Ngày bắt buộc / nghỉ lễ" />
+          <LegendRow kind="weekend" />
+          <LegendRow kind="holiday" />
+          {!teacherView && <LegendRow kind="workday" />}
+          {teacherView && (
+            <LegendRow swatch={{ background: 'var(--blue-bg)', boxShadow: 'inset 3px 0 0 var(--blue)' }}
+              label="Ngày có lịch dạy" />
+          )}
+          <LegendRow swatch={{ background: '#FEF3E2', boxShadow: `inset 0 0 0 2px ${OVERLAP_CLR.line}` }}
+            label={`Trùng lịch (≥ ${OVERLAP_WARN} người nghỉ)`} />
+          <div className="muted" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+            Lịch chỉ hiển thị ngày nghỉ/làm của công ty. Chi tiết từng đơn nghỉ xem ở
+            tab {isOfficer ? <><b>Đơn chờ duyệt</b> / <b>Đơn đã duyệt</b></> : <b>Đơn của tôi</b>}.
+          </div>
         </div>
 
         {teacherView ? (
@@ -284,9 +249,9 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYe
           </div>
         ) : (
           <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Lịch làm việc</div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Ngày làm bù</div>
             <div className="muted" style={{ fontSize: 12.5, marginBottom: workdays.size ? 10 : 0 }}>
-              Chuẩn: Thứ 2 – Thứ 6. Các ngày Thứ 7 đi làm do HR thêm.
+              Chuẩn: Thứ 2 – Thứ 6. Các ngày Thứ 7 đi làm bù do HR thêm.
             </div>
             {workdays.size > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -304,13 +269,16 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYe
 
         {data.mandatoryDays.length > 0 && (
           <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Ngày bắt buộc</div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Nghỉ lễ</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {data.mandatoryDays.map((m, i) => (
-                <div key={i} style={{ fontSize: 12.5 }}>
+                <div key={i} style={{ fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 3, background: 'var(--red-600)', flexShrink: 0, marginTop: 4 }}></span>
+                  <div>
                   <div style={{ fontWeight: 600 }}>{m.name}</div>
                   <div className="muted mono" style={{ fontSize: 11.5 }}>
                     {fmtDate(m.from)}{m.to !== m.from ? ' → ' + fmtDate(m.to) : ''}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -321,13 +289,16 @@ export default function CalendarPanel({ isOfficer, isTeacher, seeAll, year, onYe
   );
 }
 
-function LegendRow({ swatch, dot, label }) {
+/* `kind` = 1 trong 3 loại ngày (dùng đúng màu ô lịch); hoặc truyền swatch/label tay. */
+function LegendRow({ kind, swatch, label }) {
+  const k = kind ? DAY_KIND[kind] : null;
+  const box = k
+    ? { background: k.bg, boxShadow: kind === 'weekend' ? undefined : `inset 0 0 0 1.5px ${k.line}` }
+    : (swatch || {});
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 0', fontSize: 12.5 }}>
-      <span style={{ width: 16, height: 16, borderRadius: 4, position: 'relative', ...(swatch || {}) }}>
-        {dot && <span style={{ position: 'absolute', top: 1, right: 1, width: 6, height: 6, borderRadius: 3, background: 'var(--red-600)' }}></span>}
-      </span>
-      {label}
+      <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, position: 'relative', ...box }}></span>
+      {k ? k.label : label}
     </div>
   );
 }

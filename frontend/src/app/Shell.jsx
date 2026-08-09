@@ -113,7 +113,9 @@ export const PAGE_META = {
   attendanceConfig: { t: 'Cấu hình chấm công', c: 'Hệ thống / Attendance' },
 };
 
-export function Sidebar({ view, setView, me }) {
+/* badges: { [viewId]: number } — số việc cần xử lý hiện cạnh tên mục menu
+   (vd Nghỉ phép: số đơn chờ duyệt). 0 / thiếu key = không hiện. */
+export function Sidebar({ view, setView, me, badges }) {
   const groups = visibleNav(me);
   return (
     <aside className="sidebar">
@@ -128,14 +130,22 @@ export function Sidebar({ view, setView, me }) {
         {groups.map((grp) => (
           <div key={grp.sec}>
             <div className="nav-label">{grp.sec}</div>
-            {grp.items.map((it) => (
-              <button key={it.id}
-                className={'nav-item' + (view === it.id ? ' active' : '')}
-                onClick={() => setView(it.id)}>
-                <Icon name={it.icon} size={19} className="ico" />
-                <span>{it.label}</span>
-              </button>
-            ))}
+            {grp.items.map((it) => {
+              const n = (badges && badges[it.id]) || 0;
+              return (
+                <button key={it.id}
+                  className={'nav-item' + (view === it.id ? ' active' : '')}
+                  onClick={() => setView(it.id)}>
+                  <Icon name={it.icon} size={19} className="ico" />
+                  <span>{it.label}</span>
+                  {n > 0 && (
+                    <span className="nav-badge" title={`${n} việc cần xử lý`}>
+                      {n > 99 ? '99+' : n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         ))}
       </nav>

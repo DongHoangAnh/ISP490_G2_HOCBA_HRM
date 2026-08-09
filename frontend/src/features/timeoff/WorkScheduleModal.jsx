@@ -1,5 +1,7 @@
 /* Modal "Thêm lịch làm việc" (chỉ HR/Admin).
    Công ty làm Thứ 2–Thứ 6; HR thêm các ngày Thứ 7 (hoặc ngày khác) đi làm.
+   2 cách thêm: nhập TAY từng ngày, hoặc NHẬP TỪ EXCEL (tải file mẫu của năm →
+   tick 'x' → tải lên; BE kiểm định dạng và báo lỗi ngay, xem trước rồi mới lưu).
    Owner: Nhật Anh. */
 import { useState, useEffect } from 'react';
 import Modal from '../../components/Modal';
@@ -8,7 +10,10 @@ import Badge from '../../components/Badge';
 import ModalHeader from '../../components/ModalHeader';
 import { LoadingState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
-import { fetchWorkdays, addWorkdays, updateWorkday, deleteWorkday } from '../../api/timeoff';
+import {
+  fetchWorkdays, addWorkdays, updateWorkday, deleteWorkday,
+  importWorkdays, workdayTemplateUrl,
+} from '../../api/timeoff';
 import useFetch from '../../hooks/useFetch';
 import YearNav from './YearNav';
 
@@ -23,18 +28,25 @@ const dowOf = (iso) => { const [y, m, d] = iso.split('-').map(Number); return DO
 
 export default function WorkScheduleModal({ onClose }) {
   const [year, setYear] = useState(new Date().getFullYear());
-  const [staging, setStaging] = useState([]);   // các ngày chờ lưu
+  const [mode, setMode] = useState('manual');   // 'manual' | 'excel'
+  const [staging, setStaging] = useState([]);   // [{date, name}] chờ lưu
   const [pick, setPick] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);         // lỗi action (thêm/sửa/xoá)
+  const [errRows, setErrRows] = useState([]);   // từng dòng sai của file Excel
+  const [imported, setImported] = useState(null); // tóm tắt lần import gần nhất
   const [editing, setEditing] = useState(null); // { id, date, name } đang sửa
   const { data, err: loadErr, loading, setData } = useFetch(
     () => fetchWorkdays(year), [year], `timeoff:workdays:${year}`);
 
-  useEffect(() => { setStaging([]); setEditing(null); }, [year]);
+  useEffect(() => {
+    setStaging([]); setEditing(null); setImported(null);
+    setErr(null); setErrRows([]);
+  }, [year]);
 
   const existing = new Set((data?.workDays || []).map((d) => d.date));
+  const staged = new Set(staging.map((s) => s.date));
   // Ngày sớm nhất còn thao tác được = ngày mai (BE trả về; model chặn thật).
   // Ngày đã đến/đã qua bị khoá vì chấm công + lương của ngày đó đã tính theo
   // lịch này — xoá đi là sai dữ liệu.
@@ -43,7 +55,7 @@ export default function WorkScheduleModal({ onClose }) {
     && Number(iso.slice(0, 4)) === year;
 
   const addToList = () => {
-    setErr(null);
+    setErr(null); setErrRows([]);
     if (!pick) return;
     if (Number(pick.slice(0, 4)) !== year) { setErr('Ngày phải thuộc năm ' + year + '.'); return; }
     if (minDate && pick < minDate) {
@@ -51,17 +63,38 @@ export default function WorkScheduleModal({ onClose }) {
         + 'Ngày đã diễn ra thì chấm công và lương đã tính theo lịch lúc đó.');
       return;
     }
-    if (existing.has(pick) || staging.includes(pick)) { setErr('Ngày này đã có trong lịch.'); return; }
-    setStaging((s) => [...s, pick].sort());
+    if (existing.has(pick) || staged.has(pick)) { setErr('Ngày này đã có trong lịch.'); return; }
+    setStaging((s) => [...s, { date: pick, name: '' }].sort((a, b) => a.date.localeCompare(b.date)));
     setPick('');
+  };
+
+  /* Chọn file → gửi BE kiểm NGAY (chưa ghi gì). Sai định dạng thì hiện lỗi
+     tóm tắt + từng dòng sai; đúng thì đẩy vào danh sách chờ lưu để xem trước. */
+  const onPickFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';               // chọn lại đúng file đó vẫn kích hoạt
+    if (!file) return;
+    setBusy(true); setErr(null); setErrRows([]); setImported(null);
+    try {
+      const res = await importWorkdays(file, year);
+      setStaging((s) => {
+        const seen = new Set(s.map((x) => x.date));
+        const add = res.rows.filter((r) => !seen.has(r.date));
+        return [...s, ...add].sort((a, b) => a.date.localeCompare(b.date));
+      });
+      setImported({ file: file.name, count: res.rows.length, skipped: res.skipped || [] });
+    } catch (ex) {
+      setErr(ex.message);
+      setErrRows(ex.details || []);
+    } finally { setBusy(false); }
   };
 
   const save = async () => {
     if (!staging.length) return;
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setErrRows([]);
     try {
       const res = await addWorkdays(staging, note.trim(), year);
-      setData(res); setStaging([]); setNote('');
+      setData(res); setStaging([]); setNote(''); setImported(null);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
 
@@ -89,31 +122,77 @@ export default function WorkScheduleModal({ onClose }) {
   return (
     <Modal onClose={onClose}>
       <ModalHeader lg icon="calendar" title="Thêm lịch làm việc"
-        sub="Công ty làm Thứ 2 – Thứ 6 · thêm các ngày Thứ 7 đi làm" onClose={onClose} />
+        sub="Công ty làm Thứ 2 – Thứ 6 · thêm ngày làm bù (nhập tay hoặc từ Excel)"
+        onClose={onClose} />
 
       <div style={{ padding: '20px 24px', maxHeight: '62vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Năm */}
         <YearNav year={year} onChange={setYear} disabled={busy} />
 
-        {/* Thêm ngày */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>Ngày đi làm</span>
-            <input type="date" style={inp} value={pick} max={`${year}-12-31`}
-              min={minDate && minDate > `${year}-01-01` ? minDate : `${year}-01-01`}
-              onChange={(e) => setPick(e.target.value)} />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 140 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>Ghi chú</span>
-            <input type="text" style={inp} value={note} placeholder="VD: Làm bù"
-              onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <button className="btn btn-ghost" onClick={addToList} disabled={!pick}>
-            <Icon name="plus" size={16} />Thêm vào danh sách</button>
+        {/* Chọn cách thêm */}
+        <div className="seg" style={{ alignSelf: 'flex-start' }}>
+          <button className={mode === 'manual' ? 'active' : ''}
+            onClick={() => { setMode('manual'); setErr(null); setErrRows([]); }}>Nhập tay</button>
+          <button className={mode === 'excel' ? 'active' : ''}
+            onClick={() => { setMode('excel'); setErr(null); setErrRows([]); }}>Nhập từ Excel</button>
         </div>
 
-        {pick && dowOf(pick) !== 'Thứ 7' && (
-          <div className="muted" style={{ fontSize: 12 }}>Lưu ý: {dowOf(pick)} không phải Thứ 7.</div>
+        {mode === 'manual' ? (
+          <>
+            {/* Thêm ngày */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>Ngày đi làm</span>
+                <input type="date" style={inp} value={pick} max={`${year}-12-31`}
+                  min={minDate && minDate > `${year}-01-01` ? minDate : `${year}-01-01`}
+                  onChange={(e) => setPick(e.target.value)} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 140 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>Ghi chú</span>
+                <input type="text" style={inp} value={note} placeholder="VD: Làm bù"
+                  onChange={(e) => setNote(e.target.value)} />
+              </label>
+              <button className="btn btn-ghost" onClick={addToList} disabled={!pick}>
+                <Icon name="plus" size={16} />Thêm vào danh sách</button>
+            </div>
+
+            {pick && dowOf(pick) !== 'Thứ 7' && (
+              <div className="muted" style={{ fontSize: 12 }}>Lưu ý: {dowOf(pick)} không phải Thứ 7.</div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14, border: '1px dashed var(--border-strong)', borderRadius: 12, background: 'var(--surface-2)' }}>
+            <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+              <b>Bước 1.</b> Tải file mẫu năm {year} — file liệt kê sẵn các ngày
+              <b> Thứ 7 / Chủ nhật chưa đến</b>.<br />
+              <b>Bước 2.</b> Điền <b>x</b> vào cột <b>"Đi làm (x)"</b> ở những ngày cần
+              đi làm bù (ghi chú riêng ở cột cuối, không bắt buộc).<br />
+              <b>Bước 3.</b> Tải file lên — hệ thống kiểm định dạng ngay, đúng thì
+              hiện danh sách để bạn xem trước rồi mới bấm Lưu.
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <a className="btn btn-ghost" href={workdayTemplateUrl(year)} download>
+                <Icon name="download" size={16} />Tải file mẫu {year}</a>
+              <label className="btn btn-primary" style={{ cursor: busy ? 'default' : 'pointer' }}>
+                <Icon name="upload" size={16} />{busy ? 'Đang kiểm tra…' : 'Chọn file Excel đã điền'}
+                <input type="file" accept=".xlsx" hidden disabled={busy} onChange={onPickFile} />
+              </label>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>
+              Chỉ nhận file <b>.xlsx</b> đúng mẫu. Ngày không phải Thứ 7/Chủ nhật,
+              ngày của năm khác, ngày đã qua hoặc bị lặp đều bị báo lỗi và
+              <b> không nhập ngày nào</b> cho tới khi bạn sửa xong.
+            </div>
+            {imported && (
+              <div style={{ padding: '10px 13px', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 10, color: 'var(--green)', fontSize: 12.5 }}>
+                <b>{imported.file}</b>: đọc được {imported.count} ngày hợp lệ
+                {imported.skipped.length > 0 && (
+                  <> · bỏ qua {imported.skipped.length} ngày đã có trong lịch
+                    ({imported.skipped.map((s) => fmtDate(s.date)).join(', ')})</>
+                )}.
+              </div>
+            )}
+          </div>
         )}
 
         <div className="muted" style={{ fontSize: 12 }}>
@@ -127,23 +206,34 @@ export default function WorkScheduleModal({ onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Chờ lưu ({staging.length})</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {staging.map((d) => (
-                <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'var(--surface-2)', fontSize: 12.5 }}>
-                  {dowOf(d)} · {fmtDate(d)}
-                  <button className="icon-btn" style={{ width: 18, height: 18 }} onClick={() => setStaging((s) => s.filter((x) => x !== d))}>
+              {staging.map((s) => (
+                <span key={s.date} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'var(--surface-2)', fontSize: 12.5 }}
+                  title={s.name || undefined}>
+                  {dowOf(s.date)} · {fmtDate(s.date)}
+                  <button className="icon-btn" style={{ width: 18, height: 18 }}
+                    onClick={() => setStaging((list) => list.filter((x) => x.date !== s.date))}>
                     <Icon name="x" size={13} /></button>
                 </span>
               ))}
             </div>
-            <div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-primary" onClick={save} disabled={busy}>
                 <Icon name="checkCircle" size={16} />{busy ? 'Đang lưu…' : `Lưu ${staging.length} ngày`}</button>
+              <button className="btn btn-ghost" onClick={() => { setStaging([]); setImported(null); }} disabled={busy}>
+                Xoá danh sách</button>
             </div>
           </div>
         )}
 
         {(err || loadErr) && (
-          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>{err || loadErr}</div>
+          <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
+            {err || loadErr}
+            {errRows.length > 0 && (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {errRows.map((line, i) => <li key={i}>{line}</li>)}
+              </ul>
+            )}
+          </div>
         )}
 
         {/* Danh sách ngày đã có */}

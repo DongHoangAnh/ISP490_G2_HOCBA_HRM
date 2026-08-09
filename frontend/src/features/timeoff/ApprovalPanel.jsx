@@ -94,12 +94,15 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
                     {r.withdrawState === 'pending' && (
                       <Badge kind="red">Yêu cầu rút</Badge>
                     )}
-                    {r.overdue && (
-                      <Badge kind="red">Quá hạn {r.ageDays} ngày</Badge>
-                    )}
+                    {/* Nộp bù cho ngày nghỉ đã qua — NV tự khai lúc tạo đơn.
+                        Đơn này KHÔNG bao giờ kèm tag "Quá hạn" (backend trả
+                        lapsed = null). */}
+                    {r.isMakeup && <Badge kind="violet">Xin nghỉ bù</Badge>}
+                    {/* Chỉ một khái niệm "quá hạn": qua ngày bắt đầu nghỉ mà
+                        đơn vẫn chờ duyệt (tag SLA theo tuổi đơn đã bỏ). */}
                     {r.lapsed && (
                       <Badge kind="red">
-                        Lỡ hạn{r.lapsed.lapsedDays > 0 ? ` ${r.lapsed.lapsedDays} ngày` : ''}
+                        Quá hạn{r.lapsed.lapsedDays > 0 ? ` ${r.lapsed.lapsedDays} ngày` : ''}
                       </Badge>
                     )}
                     {r.halfDay && <Badge kind="blue">{r.halfDay}</Badge>}
@@ -258,9 +261,16 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
           <div className="muted" style={{ fontSize: 13 }}><b>Lý do:</b> {req.reason}</div>
         )}
 
+        {req.isMakeup && (
+          <div style={{ padding: '10px 13px', background: 'var(--violet-bg,#f5f3ff)', border: '1px solid var(--border-strong)', borderRadius: 10, fontSize: 12.5 }}>
+            <b>Đơn xin nghỉ bù</b> — nhân viên đã nghỉ những ngày này rồi mới nộp đơn,
+            nên đơn không tính vào thống kê quá hạn duyệt.
+          </div>
+        )}
+
         {req.lapsed && (
           <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, fontSize: 12.5, color: 'var(--red-700)' }}>
-            <b>Đơn lỡ hạn duyệt{req.lapsed.lapsedDays > 0 ? ` ${req.lapsed.lapsedDays} ngày làm việc` : ''}</b>
+            <b>Đơn quá hạn duyệt{req.lapsed.lapsedDays > 0 ? ` ${req.lapsed.lapsedDays} ngày làm việc` : ''}</b>
             {' '}— đã qua ngày bắt đầu nghỉ mà chưa được duyệt.
             <div style={{ marginTop: 6, color: 'var(--ink)' }}>
               {req.lapsed.exempt

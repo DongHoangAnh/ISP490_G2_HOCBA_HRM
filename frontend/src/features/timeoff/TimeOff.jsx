@@ -25,17 +25,17 @@ import SummaryPanel from './SummaryPanel';
 import WorkScheduleModal from './WorkScheduleModal';
 import HistoryTimeline from './HistoryTimeline';
 
-export default function TimeOff({ search, focus }) {
+export default function TimeOff({ search, focus, onPendingCount }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
   const [creating, setCreating] = useState(false);
   const [schedOpen, setSchedOpen] = useState(false); // modal lịch làm việc (HR)
   const [cancelling, setCancelling] = useState(null); // đơn đang chờ xác nhận hủy
-  const [pendingCount, setPendingCount] = useState(0); // badge tab "Chờ duyệt"
+  const [pendingCount, setPendingCount] = useState(0); // badge tab "Đơn chờ duyệt"
   const [subCount, setSubCount] = useState(0); // badge tab "Yêu cầu dạy thay"
   const [historyReq, setHistoryReq] = useState(null); // đơn xem lịch sử (từ chuông)
-  const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Giám sát duyệt → mở modal ở tab Chờ duyệt
+  const [approvalFocus, setApprovalFocus] = useState(null); // requestId từ tab Kiểm duyệt phát sinh → mở modal ở tab Đơn chờ duyệt
   const [year, setYear] = useState(new Date().getFullYear()); // filter chung xuyên tab
   const [dept, setDept] = useState('');                        // '' = mọi phòng ban
 
@@ -45,10 +45,16 @@ export default function TimeOff({ search, focus }) {
   };
   useEffect(load, []);
 
+  // Badge "Đơn chờ duyệt": cập nhật cả tab lẫn mục "Nghỉ phép" ở thanh menu.
+  const updatePending = (n) => {
+    setPendingCount(n);
+    if (onPendingCount) onPendingCount(n);
+  };
+
   // Officer: lấy số đơn đang chờ để hiện badge trên tab "Chờ duyệt".
   useEffect(() => {
     if (data && data.isOfficer) {
-      fetchApprovals().then((d) => setPendingCount((d.requests || []).length)).catch(() => {});
+      fetchApprovals().then((d) => updatePending((d.requests || []).length)).catch(() => {});
     }
   }, [data]);
 
@@ -73,15 +79,18 @@ export default function TimeOff({ search, focus }) {
   if (!data) return <LoadingState label="Đang tải dữ liệu nghỉ phép…" />;
 
   // Tách luồng cá nhân / quản lý theo phân quyền:
-  //  - Quản lý (officer): "Tổng quan" + "Lịch" + "Chờ duyệt" + "Đơn đã duyệt".
+  //  - Quản lý (officer): Tổng quan · Đơn chờ duyệt · Đơn đã duyệt · Lịch ·
+  //    Kiểm duyệt phát sinh · Theo dõi nghỉ phép · Quỹ phép.
   //    KHÔNG có tab "Đơn của tôi" (luồng quản lý thuần).
   //  - Nhân viên: "Tổng hợp" (báo cáo cá nhân) + "Đơn của tôi" + "Lịch".
   const tabs = [];
   if (data.isOfficer) {
-    tabs.push(['overview', 'Tổng quan'], ['calendar', 'Lịch'],
-              ['approvals', 'Chờ duyệt'], ['lapsed', 'Giám sát duyệt'],
-              ['health', 'Sức khỏe NV'],
+    tabs.push(['overview', 'Tổng quan'],
+              ['approvals', 'Đơn chờ duyệt'],
               ['approved', 'Đơn đã duyệt'],
+              ['calendar', 'Lịch'],
+              ['lapsed', 'Kiểm duyệt phát sinh'],
+              ['health', 'Theo dõi nghỉ phép'],
               ['balances', 'Quỹ phép']);
   } else {
     tabs.push(['summary', 'Tổng hợp'], ['me', 'Đơn của tôi'], ['calendar', 'Lịch']);
@@ -152,7 +161,7 @@ export default function TimeOff({ search, focus }) {
         <ApprovalPanel isHrManager={data.isHrManager}
           focusRequestId={approvalFocus}
           onFocusConsumed={() => setApprovalFocus(null)}
-          onChanged={setPendingCount} />
+          onChanged={updatePending} />
       )}
       {/* Lapsed/Burnout chỉ hiện DeptSelect khi seeAll → chặn dept chọn ở tab khác
           leak vào thành filter ẩn (trưởng phòng nhiều phòng ban không thấy/xóa được). */}
@@ -228,6 +237,9 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
     return <EmptyState>Tài khoản chưa gắn với hồ sơ nhân viên — chưa có dữ liệu nghỉ phép.</EmptyState>;
   }
 
+  // Cột "GV dạy thay" chỉ có nghĩa với đơn nghỉ theo buổi dạy → nhân viên
+  // thường luôn thấy một cột toàn dấu "—", ẩn đi cho gọn bảng.
+  const isTeacher = !!data.employee.isTeacher;
   const q = (search || '').toLowerCase();
   const requests = sortRows(
     data.requests.filter((r) =>
@@ -272,7 +284,7 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Từ ngày</th>
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Đến ngày</th>
               <th className="tbl-num" style={{ width: '1%', whiteSpace: 'nowrap' }}>Số ngày</th>
-              <th>GV dạy thay</th>
+              {isTeacher && <th>GV dạy thay</th>}
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
             </tr></thead>
@@ -297,8 +309,10 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
                   <td className="mono muted" style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{fmtDate(r.to)}</td>
                   <td className="tbl-num mono" style={{ fontWeight: 600, width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     {r.isTeachingOff ? `${r.sessionCount} buổi` : r.days}</td>
-                  <td className="muted">
-                    {r.isTeachingOff ? (r.substituteNames || '—') : '—'}</td>
+                  {isTeacher && (
+                    <td className="muted">
+                      {r.isTeachingOff ? (r.substituteNames || '—') : '—'}</td>
+                  )}
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     {r.canCancel && (

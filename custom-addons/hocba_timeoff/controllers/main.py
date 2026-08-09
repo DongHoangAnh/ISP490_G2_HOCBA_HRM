@@ -16,6 +16,10 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import content_disposition, request
 from odoo.tools import html2plaintext
 
+from .workday_xlsx import (
+    XLSX_MIME, WorkdayImportError, build_template, parse_workdays_xlsx,
+)
+
 # Chứng từ y tế (BR-012): chỉ chấp nhận PDF / JPG / PNG, tối đa 5MB.
 ALLOWED_MIME = frozenset({'application/pdf', 'image/jpeg', 'image/png'})
 MAX_SIZE_BYTES = 5 * 1024 * 1024
@@ -87,10 +91,16 @@ AT_RISK_DAYS = 5.0
 # người CÙNG PHÒNG nghỉ thì coi là "quá tải" → FE tô đậm cảnh báo.
 OVERLAP_WARN = 3
 
-# Phase 8 — SLA duyệt đơn. Đơn ở trạng thái chờ duyệt (confirm/validate1) >
-# SLA_DAYS ngày làm việc thì coi là "quá hạn". Đếm theo NGÀY LÀM VIỆC (T2–T6,
-# trừ ngày lễ + cộng workday HR đánh dấu) cho khớp văn hoá HR Việt Nam.
-SLA_DAYS = 3
+# "Quá hạn" trong module này CHỈ có một nghĩa: đơn còn chờ duyệt mà ngày BẮT
+# ĐẦU nghỉ đã qua (xem _lapsed_info). SLA theo tuổi đơn kể từ ngày nộp (Phase 8)
+# đã bỏ — hai khái niệm cùng tên "quá hạn" làm số liệu giữa các tab lệch nhau.
+# Ngưỡng tô đậm dòng ở bảng "Đơn quá hạn duyệt" (dashboard).
+OVERDUE_DEEP_DAYS = 3
+
+# Dashboard "Tổng quan" là màn nhìn lướt: mỗi bảng/biểu đồ chỉ lấy TOP 5, số
+# tổng đã có ở KPI (và ở byDeptTotal). Xem đầy đủ thì sang tab chuyên trách
+# ("Kiểm duyệt phát sinh" / "Đơn chờ duyệt").
+DASHBOARD_TOP_N = 5
 
 
 def _carryover_expire_date(env, year):
@@ -164,6 +174,19 @@ def _approvals_domain(scope):
                  ('x_withdraw_state', '=', 'none'),
             '&', ('state', '=', 'validate'),
                  ('x_withdraw_state', '=', 'pending')] + _dept_domain(scope)
+
+
+def _refused_domain(scope, dept_id, start, end):
+    """Domain KPI "Đã từ chối" (dashboard Tổng quan): đơn bị từ chối trong năm,
+    theo phạm vi phòng ban.
+
+    Gồm CẢ đơn bị từ chối do duyệt yêu cầu rút (Phase 7) — Odoo đưa đơn về
+    state 'refuse' và quỹ được hoàn — đúng nghĩa "tổng số đơn đã bị từ chối".
+    """
+    return [('state', '=', 'refuse'),
+            ('date_from', '>=', start), ('date_from', '<=', end)] \
+        + ([('department_id', '=', dept_id)] if dept_id else []) \
+        + _dept_domain(scope)
 
 
 def _scoped_departments(env, scope):
@@ -517,19 +540,6 @@ def _count_working_days_env(env, start, end):
     return len(_working_dates_env(env, start, end))
 
 
-def _request_age_working_days(env, leave):
-    """Tuổi đơn (Phase 8): số ngày làm việc kể từ ngày tạo đơn đến hôm nay.
-    Đơn tạo trong-ngày → tuổi = 1 (đếm cả ngày tạo) để KPI khớp văn hoá HR Việt
-    ('đơn nộp hôm nay = 1 ngày chờ'). Đơn chưa có create_date → 0."""
-    if not leave.create_date:
-        return 0
-    start = leave.create_date.date()
-    today = fields.Date.context_today(env.user)
-    if today < start:
-        return 0
-    return _count_working_days_env(env, start, today)
-
-
 # ---------------------------------------------------------------------------
 # Phase 12 — Đơn lỡ hạn duyệt. Spec:
 # docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
@@ -552,13 +562,15 @@ def _working_dates_env(env, start, end):
 def _lapsed_info(env, leave):
     """Thông tin 'lỡ hạn duyệt' của 1 đơn (BR-L01→L03) — None nếu chưa lỡ hạn.
 
-    Lỡ hạn = còn chờ duyệt mà ngày BẮT ĐẦU nghỉ đã qua. Đối chiếu
+    Lỡ hạn = còn chờ duyệt mà ngày BẮT ĐẦU nghỉ đã qua — TRỪ đơn "xin nghỉ bù"
+    (x_is_makeup): NV chủ động nộp muộn cho ngày đã nghỉ, không phải người
+    duyệt để trễ, nên không tính quá hạn. Đối chiếu
     hocba.attendance từng ngày nghỉ ĐÃ QUA (đến hết hôm qua): tổng work_credit
     trong ngày >= 0.5 là 'vẫn đi làm'; đơn NỬA NGÀY cần >= 1.0 mới tính (nửa
     làm + nửa nghỉ là khớp đơn). Loại 'Nghỉ Buổi Dạy' miễn đối chiếu — GV có
     thể vẫn chấm công ở trung tâm dù nghỉ 1 buổi dạy. Attendance đọc qua sudo:
     người duyệt không có ACL hocba.attendance; quyền phạm vi kiểm ở tầng gọi."""
-    if leave.state not in PENDING_STATES:
+    if leave.state not in PENDING_STATES or leave.x_is_makeup:
         return None
     d0, d1 = _leave_day_bounds(leave)
     today = fields.Date.context_today(env.user)
@@ -625,8 +637,11 @@ def _lapsed_table(env, scope, dept_id=False):
     """Dữ liệu màn 'Giám sát duyệt đơn' (BR-L06): KPI + bảng đơn lỡ hạn
     + đếm theo phòng. sudo + lọc phòng ban tường minh theo scope."""
     today = fields.Date.context_today(env.user)
+    # Loại đơn "xin nghỉ bù" ngay ở domain (_lapsed_info cũng trả None cho
+    # chúng) — khỏi tải về rồi bỏ.
     domain = [('state', 'in', list(PENDING_STATES)),
-              ('request_date_from', '<', today)] + _dept_domain(scope)
+              ('request_date_from', '<', today),
+              ('x_is_makeup', '=', False)] + _dept_domain(scope)
     if dept_id:
         domain.append(('department_id', '=', dept_id))
     leaves = env['hr.leave'].sudo().search(domain, order='request_date_from, id')
@@ -658,6 +673,9 @@ def _lapsed_table(env, scope, dept_id=False):
             'days': round(leave.number_of_days, 2),
             'state': leave.state,
             'stateLabel': STATE_LABEL.get(leave.state, leave.state),
+            'submittedAt': _d(leave.create_date.date()
+                              if leave.create_date else None),
+            'isEmergency': leave.x_is_emergency,
             'lapsedDays': info['lapsedDays'],
             'summary': _lapsed_summary_label(info),
             'suggestion': info['suggestion'],
@@ -681,9 +699,9 @@ def _post_lapsed_decision_note(env, leave, action, info):
     `info` phải lấy TRƯỚC khi duyệt (sau khi duyệt state đổi → hết lỡ hạn)."""
     if not info or not info.get('isLapsed'):
         return
-    head = 'Duyệt trễ' if action == 'approve' else 'Từ chối đơn lỡ hạn'
+    head = 'Duyệt trễ' if action == 'approve' else 'Từ chối đơn quá hạn'
     leave.sudo().message_post(
-        body='%s — đơn lỡ hạn %d ngày làm việc. Đối chiếu chấm công: %s.' % (
+        body='%s — đơn quá hạn %d ngày làm việc. Đối chiếu chấm công: %s.' % (
             head, info['lapsedDays'], _lapsed_summary_label(info)),
         subtype_xmlid='mail.mt_note',
     )
@@ -1244,7 +1262,6 @@ class HocBaTimeoff(http.Controller):
         }
 
     def _approval_request(self, leave):
-        age = _request_age_working_days(request.env, leave)
         return {
             'id': leave.id,
             'employeeId': leave.employee_id.id,
@@ -1271,12 +1288,12 @@ class HocBaTimeoff(http.Controller):
             # Phase 7: yêu cầu rút đơn (FE hiện badge "Yêu cầu rút" + modal riêng).
             'withdrawState': leave.x_withdraw_state,
             'withdrawReason': leave.x_withdraw_reason or '',
-            # Phase 8 — SLA: tuổi đơn (ngày làm việc) + cờ quá hạn.
-            'ageDays': age,
-            'slaDays': SLA_DAYS,
-            'overdue': age > SLA_DAYS and leave.state in PENDING_STATES,
             'submittedAt': _d(leave.create_date.date() if leave.create_date else None),
-            # Phase 12 — đơn lỡ hạn duyệt + đối chiếu chấm công (None nếu chưa).
+            # Đơn nộp bù cho ngày nghỉ đã qua (NV tự khai lúc tạo đơn) — luôn
+            # loại trừ khỏi 'lapsed' bên dưới.
+            'isMakeup': leave.x_is_makeup,
+            # "Quá hạn duyệt": qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt, kèm
+            # đối chiếu chấm công (None nếu chưa quá hạn / là đơn nghỉ bù).
             'lapsed': _lapsed_info(request.env, leave),
         }
 
@@ -1359,6 +1376,25 @@ class HocBaTimeoff(http.Controller):
             'allDepartments': [{'id': d.id, 'name': d.name}
                                for d in self._scoped_departments(scope)],
             'requests': [self._approval_request(l) for l in leaves],
+        })
+
+    # ------------------------------------------------------------------
+    # 3.2a. GET /pending-count — badge "Nghỉ phép" ở thanh menu (sidebar).
+    # Chỉ đếm (search_count), KHÔNG dựng payload đơn như /approvals: gọi ở
+    # mọi màn nên phải rẻ. Không có quyền duyệt → 200 + count 0 (badge ẩn),
+    # để SPA khỏi phải bắt 403 cho một chi tiết trang trí.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/pending-count', auth='user',
+                type='http', methods=['GET'])
+    def api_pending_count(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'canApprove': False, 'count': 0})
+        return request.make_json_response({
+            'canApprove': True,
+            # Cùng _approvals_domain với tab "Đơn chờ duyệt" → 2 badge không lệch.
+            'count': request.env['hr.leave'].sudo().search_count(
+                self._approvals_domain(scope)),
         })
 
     # ------------------------------------------------------------------
@@ -1520,6 +1556,11 @@ class HocBaTimeoff(http.Controller):
         period = (payload.get('period') or '').strip().lower()  # ''/'am'/'pm' (Phase 6)
         reason = (payload.get('reason') or '').strip()
         att = payload.get('attachment')
+        # NV tự khai "xin nghỉ bù" khi nộp đơn cho ngày nghỉ ĐÃ QUA. Chỉ nhận
+        # cờ này khi ngày bắt đầu thật sự ở quá khứ (model cũng chặn lại) —
+        # tránh biến nó thành lối thoát khỏi thống kê quá hạn duyệt.
+        is_makeup = bool(payload.get('isMakeup')) and date_from < str(
+            fields.Date.context_today(request.env.user))
 
         if not leave_type_id or not date_from or not date_to:
             return request.make_json_response({'error': 'bad_request'}, status=400)
@@ -1598,6 +1639,8 @@ class HocBaTimeoff(http.Controller):
             'request_date_to': date_to,
         }
         vals.update(period_vals)   # Phase 6 — nửa ngày (nếu có)
+        if is_makeup:
+            vals['x_is_makeup'] = True
         if reason:
             vals['name'] = reason
 
@@ -1921,48 +1964,44 @@ class HocBaTimeoff(http.Controller):
         approved_days = sum(
             r[0] for r in Leave._read_group(approved_dom, [], ['number_of_days:sum']))
 
-        # Phase 8 — SLA: tải toàn bộ đơn chờ duyệt trong phạm vi để tính tuổi.
-        # Quy mô đội nhỏ (vài chục đơn) → N+1 queries chấp nhận được; tối ưu
-        # bằng batch lookup nếu vượt 100 đơn.
-        pending_all = Leave.search(pending_dom, order='create_date asc')
-        ages = [_request_age_working_days(request.env, l) for l in pending_all]
-        overdue_idx = [i for i, a in enumerate(ages) if a > SLA_DAYS]
-        avg_age = round(sum(ages) / len(ages), 1) if ages else 0
-        oldest_age = max(ages) if ages else 0
+        # "Đơn quá hạn duyệt" dùng CHUNG nguồn với tab "Kiểm duyệt phát sinh"
+        # (_lapsed_table) — trước đây dashboard đếm theo SLA tuổi đơn nên hai
+        # tab cùng nói "quá hạn" mà ra hai con số khác nhau.
+        lapsed = _lapsed_table(request.env, scope, dept_id)
 
         kpi = {
             'total': Leave.search_count(year_dom + dept_dom),
             'pending': Leave.search_count(pending_dom),
             'approved': Leave.search_count(approved_dom),
             'approvedDays': round(approved_days, 1),
+            'refused': Leave.search_count(
+                _refused_domain(scope, dept_id, start, end)),
             'onLeaveToday': Leave.search_count([
                 ('state', '=', 'validate'),
                 ('date_from', '<=', '%s 23:59:59' % today),
                 ('date_to', '>=', '%s 00:00:00' % today)] + dept_dom),
-            # Phase 8 — SLA duyệt đơn (đếm theo ngày làm việc).
-            'slaDays': SLA_DAYS,
-            'overdue': len(overdue_idx),
-            'avgAgeDays': avg_age,
-            'oldestAgeDays': oldest_age,
+            # Quá hạn duyệt = qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt.
+            'overdue': lapsed['kpi']['total'],
+            'oldestOverdueDays': lapsed['kpi']['oldestLapsedDays'],
+            'deepOverdueDays': OVERDUE_DEEP_DAYS,   # ngưỡng FE tô đậm dòng
         }
 
+        # _lapsed_table đã sắp giảm dần theo số ngày quá hạn → cắt TOP 5 là
+        # 5 đơn quá hạn lâu nhất. Tổng vẫn ở kpi['overdue'].
         overdue_requests = [{
-            'requestId': pending_all[i].id,
-            'employee': pending_all[i].employee_id.name,
-            'department': pending_all[i].department_id.name
-                or pending_all[i].employee_id.department_id.name or '—',
-            'leaveType': pending_all[i].holiday_status_id.name,
-            'from': _d(pending_all[i].request_date_from),
-            'to': _d(pending_all[i].request_date_to),
-            'days': round(pending_all[i].number_of_days, 2),
-            'ageDays': ages[i],
-            'submittedAt': _d(pending_all[i].create_date.date()
-                              if pending_all[i].create_date else None),
-            'state': pending_all[i].state,
-            'stateLabel': STATE_LABEL.get(pending_all[i].state, pending_all[i].state),
-            'isEmergency': pending_all[i].x_is_emergency,
-        } for i in overdue_idx]
-        overdue_requests.sort(key=lambda r: r['ageDays'], reverse=True)
+            'requestId': r['requestId'],
+            'employee': r['employee'],
+            'department': r['department'],
+            'leaveType': r['leaveType'],
+            'from': r['from'],
+            'to': r['to'],
+            'days': r['days'],
+            'overdueDays': r['lapsedDays'],
+            'submittedAt': r['submittedAt'],
+            'state': r['state'],
+            'stateLabel': r['stateLabel'],
+            'isEmergency': r['isEmergency'],
+        } for r in lapsed['items'][:DASHBOARD_TOP_N]]
 
         def _bars(groups, get_id, get_name):
             rows = []
@@ -1990,13 +2029,18 @@ class HocBaTimeoff(http.Controller):
         top_emp = _bars(
             Leave._read_group(approved_dom, ['employee_id'],
                               ['number_of_days:sum', '__count']),
-            lambda r: r.id or False, lambda r: r.name or 'Không xác định')[:5]
+            lambda r: r.id or False,
+            lambda r: r.name or 'Không xác định')[:DASHBOARD_TOP_N]
 
-        pending = Leave.search(pending_dom, limit=10, order='create_date desc')
+        pending = Leave.search(pending_dom, limit=DASHBOARD_TOP_N,
+                               order='create_date desc')
         return {
             'kpi': kpi,
             'byType': by_type,
-            'byDept': by_dept,
+            # Top 5 phòng nghỉ nhiều nhất; byDeptTotal để FE nói rõ "5/N phòng"
+            # (by_dept đã sort giảm dần nên pct của top 5 vẫn đúng thang cũ).
+            'byDept': by_dept[:DASHBOARD_TOP_N],
+            'byDeptTotal': len(by_dept),
             'topEmployees': top_emp,
             'pending': [{
                 'id': l.id,
@@ -2238,17 +2282,26 @@ class HocBaTimeoff(http.Controller):
         if not scope['isHrManager']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data()
-        raw_dates = payload.get('dates') or []
         name = (payload.get('name') or 'Ngày đi làm').strip() or 'Ngày đi làm'
         try:
             year = int(payload.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
 
+        # 2 dạng payload: `dates` (thêm tay — dùng chung 1 ghi chú `name`) hoặc
+        # `items` [{date, name}] (nhập từ Excel — ghi chú riêng từng ngày).
+        raw_items = payload.get('items')
+        if raw_items is None:
+            raw_items = [{'date': d} for d in (payload.get('dates') or [])]
+
         Model = request.env['hb.work.day'].sudo()
         limit = Model._first_editable_date()
         days = []
-        for ds in raw_dates:
+        for it in raw_items:
+            if isinstance(it, dict):
+                ds, it_name = it.get('date'), (it.get('name') or '').strip()
+            else:
+                ds, it_name = it, ''
             ds = (ds or '').strip()
             if not ds:
                 continue
@@ -2256,11 +2309,11 @@ class HocBaTimeoff(http.Controller):
                 day = fields.Date.to_date(ds)
             except (ValueError, TypeError):
                 continue
-            days.append(day)
+            days.append((day, it_name or name))
         # Chặn TRƯỚC khi tạo: chỉ nhận ngày chưa đến. Báo lỗi cả lô (không tạo
         # một phần) để HR sửa lại danh sách rồi lưu lại — tránh trạng thái
         # "đã lưu 2/3 ngày" khó hiểu.
-        past = sorted({d for d in days if d < limit})
+        past = sorted({d for d, _n in days if d < limit})
         if past:
             return request.make_json_response(
                 {'error': 'past_workday',
@@ -2270,13 +2323,80 @@ class HocBaTimeoff(http.Controller):
                             % (', '.join(d.strftime('%d/%m/%Y') for d in past),
                                limit.strftime('%d/%m/%Y'))},
                 status=400)
-        for day in days:
+        for day, day_name in days:
             if not Model.search_count([('date', '=', day)]):
-                Model.create({'date': day, 'name': name})
+                Model.create({'date': day, 'name': day_name})
         return request.make_json_response({
             'canEdit': True, 'year': year, 'minDate': self._min_work_day(),
             'workDays': self._work_days(year),
         })
+
+    # -- Nhập lịch làm việc bằng Excel (cách thêm thứ 2, cạnh thêm tay) -----
+    @http.route('/hocba-hrm/api/timeoff/workdays/template', auth='user',
+                type='http', methods=['GET'])
+    def api_workdays_template(self, **kw):
+        """Tải file .xlsx mẫu: liệt kê sẵn Thứ 7/Chủ nhật CHƯA ĐẾN của năm đó,
+        HR chỉ tick 'x'. Khoá cột Ngày/Thứ nên không chọn nhầm ngày khác."""
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+        min_date = request.env['hb.work.day'].sudo()._first_editable_date()
+        try:
+            content = build_template(year, min_date)
+        except WorkdayImportError as ex:
+            return request.make_json_response(
+                {'error': ex.code, 'message': ex.message}, status=400)
+        return request.make_response(content, headers=[
+            ('Content-Type', XLSX_MIME),
+            ('Content-Length', len(content)),
+            ('Content-Disposition',
+             content_disposition('mau-lich-lam-viec-%d.xlsx' % year)),
+        ])
+
+    @http.route('/hocba-hrm/api/timeoff/workdays/import', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_workdays_import(self, **kw):
+        """Đọc + KIỂM file HR tải lên, KHÔNG ghi gì cả — trả danh sách ngày để
+        SPA xem trước rồi mới bấm Lưu (dùng lại /workdays/add). Sai định dạng
+        thì báo lỗi ngay kèm số dòng, không nhập một phần."""
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+
+        upload = kw.get('file')
+        filename = getattr(upload, 'filename', '') or ''
+        if not upload or not filename:
+            return request.make_json_response(
+                {'error': 'no_file', 'message': 'Chưa chọn file để tải lên.'},
+                status=400)
+        if not filename.lower().endswith('.xlsx'):
+            return request.make_json_response(
+                {'error': 'bad_ext',
+                 'message': 'Chỉ nhận file Excel .xlsx (file bạn chọn: "%s"). '
+                            'Nếu đang dùng .xls hoặc .csv, hãy mở bằng Excel '
+                            'rồi "Lưu dưới dạng" .xlsx.' % filename},
+                status=400)
+
+        Model = request.env['hb.work.day'].sudo()
+        existing = set(Model.search([
+            ('date', '>=', '%d-01-01' % year),
+            ('date', '<=', '%d-12-31' % year)]).mapped('date'))
+        try:
+            res = parse_workdays_xlsx(upload.read(), year,
+                                      Model._first_editable_date(), existing)
+        except WorkdayImportError as ex:
+            return request.make_json_response(
+                {'error': ex.code, 'message': ex.message,
+                 'details': ex.details}, status=400)
+        return request.make_json_response({'year': year, 'filename': filename, **res})
 
     @http.route('/hocba-hrm/api/timeoff/workdays/<int:day_id>/update',
                 auth='user', type='http', methods=['POST'], csrf=False)
