@@ -165,6 +165,31 @@ class TestHonorBoard(TransactionCase):
             _honor_create(self._env(self.hr), {
                 'employeeId': self.emp.id, 'title': '  '})
 
+    def test_honor_create_rejects_garbage_payload(self):
+        # Không được thành 500: int('abc') ném ValueError mà route chỉ bắt
+        # AccessError/ValidationError/UserError.
+        with self.assertRaises(ValidationError):
+            _honor_create(self._env(self.hr), {
+                'employeeId': 'abc', 'title': 'X'})
+        with self.assertRaises(ValidationError):
+            _honor_create(self._env(self.hr), {
+                'employeeId': self.emp.id, 'title': 'X', 'rank': 'nhất'})
+
+    def test_ranking_covers_whole_period_boundaries(self):
+        # Lọc kỳ chuyển từ Python sang domain ngày — phải ôm trọn ngày đầu và
+        # ngày cuối tháng, kể cả tháng 12 (biên năm).
+        first = self.today.replace(day=1)
+        last = first + relativedelta(months=1) - relativedelta(days=1)
+        a = self.env['hr.employee'].create({
+            'name': 'Dau ky', 'x_employee_code': 'EMP-HONOR-B1'})
+        b = self.env['hr.employee'].create({
+            'name': 'Cuoi ky', 'x_employee_code': 'EMP-HONOR-B2'})
+        self._confirmed_eval(a, 0.8, when=first)
+        self._confirmed_eval(b, 0.9, when=last)
+        names = [r['empName'] for r in
+                 _honor_board(self._env(self.hr))['ranking']]
+        self.assertEqual(names, ['Cuoi ky', 'Dau ky'])
+
     def test_honor_archive_requires_hr(self):
         e = self._entry()
         with self.assertRaises(AccessError):

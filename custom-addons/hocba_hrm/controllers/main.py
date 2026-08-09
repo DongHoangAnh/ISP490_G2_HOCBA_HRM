@@ -1816,17 +1816,18 @@ def _career_payload(env, emp_id):
     timeline.sort(key=lambda t: (t['date'] or '', t['sort']), reverse=True)
 
     scores = [e['totalScore'] for e in evaluations if e['state'] == 'confirmed']
-    metrics = emp._promo_auto_metrics()
-    # _promo_auto_metrics tính theo bản ghi thăng tiến gần nhất BẤT KỲ LOẠI,
-    # mà hồ sơ nào cũng có snapshot 'join' → người chưa từng thăng chức vẫn
-    # hiện một con số, chửi nhau với ô "Lần thăng chức: 0" ngay cạnh.
+    # KHÔNG dùng emp._promo_auto_metrics(): nó kéo thêm tổng hợp chấm công 90
+    # ngày (module khác) mà trang này không dùng, và tính "tháng từ thăng
+    # tiến" theo bản ghi gần nhất BẤT KỲ LOẠI — hồ sơ nào cũng có snapshot
+    # 'join' nên người chưa từng thăng chức vẫn hiện một con số, chửi nhau với
+    # ô "Lần thăng chức: 0" ngay cạnh.
+    today = fields.Date.context_today(emp)
+    tenure_months = round((today - start).days / 30.44, 1) if start else 0
     real_promos = promos.filtered(lambda p: p.x_change_type == 'promotion')
     months_since = None
     if real_promos:
         last = max(real_promos, key=lambda p: p.date_effective)
-        months_since = round(
-            (fields.Date.context_today(emp) - last.date_effective).days / 30.44,
-            1)
+        months_since = round((today - last.date_effective).days / 30.44, 1)
     status_labels = dict(
         env['hr.employee']._fields['x_employment_status']
         ._description_selection(env))
@@ -1845,7 +1846,7 @@ def _career_payload(env, emp_id):
         'canManage': can_manage,
         'canSeeSalary': see_salary,
         'stats': {
-            'tenureMonths': metrics.get('tenureMonths') or 0,
+            'tenureMonths': tenure_months,
             'monthsSincePromo': months_since,
             # Chỉ thăng chức thật: hồ sơ nào cũng có snapshot 'join', đếm cả
             # nó thì ai vừa vào làm cũng thành "đã có 1 mốc thăng tiến".
@@ -1922,11 +1923,17 @@ def _honor_board(env):
     labels = dict(Honor._fields['category']._description_selection(env))
     can_manage = _user_can_manage(env)
 
+    # Lọc khoảng ngày ngay trong domain: kéo hết đợt đánh giá đã xác nhận về
+    # rồi mới lọc bằng Python là đọc cả lịch sử nhiều năm cho một tháng.
+    y, m = (int(x) for x in period.split('-'))
+    first = date(y, m, 1)
+    last_day = date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)
     evals = env['hr.promotion.evaluation'].sudo().search([
         ('state', '=', 'confirmed'),
         ('verdict_final', '=', 'qualified'),
-    ]).filtered(lambda ev: ev.eval_date
-                and _honor_period_key(ev.eval_date) == period)
+        ('eval_date', '>=', first),
+        ('eval_date', '<=', last_day),
+    ])
     ranking = []
     for ev in evals.sorted(key=lambda e: -e.total_score)[:HONOR_RANK_LIMIT]:
         emp = ev.employee_id
@@ -1954,7 +1961,13 @@ def _honor_create(env, body):
     lên đấy thôi')."""
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được thêm mục vinh danh.')
-    emp_id = int(body.get('employeeId') or 0)
+    # Payload rác không được thành 500: int() trên chuỗi bậy ném ValueError,
+    # mà route chỉ bắt AccessError/ValidationError/UserError.
+    try:
+        emp_id = int(body.get('employeeId') or 0)
+        rank = int(body.get('rank') or 0)
+    except (TypeError, ValueError):
+        raise ValidationError('Dữ liệu gửi lên không hợp lệ.')
     emp = env['hr.employee'].sudo().browse(emp_id)
     if not emp_id or not emp.exists():
         raise ValidationError('Không tìm thấy nhân viên.')
@@ -1971,7 +1984,7 @@ def _honor_create(env, body):
         'title': title,
         'description': (body.get('description') or '').strip() or False,
         'date_awarded': body.get('date') or fields.Date.context_today(emp),
-        'rank': int(body.get('rank') or 0),
+        'rank': rank,
         'source': 'manual',
     })
     return _honor_board(env)
