@@ -237,6 +237,9 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
     return <EmptyState>Tài khoản chưa gắn với hồ sơ nhân viên — chưa có dữ liệu nghỉ phép.</EmptyState>;
   }
 
+  // Cột "GV dạy thay" chỉ có nghĩa với đơn nghỉ theo buổi dạy → nhân viên
+  // thường luôn thấy một cột toàn dấu "—", ẩn đi cho gọn bảng.
+  const isTeacher = !!data.employee.isTeacher;
   const q = (search || '').toLowerCase();
   const requests = sortRows(
     data.requests.filter((r) =>
@@ -281,7 +284,7 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Từ ngày</th>
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Đến ngày</th>
               <th className="tbl-num" style={{ width: '1%', whiteSpace: 'nowrap' }}>Số ngày</th>
-              <th>GV dạy thay</th>
+              {isTeacher && <th>GV dạy thay</th>}
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
             </tr></thead>
@@ -306,8 +309,10 @@ function MyTimeOff({ data, search, onCancel, onUpdated }) {
                   <td className="mono muted" style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{fmtDate(r.to)}</td>
                   <td className="tbl-num mono" style={{ fontWeight: 600, width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     {r.isTeachingOff ? `${r.sessionCount} buổi` : r.days}</td>
-                  <td className="muted">
-                    {r.isTeachingOff ? (r.substituteNames || '—') : '—'}</td>
+                  {isTeacher && (
+                    <td className="muted">
+                      {r.isTeachingOff ? (r.substituteNames || '—') : '—'}</td>
+                  )}
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={r.stateKind} dot>{r.stateLabel}</Badge></td>
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
                     {r.canCancel && (
