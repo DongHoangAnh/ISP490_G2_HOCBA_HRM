@@ -204,9 +204,13 @@ Ràng buộc:
 - `rank >= 0` (`@api.constrains`).
 - `title` không được rỗng/toàn khoảng trắng.
 
-`_order = 'date_awarded desc, rank, id desc'` — mới nhất trước; trong cùng ngày
-thì hạng nhỏ đứng trên (rank 0 = không xếp hạng lại đứng đầu, nên **rank 0 được
-đẩy xuống cuối** bằng cách sắp ở tầng payload, không dựa vào `_order`).
+`_order = 'date_awarded desc, id desc'` — **cố tình không có `rank`**: rank 0
+nghĩa là "không xếp hạng", sắp tăng dần thì nó leo lên trên cả hạng 1. Việc xếp
+hạng làm ở tầng payload (`(rank == 0, rank, -ngày, -id)`).
+
+> **Odoo 19**: `_sql_constraints` đã bị bỏ và **im lặng không có tác dụng** —
+> phải dùng `models.Constraint`. Test `test_unique_auto_entry_per_promotion`
+> bắt được đúng cái bẫy này.
 
 ### 5.2 Tự sinh khi bổ nhiệm
 
@@ -308,7 +312,32 @@ trong **90 ngày** gần nhất và chưa có entry — để bảng vinh danh t
 không trống trơn sau khi upgrade. Idempotent (lọc theo `promotion_id` chưa tồn
 tại), an toàn khi chạy lại.
 
-## 8. Rủi ro đã cân nhắc
+## 8. Phát sinh trong lúc làm (đã sửa, có test chặn)
+
+Bốn thứ chỉ lộ ra khi chạy thật, không có trong thiết kế ban đầu:
+
+1. **Mốc "Vào làm việc" bị nhân đôi.** `hr.employee.create` đã tự ghi snapshot
+   `x_change_type='join'` vào `hr.promotion.history`, nên mốc tổng hợp dựng từ
+   `x_probation_start` là dòng thứ hai cùng nội dung. → Chỉ dựng mốc tổng hợp
+   khi **không có** snapshot `join`.
+2. **`promoCount` và `monthsSincePromo` đếm cả snapshot `join`.** Hệ quả trên
+   màn hình: một người chưa từng thăng chức vẫn hiện "Từ lần thăng tiến: 1.7"
+   ngay cạnh ô "Lần thăng chức: 0". → Cả hai chỉ tính bản ghi
+   `x_change_type='promotion'`.
+3. **Snapshot `join` hiển thị tiêu đề "— → —"** (chưa có chức vụ trước/sau).
+   → Dòng đó lấy tiêu đề "Vào làm việc".
+4. **Trang `career` thành ngõ cụt với tài khoản vai trò quản lý.** Các tài
+   khoản HR/Admin/Giáo vụ **không gắn hồ sơ nhân viên** (tách tài khoản quản lý
+   ↔ cá nhân, họp #2), nên `emp_id=0` chắc chắn lỗi — mà `ErrorState` lại thay
+   cả trang, nuốt luôn ô chọn nhân viên: không còn cách nào thoát. → Header
+   (gồm ô chọn) **luôn render**; với `canManage` mặc định là "chờ chọn người",
+   không tự nạp bản thân.
+
+Ngoài ra `_honor_board` đọc **toàn bộ** bảng nên test của nó phải tự dọn dữ
+liệu sẵn có trong `setUp` (trong phạm vi transaction) — nếu không, mọi khẳng
+định về kỳ / thứ tự / bảng-rỗng sẽ vỡ ngay khi DB có mục vinh danh thật.
+
+## 9. Rủi ro đã cân nhắc
 
 - **`Dashboard.jsx` và `Shell.jsx` là file CHUNG.** Chỉ chèn thêm, không sửa
   logic sẵn có: 1 dòng render `HonorBoard` + 2 nav item + 1 `PAGE_META`.

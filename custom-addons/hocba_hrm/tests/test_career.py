@@ -179,7 +179,31 @@ class TestCareer(TransactionCase):
         self.assertIn('evaluation', self._kinds(
             _career_payload(self._env(self.hr_mgr), self.emp.id)))
 
+    def test_career_join_snapshot_titled_not_dashes(self):
+        # Snapshot 'join' không có chức vụ trước/sau → tiêu đề "— → —" vô
+        # nghĩa với người đọc; phải là "Vào làm việc".
+        bare = self.env['hr.employee'].create({
+            'name': 'Moi Vao', 'x_employee_code': 'EMP-CAR-5'})
+        out = _career_payload(self._env(self.hr_mgr), bare.id)
+        row = next(t for t in out['timeline'] if t['badge'] == 'Nhận việc')
+        self.assertEqual(row['title'], 'Vào làm việc')
+
     # --- thống kê ---
+    def test_career_months_since_promo_none_without_promotion(self):
+        # Hồ sơ nào cũng có snapshot 'join'; tính "tháng từ lần thăng tiến"
+        # theo bản ghi gần nhất BẤT KỲ LOẠI thì người chưa từng thăng chức
+        # vẫn hiện một con số — mâu thuẫn với "Lần thăng chức: 0".
+        bare = self.env['hr.employee'].create({
+            'name': 'Chua Thang Chuc', 'x_employee_code': 'EMP-CAR-6'})
+        out = _career_payload(self._env(self.hr_mgr), bare.id)
+        self.assertEqual(out['stats']['promoCount'], 0)
+        self.assertIsNone(out['stats']['monthsSincePromo'])
+
+    def test_career_months_since_promo_set_after_promotion(self):
+        self._promo()
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        self.assertIsNotNone(out['stats']['monthsSincePromo'])
+
     def test_career_stats_counts(self):
         self._promo()
         self._eval(when=date(2026, 6, 1), score=8)

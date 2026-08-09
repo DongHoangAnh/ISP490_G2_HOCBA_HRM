@@ -28,6 +28,12 @@ class TestHonorBoard(TransactionCase):
             'name': 'Ngôi Sao', 'x_employee_code': 'EMP-HONOR-1',
             'department_id': self.dept.id})
         self.today = fields.Date.context_today(self.env['hb.honor.entry'])
+        # _honor_board đọc TOÀN BỘ bảng, nên mọi khẳng định về kỳ / thứ tự /
+        # bảng rỗng sẽ vỡ nếu DB đã có mục vinh danh thật. Dọn trong phạm vi
+        # transaction (TransactionCase tự rollback, DB không đổi).
+        self.env['hb.honor.entry'].search([]).write({'active': False})
+        self.env['hr.promotion.evaluation'].search(
+            [('state', '=', 'confirmed')]).write({'verdict_final': 'not_yet'})
 
     def _env(self, user):
         return self.env(user=user)

@@ -51,7 +51,13 @@ export default function Career({ canManage, focusEmpId, onBack }) {
     if (focusEmpId) setEmpId(focusEmpId);
   }, [focusEmpId]);
 
+  // Tài khoản vai trò quản lý (HR/Admin/Giáo vụ) KHÔNG gắn hồ sơ nhân viên
+  // (tách tài khoản quản lý ↔ cá nhân, họp #2) → mở trang mà tự nạp "chính
+  // mình" là chắc chắn lỗi. Với họ, mặc định là chờ chọn người.
+  const needPick = canManage && !empId;
+
   const load = () => {
+    if (needPick) { setErr(null); setData(null); return; }
     setErr(null); setData(null);
     fetchCareer(empId).then(setData).catch((e) => setErr(e.message));
   };
@@ -64,42 +70,64 @@ export default function Career({ canManage, focusEmpId, onBack }) {
     fetchEmployees().then((d) => setPeople(d.employees || [])).catch(() => {});
   }, [canManage]);
 
-  if (err) return <ErrorState message={err} onRetry={load} />;
-  if (!data) return <LoadingState label="Đang dựng lộ trình sự nghiệp…" />;
-
-  const e = data.employee;
-  const st = data.stats;
-  const rows = kind === 'all'
+  const e = data?.employee;
+  const st = data?.stats;
+  const rows = !data ? [] : kind === 'all'
     ? data.timeline
     : data.timeline.filter((t) => t.kind === kind);
 
   const count = (k) => data.timeline.filter((t) => t.kind === k).length;
 
-  return (
-    <div className="content fade-in">
-      <div className="page-head">
-        <div>
-          <h1>{data.isSelf ? 'Lộ trình của tôi' : 'Lộ trình sự nghiệp'}</h1>
-          <p>Toàn bộ thăng tiến, đánh giá và nhận xét từ ngày vào làm</p>
-        </div>
-        <div className="actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {canManage && (
-            <select style={SEL} value={empId}
-              onChange={(ev) => setEmpId(Number(ev.target.value))}>
-              <option value={0}>— Lộ trình của tôi —</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code ? `${p.code} · ` : ''}{p.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {onBack && (
-            <button className="btn btn-ghost" onClick={onBack}>
-              <Icon name="users" size={16} />Danh sách nhân viên</button>
-          )}
+  // Header (gồm ô chọn NV) luôn render: nếu lỗi mà nuốt mất ô chọn thì trang
+  // thành ngõ cụt — không còn cách nào chọn người khác để thoát lỗi.
+  const head = (
+    <div className="page-head">
+      <div>
+        <h1>{data?.isSelf ? 'Lộ trình của tôi' : 'Lộ trình sự nghiệp'}</h1>
+        <p>Toàn bộ thăng tiến, đánh giá và nhận xét từ ngày vào làm</p>
+      </div>
+      <div className="actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {canManage && (
+          <select style={SEL} value={empId}
+            onChange={(ev) => setEmpId(Number(ev.target.value))}>
+            <option value={0}>— Chọn nhân viên —</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code ? `${p.code} · ` : ''}{p.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {onBack && (
+          <button className="btn btn-ghost" onClick={onBack}>
+            <Icon name="users" size={16} />Danh sách nhân viên</button>
+        )}
+      </div>
+    </div>
+  );
+
+  if (needPick) {
+    return (
+      <div className="content fade-in">
+        {head}
+        <div className="card" style={{ padding: 36 }}>
+          <EmptyState>Chọn một nhân viên ở trên để xem toàn bộ lộ trình.</EmptyState>
         </div>
       </div>
+    );
+  }
+  if (err) {
+    return <div className="content fade-in">{head}
+      <ErrorState message={err} onRetry={load} /></div>;
+  }
+  if (!data) {
+    return <div className="content fade-in">{head}
+      <LoadingState label="Đang dựng lộ trình sự nghiệp…" /></div>;
+  }
+
+  return (
+    <div className="content fade-in">
+      {head}
 
       {/* Thẻ nhân sự */}
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>

@@ -1728,10 +1728,18 @@ def _career_payload(env, emp_id):
             bits.append(p.reason)
         if p.decision_ref:
             bits.append('QĐ: %s' % p.decision_ref)
+        # Snapshot 'join' chưa có chức vụ trước/sau → "— → —" vô nghĩa với
+        # người đọc; dòng đó chính là mốc vào làm.
+        if p.x_change_type == 'join':
+            title = 'Vào làm việc'
+            if p.to_job_id:
+                bits.insert(0, p.to_job_id.name)
+        else:
+            title = '%s → %s' % (p.from_job_id.name or '—',
+                                 p.to_job_id.name or '—')
         item = {
             'kind': 'promotion', 'date': _d(p.date_effective), 'sort': 1,
-            'title': '%s → %s' % (p.from_job_id.name or '—',
-                                  p.to_job_id.name or '—'),
+            'title': title,
             'detail': ' · '.join(bits),
             'badge': change_labels.get(p.x_change_type, ''),
             'badgeKind': 'gold' if p.x_change_type == 'promotion' else 'gray',
@@ -1809,6 +1817,16 @@ def _career_payload(env, emp_id):
 
     scores = [e['totalScore'] for e in evaluations if e['state'] == 'confirmed']
     metrics = emp._promo_auto_metrics()
+    # _promo_auto_metrics tính theo bản ghi thăng tiến gần nhất BẤT KỲ LOẠI,
+    # mà hồ sơ nào cũng có snapshot 'join' → người chưa từng thăng chức vẫn
+    # hiện một con số, chửi nhau với ô "Lần thăng chức: 0" ngay cạnh.
+    real_promos = promos.filtered(lambda p: p.x_change_type == 'promotion')
+    months_since = None
+    if real_promos:
+        last = max(real_promos, key=lambda p: p.date_effective)
+        months_since = round(
+            (fields.Date.context_today(emp) - last.date_effective).days / 30.44,
+            1)
     status_labels = dict(
         env['hr.employee']._fields['x_employment_status']
         ._description_selection(env))
@@ -1828,11 +1846,10 @@ def _career_payload(env, emp_id):
         'canSeeSalary': see_salary,
         'stats': {
             'tenureMonths': metrics.get('tenureMonths') or 0,
-            'monthsSincePromo': metrics.get('monthsSincePromo'),
+            'monthsSincePromo': months_since,
             # Chỉ thăng chức thật: hồ sơ nào cũng có snapshot 'join', đếm cả
             # nó thì ai vừa vào làm cũng thành "đã có 1 mốc thăng tiến".
-            'promoCount': len(promos.filtered(
-                lambda p: p.x_change_type == 'promotion')),
+            'promoCount': len(real_promos),
             'evalCount': len(evaluations),
             'honorCount': len(honors),
             'avgScore': round(sum(scores) / len(scores), 1) if scores else None,
