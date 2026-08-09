@@ -17,6 +17,7 @@ import { fetchCertAlerts } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
+import HonorBoard from '../../components/HonorBoard';
 import { LoadingState, ErrorState } from '../../components/states';
 import { fmtDate, HB_CERT } from '../../utils/format';
 
@@ -77,6 +78,9 @@ function OverviewTab({ stats, certs, setView }) {
   const maxDep = Math.max(1, ...stats.byDepartment.map((d) => d.count));
   return (
     <>
+      {/* Khung vinh danh ở trên cùng — khách: "người ta vào đấy, người ta sẽ
+          nhìn thấy cái đấy đầu tiên" (họp 2026-08-07, 10:33). */}
+      <HonorBoard />
       <KpiRow items={[
         ['Số nhân sự tính đến hiện tại', kpi.total],
         ['Onboard', kpi.onboard],

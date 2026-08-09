@@ -15,7 +15,7 @@ import EmployeeForm from './EmployeeForm';
 
 const PAGE_SIZE = 20;
 
-export default function Employees({ search }) {
+export default function Employees({ search, onOpenCareer }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [dep, setDep] = useState('all');
@@ -177,7 +177,8 @@ export default function Employees({ search }) {
         onClose={() => { setSel(null); if (dirtyRef.current) { dirtyRef.current = false; reloadQuiet(); } }}
         onChanged={() => { dirtyRef.current = true; }}
         canEdit={data.canEditEmp} canManageAccount={data.canManageAccount}
-        isMgr={data.isHrManager} canSeeSalary={data.canSeeSalary} />}
+        isMgr={data.isHrManager} canSeeSalary={data.canSeeSalary}
+        onOpenCareer={onOpenCareer} />}
       {creating && (
         <EmployeeForm emp={null} isMgr={data.isHrManager}
           onClose={() => setCreating(false)}

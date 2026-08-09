@@ -22,6 +22,9 @@ const NAV = [
     { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
     // Đánh giá định kỳ (giảng viên / văn phòng) — HR, trưởng phòng, giáo vụ
     { id: 'reviews', label: 'Đánh giá', icon: 'star', need: 'manage' },
+    // Trang lịch sử từng người (họp 2026-08-07): thăng tiến + đánh giá +
+    // nhận xét thử việc + vinh danh gộp trong một dòng thời gian.
+    { id: 'career', label: 'Lộ trình sự nghiệp', icon: 'trend', need: 'manage' },
     { id: 'recruitment', label: 'Tuyển dụng', icon: 'briefcase', need: 'manage' },
     { id: 'accounts', label: 'Tài khoản', icon: 'idcard', need: 'hr' },
     { id: 'departments', label: 'Phòng ban', icon: 'building', need: 'hr' },
@@ -47,6 +50,9 @@ const NAV = [
     { id: 'service', label: 'Yêu cầu & Góp ý', icon: 'mail', need: 'self' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'self' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
+    // Cùng view 'career', tự ghim vào bản thân — khách muốn nhân viên xem
+    // được "họ được đánh giá như thế nào, thăng tiến như thế nào" (08:13).
+    { id: 'career', label: 'Lộ trình của tôi', icon: 'trend', need: 'self' },
   ]},
 ];
 
@@ -97,6 +103,8 @@ export const PAGE_META = {
   'onboarding-config': { t: 'Cấu hình nhận việc', c: 'Hệ thống / Cấu hình quy trình' },
   'recruitment-config': { t: 'Cấu hình tuyển dụng', c: 'Hệ thống / Cấu hình quy trình' },
   profile: { t: 'Hồ sơ của tôi', c: 'Cá nhân / Self-service' },
+  // Crumb trung tính: view này ở CẢ 2 mục nav (quản lý + cá nhân).
+  career: { t: 'Lộ trình sự nghiệp', c: 'Nhân sự / Thăng tiến & Đánh giá' },
   // Crumb trung tính: view này xuất hiện ở CẢ 2 mục nav (quản lý + cá nhân),
   // PAGE_META lại theo view nên "Cá nhân / Self-service" sẽ sai với HR.
   service: { t: 'Yêu cầu dịch vụ nhân sự', c: 'Nhân sự / Yêu cầu & Góp ý' },

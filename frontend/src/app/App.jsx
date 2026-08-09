@@ -5,6 +5,7 @@ import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
+import Career from '../features/employees/Career';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
 import Reviews from '../features/reviews/Reviews';
@@ -30,6 +31,11 @@ export default function App() {
   const [search, setSearch] = useState('');
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
   const [focus, setFocus] = useState(null);
+  // NV cần mở trên trang Lộ trình sự nghiệp (0 = chính mình). Đặt khi bấm
+  // "Mở trang đầy đủ" từ drawer hồ sơ.
+  const [careerEmp, setCareerEmp] = useState(0);
+
+  const openCareer = (empId) => { setCareerEmp(empId || 0); setView('career'); };
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -83,7 +89,11 @@ export default function App() {
       <div className="main">
         <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
-        {view === 'employees' && canManage && <Employees search={search} />}
+        {view === 'employees' && canManage && <Employees search={search} onOpenCareer={openCareer} />}
+        {view === 'career' && (
+          <Career canManage={canManage} focusEmpId={careerEmp}
+            onBack={canManage ? () => setView('employees') : null} />
+        )}
         {view === 'onboarding' && canManage && <Onboarding search={search} />}
         {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
         {view === 'timeoff' && <TimeOff search={search} focus={focus} />}

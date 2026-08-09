@@ -8,6 +8,7 @@ import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import HonorBoard from '../../components/HonorBoard';
 import { hbStatusKind } from '../../utils/format';
 import { InfoTab, ProbationTab, AssetsTab, PromoTab } from './EmployeeDrawer';
 import ProfileEditForm from './ProfileEditForm';
@@ -70,6 +71,9 @@ export default function Profile() {
 
   return (
     <div className="content fade-in">
+      {/* Nhân viên thường không thấy Dashboard — đây mới là màn đầu tiên của
+          họ, nên khung vinh danh phải đặt ở đây nữa (họp 2026-08-07, 10:33). */}
+      <HonorBoard />
       {/* Header hồ sơ */}
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
         <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
