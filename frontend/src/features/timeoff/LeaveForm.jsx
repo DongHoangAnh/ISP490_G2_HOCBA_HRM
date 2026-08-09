@@ -28,6 +28,14 @@ function Field({ label, full, children }) {
   );
 }
 
+/* Hôm nay theo giờ MÁY (không dùng toISOString trực tiếp: UTC lệch -7h so với
+   VN nên trước 07:00 sẽ coi hôm nay là quá khứ). */
+function todayISO() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 10);
+}
+
 /* File → base64 (bỏ tiền tố data:...;base64,). */
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -226,6 +234,7 @@ function RangeLeaveBody({ leaveTypes, isTeacher, onClose, onSaved }) {
   const [span, setSpan] = useState('day'); // 'day' | 'am' | 'pm'
   const [reason, setReason] = useState('');
   const [file, setFile] = useState(null);
+  const [makeup, setMakeup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -242,6 +251,9 @@ function RangeLeaveBody({ leaveTypes, isTeacher, onClose, onSaved }) {
   const dateFrom = from;
   const dateTo = isHalf ? from : to;
   const rangeReady = !!from && (isHalf || (!!to && to >= from));
+  // Nghỉ rồi mới nộp đơn: cho phép, nhưng NV phải tự khai "xin nghỉ bù" thì
+  // đơn mới không bị tính vào "quá hạn duyệt" của người duyệt.
+  const isPast = !!from && from < todayISO();
 
   useEffect(() => {
     if (!isTeacher || !rangeReady) { setConflicts([]); setSubs([]); setRes({}); return undefined; }
@@ -258,6 +270,9 @@ function RangeLeaveBody({ leaveTypes, isTeacher, onClose, onSaved }) {
       .finally(() => { if (alive) setChecking(false); });
     return () => { alive = false; };
   }, [isTeacher, rangeReady, dateFrom, dateTo]);
+
+  // Đổi sang ngày tương lai thì bỏ tick nghỉ bù (backend cũng chặn).
+  useEffect(() => { if (!isPast) setMakeup(false); }, [isPast]);
 
   const setResolution = (sid, patch) => setRes((m) => ({ ...m, [sid]: { ...m[sid], ...patch } }));
 
@@ -298,6 +313,7 @@ function RangeLeaveBody({ leaveTypes, isTeacher, onClose, onSaved }) {
         dateTo: isHalf ? from : to,
         period: isHalf ? span : undefined,
         reason: reason.trim(), attachment,
+        isMakeup: isPast && makeup ? true : undefined,
         resolutions: resolutions.length ? resolutions : undefined,
       });
       onSaved(payload);
@@ -360,6 +376,25 @@ function RangeLeaveBody({ leaveTypes, isTeacher, onClose, onSaved }) {
               <input type="date" style={inp} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           )}
         </div>
+
+        {/* Ngày nghỉ đã qua: vẫn cho tạo đơn (hôm đó quên nộp), nhưng hỏi rõ
+            đây có phải đơn nộp bù không — nếu có, đơn không bị tính là người
+            duyệt để quá hạn. */}
+        {isPast && (
+          <div style={{ padding: '11px 13px', background: 'var(--violet-bg,#f5f3ff)', border: '1px solid var(--border-strong)', borderRadius: 10 }}>
+            <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input type="checkbox" checked={makeup} style={{ marginTop: 2 }}
+                onChange={(e) => setMakeup(e.target.checked)} />
+              <span style={{ fontSize: 13 }}>
+                <b>Đây là đơn xin nghỉ bù</b> — hôm nghỉ chưa kịp tạo đơn, nay nộp bù.
+                <span className="muted" style={{ display: 'block', fontSize: 12, marginTop: 3 }}>
+                  Ngày bắt đầu nghỉ đã qua. Không tick thì đơn sẽ bị tính là
+                  <b> quá hạn duyệt</b> ở màn hình của người duyệt.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
 
         {isTeacher && rangeReady && (
           <ConflictStep checking={checking} conflicts={conflicts} subs={subs}

@@ -94,6 +94,10 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
                     {r.withdrawState === 'pending' && (
                       <Badge kind="red">Yêu cầu rút</Badge>
                     )}
+                    {/* Nộp bù cho ngày nghỉ đã qua — NV tự khai lúc tạo đơn.
+                        Đơn này KHÔNG bao giờ kèm tag "Quá hạn" (backend trả
+                        lapsed = null). */}
+                    {r.isMakeup && <Badge kind="violet">Xin nghỉ bù</Badge>}
                     {/* Chỉ một khái niệm "quá hạn": qua ngày bắt đầu nghỉ mà
                         đơn vẫn chờ duyệt (tag SLA theo tuổi đơn đã bỏ). */}
                     {r.lapsed && (
@@ -255,6 +259,13 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
 
         {req.reason && (
           <div className="muted" style={{ fontSize: 13 }}><b>Lý do:</b> {req.reason}</div>
+        )}
+
+        {req.isMakeup && (
+          <div style={{ padding: '10px 13px', background: 'var(--violet-bg,#f5f3ff)', border: '1px solid var(--border-strong)', borderRadius: 10, fontSize: 12.5 }}>
+            <b>Đơn xin nghỉ bù</b> — nhân viên đã nghỉ những ngày này rồi mới nộp đơn,
+            nên đơn không tính vào thống kê quá hạn duyệt.
+          </div>
         )}
 
         {req.lapsed && (
