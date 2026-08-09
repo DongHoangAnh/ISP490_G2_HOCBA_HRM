@@ -170,6 +170,19 @@ def _approvals_domain(scope):
                  ('x_withdraw_state', '=', 'pending')] + _dept_domain(scope)
 
 
+def _refused_domain(scope, dept_id, start, end):
+    """Domain KPI "Đã từ chối" (dashboard Tổng quan): đơn bị từ chối trong năm,
+    theo phạm vi phòng ban.
+
+    Gồm CẢ đơn bị từ chối do duyệt yêu cầu rút (Phase 7) — Odoo đưa đơn về
+    state 'refuse' và quỹ được hoàn — đúng nghĩa "tổng số đơn đã bị từ chối".
+    """
+    return [('state', '=', 'refuse'),
+            ('date_from', '>=', start), ('date_from', '<=', end)] \
+        + ([('department_id', '=', dept_id)] if dept_id else []) \
+        + _dept_domain(scope)
+
+
 def _scoped_departments(env, scope):
     """Phòng ban cho dropdown lọc: HR/Admin = tất cả, Trưởng phòng = phòng mình."""
     Dept = env['hr.department'].sudo()
@@ -1366,6 +1379,25 @@ class HocBaTimeoff(http.Controller):
         })
 
     # ------------------------------------------------------------------
+    # 3.2a. GET /pending-count — badge "Nghỉ phép" ở thanh menu (sidebar).
+    # Chỉ đếm (search_count), KHÔNG dựng payload đơn như /approvals: gọi ở
+    # mọi màn nên phải rẻ. Không có quyền duyệt → 200 + count 0 (badge ẩn),
+    # để SPA khỏi phải bắt 403 cho một chi tiết trang trí.
+    # ------------------------------------------------------------------
+    @http.route('/hocba-hrm/api/timeoff/pending-count', auth='user',
+                type='http', methods=['GET'])
+    def api_pending_count(self, **kw):
+        scope = self._scope()
+        if not scope['canApprove']:
+            return request.make_json_response({'canApprove': False, 'count': 0})
+        return request.make_json_response({
+            'canApprove': True,
+            # Cùng _approvals_domain với tab "Đơn chờ duyệt" → 2 badge không lệch.
+            'count': request.env['hr.leave'].sudo().search_count(
+                self._approvals_domain(scope)),
+        })
+
+    # ------------------------------------------------------------------
     # 3.2b. POST /teaching-conflicts — dò buổi dạy trùng kỳ nghỉ (giáo viên)
     # ------------------------------------------------------------------
     @http.route('/hocba-hrm/api/timeoff/teaching-conflicts', auth='user',
@@ -1939,6 +1971,10 @@ class HocBaTimeoff(http.Controller):
             'pending': Leave.search_count(pending_dom),
             'approved': Leave.search_count(approved_dom),
             'approvedDays': round(approved_days, 1),
+            # KPI "Đã từ chối" — thay ô "Tuổi đơn cũ nhất" trên FE (avgAgeDays/
+            # oldestAgeDays vẫn trả để không phá client cũ).
+            'refused': Leave.search_count(
+                _refused_domain(scope, dept_id, start, end)),
             'onLeaveToday': Leave.search_count([
                 ('state', '=', 'validate'),
                 ('date_from', '<=', '%s 23:59:59' % today),

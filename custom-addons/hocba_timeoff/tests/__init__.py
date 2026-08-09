@@ -12,6 +12,7 @@ from . import test_handover_chain
 from . import test_lapsed
 from . import test_burnout
 from . import test_approvals_domain
+from . import test_dashboard_kpi
 from . import test_attendance_integration
 from . import test_work_day_lock
 from . import test_work_day_unique
