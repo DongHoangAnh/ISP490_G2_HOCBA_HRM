@@ -16,6 +16,10 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import content_disposition, request
 from odoo.tools import html2plaintext
 
+from .workday_xlsx import (
+    XLSX_MIME, WorkdayImportError, build_template, parse_workdays_xlsx,
+)
+
 # Chứng từ y tế (BR-012): chỉ chấp nhận PDF / JPG / PNG, tối đa 5MB.
 ALLOWED_MIME = frozenset({'application/pdf', 'image/jpeg', 'image/png'})
 MAX_SIZE_BYTES = 5 * 1024 * 1024
@@ -2238,17 +2242,26 @@ class HocBaTimeoff(http.Controller):
         if not scope['isHrManager']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data()
-        raw_dates = payload.get('dates') or []
         name = (payload.get('name') or 'Ngày đi làm').strip() or 'Ngày đi làm'
         try:
             year = int(payload.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
 
+        # 2 dạng payload: `dates` (thêm tay — dùng chung 1 ghi chú `name`) hoặc
+        # `items` [{date, name}] (nhập từ Excel — ghi chú riêng từng ngày).
+        raw_items = payload.get('items')
+        if raw_items is None:
+            raw_items = [{'date': d} for d in (payload.get('dates') or [])]
+
         Model = request.env['hb.work.day'].sudo()
         limit = Model._first_editable_date()
         days = []
-        for ds in raw_dates:
+        for it in raw_items:
+            if isinstance(it, dict):
+                ds, it_name = it.get('date'), (it.get('name') or '').strip()
+            else:
+                ds, it_name = it, ''
             ds = (ds or '').strip()
             if not ds:
                 continue
@@ -2256,11 +2269,11 @@ class HocBaTimeoff(http.Controller):
                 day = fields.Date.to_date(ds)
             except (ValueError, TypeError):
                 continue
-            days.append(day)
+            days.append((day, it_name or name))
         # Chặn TRƯỚC khi tạo: chỉ nhận ngày chưa đến. Báo lỗi cả lô (không tạo
         # một phần) để HR sửa lại danh sách rồi lưu lại — tránh trạng thái
         # "đã lưu 2/3 ngày" khó hiểu.
-        past = sorted({d for d in days if d < limit})
+        past = sorted({d for d, _n in days if d < limit})
         if past:
             return request.make_json_response(
                 {'error': 'past_workday',
@@ -2270,13 +2283,80 @@ class HocBaTimeoff(http.Controller):
                             % (', '.join(d.strftime('%d/%m/%Y') for d in past),
                                limit.strftime('%d/%m/%Y'))},
                 status=400)
-        for day in days:
+        for day, day_name in days:
             if not Model.search_count([('date', '=', day)]):
-                Model.create({'date': day, 'name': name})
+                Model.create({'date': day, 'name': day_name})
         return request.make_json_response({
             'canEdit': True, 'year': year, 'minDate': self._min_work_day(),
             'workDays': self._work_days(year),
         })
+
+    # -- Nhập lịch làm việc bằng Excel (cách thêm thứ 2, cạnh thêm tay) -----
+    @http.route('/hocba-hrm/api/timeoff/workdays/template', auth='user',
+                type='http', methods=['GET'])
+    def api_workdays_template(self, **kw):
+        """Tải file .xlsx mẫu: liệt kê sẵn Thứ 7/Chủ nhật CHƯA ĐẾN của năm đó,
+        HR chỉ tick 'x'. Khoá cột Ngày/Thứ nên không chọn nhầm ngày khác."""
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+        min_date = request.env['hb.work.day'].sudo()._first_editable_date()
+        try:
+            content = build_template(year, min_date)
+        except WorkdayImportError as ex:
+            return request.make_json_response(
+                {'error': ex.code, 'message': ex.message}, status=400)
+        return request.make_response(content, headers=[
+            ('Content-Type', XLSX_MIME),
+            ('Content-Length', len(content)),
+            ('Content-Disposition',
+             content_disposition('mau-lich-lam-viec-%d.xlsx' % year)),
+        ])
+
+    @http.route('/hocba-hrm/api/timeoff/workdays/import', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_workdays_import(self, **kw):
+        """Đọc + KIỂM file HR tải lên, KHÔNG ghi gì cả — trả danh sách ngày để
+        SPA xem trước rồi mới bấm Lưu (dùng lại /workdays/add). Sai định dạng
+        thì báo lỗi ngay kèm số dòng, không nhập một phần."""
+        scope = self._scope()
+        if not scope['isHrManager']:
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        try:
+            year = int(kw.get('year') or self._this_year())
+        except (TypeError, ValueError):
+            year = self._this_year()
+
+        upload = kw.get('file')
+        filename = getattr(upload, 'filename', '') or ''
+        if not upload or not filename:
+            return request.make_json_response(
+                {'error': 'no_file', 'message': 'Chưa chọn file để tải lên.'},
+                status=400)
+        if not filename.lower().endswith('.xlsx'):
+            return request.make_json_response(
+                {'error': 'bad_ext',
+                 'message': 'Chỉ nhận file Excel .xlsx (file bạn chọn: "%s"). '
+                            'Nếu đang dùng .xls hoặc .csv, hãy mở bằng Excel '
+                            'rồi "Lưu dưới dạng" .xlsx.' % filename},
+                status=400)
+
+        Model = request.env['hb.work.day'].sudo()
+        existing = set(Model.search([
+            ('date', '>=', '%d-01-01' % year),
+            ('date', '<=', '%d-12-31' % year)]).mapped('date'))
+        try:
+            res = parse_workdays_xlsx(upload.read(), year,
+                                      Model._first_editable_date(), existing)
+        except WorkdayImportError as ex:
+            return request.make_json_response(
+                {'error': ex.code, 'message': ex.message,
+                 'details': ex.details}, status=400)
+        return request.make_json_response({'year': year, 'filename': filename, **res})
 
     @http.route('/hocba-hrm/api/timeoff/workdays/<int:day_id>/update',
                 auth='user', type='http', methods=['POST'], csrf=False)
