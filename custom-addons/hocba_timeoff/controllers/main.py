@@ -91,10 +91,11 @@ AT_RISK_DAYS = 5.0
 # người CÙNG PHÒNG nghỉ thì coi là "quá tải" → FE tô đậm cảnh báo.
 OVERLAP_WARN = 3
 
-# Phase 8 — SLA duyệt đơn. Đơn ở trạng thái chờ duyệt (confirm/validate1) >
-# SLA_DAYS ngày làm việc thì coi là "quá hạn". Đếm theo NGÀY LÀM VIỆC (T2–T6,
-# trừ ngày lễ + cộng workday HR đánh dấu) cho khớp văn hoá HR Việt Nam.
-SLA_DAYS = 3
+# "Quá hạn" trong module này CHỈ có một nghĩa: đơn còn chờ duyệt mà ngày BẮT
+# ĐẦU nghỉ đã qua (xem _lapsed_info). SLA theo tuổi đơn kể từ ngày nộp (Phase 8)
+# đã bỏ — hai khái niệm cùng tên "quá hạn" làm số liệu giữa các tab lệch nhau.
+# Ngưỡng tô đậm dòng ở bảng "Đơn quá hạn duyệt" (dashboard).
+OVERDUE_DEEP_DAYS = 3
 
 
 def _carryover_expire_date(env, year):
@@ -534,19 +535,6 @@ def _count_working_days_env(env, start, end):
     return len(_working_dates_env(env, start, end))
 
 
-def _request_age_working_days(env, leave):
-    """Tuổi đơn (Phase 8): số ngày làm việc kể từ ngày tạo đơn đến hôm nay.
-    Đơn tạo trong-ngày → tuổi = 1 (đếm cả ngày tạo) để KPI khớp văn hoá HR Việt
-    ('đơn nộp hôm nay = 1 ngày chờ'). Đơn chưa có create_date → 0."""
-    if not leave.create_date:
-        return 0
-    start = leave.create_date.date()
-    today = fields.Date.context_today(env.user)
-    if today < start:
-        return 0
-    return _count_working_days_env(env, start, today)
-
-
 # ---------------------------------------------------------------------------
 # Phase 12 — Đơn lỡ hạn duyệt. Spec:
 # docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
@@ -675,6 +663,9 @@ def _lapsed_table(env, scope, dept_id=False):
             'days': round(leave.number_of_days, 2),
             'state': leave.state,
             'stateLabel': STATE_LABEL.get(leave.state, leave.state),
+            'submittedAt': _d(leave.create_date.date()
+                              if leave.create_date else None),
+            'isEmergency': leave.x_is_emergency,
             'lapsedDays': info['lapsedDays'],
             'summary': _lapsed_summary_label(info),
             'suggestion': info['suggestion'],
@@ -698,9 +689,9 @@ def _post_lapsed_decision_note(env, leave, action, info):
     `info` phải lấy TRƯỚC khi duyệt (sau khi duyệt state đổi → hết lỡ hạn)."""
     if not info or not info.get('isLapsed'):
         return
-    head = 'Duyệt trễ' if action == 'approve' else 'Từ chối đơn lỡ hạn'
+    head = 'Duyệt trễ' if action == 'approve' else 'Từ chối đơn quá hạn'
     leave.sudo().message_post(
-        body='%s — đơn lỡ hạn %d ngày làm việc. Đối chiếu chấm công: %s.' % (
+        body='%s — đơn quá hạn %d ngày làm việc. Đối chiếu chấm công: %s.' % (
             head, info['lapsedDays'], _lapsed_summary_label(info)),
         subtype_xmlid='mail.mt_note',
     )
@@ -1261,7 +1252,6 @@ class HocBaTimeoff(http.Controller):
         }
 
     def _approval_request(self, leave):
-        age = _request_age_working_days(request.env, leave)
         return {
             'id': leave.id,
             'employeeId': leave.employee_id.id,
@@ -1288,12 +1278,9 @@ class HocBaTimeoff(http.Controller):
             # Phase 7: yêu cầu rút đơn (FE hiện badge "Yêu cầu rút" + modal riêng).
             'withdrawState': leave.x_withdraw_state,
             'withdrawReason': leave.x_withdraw_reason or '',
-            # Phase 8 — SLA: tuổi đơn (ngày làm việc) + cờ quá hạn.
-            'ageDays': age,
-            'slaDays': SLA_DAYS,
-            'overdue': age > SLA_DAYS and leave.state in PENDING_STATES,
             'submittedAt': _d(leave.create_date.date() if leave.create_date else None),
-            # Phase 12 — đơn lỡ hạn duyệt + đối chiếu chấm công (None nếu chưa).
+            # "Quá hạn duyệt": qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt, kèm
+            # đối chiếu chấm công (None nếu chưa quá hạn).
             'lapsed': _lapsed_info(request.env, leave),
         }
 
@@ -1957,52 +1944,43 @@ class HocBaTimeoff(http.Controller):
         approved_days = sum(
             r[0] for r in Leave._read_group(approved_dom, [], ['number_of_days:sum']))
 
-        # Phase 8 — SLA: tải toàn bộ đơn chờ duyệt trong phạm vi để tính tuổi.
-        # Quy mô đội nhỏ (vài chục đơn) → N+1 queries chấp nhận được; tối ưu
-        # bằng batch lookup nếu vượt 100 đơn.
-        pending_all = Leave.search(pending_dom, order='create_date asc')
-        ages = [_request_age_working_days(request.env, l) for l in pending_all]
-        overdue_idx = [i for i, a in enumerate(ages) if a > SLA_DAYS]
-        avg_age = round(sum(ages) / len(ages), 1) if ages else 0
-        oldest_age = max(ages) if ages else 0
+        # "Đơn quá hạn duyệt" dùng CHUNG nguồn với tab "Kiểm duyệt phát sinh"
+        # (_lapsed_table) — trước đây dashboard đếm theo SLA tuổi đơn nên hai
+        # tab cùng nói "quá hạn" mà ra hai con số khác nhau.
+        lapsed = _lapsed_table(request.env, scope, dept_id)
 
         kpi = {
             'total': Leave.search_count(year_dom + dept_dom),
             'pending': Leave.search_count(pending_dom),
             'approved': Leave.search_count(approved_dom),
             'approvedDays': round(approved_days, 1),
-            # KPI "Đã từ chối" — thay ô "Tuổi đơn cũ nhất" trên FE (avgAgeDays/
-            # oldestAgeDays vẫn trả để không phá client cũ).
             'refused': Leave.search_count(
                 _refused_domain(scope, dept_id, start, end)),
             'onLeaveToday': Leave.search_count([
                 ('state', '=', 'validate'),
                 ('date_from', '<=', '%s 23:59:59' % today),
                 ('date_to', '>=', '%s 00:00:00' % today)] + dept_dom),
-            # Phase 8 — SLA duyệt đơn (đếm theo ngày làm việc).
-            'slaDays': SLA_DAYS,
-            'overdue': len(overdue_idx),
-            'avgAgeDays': avg_age,
-            'oldestAgeDays': oldest_age,
+            # Quá hạn duyệt = qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt.
+            'overdue': lapsed['kpi']['total'],
+            'oldestOverdueDays': lapsed['kpi']['oldestLapsedDays'],
+            'deepOverdueDays': OVERDUE_DEEP_DAYS,   # ngưỡng FE tô đậm dòng
         }
 
+        # _lapsed_table đã sắp giảm dần theo số ngày quá hạn.
         overdue_requests = [{
-            'requestId': pending_all[i].id,
-            'employee': pending_all[i].employee_id.name,
-            'department': pending_all[i].department_id.name
-                or pending_all[i].employee_id.department_id.name or '—',
-            'leaveType': pending_all[i].holiday_status_id.name,
-            'from': _d(pending_all[i].request_date_from),
-            'to': _d(pending_all[i].request_date_to),
-            'days': round(pending_all[i].number_of_days, 2),
-            'ageDays': ages[i],
-            'submittedAt': _d(pending_all[i].create_date.date()
-                              if pending_all[i].create_date else None),
-            'state': pending_all[i].state,
-            'stateLabel': STATE_LABEL.get(pending_all[i].state, pending_all[i].state),
-            'isEmergency': pending_all[i].x_is_emergency,
-        } for i in overdue_idx]
-        overdue_requests.sort(key=lambda r: r['ageDays'], reverse=True)
+            'requestId': r['requestId'],
+            'employee': r['employee'],
+            'department': r['department'],
+            'leaveType': r['leaveType'],
+            'from': r['from'],
+            'to': r['to'],
+            'days': r['days'],
+            'overdueDays': r['lapsedDays'],
+            'submittedAt': r['submittedAt'],
+            'state': r['state'],
+            'stateLabel': r['stateLabel'],
+            'isEmergency': r['isEmergency'],
+        } for r in lapsed['items']]
 
         def _bars(groups, get_id, get_name):
             rows = []

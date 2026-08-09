@@ -270,6 +270,24 @@ class TestTimeoffLapsed(TransactionCase):
         self.assertEqual(row['state'], 'confirm')
         self.assertGreaterEqual(row['lapsedDays'], 1)
 
+    def test_lapsed_table_items_feed_dashboard_columns(self):
+        """Bảng "Đơn quá hạn duyệt" ở tab Tổng quan map thẳng từ _lapsed_table
+        → item phải đủ cột của bảng đó (ngày tạo + cờ khẩn cấp) và sắp giảm
+        dần theo số ngày quá hạn."""
+        days = self._past_working_days(3)
+        self._mk_leave(self.emp_a, days[2], days[2])          # quá hạn ít nhất
+        old = self._mk_leave(self.emp_a, days[0], days[0])    # quá hạn lâu nhất
+        old.x_is_emergency = True
+
+        env_hr = self.env(user=self.hr_user)
+        items = _lapsed_table(env_hr, _scope_for(env_hr))['items']
+        self.assertEqual(items[0]['requestId'], old.id,
+                         'phải sắp giảm dần theo số ngày quá hạn')
+        self.assertTrue(items[0]['isEmergency'])
+        self.assertEqual(items[0]['submittedAt'],
+                         old.create_date.date().isoformat())
+        self.assertFalse(items[1]['isEmergency'])
+
     # ----- Task 4: chatter note duyệt trễ / từ chối -----
     def test_lapsed_decision_note_posted(self):
         days = self._past_working_days(2)

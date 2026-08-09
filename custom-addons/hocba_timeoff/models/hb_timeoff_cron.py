@@ -100,7 +100,7 @@ class HbTimeoffCron(models.AbstractModel):
             ('x_lapsed_notified', '=', False),
         ])
         for leave in leaves:
-            title = 'Đơn nghỉ lỡ hạn duyệt'
+            title = 'Đơn nghỉ quá hạn duyệt'
             body = '%s — %s (%s) đã qua ngày nghỉ mà chưa được duyệt.' % (
                 leave.employee_id.name, leave.holiday_status_id.name,
                 _leave_span_label(leave))
