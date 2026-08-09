@@ -2,9 +2,10 @@
 
 Bảng cơ bản (GET /recruitment/jobs → data['requests']): vị trí · phòng ban ·
 trạng thái · số lượng tuyển · đã tuyển · deadline (Ngày cần onboard).
-Xổ dòng chi tiết: đã nộp CV · hoàn thiện thử việc · fail CV · fail PV.
-Bấm vào một con số → GET /recruitment/request/<id>/applicants?group=... trả
-danh sách ứng viên + thông tin JD cho popup.
+Xổ dòng chi tiết: phễu 8 mốc — Tổng CV · CV pass · CV fail · PV · PV pass ·
+PV fail · Nhận việc · Đã tuyển. Bấm vào một con số → GET
+/recruitment/request/<id>/applicants?group=... trả danh sách ứng viên + thông
+tin JD cho popup; con số và danh sách dùng CHUNG domain (APPLICANT_GROUPS).
 
 Quy ước đếm (xem _request_stats): ứng viên gắn thẳng vào đợt tuyển qua
 hr.applicant.hb_request_id, tính cả hồ sơ đã lưu trữ (active_test=False) vì hồ sơ
@@ -258,6 +259,102 @@ class TestRequestTracking(HttpCase):
         self.assertTrue(jd['levelLabel'])
         self.assertEqual(jd['languageRequirement'], 'HSK5')
         self.assertIn('12.000.000', jd['salary'])
+
+    # ── Phễu 8 mốc ───────────────────────────────────────────────────────────
+    # Tổng CV → CV pass → CV fail → PV → PV pass → PV fail → Nhận việc → Đã tuyển.
+    # Dựng phiếu RIÊNG thay vì thêm ứng viên vào req_a: mấy test trên chốt cứng
+    # "5 CV của đợt 1", thêm người vào đó là gãy cả loạt.
+
+    def _funnel_fixture(self):
+        """Phiếu riêng + 8 ứng viên phủ đủ các nhánh đếm. Trả (phiếu, dict tên→UV)."""
+        Stage = self.env['hr.recruitment.stage']
+        stage_pv = Stage.search(
+            [('sequence', '>=', 60), ('hired_stage', '=', False)],
+            order='sequence', limit=1)
+        self.assertTrue(stage_pv, 'phải có bước Phỏng vấn (sequence 60) trong quy trình')
+
+        job = self.env['hr.job'].create({
+            'name': 'Vị trí đo phễu (test tracking)',
+            'department_id': self.dept_a.id, 'no_of_recruitment': 0})
+        # qty rộng để 1 người hired không kích hoạt tự đóng phiếu.
+        req = self.env['hb.recruitment.request'].create({
+            'department_id': self.dept_a.id, 'job_id': job.id,
+            'job_title': job.name, 'qty_expected': 10})
+        req.action_submit()
+        req.action_approve()
+
+        def uv(name, **vals):
+            return self.env['hr.applicant'].create(
+                dict({'partner_name': name, 'job_id': job.id}, **vals))
+
+        people = {
+            # CV pass / fail — lấy thẳng từ ô Lọc CV
+            'pass_cv':  uv('UV pass CV', cv_filter_result='pass'),
+            'fail_cv':  uv('UV fail CV', cv_filter_result='fail'),
+            # PV suy ra: có lịch hẹn / đang ở bước Phỏng vấn / đã có kết quả
+            'hen_pv':   uv('UV mới hẹn PV', interview_date='2026-09-01'),
+            'dang_pv':  uv('UV đang ở bước PV', stage_id=stage_pv.id),
+            'pass_pv':  uv('UV pass PV', cv_filter_result='pass',
+                           interview_result='pass'),
+            'fail_pv':  uv('UV fail PV', interview_result='fail'),
+            # Nhận việc suy ra: đã điền ngày nhận việc / đã sang Onboarding trở đi
+            'nhan_viec': uv('UV đã nhận việc', start_date='2026-09-20'),
+            'ban_giao':  uv('UV đã bàn giao', stage_id=self.stage_hired.id),
+        }
+        return req, people
+
+    def test_16_funnel_counters(self):
+        """Tám con số đếm đúng, kể cả hai mốc suy ra là PV và Nhận việc."""
+        req, _ = self._funnel_fixture()
+        r = self._row(req)
+        self.assertEqual(r['cvCount'], 8)
+        self.assertEqual(r['cvPass'], 2, 'chỉ 2 hồ sơ đánh Pass ở khâu lọc CV')
+        self.assertEqual(r['failCv'], 1)
+        # PV = hẹn PV + đang ở bước PV + pass PV + fail PV + đã bàn giao (bước 100)
+        self.assertEqual(r['pvCount'], 5)
+        self.assertEqual(r['pvPass'], 1)
+        self.assertEqual(r['failPv'], 1)
+        # Nhận việc = có ngày nhận việc + đã sang bước Bàn giao nhân sự
+        self.assertEqual(r['onboard'], 2)
+        self.assertEqual(r['hired'], 1)
+
+    def test_17_funnel_never_shrinks(self):
+        """Nhóm sau luôn nằm trong nhóm trước — phễu không được hụt.
+
+        Đây là lý do PV / Nhận việc đếm theo phép HỢP (bước HOẶC dữ liệu đã
+        điền): nếu chỉ xét bước, ứng viên đã có kết quả PV mà chưa ai kéo thẻ
+        sang bước sau sẽ rơi khỏi "PV", thành ra PV fail > PV — người xem sẽ
+        tưởng số liệu sai.
+        """
+        req, _ = self._funnel_fixture()
+        r = self._row(req)
+        self.assertGreaterEqual(r['cvCount'], r['cvPass'] + r['failCv'])
+        self.assertGreaterEqual(r['pvCount'], r['pvPass'] + r['failPv'])
+        self.assertGreaterEqual(r['cvCount'], r['pvCount'])
+        self.assertGreaterEqual(r['onboard'], r['hired'])
+
+    def test_18_new_groups_list_matching_people(self):
+        """Bấm vào con số nào ra đúng người của số đó (chung domain với phần đếm)."""
+        req, _ = self._funnel_fixture()
+
+        def names(group):
+            data = self._get('request/%s/applicants?group=%s' % (req.id, group))
+            self.assertEqual(data['group'], group)
+            return {r['name'] for r in data['rows']}
+
+        self.assertEqual(names('cv_pass'), {'UV pass CV', 'UV pass PV'})
+        self.assertEqual(names('pv_pass'), {'UV pass PV'})
+        self.assertEqual(names('onboard'), {'UV đã nhận việc', 'UV đã bàn giao'})
+        self.assertEqual(names('pv'), {
+            'UV mới hẹn PV', 'UV đang ở bước PV', 'UV pass PV', 'UV fail PV',
+            'UV đã bàn giao'})
+
+    def test_19_funnel_zero_for_empty_request(self):
+        """Phiếu chưa có CV nào: cả 8 mốc = 0, không thiếu khoá nào."""
+        r = self._row(self.req_nojd)
+        for key in ('cvCount', 'cvPass', 'failCv', 'pvCount',
+                    'pvPass', 'failPv', 'onboard', 'hired'):
+            self.assertEqual(r[key], 0, 'khoá %s phải có và bằng 0' % key)
 
     def test_14_bad_group_rejected(self):
         self._get('request/%s/applicants?group=banana' % self.req_a.id, expect=400)
