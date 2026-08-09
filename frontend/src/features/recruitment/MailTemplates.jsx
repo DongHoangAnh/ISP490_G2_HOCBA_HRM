@@ -8,6 +8,7 @@ import { fetchMailTemplates, deleteMailTemplate } from '../../api/recruitment';
 import MailTemplateForm from './MailTemplateForm';
 import MailTemplateImport from './MailTemplateImport';
 import SendMailModal from './SendMailModal';
+import GuideNote from './GuideNote';
 import { toFriendly } from './mailTokens';
 
 /* Cắt bớt phần chữ dài mà vẫn giữ nguyên nghĩa: tiêu đề dài ngắn khác nhau từng
@@ -17,6 +18,39 @@ const clamp = (lines) => ({
   display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical',
   overflow: 'hidden', wordBreak: 'break-word',
 });
+
+/* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
+const TMPL_STEPS = [
+  ['Soạn hoặc mang mẫu cũ vào',
+   <>Bấm <b>Thêm mẫu</b> để soạn mới, hoặc <b>Import mẫu</b> rồi dán nguyên lá mail
+     đang dùng (Word / Gmail / sheet 7.7) — hệ thống tự tách tiêu đề, dựng nội dung
+     và nhận ra các chỗ điền dạng <b>[Tên ứng viên]</b>.</>],
+  ['Chèn thông tin tự động',
+   <>Trong ô nội dung, bấm nút <b>Chèn</b> để đặt các ô vàng: <b>Họ tên ứng viên</b>,
+     <b> Vị trí ứng tuyển</b>, <b>Email</b>, <b>Số điện thoại</b>, <b>Ngày</b> và
+     <b> Giờ phỏng vấn</b>. Lúc gửi, mỗi ô vàng được thay bằng dữ liệu thật của
+     từng ứng viên — đừng gõ tay tên người vào mẫu.</>],
+  ['Gửi cho ứng viên',
+   <>Bấm <b>Gửi mail</b> trên thẻ mẫu → tick những ứng viên cần gửi → <b>Tiếp tục</b>
+     → bấm <b>Mở Gmail</b> ở từng người và gửi bằng Gmail của bạn → quay lại bấm
+     <b> Lưu lịch sử</b>. Cần soát kỹ hoặc sửa nội dung cho riêng một người thì gửi
+     từ nút <b>Gửi mail</b> ở tab Danh sách PV / Offer, chỗ đó có <b>Xem trước</b>
+     và sửa được trước khi gửi.</>],
+  ['Nhớ hệ quả đổi bước',
+   <>Gửi <b>“Thư mời phỏng vấn”</b> đẩy ứng viên từ bước Hẹn &amp; mời phỏng vấn sang
+     <b> Phỏng vấn</b>; gửi <b>“Thư mời nhận việc”</b> đẩy sang <b>Gửi Offer</b>. Các
+     mẫu còn lại gửi đi không đổi bước. Bước chỉ đổi khi bạn bấm <b>Lưu lịch sử</b>,
+     nên đừng bỏ qua thao tác đó.</>],
+  ['Kiểm tra lại sau khi gửi',
+   <>Xem tab <b>Lịch sử gửi mail</b> để biết đã gửi cho ai, lúc nào. Sửa mẫu về sau
+     <b> không</b> ảnh hưởng các mail đã gửi.</>],
+];
+
+const TMPL_GUIDE_NOTE = (
+  <>Mail mẫu là cấu hình dùng chung <b>toàn hệ thống</b>, không theo phòng ban —
+    nên chỉ HR mới thêm/sửa/xoá/import được. Trưởng phòng <b>gửi</b> được nhưng
+    chỉ tới ứng viên phòng mình (danh sách người nhận đã lọc sẵn).</>
+);
 
 export default function MailTemplates({ search }) {
   const [data, setData] = useState(null);
@@ -108,6 +142,9 @@ export default function MailTemplates({ search }) {
         {filtered.length === 0 && <div style={{ gridColumn: '1/-1' }}><EmptyState>Chưa có mail mẫu nào.</EmptyState></div>}
         <div style={{ gridColumn: '1/-1' }}><Pagination {...pg} /></div>
       </div>
+
+      <GuideNote title="Các bước bộ phận tuyển dụng cần làm ở màn này"
+        steps={TMPL_STEPS} note={TMPL_GUIDE_NOTE} />
 
       {editing && (
         <MailTemplateForm tmpl={editing === 'new' ? null : editing}

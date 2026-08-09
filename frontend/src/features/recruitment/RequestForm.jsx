@@ -47,13 +47,22 @@ export default function RequestForm({ req, meta, onClose, onSaved }) {
   const [err, setErr] = useState(null);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
-  // Chọn vị trí theo JD -> tự điền tên vị trí nếu trống
+  /* Chọn JD từ kho → điền luôn tên vị trí + link JD. Ghi đè chứ không "chỉ điền
+     khi trống": người dùng vừa chủ động chọn JD, giá trị cũ là của JD trước đó
+     nên giữ lại chỉ gây sai lệch. Vẫn sửa tay được sau khi điền. */
   const onJob = (e) => {
     const jobId = e.target.value;
     const job = meta.jobs.find((j) => String(j.id) === String(jobId));
-    setF((p) => ({ ...p, jobId, jobTitle: p.jobTitle || (job ? job.name : '') }));
+    setF((p) => (job
+      ? { ...p, jobId, jobTitle: job.name || p.jobTitle, jdLink: job.jdLink || p.jdLink }
+      : { ...p, jobId: '' }));
   };
 
+  /* Đổi phòng ban → bỏ JD đã chọn (JD thuộc phòng khác). Giữ nguyên tên vị trí
+     và link đã điền: người dùng có thể đã sửa tay, xoá là mất công gõ lại. */
+  const onDep = (e) => setF((p) => ({ ...p, depId: e.target.value, jobId: '' }));
+
+  // Kho JD lọc theo phòng ban đang chọn (meta.jobs đã bị BE cắt theo phạm vi).
   const jobs = meta.jobs.filter((j) => !f.depId || j.dep === Number(f.depId));
 
   const submit = async () => {
@@ -84,15 +93,20 @@ export default function RequestForm({ req, meta, onClose, onSaved }) {
       <div style={{ padding: '22px 24px', maxHeight: '58vh', overflowY: 'auto' }}>
         <Section title="Vị trí cần tuyển">
           <Field label="Phòng ban *">
-            <select style={inp} value={f.depId} onChange={(e) => setF((p) => ({ ...p, depId: e.target.value, jobId: '' }))}>
+            <select style={inp} value={f.depId} onChange={onDep}>
               <option value="">— Chọn —</option>
               {meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select></Field>
-          <Field label="Vị trí (theo JD)">
-            <select style={inp} value={f.jobId} onChange={onJob}>
-              <option value="">— Không chọn —</option>
+          <Field label="JD từ kho">
+            <select style={inp} value={f.jobId} onChange={onJob} disabled={!f.depId}>
+              <option value="">{f.depId
+                ? (jobs.length ? '— Chọn JD —' : '— Phòng ban này chưa có JD —')
+                : '— Chọn phòng ban trước —'}</option>
               {jobs.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
-            </select></Field>
+            </select>
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              Lấy từ tab <b>Kho quản lý JD</b>, lọc theo phòng ban đã chọn. Chọn xong
+              tự điền tên vị trí và link JD.</span></Field>
           <Field label="Tên vị trí *">
             <input style={inp} value={f.jobTitle} onChange={set('jobTitle')} placeholder="VD: Giáo viên Tiếng Trung" /></Field>
           <Field label="Số lượng cần tuyển">

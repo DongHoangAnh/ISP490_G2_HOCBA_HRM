@@ -16,7 +16,8 @@ cầu, tạo lịch rảnh PV, soạn/xem trước/chỉnh sửa & gửi mail m�
 | # | Tab | Component | Endpoint chính |
 |---|-----|-----------|----------------|
 | 1 | **Danh sách CV** | `CvList` | `GET /cv` (+ create/update/stage/cv-file) |
-| 2 | **Vị trí tuyển dụng / JD** | `Jobs` | `GET /jobs` (+ job CRUD) |
+| 2 | **Kho quản lý JD** | `JdLibrary` | `GET /jobs` (+ job CRUD — nút Thêm vị trí) |
+| 2b | **Theo dõi tuyển dụng** *(tên cũ: Vị trí tuyển dụng / JD)* | `Jobs` | `GET /jobs` (+ publish) |
 | 3 | **Phiếu yêu cầu** | `Requests` | `GET /requests` (+ CRUD + action) |
 | 4 | **Danh sách PV** | `InterviewSlots` | `GET /interview-slots` + `GET /cv` (lọc stage Phỏng vấn) |
 | 5 | **Offer & Nhận việc** | `Offers` | `GET /cv` (lọc stage Offer/Onboarding) + mail |
@@ -112,8 +113,23 @@ Trả toàn bộ ứng viên active + meta (nhãn select, danh sách stages/jobs
 **`_job_row` (rút gọn):** `id, name, depId, depName, status, published, expected, hired, applications, newApplications, location, teachingLevel, requiresTeaching, sessionsPerWeek` (+ `description` khi detail).
 - `hired` = `no_of_hired_employee` của vị trí.
 
-**`requests` (vị trí đang tuyển từ phiếu — dùng cho view "Phòng ban"):** các phiếu `state='recruiting'`, mỗi item: `id, code, jobTitle, depId, depName, qty, hired, jobId, jobName, published, levelLabel, jdLink`.
-- `hired` = số ứng viên ở **stage hired** (`stage_id.hired_stage=True`) của JD gắn với phiếu (đếm thực tế, kể cả hồ sơ archive).
+**`requests` (nguồn của tab "Theo dõi tuyển dụng"):** các phiếu `state in ('recruiting','closed')` — **có cả phiếu đã đóng** để người dùng thấy nó chuyển trạng thái thay vì biến mất khi tuyển đủ; phiếu nháp/chờ duyệt/từ chối đứng ngoài. Mỗi item: `id, code, jobTitle, depId, depName, state, stateLabel, jobStatus, qty, hired, deadline, cvCount, failCv, failPv, jobId, jobName, published, websiteUrl, levelLabel, jdLink`.
+
+**Cột "Trạng thái" trên tab = ghép 2 nguồn** (SPA `trackStatus()`), ưu tiên nặng → nhẹ:
+1. `state != 'recruiting'` → **Đã đóng** — chốt đợt tuyển. Tuyển đủ chỉ tiêu thì `_hb_auto_close_if_filled` tự đóng phiếu + tự ngừng đăng.
+2. `jobStatus == 'stopped'` → **Dừng tuyển** — chỉ tắt tin của JD, phiếu vẫn mở, bật lại được. Đây là cờ mà nút **Đăng tuyển / Ngừng đăng** lật (`_job_vals`: `published` → `is_published` + `x_published` + `recruitment_status`).
+3. còn lại → **Đang tuyển**.
+`jobStatus` = `hr.job.recruitment_status` của JD gắn với phiếu (rỗng khi phiếu chưa gắn JD).
+- `hired` = số ứng viên ở **stage hired** (`stage_id.hired_stage=True`) của JD gắn với phiếu — tức đã **hoàn thiện thử việc** (NV lên `official` thì `hr_employee._hb_advance_applicant_to_handover()` đẩy ứng viên tới bước Bàn giao nhân sự). Đếm thực tế, kể cả hồ sơ archive.
+- `cvCount` = tổng ứng viên của đợt · `failCv` = `cv_filter_result='fail'` · `failPv` = `interview_result='fail'`. Một ứng viên fail cả hai khâu được đếm ở **cả hai** cột (2 chỉ số độc lập, không phải phân loại loại trừ).
+- `deadline` = `expected_start_date` ("Ngày cần onboard") của phiếu.
+- 4 chỉ số gom bằng `_read_group` theo `hb_request_id` (`_request_stats`), không đếm rời từng phiếu.
+
+**Gắn CV vào đợt tuyển — `hr.applicant.hb_request_id`** (từ 19.0.2.7.0):
+- Tự điền khi `create` và khi `write` đổi `job_id`: lấy phiếu `state='recruiting'` mới nhất của vị trí (`_hb_open_request`). Vị trí không mở đợt nào ⇒ **để trống**, không lùi về phiếu đã đóng.
+- **Không bao giờ ghi đè** giá trị đã có — HR gán tay thì máy không đạp lên, kể cả khi sau đó đổi vị trí ứng tuyển.
+- Wire format: `_cv_row` trả thêm `requestId`, `requestCode`; payload nhận `requestId`. `_meta()` (`GET /cv`) trả thêm `requests` (chỉ phiếu đang tuyển, lọc theo phạm vi phòng ban) cho ô chọn ở form CV.
+- Migration `19.0.2.7.0/post-migrate.py` gán ngược CV cũ theo luật "phiếu mở gần nhất trước ngày nhận CV", fallback phiếu sớm nhất của vị trí.
 
 **Trường `published` — đồng bộ 3 nơi (quan trọng):**
 - `published` đọc từ **`is_published`** (trạng thái thật trên website công khai `/jobs` — nguồn sự thật), không còn đọc `x_published`.
@@ -127,6 +143,11 @@ Trả toàn bộ ứng viên active + meta (nhãn select, danh sách stages/jobs
 - `GET /requests` · `GET /request/<id>`
 - `POST /requests` *(recruiter)* — tạo · `POST /request/<id>` *(recruiter)* — sửa
 - `POST /request/<id>/action` body `{ "action": "submit|approve|close|refuse|reset_draft", ... }` — chuyển state.
+- `GET /request/<id>/applicants?group=cv|hired|fail_cv|fail_pv` — ứng viên của phiếu theo nhóm, cho popup "xem chi tiết số ứng viên" ở tab Theo dõi tuyển dụng.
+  - Trả `{ group, jd, rows, cvResultLabels, interviewResultLabels }`; `rows` dùng lại `_cv_row`.
+  - `jd` = thông tin phiếu + JD để đối chiếu: `code, jobTitle, jobName, depName, state, stateLabel, qty, deadline, dateRequest, requester, levelLabel, reasonLabel, educationLabel, workTypeLabel, experienceYears, languageRequirement, skillDescription, salary, jdLink, jdDescription, published, websiteUrl`.
+  - `group` ngoài danh sách → **400**; phiếu không tồn tại → **404**; ngoài phạm vi phòng ban → **403**.
+  - Lọc theo `hb_request_id = <phiếu>`; phiếu chưa gắn JD thì chưa CV nào quy về được ⇒ `rows` rỗng.
 
 State machine: `draft → submitted → recruiting → closed`; `submitted → refused → (reset_draft) → draft`.
 Khi `approve` (→ recruiting): nếu phiếu có `job_id` thì **cộng dồn `qty_expected` vào `no_of_recruitment`** của vị trí (cờ `headcount_synced`, 1 lần/phiếu).

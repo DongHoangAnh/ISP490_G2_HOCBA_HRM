@@ -2,8 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // Dev:   npm run dev  → http://localhost:5173, proxy API về Odoo Docker.
-//        Odoo bind cả IPv6; dùng [::1] để chắc chắn vào Docker chứ không phải
-//        Odoo native Windows (xem docs/DEV_LOCAL.md).
+//        Stack Neon (docker-compose.onl.yml) publish cổng 8070 → proxy vào
+//        127.0.0.1:8070, tránh đụng Odoo native Windows đang giữ 8069.
 // Build: npm run build → custom-addons/hocba_hrm/static/spa/, Odoo serve
 //        qua route /hocba-hrm (controllers/main.py).
 export default defineConfig({
@@ -11,13 +11,13 @@ export default defineConfig({
   base: '/hocba_hrm/static/spa/',
   server: {
     proxy: {
-      '/hocba-hrm/api': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/hocba-hrm': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/hocba_employees/static': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/web': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/odoo': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/jobs': { target: 'http://[::1]:8069', changeOrigin: false },
-      '/website': { target: 'http://[::1]:8069', changeOrigin: false },
+      '/hocba-hrm/api': { target: 'http://127.0.0.1:8070', changeOrigin: false },
+      '/hocba-hrm': { target: 'http://127.0.0.1:8070', changeOrigin: false },
+      '/hocba_employees/static': { target: 'http://127.0.0.1:8070', changeOrigin: false },
+      '/web': { target: 'http://127.0.0.1:8070', changeOrigin: false },
+      '/odoo': { target: 'http://127.0.0.1:8070', changeOrigin: false },
+      '/jobs': { target: 'http://127.0.0.1:8070', changeOrigin: false },
+      '/website': { target: 'http://127.0.0.1:8070', changeOrigin: false },
     },
   },
   build: {
