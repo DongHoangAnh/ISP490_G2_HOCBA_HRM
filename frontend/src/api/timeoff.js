@@ -7,6 +7,12 @@ export const fetchOverview = () => hbGet('/hocba-hrm/api/timeoff/overview');
 /* Tab "Chờ duyệt" (officer): đơn đang chờ của đội. */
 export const fetchApprovals = () => hbGet('/hocba-hrm/api/timeoff/approvals');
 
+/* Số đơn cần duyệt — cho badge cạnh "Nghỉ phép" ở thanh menu. Endpoint chỉ
+   đếm (rẻ hơn fetchApprovals) và trả {canApprove:false, count:0} thay vì 403
+   khi user không có quyền duyệt. */
+export const fetchPendingCount = () =>
+  hbGet('/hocba-hrm/api/timeoff/pending-count');
+
 /* Tạo đơn nghỉ cho chính mình. payload:
    { leaveTypeId, dateFrom, dateTo, period?, reason, attachment?, resolutions? }
    period = 'am'|'pm' cho nghỉ NỬA NGÀY (chỉ loại requestUnit='half_day'); bỏ trống = cả ngày.

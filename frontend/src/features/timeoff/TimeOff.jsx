@@ -25,7 +25,7 @@ import SummaryPanel from './SummaryPanel';
 import WorkScheduleModal from './WorkScheduleModal';
 import HistoryTimeline from './HistoryTimeline';
 
-export default function TimeOff({ search, focus }) {
+export default function TimeOff({ search, focus, onPendingCount }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
@@ -45,10 +45,16 @@ export default function TimeOff({ search, focus }) {
   };
   useEffect(load, []);
 
+  // Badge "Đơn chờ duyệt": cập nhật cả tab lẫn mục "Nghỉ phép" ở thanh menu.
+  const updatePending = (n) => {
+    setPendingCount(n);
+    if (onPendingCount) onPendingCount(n);
+  };
+
   // Officer: lấy số đơn đang chờ để hiện badge trên tab "Chờ duyệt".
   useEffect(() => {
     if (data && data.isOfficer) {
-      fetchApprovals().then((d) => setPendingCount((d.requests || []).length)).catch(() => {});
+      fetchApprovals().then((d) => updatePending((d.requests || []).length)).catch(() => {});
     }
   }, [data]);
 
@@ -155,7 +161,7 @@ export default function TimeOff({ search, focus }) {
         <ApprovalPanel isHrManager={data.isHrManager}
           focusRequestId={approvalFocus}
           onFocusConsumed={() => setApprovalFocus(null)}
-          onChanged={setPendingCount} />
+          onChanged={updatePending} />
       )}
       {/* Lapsed/Burnout chỉ hiện DeptSelect khi seeAll → chặn dept chọn ở tab khác
           leak vào thành filter ẩn (trưởng phòng nhiều phòng ban không thấy/xóa được). */}
