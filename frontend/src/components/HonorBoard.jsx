@@ -41,8 +41,10 @@ export default function HonorBoard() {
 
   if (!board) return null;
   const empty = board.entries.length === 0 && board.ranking.length === 0;
-  // Bảng trống với nhân viên thường = một ô chết ngay đầu trang → ẩn hẳn.
-  if (empty && !board.canManage) return null;
+  // Thêm/gỡ là quyền HR (canEdit), KHÔNG phải mọi vai trò quản lý — trưởng
+  // phòng bấm "Thêm vinh danh" chỉ nhận 403 từ API.
+  // Bảng trống mà không có quyền thêm = một ô chết ngay đầu trang → ẩn hẳn.
+  if (empty && !board.canEdit) return null;
   // Với HR thì vẫn phải có lối thêm, nhưng không được ngốn nguyên khung cao
   // ở chỗ đắt nhất của trang — thu về một dải mỏng.
   if (empty) {
@@ -87,7 +89,7 @@ export default function HonorBoard() {
           {board.periodLabel}
           {!board.isCurrent && ' · kỳ gần nhất có dữ liệu'}
         </span>
-        {board.canManage && (
+        {board.canEdit && (
           <div className="actions">
             <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
               <Icon name="plus" size={13} />Thêm vinh danh</button>
@@ -129,7 +131,7 @@ export default function HonorBoard() {
                       <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>{h.description}</div>
                     )}
                   </div>
-                  {board.canManage && (
+                  {board.canEdit && (
                     <button className="icon-btn" title="Gỡ khỏi bảng"
                       style={{ position: 'absolute', top: 6, right: 6 }}
                       onClick={() => setRemoving(h)}>

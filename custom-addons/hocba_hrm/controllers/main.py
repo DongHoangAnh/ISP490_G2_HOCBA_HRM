@@ -1781,15 +1781,21 @@ def _career_payload(env, emp_id):
             bits.append('QĐ: %s' % p.decision_ref)
         # Snapshot 'join' chưa có chức vụ trước/sau → "— → —" vô nghĩa với
         # người đọc; dòng đó chính là mốc vào làm.
-        if p.x_change_type == 'join':
+        is_join = p.x_change_type == 'join'
+        if is_join:
             title = 'Vào làm việc'
             if p.to_job_id:
                 bits.insert(0, p.to_job_id.name)
         else:
             title = '%s → %s' % (p.from_job_id.name or '—',
                                  p.to_job_id.name or '—')
+        # Snapshot 'join' KHÔNG mang kind 'promotion': bộ lọc dòng thời gian
+        # đếm theo kind, nên người chưa từng thăng chức sẽ thấy chip
+        # "Thăng tiến (1)" ngay cạnh ô "Lần thăng chức: 0" — cùng một mâu
+        # thuẫn đã sửa ở stats (promoCount/monthsSincePromo).
         item = {
-            'kind': 'promotion', 'date': _d(p.date_effective), 'sort': 1,
+            'kind': 'join' if is_join else 'promotion',
+            'date': _d(p.date_effective), 'sort': 0 if is_join else 1,
             'title': title,
             'detail': ' · '.join(bits),
             'badge': change_labels.get(p.x_change_type, ''),
@@ -2018,6 +2024,7 @@ def _honor_board(env):
         ('eval_date', '>=', first),
         ('eval_date', '<=', last_day),
     ])
+    is_hr = _is_hr(env)
     ranking = []
     for ev in evals.sorted(key=lambda e: -e.total_score)[:HONOR_RANK_LIMIT]:
         emp = ev.employee_id
@@ -2025,8 +2032,10 @@ def _honor_board(env):
                'dep': emp.department_id.name or '',
                'hasImg': bool(emp.image_128)}
         # Điểm đánh giá cá nhân không bày cho toàn công ty — vinh danh là
-        # nêu tên, không phải công bố bảng điểm.
-        if can_manage:
+        # nêu tên, không phải công bố bảng điểm. Bảng là dữ liệu chung nên
+        # quản lý cũng chỉ thấy điểm của người TRONG phạm vi mình: cùng một
+        # người đó, /api/career trả 403 cho trưởng phòng phòng khác.
+        if is_hr or _emp_in_scope(env, emp):
             row['score'] = round(ev.total_score, 1)
         ranking.append(row)
 
@@ -2035,6 +2044,10 @@ def _honor_board(env):
         'periodLabel': _honor_period_label(period),
         'isCurrent': period == current,
         'canManage': can_manage,
+        # Thêm/gỡ mục vinh danh là quyền HR (_honor_create/_honor_archive).
+        # FE bày nút theo cờ này, không theo canManage — bày cho trưởng phòng
+        # là mời họ bấm vào một lỗi 403.
+        'canEdit': is_hr,
         'entries': [_honor_row(e, labels) for e in entries],
         'ranking': ranking,
     }
@@ -2805,9 +2818,17 @@ class HocBaHRM(http.Controller):
         # --- Thăng tiến (F-007) ---
         promotions = []
         for p in e.x_promotion_ids.sorted('date_effective'):
+            # Snapshot 'join' chưa có chức vụ trước/sau → tiêu đề dựng từ
+            # fromJob/toJob thành "— → —" (hồ sơ nào cũng mở ra bằng dòng
+            # đó). Trang Lộ trình đã bỏ; tab Thăng tiến dùng chung 'title'.
+            is_join = p.x_change_type == 'join'
             item = {
                 'id': p.id,
                 'date': _d(p.date_effective),
+                'changeType': p.x_change_type or '',
+                'title': ('Vào làm việc' if is_join
+                          else '%s → %s' % (p.from_job_id.name or '—',
+                                            p.to_job_id.name or '—')),
                 'fromJob': p.from_job_id.name or '—',
                 'toJob': p.to_job_id.name or '—',
                 'dept': p.to_department_id.name or '',

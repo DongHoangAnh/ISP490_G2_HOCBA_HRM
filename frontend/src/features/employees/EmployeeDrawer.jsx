@@ -537,7 +537,7 @@ function PromoTimeline({ path, isMgr }) {
             <div style={{ flex: 1 }}>
               <div className="between">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>{p.fromJob} → {p.toJob}</span>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>{p.title || `${p.fromJob} → ${p.toJob}`}</span>
                   {p.dept && <Badge kind="gray">{p.dept}</Badge>}
                   {delta > 0 && <span className="badge badge-gold"><Icon name="arrowUp" size={11} />+{hbVND(delta)}</span>}
                 </div>

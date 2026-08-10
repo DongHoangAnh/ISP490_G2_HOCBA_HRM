@@ -116,6 +116,49 @@ class TestHonorBoard(TransactionCase):
         self.assertTrue(out['canManage'])
         self.assertAlmostEqual(out['ranking'][0]['score'], 90.0, places=0)
 
+    def _dept_manager(self, name):
+        """Trưởng phòng của MỘT phòng riêng — phạm vi không chạm self.emp."""
+        dept = self.env['hr.department'].create({'name': 'Phòng %s' % name})
+        user = self.env['res.users'].create({
+            'name': 'TP %s' % name, 'login': 'tp_%s_honor' % name,
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        emp = self.env['hr.employee'].create({
+            'name': 'TP %s' % name, 'x_employee_code': 'EMP-TP-%s' % name,
+            'department_id': dept.id, 'user_id': user.id})
+        dept.manager_id = emp.id
+        return user, dept
+
+    def test_ranking_hides_score_of_employee_out_of_scope(self):
+        # Trưởng phòng bị chặn 403 ở /api/career của NV phòng khác, nhưng lại
+        # đọc được ĐIỂM đánh giá của chính người đó trên bảng vinh danh —
+        # bảng là dữ liệu toàn công ty, điểm thì không.
+        tp, _dept = self._dept_manager('Ngoai')
+        self._confirmed_eval(self.emp, 0.9)
+        out = _honor_board(self._env(tp))
+        self.assertEqual(out['ranking'][0]['empName'], 'Ngôi Sao')
+        self.assertNotIn('score', out['ranking'][0])
+
+    def test_ranking_shows_score_of_own_member_to_manager(self):
+        # Người của phòng mình thì vẫn thấy điểm — đúng phạm vi quản lý.
+        tp, dept = self._dept_manager('Cua Minh')
+        member = self.env['hr.employee'].create({
+            'name': 'Nhan Vien Cua TP', 'x_employee_code': 'EMP-TP-MEM',
+            'department_id': dept.id})
+        self._confirmed_eval(member, 0.7)
+        out = _honor_board(self._env(tp))
+        row = next(r for r in out['ranking']
+                   if r['empName'] == 'Nhan Vien Cua TP')
+        self.assertAlmostEqual(row['score'], 70.0, places=0)
+
+    def test_can_edit_only_for_hr(self):
+        # FE bày nút "Thêm vinh danh"/"Gỡ" theo cờ này; bày cho vai trò mà API
+        # chắc chắn từ chối (_honor_create đòi _is_hr) là mời người dùng bấm
+        # vào một lỗi.
+        tp, _dept = self._dept_manager('Nut')
+        self.assertFalse(_honor_board(self._env(self.plain))['canEdit'])
+        self.assertFalse(_honor_board(self._env(tp))['canEdit'])
+        self.assertTrue(_honor_board(self._env(self.hr))['canEdit'])
+
     def test_ranking_only_qualified_confirmed_in_period(self):
         other = self.env['hr.employee'].create({
             'name': 'Chưa đạt', 'x_employee_code': 'EMP-HONOR-2'})

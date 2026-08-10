@@ -136,9 +136,30 @@ class TestCareer(TransactionCase):
         # thêm mốc tổng hợp nữa là hai dòng "nhận việc" chồng nhau.
         self.emp.x_probation_start = date(2026, 1, 5)
         out = _career_payload(self._env(self.hr_mgr), self.emp.id)
-        self.assertNotIn('join', self._kinds(out))
+        self.assertEqual(self._kinds(out).count('join'), 1)
         joins = [t for t in out['timeline'] if t['badge'] == 'Nhận việc']
         self.assertEqual(len(joins), 1)
+
+    def test_career_join_snapshot_not_counted_as_promotion(self):
+        # Bộ lọc dòng thời gian đếm theo kind. Snapshot 'join' mang kind
+        # 'promotion' thì người chưa từng thăng chức vẫn thấy chip
+        # "Thăng tiến (1)" ngay cạnh ô "Lần thăng chức: 0" — đúng cái mâu
+        # thuẫn đã sửa ở tầng thống kê, còn sót ở tầng dòng thời gian.
+        bare = self.env['hr.employee'].create({
+            'name': 'Chua Thang Chuc Chip', 'x_employee_code': 'EMP-CAR-7'})
+        out = _career_payload(self._env(self.hr_mgr), bare.id)
+        self.assertEqual(out['stats']['promoCount'], 0)
+        self.assertEqual(self._kinds(out).count('promotion'), 0)
+        self.assertEqual(self._kinds(out).count('join'), 1)
+
+    def test_career_real_promotion_still_counted(self):
+        # Đừng sửa quá tay: thăng chức thật vẫn phải nằm trong nhóm 'promotion'
+        # (và các biến động khác — lương/thử việc — cũng vậy).
+        self._promo()
+        self._promo(x_change_type='salary', date_effective=date(2026, 5, 2))
+        kinds = self._kinds(_career_payload(self._env(self.hr_mgr),
+                                            self.emp.id))
+        self.assertEqual(kinds.count('promotion'), 2)
 
     def test_career_timeline_sorted_desc(self):
         self._promo()
