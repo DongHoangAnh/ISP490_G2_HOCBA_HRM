@@ -368,6 +368,39 @@ Ngoài ra `_honor_board` đọc **toàn bộ** bảng nên test của nó phải
 liệu sẵn có trong `setUp` (trong phạm vi transaction) — nếu không, mọi khẳng
 định về kỳ / thứ tự / bảng-rỗng sẽ vỡ ngay khi DB có mục vinh danh thật.
 
+## 8b. Đợt tự kiểm 2026-08-10 (trên DB thật, 200 NV)
+
+Chạy lại toàn bộ tính năng trên Neon với 3 vai (`test_hrmanager`,
+`test_truongphong`, `test_employee`). Bốn thứ nữa lộ ra — đều đã sửa, mỗi cái
+có test chặn:
+
+5. **Điểm đánh giá rò ra ngoài phạm vi.** `score` trong `ranking` gác bằng
+   `_user_can_manage` (mọi vai trò quản lý), nên trưởng phòng đọc được điểm
+   của người **phòng khác** — trong khi `/api/career/<id>` của đúng người đó
+   trả **403** cho họ. → Điều kiện đổi thành `_is_hr(env) or
+   _emp_in_scope(env, emp)`: HR thấy hết, quản lý chỉ thấy điểm người
+   trong phạm vi mình, còn lại chỉ thấy tên như nhân viên thường.
+6. **Nút HR bày cho vai trò không có quyền.** `HonorBoard` bật "Thêm vinh
+   danh" / "Gỡ khỏi bảng" theo `canManage`, mà `_honor_create` /
+   `_honor_archive` lại đòi `_is_hr` ⇒ trưởng phòng bấm là chắc chắn 403.
+   → Payload thêm cờ **`canEdit = _is_hr(env)`**, FE bày nút theo cờ đó
+   (kể cả nhánh "bảng rỗng thu về dải mỏng").
+7. **Snapshot `join` vẫn mang `kind='promotion'`.** Đã sửa ở tầng thống kê
+   (§8.2) nhưng còn sót ở dòng thời gian: chip lọc đếm theo `kind` nên
+   người chưa từng thăng chức vẫn thấy **"Thăng tiến (1)"** cạnh ô
+   "Lần thăng chức: 0". → Dòng đó nhận `kind='join'`, `sort=0`.
+8. **Tab Thăng tiến trong hồ sơ vẫn in "— → —".** Trang lộ trình đã bỏ
+   (§8.3) nhưng `PromoTab` (drawer + "Hồ sơ của tôi") tự ghép
+   `fromJob → toJob` nên hồ sơ nào cũng mở đầu bằng dòng vô nghĩa đó.
+   → `_employee_detail` trả thêm `changeType` + **`title`** dựng sẵn, FE
+   dùng `p.title` (vẫn fallback về mũi tên cho payload cũ).
+
+**Cải thiện kèm theo**: ô chọn nhân viên trên trang `career` từ `<select>`
+phẳng đổi thành **ô tìm kiếm gõ-để-lọc** (`PeoplePicker` trong `Career.jsx`).
+Trên DB thật danh sách đã 199 người — thẻ `<select>` bắt HR cuộn tay qua từng
+dòng. Lọc theo tên **không dấu** lẫn mã HB, hiển thị tối đa 30 dòng kèm nhắc
+"còn N người nữa — gõ thêm để lọc".
+
 ## 9. Rủi ro đã cân nhắc
 
 - **`Dashboard.jsx` và `Shell.jsx` là file CHUNG.** Chỉ chèn thêm, không sửa
