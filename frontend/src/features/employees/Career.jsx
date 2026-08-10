@@ -7,7 +7,7 @@
    Trang riêng chứ KHÔNG phải popup — chính là thứ khách bảo bỏ.
    Owner: Tân.
    ============================================================ */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area,
   BarChart, Bar, Cell, LabelList, PieChart, Pie, Legend,
@@ -99,15 +99,7 @@ export default function Career({ canManage, focusEmpId, onBack }) {
       </div>
       <div className="actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {canManage && (
-          <select style={SEL} value={empId}
-            onChange={(ev) => setEmpId(Number(ev.target.value))}>
-            <option value={0}>— Chọn nhân viên —</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code ? `${p.code} · ` : ''}{p.name}
-              </option>
-            ))}
-          </select>
+          <PeoplePicker people={people} empId={empId} onPick={setEmpId} />
         )}
         {onBack && (
           <button className="btn btn-ghost" onClick={onBack}>
@@ -137,6 +129,95 @@ export default function Career({ canManage, focusEmpId, onBack }) {
       {head}
       <HonorBoard />
       {body()}
+    </div>
+  );
+}
+
+/* Ô chọn nhân viên có tìm kiếm. Danh sách thật đã hơn 200 người — thẻ
+   <select> phẳng bắt HR cuộn tay qua từng dòng để mở lộ trình một người.
+   Lọc theo tên KHÔNG dấu lẫn mã HB, cắt 30 dòng cho danh sách khỏi dài. */
+const noAccent = (s) => (s || '').normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
+
+function PeoplePicker({ people, empId, onPick }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onDocDown = (ev) => {
+      if (wrapRef.current && !wrapRef.current.contains(ev.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, []);
+
+  const selected = people.find((p) => p.id === Number(empId));
+  const q = noAccent(query.trim());
+  const matched = q
+    ? people.filter((p) => noAccent(p.name).includes(q)
+        || noAccent(p.code).includes(q))
+    : people;
+  const shown = matched.slice(0, 30);
+
+  const pick = (p) => { onPick(p.id); setQuery(''); setOpen(false); };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <div style={{ position: 'absolute', left: 10, top: '50%',
+        transform: 'translateY(-50%)', color: 'var(--muted)',
+        pointerEvents: 'none', display: 'flex' }}>
+        <Icon name="search" size={14} />
+      </div>
+      <input
+        style={{ ...SEL, paddingLeft: 30, paddingRight: selected ? 28 : 10 }}
+        value={open ? query : (selected
+          ? `${selected.code ? `${selected.code} · ` : ''}${selected.name}`
+          : '')}
+        placeholder="Tìm nhân viên theo tên hoặc mã…"
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={(ev) => { setQuery(ev.target.value); setOpen(true); }}
+      />
+      {selected && !open && (
+        <button className="icon-btn" title="Bỏ chọn"
+          style={{ position: 'absolute', right: 4, top: '50%',
+            transform: 'translateY(-50%)' }}
+          onClick={() => { onPick(0); setQuery(''); }}>
+          <Icon name="x" size={13} className="faint" />
+        </button>
+      )}
+      {open && (
+        <div className="card" style={{ position: 'absolute', top: '100%',
+          left: 0, right: 0, zIndex: 60, marginTop: 4, padding: 4,
+          maxHeight: 300, overflowY: 'auto',
+          boxShadow: '0 8px 24px rgba(0,0,0,.14)' }}>
+          {shown.length === 0 && (
+            <div className="muted" style={{ padding: '10px 12px', fontSize: 13 }}>
+              Không có nhân viên nào khớp.
+            </div>
+          )}
+          {shown.map((p) => (
+            <div key={p.id} role="button" onMouseDown={() => pick(p)}
+              style={{ padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                fontSize: 13, display: 'flex', gap: 8, alignItems: 'baseline',
+                background: p.id === Number(empId) ? 'var(--gray-50)' : '' }}>
+              {p.code && (
+                <span className="muted" style={{ fontSize: 12 }}>{p.code}</span>
+              )}
+              <span>{p.name}</span>
+              {p.depName && (
+                <span className="muted" style={{ fontSize: 11.5,
+                  marginLeft: 'auto' }}>{p.depName}</span>
+              )}
+            </div>
+          ))}
+          {matched.length > shown.length && (
+            <div className="muted" style={{ padding: '6px 10px', fontSize: 12 }}>
+              còn {matched.length - shown.length} người nữa — gõ thêm để lọc
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
