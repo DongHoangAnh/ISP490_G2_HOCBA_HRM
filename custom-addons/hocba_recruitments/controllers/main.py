@@ -8,6 +8,9 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
 from ..models.hr_job import HB_TEACHING_LEVELS
+from ..models.hb_interview_slot import (
+    P_SLOT_CLOSE, P_SLOT_OPEN, P_SLOT_STEP, SLOT_STEPS_ALLOWED, _hour_label,
+)
 
 
 def _d(v):
@@ -619,11 +622,44 @@ class HocBaTuyenDung(http.Controller):
         a._hb_advance_stage(
             ['hb_stage_result', 'hb_stage_offer'], 'hb_stage_onboarding',
             'Do đã tạo hồ sơ nhân viên (Onboard).')
+        self._notify_profile_incomplete(emp)
         return request.make_json_response({
             'created': True, 'employeeId': emp.id,
             'employeeName': emp.name or '',
             'employeeCode': emp.x_employee_code or '',
         })
+
+    def _notify_profile_incomplete(self, emp):
+        """Chuông "cần hoàn thiện hồ sơ" cho hồ sơ vừa sinh từ ứng viên.
+
+        Hồ sơ tạo từ tuyển dụng luôn thiếu CCCD / MST / BHXH — tuyển dụng không
+        nắm mấy thông tin đó. Thiếu thì BR-010 chặn lên chính thức, mà người
+        phát hiện lại là HR ở tận cuối kỳ thử việc. Báo ngay lúc tạo.
+
+        Người nhận: HR Manager (người điền) + chính người vừa bấm Onboard (họ
+        biết hồ sơ này vừa sinh ra, và thường là người đi nhắc). dedup theo
+        employee để bấm lại nút không sinh thêm chuông.
+        """
+        missing = emp._hocba_missing_official_fields()
+        if not missing:
+            return
+        env = request.env
+        recipients = env['res.users'].sudo().browse(env.user.id)
+        grp = env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if grp:
+            recipients |= env['res.users'].sudo().search(
+                [('all_group_ids', 'in', grp.id), ('active', '=', True)])
+        code = emp.x_employee_code or ''
+        env['hb.notification'].sudo()._notify(
+            recipients, category='onboarding', kind='profile_incomplete',
+            level='warning',
+            title='Cần hoàn thiện hồ sơ: %s' % (emp.name or ''),
+            body='Hồ sơ %s%s vừa tạo từ ứng viên, còn thiếu: %s. Thiếu các mục '
+                 'này thì không chuyển sang Chính thức được khi hết thử việc.'
+                 % (emp.name or '', ' (%s)' % code if code else '',
+                    ', '.join(missing)),
+            target_view='employees', target_ref=emp.id,
+            dedup_key='profile_incomplete_%s' % emp.id)
 
     # ------------------------------------------------------------------
     # Vị trí tuyển dụng (hr.job) — dùng chung cho 2 tab SPA:
@@ -1643,6 +1679,9 @@ class HocBaTuyenDung(http.Controller):
             'meName': env.user.name,
             'interviewers': interviewers,
             'rows': [self._slot_row(s) for s in slots],
+            # Người khai slot là trưởng bộ phận — KHÔNG có quyền vào màn cấu
+            # hình, nên khung giờ phải đi kèm ngay ở payload này.
+            'hourOptions': self._slot_hours_payload()['options'],
         })
 
     @http.route('/hocba-hrm/api/recruitment/interview-slots', auth='user',
@@ -1661,12 +1700,22 @@ class HocBaTuyenDung(http.Controller):
         Slot = request.env['hb.interview.slot'].sudo()
         created = []
         try:
+            open_h, close_h, _step = Slot._hb_slot_hour_config()
             for ln in lines:
                 day = fields.Date.from_string(ln['date'])
                 sh = float(ln['startHour'])
                 eh = float(ln['endHour'])
                 if eh <= sh:
                     raise UserError('Giờ kết thúc phải sau giờ bắt đầu.')
+                # Khung giờ là cấu hình của trung tâm — chặn ở API chứ không chỉ
+                # ở dropdown, vì endpoint này nhận float tự do.
+                if sh < open_h or eh > close_h:
+                    raise UserError(
+                        'Khung giờ phỏng vấn của trung tâm là %s–%s. Slot %s–%s '
+                        'nằm ngoài khung. Cần khai ngoài giờ thì Admin nới khung '
+                        'ở màn Cấu hình tuyển dụng → tab Khung giờ phỏng vấn.'
+                        % (_hour_label(open_h), _hour_label(close_h),
+                           _hour_label(sh), _hour_label(eh)))
                 rec = Slot.create({
                     'start_datetime': self._local_to_utc(day, sh, tz),
                     'stop_datetime': self._local_to_utc(day, eh, tz),
@@ -1840,7 +1889,61 @@ class HocBaTuyenDung(http.Controller):
             'overdueNotifyLabels': self.OVERDUE_NOTIFY_LABELS,
             'stages': [self._stage_config_row(s, counts, active_counts)
                        for s in stages],
+            'slotHours': self._slot_hours_payload(),
         })
+
+    def _slot_hours_payload(self):
+        """Khung giờ khai lịch rảnh PV — dùng chung cho màn cấu hình và form khai."""
+        Slot = request.env['hb.interview.slot'].sudo()
+        open_h, close_h, step = Slot._hb_slot_hour_config()
+        return {
+            'open': open_h,
+            'close': close_h,
+            'stepMinutes': step,
+            'stepChoices': list(SLOT_STEPS_ALLOWED),
+            'options': [[v, lbl] for v, lbl in Slot._hb_hour_slots()],
+        }
+
+    @http.route('/hocba-hrm/api/recruitment/config/slot-hours', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_slot_hours(self, **kw):
+        """Lưu khung giờ phỏng vấn — Admin / HR Manager."""
+        if not self._can_config():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data() or {}
+        try:
+            open_h = float(payload.get('open'))
+            close_h = float(payload.get('close'))
+            step = int(payload.get('stepMinutes'))
+        except (TypeError, ValueError):
+            return request.make_json_response(
+                {'error': 'invalid', 'message': 'Giá trị khung giờ không hợp lệ.'},
+                status=400)
+        if step not in SLOT_STEPS_ALLOWED:
+            return request.make_json_response(
+                {'error': 'invalid',
+                 'message': 'Bước nhảy chỉ nhận %s phút.'
+                            % ', '.join(str(s) for s in SLOT_STEPS_ALLOWED)},
+                status=400)
+        if not (0 <= open_h < close_h <= 24):
+            return request.make_json_response(
+                {'error': 'invalid',
+                 'message': 'Giờ mở phải nhỏ hơn giờ đóng và nằm trong 0–24.'},
+                status=400)
+        # Khung hẹp hơn một bước nhảy ⇒ dropdown chỉ có đúng mốc mở, không khai
+        # nổi slot nào (giờ kết thúc luôn phải sau giờ bắt đầu).
+        if (close_h - open_h) < (step / 60.0):
+            return request.make_json_response(
+                {'error': 'invalid',
+                 'message': 'Khung giờ %s–%s hẹp hơn một bước nhảy %s phút nên '
+                            'không khai được slot nào.'
+                            % (_hour_label(open_h), _hour_label(close_h), step)},
+                status=400)
+        ICP = request.env['ir.config_parameter'].sudo()
+        ICP.set_param(P_SLOT_OPEN, str(open_h))
+        ICP.set_param(P_SLOT_CLOSE, str(close_h))
+        ICP.set_param(P_SLOT_STEP, str(step))
+        return request.make_json_response(self._slot_hours_payload())
 
     @http.route('/hocba-hrm/api/recruitment/config/stages', auth='user',
                 type='http', methods=['POST'], csrf=False)

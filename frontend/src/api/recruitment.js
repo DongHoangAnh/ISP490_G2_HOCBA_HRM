@@ -68,6 +68,8 @@ export const reorderRecruitStages = (ids) =>
   hbPost('/hocba-hrm/api/recruitment/config/stages/reorder', { ids });
 export const saveRecruitSettings = (payload) =>
   hbPost('/hocba-hrm/api/recruitment/config/settings', payload);
+export const saveSlotHours = (payload) =>
+  hbPost('/hocba-hrm/api/recruitment/config/slot-hours', payload);
 
 /* Lịch rảnh phỏng vấn (hb.interview.slot) */
 export const fetchInterviewSlots = (from, to) =>

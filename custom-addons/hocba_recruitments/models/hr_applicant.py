@@ -258,7 +258,39 @@ class HrApplicantHocBaExt(models.Model):
                     'không đi làm, hãy kéo hồ sơ về bước trước rồi đánh lại.'
                     % (a.partner_name or a.display_name, a.stage_id.name))
 
+    def _check_hired_regression(self, new_stage_id):
+        """Chặn kéo hồ sơ RA KHỎI bước Bàn giao khi NV đã lên chính thức.
+
+        Kiểm ở write chứ không phải @api.constrains: constrains chỉ thấy trạng
+        thái SAU khi ghi, không phân biệt được "kéo lùi khỏi Bàn giao" với "đang
+        đứng ở bước sớm hơn". Ứng viên còn ở Gửi Offer mà NV đã chính thức (dữ
+        liệu cũ, tuyển thẳng) là chuyện có thật — bắt theo trạng thái thì HR
+        không kéo hồ sơ đó đi đâu được nữa, kể cả kéo TỚI cho đúng.
+
+        Chỉ chặn khi NV đã `official`: kéo nhầm vào Bàn giao lúc còn thử việc thì
+        vẫn phải sửa được. Hook đẩy bước chỉ chạy một lần lúc lên chính thức, nên
+        kéo lùi sau đó là hỏng vĩnh viễn — không có gì đưa hồ sơ về lại, mà chỉ
+        tiêu tuyển thì được cộng lại và tin tuyển đã tự đóng có thể mở lại.
+        """
+        new_stage = self.env['hr.recruitment.stage'].browse(new_stage_id)
+        if new_stage.hired_stage:
+            return
+        for a in self:
+            if not a.stage_id.hired_stage:
+                continue
+            if a.employee_id.x_employment_status != 'official':
+                continue
+            raise ValidationError(
+                'Nhân viên "%s" đã lên chính thức nên không đưa hồ sơ tuyển '
+                'dụng của "%s" từ bước "%s" về "%s" được. Bước này là mốc trừ '
+                'chỉ tiêu tuyển — kéo ra khỏi đây sẽ cộng lại chỉ tiêu và có '
+                'thể mở lại tin tuyển đã đóng.'
+                % (a.employee_id.name, a.partner_name or a.display_name,
+                   a.stage_id.name, new_stage.name or '(không rõ)'))
+
     def write(self, vals):
+        if vals.get('stage_id'):
+            self._check_hired_regression(vals['stage_id'])
         res = super().write(vals)
         # Đổi vị trí ứng tuyển mà chưa có đợt ⇒ thử gắn theo vị trí mới.
         if 'job_id' in vals and 'hb_request_id' not in vals:

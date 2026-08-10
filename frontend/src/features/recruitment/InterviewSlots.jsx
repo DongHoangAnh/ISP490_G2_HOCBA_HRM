@@ -104,7 +104,7 @@ export default function InterviewSlots() {
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải lịch phỏng vấn…" />;
 
-  const { rows, canManage, interviewers, meId } = data;
+  const { rows, canManage, interviewers, meId, hourOptions } = data;
   const total = rows.length;
   const booked = rows.filter((r) => r.state === 'booked').length;
 
@@ -195,6 +195,7 @@ export default function InterviewSlots() {
 
       {creating && (
         <SlotForm interviewers={interviewers} meId={meId} weekDates={weekDates} defaultDate={creating}
+          hourOptions={hourOptions}
           onClose={() => setCreating(null)}
           onSaved={() => { setCreating(null); load(); }} />
       )}

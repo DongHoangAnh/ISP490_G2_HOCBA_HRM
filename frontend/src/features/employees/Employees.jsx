@@ -15,7 +15,7 @@ import EmployeeForm from './EmployeeForm';
 
 const PAGE_SIZE = 20;
 
-export default function Employees({ search, onOpenCareer }) {
+export default function Employees({ search, focus, onOpenCareer }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [dep, setDep] = useState('all');
@@ -39,6 +39,20 @@ export default function Employees({ search, onOpenCareer }) {
   useEffect(load, []);
   // Đổi bộ lọc / từ khoá → quay về trang 1.
   useEffect(() => { setPage(1); }, [dep, status, type, search]);
+
+  /* Bấm thông báo ở chuông (vd "Cần hoàn thiện hồ sơ" sau khi Onboard) → mở
+     thẳng drawer hồ sơ đó. Phải gỡ bộ lọc đang bật: hồ sơ cần mở có thể không
+     nằm trong tập đang lọc, khi đó đóng drawer ra là màn hình trống trơn, người
+     dùng tưởng hỏng. nonce để bấm lại cùng một thông báo vẫn mở lại được. */
+  const focusId = focus && focus.requestId;
+  const focusNonce = focus && focus.nonce;
+  useEffect(() => {
+    if (!focusId || !data) return;
+    const emp = data.employees.find((e) => e.id === focusId);
+    if (!emp) return;
+    setDep('all'); setStatus('all'); setType('all');
+    setSel(emp);
+  }, [focusId, focusNonce, data]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải dữ liệu nhân sự…" />;

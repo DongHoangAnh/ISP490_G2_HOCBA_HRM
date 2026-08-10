@@ -117,6 +117,56 @@ class TestOnboardResult(HttpCase):
         self.assertTrue(res.json().get('created'))
         self.assertTrue(a.employee_id)
 
+    # ── Thông báo "cần hoàn thiện hồ sơ" sau khi Onboard ─────────────────────
+    # Hồ sơ tạo từ ứng viên thiếu CCCD / MST / BHXH (tuyển dụng không có các
+    # thông tin này). Thiếu ba mục đó thì KHÔNG lên chính thức được (BR-010) —
+    # mà người tạo hồ sơ là bộ phận tuyển dụng, người phải điền lại là HR, nên
+    # nếu không báo thì hồ sơ nằm im tới lúc hết thử việc mới lòi ra.
+
+    def _notifs_for(self, emp):
+        return self.env['hb.notification'].sudo().search([
+            ('kind', '=', 'profile_incomplete'),
+            ('target_ref', '=', emp.id)])
+
+    def test_14_onboard_sends_profile_incomplete_notification(self):
+        a = self._uv('UV bao hoan thien', onboard_result='arrived')
+        self.authenticate('test_offer_hr', PWD)
+        self.url_open('%s/applicant/%s/create-employee' % (BASE, a.id),
+                      data='{}', headers={'Content-Type': 'application/json'})
+        notifs = self._notifs_for(a.employee_id)
+        self.assertTrue(notifs, 'phải có thông báo cần hoàn thiện hồ sơ')
+        n = notifs[0]
+        self.assertEqual(n.category, 'onboarding')
+        self.assertEqual(n.level, 'warning')
+        # Bấm thông báo phải mở đúng hồ sơ đó, không phải danh sách chung.
+        self.assertEqual(n.target_view, 'employees')
+        self.assertEqual(n.target_ref, a.employee_id.id)
+        self.assertIn('CCCD', n.body or '')
+        self.assertIn('BHXH', n.body or '')
+
+    def test_15_notification_reaches_recruiter_who_clicked(self):
+        """Người bấm Onboard phải nhận được — họ là người biết hồ sơ vừa sinh ra."""
+        a = self._uv('UV bao nguoi bam', onboard_result='arrived')
+        self.authenticate('test_offer_hr', PWD)
+        self.url_open('%s/applicant/%s/create-employee' % (BASE, a.id),
+                      data='{}', headers={'Content-Type': 'application/json'})
+        recipients = self._notifs_for(a.employee_id).mapped('recipient_id')
+        self.assertIn(self.user_hr, recipients)
+
+    def test_16_no_notification_when_profile_already_complete(self):
+        """Hồ sơ đã đủ CCCD/MST/BHXH (tạo lại từ ứng viên đã có NV) ⇒ không báo
+        thừa. Ở đây ứng viên đã gắn NV nên endpoint trả về hồ sơ cũ, không tạo."""
+        emp = self.env['hr.employee'].create({
+            'name': 'NV du ho so', 'x_employment_status': 'probation',
+            'identification_id': '111122223333',
+            'x_pit_code': '8123456789', 'x_social_insurance_no': '0123456789'})
+        a = self._uv('UV da co ho so', onboard_result='arrived',
+                     employee_id=emp.id)
+        self.authenticate('test_offer_hr', PWD)
+        self.url_open('%s/applicant/%s/create-employee' % (BASE, a.id),
+                      data='{}', headers={'Content-Type': 'application/json'})
+        self.assertFalse(self._notifs_for(emp))
+
     # ── BR-OB-03 / BR-OB-04 ──────────────────────────────────────────────────
 
     def test_12_cannot_mark_no_show_after_handover(self):

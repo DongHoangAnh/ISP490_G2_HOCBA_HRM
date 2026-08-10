@@ -283,6 +283,10 @@ function KanbanView({ rows, stages, isRecruiter, onOpen, onMoved, onError }) {
       const det = await changeStage(id, stageId);
       onMoved(det);
     } catch (e) {
+      // Thẻ đã nhảy sang cột mới theo lối lạc quan; onError() tải lại nên nó tự
+      // bật về chỗ cũ. Không báo gì thì HR chỉ thấy thẻ "không chịu sang" —
+      // phải nói rõ BE từ chối vì lý do gì (vd chặn kéo lùi khỏi Bàn giao).
+      alert(e.message || 'Không chuyển được bước cho ứng viên này.');
       onError();
     }
   };

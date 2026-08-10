@@ -210,6 +210,11 @@ export default function Offers({ search }) {
                           // Bùng thì không còn hồ sơ nào để tạo — ẩn nút Onboard cho
                           // khỏi bấm nhầm. BE cũng chặn (BR-OB-02), đây chỉ là lớp mềm.
                           <span className="muted" style={{ fontSize: 12.5 }}>Đã dừng</span>
+                        ) : r.onboardResult !== 'arrived' ? (
+                          // Chưa chốt "Đã đến" thì chưa có gì để onboard: tới ngày hẹn
+                          // mà chưa biết ứng viên có đến hay không, tạo hồ sơ NV là
+                          // tạo sớm. Bắt HR đánh Kết quả nhận việc trước, nút mới hiện.
+                          <span className="muted" style={{ fontSize: 12.5 }}>Chờ kết quả nhận việc</span>
                         ) : isRecruiter ? (
                           <button className="btn btn-soft btn-sm" disabled={empBusyId === r.id} onClick={() => createEmployee(r)}>
                             <Icon name="user" size={14} />{empBusyId === r.id ? 'Đang tạo…' : 'Onboard'}</button>
@@ -264,9 +269,10 @@ const STEPS = [
      vẫn nằm lại đây để còn theo dõi; chọn nhầm thì đổi lại được. Bỏ trống nghĩa là
      chưa xác định.</>],
   ['Onboard',
-   <>Ứng viên nhận việc thì bấm <b>Onboard</b> để tạo hồ sơ nhân viên (trạng thái
-     <b> Thử việc</b>), ứng viên tự chuyển sang bước <b>Onboarding</b>. Bấm nhầm 2
-     lần không tạo trùng hồ sơ.</>],
+   <>Nút <b>Onboard</b> chỉ hiện sau khi bạn chốt <b>Kết quả nhận việc = Đã đến</b>;
+     chưa chốt thì cột này ghi “Chờ kết quả nhận việc”. Bấm <b>Onboard</b> để tạo hồ
+     sơ nhân viên (trạng thái <b>Thử việc</b>), ứng viên tự chuyển sang bước
+     <b> Onboarding</b>. Bấm nhầm 2 lần không tạo trùng hồ sơ.</>],
   ['Hoàn tất hồ sơ & hết thử việc',
    <>Sang module <b>Nhân sự</b> điền nốt CCCD · MST · BHXH cho hồ sơ vừa tạo —
      thiếu ba mục này thì không chuyển Chính thức được. Hết thử việc, khi nhân

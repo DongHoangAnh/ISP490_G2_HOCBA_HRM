@@ -13,6 +13,7 @@ bình thường.
 from datetime import timedelta
 
 from odoo import fields
+from odoo.exceptions import ValidationError
 from odoo.tests import TransactionCase, tagged
 
 
@@ -444,3 +445,30 @@ class TestProbationHandover(TransactionCase):
         self._make_official(emp)
         self.assertEqual(a.stage_id, self.st_hired)
         self.assertEqual(job.no_of_recruitment, before - 1)
+
+    # ── Chặn kéo lùi khỏi bước Bàn giao nhân sự ──────────────────────────────
+    # Hook đẩy bước chỉ chạy đúng một lần, lúc NV lên chính thức. Kéo hồ sơ ra
+    # khỏi bước hired sau đó thì không có gì đưa nó về lại — hồ sơ nằm sai bước
+    # vĩnh viễn và chỉ tiêu tuyển được cộng lại, tin tuyển đã tự đóng mở lại.
+
+    def test_08_cannot_drag_back_when_official(self):
+        a, emp = self._pair(self.st_onboarding, 'UV keo lui da chinh thuc')
+        self._make_official(emp)
+        self.assertEqual(a.stage_id, self.st_hired)
+        with self.assertRaises(ValidationError):
+            a.write({'stage_id': self.st_onboarding.id})
+
+    def test_09_can_drag_back_when_still_probation(self):
+        """Kéo nhầm vào Bàn giao lúc NV còn thử việc ⇒ vẫn sửa được."""
+        a, _emp = self._pair(self.st_hired, 'UV keo lui con thu viec')
+        a.write({'stage_id': self.st_onboarding.id})
+        self.assertEqual(a.stage_id, self.st_onboarding)
+
+    def test_10_can_drag_back_when_no_employee(self):
+        """Ứng viên chưa có hồ sơ NV (tuyển thẳng, dữ liệu cũ) ⇒ không chặn."""
+        a = self.env['hr.applicant'].create({
+            'partner_name': 'UV keo lui khong co ho so',
+            'job_id': self.job.id, 'stage_id': self.st_hired.id,
+        })
+        a.write({'stage_id': self.st_offer.id})
+        self.assertEqual(a.stage_id, self.st_offer)

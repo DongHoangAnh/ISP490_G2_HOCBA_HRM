@@ -50,10 +50,12 @@ export default function App() {
     const view = n.targetView || 'timeoff';
     if (!allowedViews(me).has(view)) return;
     setView(view);
-    // timeoff + service + recruitment đều cần focus để mở đúng đơn/ứng viên.
-    // targetTab: service chọn tab người gửi / người xử lý; recruitment chọn
-    // tab 'cv' rồi mở drawer ứng viên quá hạn.
-    if (view === 'timeoff' || view === 'service' || view === 'recruitment') {
+    // timeoff + service + recruitment + employees đều cần focus để mở đúng
+    // đơn/ứng viên/hồ sơ. targetTab: service chọn tab người gửi / người xử lý;
+    // recruitment chọn tab 'cv' rồi mở drawer ứng viên quá hạn; employees mở
+    // drawer hồ sơ (vd nhắc "cần hoàn thiện hồ sơ" sau khi Onboard).
+    if (view === 'timeoff' || view === 'service' || view === 'recruitment'
+        || view === 'employees') {
       setFocus({
         requestId: n.targetRef, kind: n.kind,
         targetTab: n.targetTab, nonce: Date.now(),
@@ -118,7 +120,7 @@ export default function App() {
       <div className="main">
         <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
-        {view === 'employees' && canManage && <Employees search={search} onOpenCareer={openCareer} />}
+        {view === 'employees' && canManage && <Employees search={search} focus={focus} onOpenCareer={openCareer} />}
         {view === 'career' && (
           <Career canManage={canManage} focusEmpId={careerEmp}
             onBack={canManage ? () => setView('employees') : null} />
