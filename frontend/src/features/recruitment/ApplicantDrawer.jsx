@@ -32,6 +32,7 @@ export default function ApplicantDrawer({ app, meta, isRecruiter, onClose, onCha
     ['Số điện thoại', d.phone || '—'],
     ['Email', d.email || '—'],
     ['Vị trí ứng tuyển', d.jobName || '—'],
+    ['Đợt tuyển', d.requestCode || '—'],
     ['Bước hiện tại', d.stage || '—'],
     ['CTV tuyển dụng', d.ctv || '—'],
     ['Ngày nhận CV', fmtDate(d.dateReceived)],

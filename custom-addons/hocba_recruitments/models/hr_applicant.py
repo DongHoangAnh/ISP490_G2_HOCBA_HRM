@@ -3,12 +3,23 @@
 from markupsafe import Markup
 
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
 
 class HrApplicantHocBaExt(models.Model):
     _inherit = 'hr.applicant'
+
+    # ── Đợt tuyển (phiếu yêu cầu) mà CV này thuộc về ─────────────────────────
+    # Trước đây số liệu theo dõi phải bắc cầu qua JD (job_id) vì ứng viên không
+    # biết mình thuộc phiếu nào ⇒ hai đợt tuyển cùng một vị trí thấy CÙNG bộ số.
+    # Gắn thẳng vào phiếu để mỗi đợt có sổ riêng.
+    hb_request_id = fields.Many2one(
+        'hb.recruitment.request', string='Phiếu yêu cầu tuyển dụng',
+        index=True, ondelete='set null', tracking=True,
+        help='Đợt tuyển mà CV này thuộc về. Tự điền theo phiếu đang tuyển của '
+             'vị trí lúc nhận CV; sửa tay được khi cần gán sang đợt khác.')
 
     # ── Sheet 7.4 — Danh sách CV ─────────────────────────────────────────────
     date_received = fields.Date(string='Thời gian nhận CV', index=True,
@@ -46,6 +57,14 @@ class HrApplicantHocBaExt(models.Model):
     start_date = fields.Date(string='Ngày nhận việc')
     offer_note = fields.Text(string='Ghi chú offer')
     candidate_confirmed = fields.Char(string='UV xác nhận mail', help='VD: Đã xác nhận, Đã phản hồi')
+    # Cột "Kết quả nhận việc" của sheet 7.6. Bỏ trống = CHƯA XÁC ĐỊNH (đã gửi thư
+    # mời, đang chờ tới ngày hẹn) — đó là trạng thái mặc định nên không cần giá
+    # trị riêng. Thiếu ô này thì ứng viên bùng nằm lẫn với người đang chờ, và
+    # không đo được tỷ lệ nhận offer rồi bùng.
+    onboard_result = fields.Selection([
+        ('arrived', 'Đã đến'),
+        ('no_show', 'Không nhận việc'),
+    ], string='Kết quả nhận việc', tracking=True)
 
     # ── SLA theo bước (cấu hình sla_days trên hr.recruitment.stage) ──────────
 
@@ -196,15 +215,60 @@ class HrApplicantHocBaExt(models.Model):
             'hocba_recruitments.auto_close_mode', 'full')
         return mode if mode in self.AUTO_CLOSE_MODES else 'full'
 
+    # ── Gắn CV vào đợt tuyển ─────────────────────────────────────────────────
+
+    def _hb_open_request(self):
+        """Phiếu ĐANG TUYỂN mới nhất của vị trí này, không có thì trả rỗng.
+
+        Cố ý KHÔNG lùi về phiếu đã đóng/nháp/từ chối: CV nộp lúc vị trí không mở
+        đợt nào thì nó thật sự không thuộc đợt nào — gắn bừa vào phiếu cũ làm
+        hỏng số liệu của đợt đã chốt.
+        """
+        self.ensure_one()
+        if not self.job_id:
+            return self.env['hb.recruitment.request']
+        return self.env['hb.recruitment.request'].sudo().search(
+            [('job_id', '=', self.job_id.id), ('state', '=', 'recruiting')],
+            order='id desc', limit=1)
+
+    def _hb_fill_request(self):
+        """Điền phiếu cho các CV còn trống ô này. KHÔNG bao giờ ghi đè.
+
+        HR gán tay là quyết định của người, máy không được đạp lên — kể cả khi
+        sau đó đổi vị trí ứng tuyển.
+        """
+        for a in self.filtered(lambda x: not x.hb_request_id and x.job_id):
+            req = a._hb_open_request()
+            if req:
+                a.hb_request_id = req.id
+
+    @api.constrains('onboard_result', 'stage_id')
+    def _check_onboard_result_vs_stage(self):
+        """Đã bàn giao nhân sự thì không thể "không nhận việc".
+
+        Vừa là mâu thuẫn dữ liệu, vừa phá bất biến của phễu theo dõi: ô "Nhận
+        việc" loại người bùng ra, nên nếu để trạng thái này tồn tại thì
+        "Đã tuyển" sẽ lớn hơn "Nhận việc" — người xem tưởng số liệu sai.
+        """
+        for a in self:
+            if a.onboard_result == 'no_show' and a.stage_id.hired_stage:
+                raise ValidationError(
+                    'Ứng viên "%s" đã ở bước "%s" (đã bàn giao nhân sự) nên '
+                    'không đánh "Không nhận việc" được. Nếu người này thực sự '
+                    'không đi làm, hãy kéo hồ sơ về bước trước rồi đánh lại.'
+                    % (a.partner_name or a.display_name, a.stage_id.name))
+
     def write(self, vals):
         res = super().write(vals)
+        # Đổi vị trí ứng tuyển mà chưa có đợt ⇒ thử gắn theo vị trí mới.
+        if 'job_id' in vals and 'hb_request_id' not in vals:
+            self._hb_fill_request()
         if vals.get('stage_id'):
             stage = self.env['hr.recruitment.stage'].browse(vals['stage_id'])
             if stage.hired_stage:
                 self._hb_auto_close_if_filled()
         # ── Tự chuyển bước theo kết quả HR vừa nhập ──────────────────────────
         # Đều chỉ xét khi GÁN giá trị; xoá trắng không kéo ngược bước.
-        # Chỉ tự động cho luồng ĐẠT; Fail/Tiềm năng do HR tự quyết đi tiếp thế nào.
         if vals.get('cv_filter_result') == 'pass':
             self._hb_advance_stage(
                 'hb_stage_screening', 'hb_stage_schedule',
@@ -213,15 +277,21 @@ class HrApplicantHocBaExt(models.Model):
             self._hb_advance_stage(
                 'hb_stage_schedule', 'hb_stage_invite',
                 'Do đã đặt Ngày hẹn phỏng vấn.')
-        if vals.get('interview_result') == 'pass':
+        # Có kết quả PV (Pass / Fail / Tiềm năng) = phỏng vấn đã xong ⇒ về bước
+        # "Kết quả phỏng vấn" để HR chốt bước kế. KHÔNG tự nhảy tiếp sang Gửi
+        # Offer kể cả khi Pass: quyết định offer là của HR, không phải của máy.
+        if vals.get('interview_result'):
+            labels = dict(self._fields['interview_result'].selection)
             self._hb_advance_stage(
-                ['hb_stage_interview', 'hb_stage_result'], 'hb_stage_offer',
-                'Do kết quả phỏng vấn là Pass.')
+                'hb_stage_interview', 'hb_stage_result',
+                'Do đã có Kết quả phỏng vấn: %s.'
+                % labels.get(vals['interview_result'], vals['interview_result']))
         return res
 
     @api.model_create_multi
     def create(self, vals_list):
         recs = super().create(vals_list)
+        recs._hb_fill_request()
         hired = recs.filtered(lambda a: a.stage_id.hired_stage)
         if hired:
             hired._hb_auto_close_if_filled()

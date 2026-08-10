@@ -367,10 +367,10 @@ export default function RecruitmentConfig() {
           <InfoNote title="Màu thẻ ứng viên trên Kanban nghĩa là gì?">
             <b style={{ color: 'var(--green)' }}>Xanh</b> = đã <b>Pass PV</b>, và
             giữ nguyên màu này qua các bước sau (Gửi Offer, Onboarding, Đã tuyển).
-            <b style={{ color: 'var(--red-700)' }}> Đỏ</b> = ứng viên đã dừng, do
-            <b> Fail PV</b> hoặc <b>Fail CV</b>.
+            <b style={{ color: 'var(--red-700)' }}> Đỏ</b> = <b>không đi tiếp lần
+              này</b>: <b>Fail PV</b>, <b>Tiềm năng PV</b> hoặc <b>Fail CV</b>.
             <b style={{ color: 'var(--amber)' }}> Vàng</b> = <b>đang chạy</b> —
-            chưa có kết quả lọc CV / phỏng vấn, hoặc đang ở mức "Tiềm năng".
+            chưa có kết quả lọc CV / phỏng vấn.
             <br /><br />
             Màu đọc từ hai ô <b>Trạng thái CV</b> và <b>Kết quả PV</b> chứ không
             đọc từ tên bước — vì bước quy trình sửa được nên bám vào tên bước sẽ
@@ -394,20 +394,29 @@ export default function RecruitmentConfig() {
             nghĩa là chưa có ai ở trạng thái đó.
           </InfoNote>
           <InfoNote title="Khi nào hệ thống tự chuyển bước?">
-            Bốn hành động của HR sẽ tự đẩy ứng viên đi tiếp, khỏi phải kéo tay
+            Các hành động dưới đây tự đẩy ứng viên đi tiếp, khỏi phải kéo tay
             trên kanban:
             <br /><br />
             • Đặt <b>Trạng thái CV = Pass</b> → sang <b>Lên lịch phỏng vấn</b><br />
             • Đặt <b>Ngày hẹn phỏng vấn</b> → sang <b>Hẹn &amp; mời phỏng vấn</b><br />
             • Gửi <b>Thư mời tham gia phỏng vấn</b> → sang <b>Phỏng vấn</b><br />
-            • Đặt <b>Kết quả PV = Pass</b> → sang <b>Gửi Offer</b>
+            • Điền <b>Kết quả PV</b> (Pass, Fail hay Tiềm năng đều vậy) → sang
+            <b> Kết quả phỏng vấn</b><br />
+            • Gửi <b>Thư mời nhận việc</b> → sang <b>Gửi Offer</b><br />
+            • Bấm <b>Onboard</b> (tạo hồ sơ nhân viên) → sang <b>Onboarding</b><br />
+            • Nhân viên <b>hết thử việc, lên Chính thức</b> ở module Nhân sự → sang
+            <b> Bàn giao nhân sự</b>
+            <br /><br />
+            Bước <b>Gửi Offer</b> vẫn kéo tay được: có kết quả Pass không đồng nghĩa
+            đã quyết định offer, nên máy không tự đẩy khi chấm Pass — chỉ đẩy khi
+            thư mời nhận việc đã gửi đi.
             <br /><br />
             Bốn quy tắc an toàn: <b>chỉ đẩy tới, không kéo lùi</b> (ứng viên đã
             đi xa hơn thì đứng yên); <b>xoá trắng giá trị không đổi bước</b>;
-            chỉ luồng <b>Pass</b> mới tự động, còn Fail / Tiềm năng / Liên hệ sau
-            do HR tự quyết; bước đích bị <b>xoá hoặc ẩn</b> thì bỏ qua im lặng,
-            không chặn thao tác. Mỗi lần máy đổi bước đều ghi một dòng vào lịch
-            sử trao đổi của ứng viên, xem lại được ai/khi nào.
+            ở khâu lọc CV chỉ luồng <b>Pass</b> mới tự động, còn Fail / Tiềm năng
+            / Liên hệ sau do HR tự quyết; bước đích bị <b>xoá hoặc ẩn</b> thì bỏ
+            qua im lặng, không chặn thao tác. Mỗi lần máy đổi bước đều ghi một
+            dòng vào lịch sử trao đổi của ứng viên, xem lại được ai/khi nào.
             <br /><br />
             Lưu ý: đổi bước làm <b>reset đồng hồ hạn xử lý</b> — ứng viên vừa tự
             nhảy bước sẽ hết badge "Quá hạn", vì họ vừa được xử lý xong.

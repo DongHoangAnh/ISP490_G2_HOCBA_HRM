@@ -21,6 +21,7 @@
                 <field name="partner_phone"     string="Số điện thoại"/>
                 <field name="email_from"        string="Email"/>
                 <field name="job_id"            string="Vị trí"/>
+                <field name="hb_request_id"     string="Đợt tuyển" optional="show"/>
                 <field name="cv_link"           string="Link CV" widget="url" optional="show"/>
                 <field name="cv_filter_result"  string="Lọc CV" widget="badge"
                     decoration-success="cv_filter_result == 'pass'"
@@ -46,6 +47,9 @@
             <!-- Inject CV fields into the first group after partner_name -->
             <field name="partner_name" position="after">
                 <field name="date_received"/>
+                <field name="hb_request_id"
+                    options="{'no_create': True}"
+                    placeholder="Tự điền theo phiếu đang tuyển của vị trí"/>
                 <field name="ctv_tuyen_dung" placeholder="Tên CTV tuyển dụng"/>
                 <field name="cv_link" placeholder="Link Google Drive hoặc tên file CV"/>
             </field>

@@ -25,11 +25,12 @@ const buildFilters = (cvLabels = {}, pvLabels = {}) => [
 /* Màu card kanban — lái theo KẾT QUẢ (lọc CV + phỏng vấn), KHÔNG theo tên bước
    (bước cấu hình được nên tên/thứ tự có thể đổi):
      xanh = đã Pass PV (giữ nguyên qua Offer/Nhận việc) ·
-     đỏ   = đã dừng, do Fail PV HOẶC Fail CV ·
+     đỏ   = không đi tiếp: Fail PV / Tiềm năng PV, HOẶC Fail CV ·
      vàng = chưa có kết quả (còn đang chạy). */
 const CARD_TONE = {
-  pass: { bd: 'var(--green)',   bg: 'var(--green-bg)' },
-  fail: { bd: 'var(--red-600)', bg: 'var(--red-50)' },
+  pass:      { bd: 'var(--green)',   bg: 'var(--green-bg)' },
+  fail:      { bd: 'var(--red-600)', bg: 'var(--red-50)' },
+  potential: { bd: 'var(--red-600)', bg: 'var(--red-50)' },
 };
 const TONE_PENDING = { bd: 'var(--amber)', bg: 'var(--amber-bg)' };
 
@@ -346,8 +347,8 @@ function KanbanView({ rows, stages, isRecruiter, onOpen, onMoved, onError }) {
    TONE_PENDING để chú thích không bao giờ lệch với card thật. */
 const LEGEND = [
   [CARD_TONE.pass, 'Đã Pass PV', 'gồm cả các bước sau: Offer, Nhận việc, Đã tuyển'],
-  [TONE_PENDING,   'Đang chạy', 'chưa có kết quả lọc CV / phỏng vấn, hoặc đang ở mức Tiềm năng'],
-  [CARD_TONE.fail, 'Fail CV hoặc Fail PV', 'ứng viên đã dừng'],
+  [TONE_PENDING,   'Đang chạy', 'chưa có kết quả lọc CV / phỏng vấn'],
+  [CARD_TONE.fail, 'Fail hoặc Tiềm năng PV, Fail CV', 'không đi tiếp lần này'],
 ];
 
 function ColorLegend() {

@@ -1,4 +1,7 @@
-/* Tab "Vị trí tuyển dụng / JD" — lưới + bảng, xem chi tiết JD, sửa, thêm.
+/* Tab "Theo dõi tuyển dụng" (tên cũ: "Vị trí tuyển dụng / JD") — theo dõi tiến
+   độ tuyển từng vị trí: cần tuyển · đã tuyển · đơn ứng tuyển · đăng tuyển, xem
+   theo phòng ban / thẻ / bảng. Soạn JD và tạo vị trí mới đã tách sang tab
+   "Kho quản lý JD" (JdLibrary.jsx).
    Owner: Việt. Spec: docs/SPEC_API_RECRUITMENT.md · 3 trạng thái §5b. */
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
@@ -7,7 +10,6 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import Pagination, { usePaged } from '../../components/Pagination';
 import { fetchJobs, updateJob } from '../../api/recruitment';
 import JobDrawer from './JobDrawer';
-import JobForm from './JobForm';
 import CopyLinkBtn from './CopyLinkBtn';
 
 export default function Jobs({ search }) {
@@ -17,7 +19,6 @@ export default function Jobs({ search }) {
   const [dep, setDep] = useState('all');
   const [vmode, setVmode] = useState(() => localStorage.getItem('hocba_job_vmode') || 'dept');
   const [sel, setSel] = useState(null);
-  const [creating, setCreating] = useState(false);
 
   const load = () => { setErr(null); setData(null); fetchJobs().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
@@ -99,10 +100,8 @@ export default function Jobs({ search }) {
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           )}
-          {isRecruiter && (
-            <button className="btn btn-primary" onClick={() => setCreating(true)}>
-              <Icon name="plus" size={16} />Thêm vị trí</button>
-          )}
+          {/* Nút "Thêm vị trí" đã chuyển sang tab Kho quản lý JD — tạo vị trí là
+              thao tác quản lý JD, gom về một chỗ để khỏi có hai cửa vào. */}
           <div className="seg">
             {isHr && <button className={vm === 'dept' ? 'active' : ''} onClick={() => setView('dept')}>Phòng ban</button>}
             <button className={vm === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>Thẻ</button>
@@ -171,11 +170,6 @@ export default function Jobs({ search }) {
       {sel && (
         <JobDrawer job={sel} meta={meta} isRecruiter={isRecruiter}
           onClose={() => setSel(null)} onChanged={applyRow} />
-      )}
-      {creating && (
-        <JobForm job={null} meta={meta}
-          onClose={() => setCreating(false)}
-          onSaved={(det) => { setCreating(false); applyRow(det); }} />
       )}
     </div>
   );

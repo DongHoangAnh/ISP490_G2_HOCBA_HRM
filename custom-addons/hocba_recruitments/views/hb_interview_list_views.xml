@@ -12,8 +12,7 @@
         <field name="arch" type="xml">
             <list string="Danh sách phỏng vấn"
                 decoration-success="interview_result == 'pass'"
-                decoration-danger="interview_result == 'fail' or attendance_status == 'absent'"
-                decoration-warning="interview_result == 'potential'">
+                decoration-danger="interview_result in ('fail', 'potential') or attendance_status == 'absent'">
                 <field name="date_received"       string="Thời gian"/>
                 <field name="ctv_tuyen_dung"       string="CTV"/>
                 <field name="partner_name"         string="Họ tên ứng viên"/>
@@ -29,8 +28,7 @@
                     decoration-danger="attendance_status == 'absent'"/>
                 <field name="interview_result"     string="Kết quả PV" widget="badge"
                     decoration-success="interview_result == 'pass'"
-                    decoration-danger="interview_result == 'fail'"
-                    decoration-warning="interview_result == 'potential'"/>
+                    decoration-danger="interview_result in ('fail', 'potential')"/>
                 <field name="offer_content"        string="Offer" optional="show"/>
                 <field name="start_date"           string="Ngày nhận việc" optional="show"/>
                 <field name="offer_note"           string="Note" optional="show"/>

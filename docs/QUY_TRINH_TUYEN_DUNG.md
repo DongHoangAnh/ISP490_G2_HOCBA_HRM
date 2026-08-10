@@ -60,7 +60,8 @@ Mỗi hồ sơ ứng viên đi qua 10 **giai đoạn (stage)** trong pipeline tu
 | Tab | Dùng cho bước | Nội dung |
 |---|---|---|
 | **Danh sách CV** | 3 — Lọc CV | Toàn bộ ứng viên, cột Kết quả lọc (badge), trạng thái gọi điện, ngày/giờ/người PV. HR có nút **Thêm CV** thủ công. |
-| **Vị trí tuyển dụng / JD** | 2 — Đăng tuyển | Danh sách vị trí + nút **Đăng tuyển / Ngừng đăng**. Vị trí đã đăng → lên `/jobs`. |
+| **Kho quản lý JD** | 2 — Soạn JD | Tra cứu JD theo vị trí · phòng ban · trạng thái, nút **Thêm vị trí**, mở/sửa nội dung JD. |
+| **Theo dõi tuyển dụng** *(tên cũ: Vị trí tuyển dụng / JD)* | 2 — Đăng tuyển | Tiến độ tuyển từng vị trí (cần / đã tuyển / đơn) + nút **Đăng tuyển / Ngừng đăng**. Vị trí đã đăng → lên `/jobs`. |
 | **Phiếu yêu cầu** | 1 — Yêu cầu tuyển dụng | Phiếu YCTU từ các phòng ban, luồng duyệt: Nháp → Chờ duyệt → Đang tuyển → Đóng. |
 | **Danh sách PV** | 4–7 — Phỏng vấn | Lịch rảnh phỏng vấn theo tuần + ứng viên đang phỏng vấn, trạng thái Đã đến/Không đến, kết quả. |
 | **Offer & Nhận việc** | 8–10 — Offer/Onboarding | Ứng viên ở bước offer: nội dung offer, ngày nhận việc, xác nhận của UV. |

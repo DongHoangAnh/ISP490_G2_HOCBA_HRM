@@ -51,7 +51,9 @@ export default function SendMailModal({ tmpl, recipients, onClose }) {
 
   // Lưu lịch sử cho những người đã mở Gmail (coi như đã gửi).
   const saveHistory = async () => {
-    const logs = prepared.filter((r) => opened.has(r.id)).map((r) => ({ applicantId: r.id, subject: r.subject }));
+    // templateId: BE dùng để áp luật đẩy bước theo mẫu mail (MAIL_STAGE_RULES).
+    const logs = prepared.filter((r) => opened.has(r.id))
+      .map((r) => ({ applicantId: r.id, subject: r.subject, templateId: tmpl.id }));
     if (logs.length === 0) { setErr('Chưa mở Gmail cho ứng viên nào.'); return; }
     setBusy(true); setErr(null);
     try {
