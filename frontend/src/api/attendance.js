@@ -5,10 +5,18 @@ import { hbGet, hbPost } from './client';
 export const fetchMyAttendance = () => hbGet('/hocba-hrm/api/attendance/me');
 export const fetchAttendanceDay = (date) =>
   hbGet(`/hocba-hrm/api/attendance?date=${date}`);
-export const fetchMyHistory = (month) =>
-  hbGet(`/hocba-hrm/api/attendance/me/history?month=${month}`);
-export const fetchMyHistoryFull = (month, type) =>
-  hbGet(`/hocba-hrm/api/attendance/me/history-full?month=${month}&type=${type}`);
+export const fetchMyHistory = (month, from, to) => {
+  let url = `/hocba-hrm/api/attendance/me/history?`;
+  if (from && to) url += `dateFrom=${from}&dateTo=${to}`;
+  else url += `month=${month}`;
+  return hbGet(url);
+};
+export const fetchMyHistoryFull = (month, type, from, to) => {
+  let url = `/hocba-hrm/api/attendance/me/history-full?type=${type}&`;
+  if (from && to) url += `dateFrom=${from}&dateTo=${to}`;
+  else url += `month=${month}`;
+  return hbGet(url);
+};
 export const enrollFace = (photo, descriptor) =>
   hbPost('/hocba-hrm/api/attendance/enroll', { photo, descriptor });
 export const checkIn = (payload) =>
@@ -42,8 +50,12 @@ export const rejectShift = (id, body) =>
 export const cancelShift = (id) =>
   hbPost(`/hocba-hrm/api/shifts/${id}/cancel`, {});
 
-export const fetchOtTable = (month) =>
-  hbGet(`/hocba-hrm/api/shifts/ot?month=${month}`);
+export const fetchOtTable = (month, from, to) => {
+  let url = `/hocba-hrm/api/shifts/ot?`;
+  if (from && to) url += `dateFrom=${from}&dateTo=${to}`;
+  else url += `month=${month}`;
+  return hbGet(url);
+};
 export const setShiftLevel = (id, otLevel) =>
   hbPost(`/hocba-hrm/api/shifts/${id}/level`, { otLevel });
 
@@ -57,10 +69,19 @@ export const searchEmployees = (q) =>
 export const previewRequest = (id, body) =>
   hbPost(`/hocba-hrm/api/attendance/requests/${id}/preview`, body);
 
-export const fetchManagerSummary = (month) =>
-  hbGet(`/hocba-hrm/api/attendance/manager-summary?month=${month}`);
-export const fetchEmpHistory = (empId, month, type) =>
-  hbGet(`/hocba-hrm/api/attendance/emp-history?empId=${empId}&month=${month}&type=${type}`);
+export const fetchManagerSummary = (month, from, to, role) => {
+  let url = `/hocba-hrm/api/attendance/manager-summary?`;
+  if (role) url += `role=${role}&`;
+  if (from && to) url += `dateFrom=${from}&dateTo=${to}`;
+  else url += `month=${month}`;
+  return hbGet(url);
+};
+export const fetchEmpHistory = (empId, month, type, from, to) => {
+  let url = `/hocba-hrm/api/attendance/emp-history?empId=${empId}&type=${type}&`;
+  if (from && to) url += `dateFrom=${from}&dateTo=${to}`;
+  else url += `month=${month}`;
+  return hbGet(url);
+};
 
 export const fetchAttendanceConfig = () => hbGet('/hocba-hrm/api/attendance/config');
 export const saveAttendanceConfig = (body) => hbPost('/hocba-hrm/api/attendance/config', body);

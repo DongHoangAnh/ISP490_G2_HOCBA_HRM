@@ -51,7 +51,7 @@ export default function Attendance({ search, onNavigate }) {
   const isTeacher = !isManager && !!me.isTeacher;
   const isCtv = !isManager && !me.isOfficial && !isTeacher;
   const tabs = isManager
-    ? [['mgr', 'Bảng tổng hợp'], ['day', 'Chấm công ngày'], ['requests', 'Đơn chấm công'], ['ot', 'Lịch ca (OT/CTV)'], ['ot_list', 'Xử lý OT']]
+    ? [['mgr', 'Bảng tổng hợp'], ['day', 'Chấm công ngày'], ['requests', 'Đơn chấm công'], ['ot', 'Lịch ca (OT/CTV)'], ['ot_list', 'Chấm công OT']]
     : isTeacher
       ? [['teaching', 'Chấm công hôm nay'], ['cal', 'Lịch tuần'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi']]
       : isCtv
@@ -104,7 +104,7 @@ export default function Attendance({ search, onNavigate }) {
             onReload={() => loadReqs(isManager)} canReview={isManager} />
         </div>
       )}
-      {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
+      {activeTab === 'ot' && <ShiftCalendar canManage={isManager} me={me} />}
       {activeTab === 'teaching' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <TeachingSchedule me={me} onChanged={load}

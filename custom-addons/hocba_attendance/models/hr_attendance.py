@@ -161,26 +161,26 @@ class Attendance(models.Model):
                 rec.afternoon_credit = 0.0
             rec.work_credit = rec.morning_credit + rec.afternoon_credit
 
-    @api.depends('check_in')
+    @api.depends('check_in', 'check_out', 'late_minutes', 'early_leave_minutes')
     def _compute_status(self):
         Status = self.env['hocba.attendance.status']
-        on_time_status = Status.search([('code', '=', 'on_time')], limit=1)
-        late_status = Status.search([('code', '=', 'late')], limit=1)
-        policy = self.env['hocba.attendance.policy'].get_policy()
-        cutoff = policy.late_cutoff
+        on_time = Status.search([('code', '=', 'on_time')], limit=1)
+        late = Status.search([('code', '=', 'late')], limit=1)
+        early = Status.search([('code', '=', 'early_leave')], limit=1)
+        forget = Status.search([('code', '=', 'forget')], limit=1)
+        none = Status.search([('code', '=', 'none')], limit=1)
 
         for record in self:
-            if not record.check_in:
-                record.status_id = False
-                continue
-
-            # check_in is stored in UTC; lateness is judged in local time.
-            local_dt = fields.Datetime.context_timestamp(record, record.check_in)
-            check_in_hour = local_dt.hour + local_dt.minute / 60.0
-            if check_in_hour <= cutoff:
-                record.status_id = on_time_status
+            if not record.check_in and not record.check_out:
+                record.status_id = none
+            elif not record.check_in or not record.check_out:
+                record.status_id = forget
+            elif record.late_minutes > 0:
+                record.status_id = late
+            elif record.early_leave_minutes > 0:
+                record.status_id = early
             else:
-                record.status_id = late_status
+                record.status_id = on_time
 
     @api.constrains('check_in', 'check_out')
     def _check_dates(self):

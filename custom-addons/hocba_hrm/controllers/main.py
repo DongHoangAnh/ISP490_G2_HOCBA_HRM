@@ -430,17 +430,21 @@ def _ot_for_employee(env, emp, first, last):
     }
 
 
-def _ot_table(env, month_str):
+def _ot_table(env, month_str, date_from=None, date_to=None):
     """Bảng ca OT approved theo tháng + phạm vi vai trò (giống _att_day_table).
     rows=mọi ca approved trong tháng; totals cộng ca counted. canManage."""
     user = env.user
-    if month_str:
-        y, m = (int(x) for x in month_str.split('-'))
+    if date_from and date_to:
+        first = fields.Date.from_string(date_from)
+        last = fields.Date.from_string(date_to)
+        y, m = first.year, first.month
     else:
-        today = fields.Date.context_today(user)
-        y, m = today.year, today.month
-
-    first, last = _get_month_range(env, y, m)
+        if month_str:
+            y, m = (int(x) for x in month_str.split('-'))
+        else:
+            today = fields.Date.context_today(user)
+            y, m = today.year, today.month
+        first, last = _get_month_range(env, y, m)
 
     tz = timezone(user.tz or 'UTC')
     start_dt_local = tz.localize(datetime.combine(first, time.min))
@@ -587,19 +591,24 @@ def _get_month_range(env, y, m):
     return first, last
 
 
-def _att_me_history(env, month_str):
+def _att_me_history(env, month_str, date_from=None, date_to=None):
     """Lịch sử chấm công của chính user theo tháng. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
     if not emp:
         return None
     policy = env['hocba.attendance.policy'].sudo().get_policy()
-    if month_str:
-        y, m = (int(x) for x in month_str.split('-'))
-    else:
-        today = fields.Date.context_today(env.user)
-        y, m = today.year, today.month
 
-    first, last = _get_month_range(env, y, m)
+    if date_from and date_to:
+        first = fields.Date.from_string(date_from)
+        last = fields.Date.from_string(date_to)
+        y, m = first.year, first.month
+    else:
+        if month_str:
+            y, m = (int(x) for x in month_str.split('-'))
+        else:
+            today = fields.Date.context_today(env.user)
+            y, m = today.year, today.month
+        first, last = _get_month_range(env, y, m)
 
     recs = env['hocba.attendance'].sudo().search([
         ('employee_id', '=', emp.id),
@@ -632,20 +641,25 @@ def _att_me_history(env, month_str):
     return {'month': '%04d-%02d' % (y, m), 'summary': summary, 'rows': rows}
 
 
-def _att_me_history_full(env, month_str, att_type):
+def _att_me_history_full(env, month_str, att_type, date_from=None, date_to=None):
     """Lịch sử chấm công đầy đủ (thường + OT + CTV) theo filter.
     att_type: 'all' | 'regular' | 'ot' | 'ctv'. None nếu chưa có hồ sơ NV."""
     emp = env.user.employee_id
     if not emp:
         return None
     policy = env['hocba.attendance.policy'].sudo().get_policy()
-    if month_str:
-        y, m = (int(x) for x in month_str.split('-'))
-    else:
-        today = fields.Date.context_today(env.user)
-        y, m = today.year, today.month
 
-    first, last = _get_month_range(env, y, m)
+    if date_from and date_to:
+        first = fields.Date.from_string(date_from)
+        last = fields.Date.from_string(date_to)
+        y, m = first.year, first.month
+    else:
+        if month_str:
+            y, m = (int(x) for x in month_str.split('-'))
+        else:
+            today = fields.Date.context_today(env.user)
+            y, m = today.year, today.month
+        first, last = _get_month_range(env, y, m)
 
     # UTC bounds for shift searches
     tz = timezone(env.user.tz or 'UTC')
@@ -733,18 +747,24 @@ def _att_me_history_full(env, month_str, att_type):
     }
 
 
-def _att_manager_summary(env, month_str):
+def _att_manager_summary(env, month_str, date_from=None, date_to=None, role=None):
     """Tổng hợp chấm công theo tháng cho manager: 1 dòng/NV trong phạm vi quản lý.
-    Cột: tổng công thường, OT, thiếu, tổng tháng."""
+    Cột: tổng công thường, OT, thiếu, tổng tháng.
+    role: 'official' | 'teacher' | 'ctv' | 'all'."""
     if not _user_can_manage(env):
         raise AccessError('Không có quyền')
-    if month_str:
-        y, m = (int(x) for x in month_str.split('-'))
-    else:
-        today = fields.Date.context_today(env.user)
-        y, m = today.year, today.month
 
-    first, last = _get_month_range(env, y, m)
+    if date_from and date_to:
+        first = fields.Date.from_string(date_from)
+        last = fields.Date.from_string(date_to)
+        y, m = first.year, first.month
+    else:
+        if month_str:
+            y, m = (int(x) for x in month_str.split('-'))
+        else:
+            today = fields.Date.context_today(env.user)
+            y, m = today.year, today.month
+        first, last = _get_month_range(env, y, m)
 
     tz = timezone(env.user.tz or 'UTC')
     start_dt_local = tz.localize(datetime.combine(first, time.min))
@@ -754,6 +774,16 @@ def _att_manager_summary(env, month_str):
 
     policy = env['hocba.attendance.policy'].sudo().get_policy()
     emp_domain = _emp_scope_domain(env)
+
+    if role == 'official':
+        emp_domain.append(('x_employment_status', '=', 'official'))
+    elif role == 'teacher':
+        emp_domain.append(('x_cms_user_id', '!=', False))
+    elif role == 'ctv':
+        # CTV: không phải official và không phải teacher
+        emp_domain.append(('x_employment_status', '!=', 'official'))
+        emp_domain.append(('x_cms_user_id', '=', False))
+
     employees = env['hr.employee'].sudo().search(
         emp_domain, order='department_id, name')
 
@@ -811,7 +841,7 @@ def _att_manager_summary(env, month_str):
     }
 
 
-def _att_emp_history(env, emp_id, month_str, att_type):
+def _att_emp_history(env, emp_id, month_str, att_type, date_from=None, date_to=None):
     """Lịch sử chấm công đầy đủ cho 1 NV cụ thể (manager xem/sửa).
     att_type: 'all' | 'regular' | 'ot' | 'ctv'. Kiểm tra phạm vi quản lý."""
     if not _user_can_manage(env):
@@ -823,17 +853,23 @@ def _att_emp_history(env, emp_id, month_str, att_type):
         raise AccessError('Ngoài phạm vi quản lý')
 
     policy = env['hocba.attendance.policy'].sudo().get_policy()
-    if month_str:
-        y, m = (int(x) for x in month_str.split('-'))
+
+    if date_from and date_to:
+        first = fields.Date.from_string(date_from)
+        last = fields.Date.from_string(date_to)
+        y, m = first.year, first.month # fallbacks for legacy datetime calculations below
     else:
-        today = fields.Date.context_today(env.user)
-        y, m = today.year, today.month
-    first = date(y, m, 1)
-    last = date(y, m, calendar.monthrange(y, m)[1])
+        if month_str:
+            y, m = (int(x) for x in month_str.split('-'))
+        else:
+            today = fields.Date.context_today(env.user)
+            y, m = today.year, today.month
+        first = date(y, m, 1)
+        last = date(y, m, calendar.monthrange(y, m)[1])
+
     tz = timezone(env.user.tz or 'UTC')
-    start_local = tz.localize(datetime(y, m, 1))
-    end_local = (tz.localize(datetime(y + 1, 1, 1)) if m == 12
-                 else tz.localize(datetime(y, m + 1, 1)))
+    start_local = tz.localize(datetime(first.year, first.month, first.day))
+    end_local = tz.localize(datetime(last.year, last.month, last.day, 23, 59, 59))
     start_utc = start_local.astimezone(utc).replace(tzinfo=None)
     end_utc = end_local.astimezone(utc).replace(tzinfo=None)
 
@@ -1034,14 +1070,40 @@ def _request_create(env, body):
     attendance = Att.browse(int(att_id)) if att_id else Att.browse()
     if not att_id or not attendance.exists() or attendance.employee_id != emp:
         raise ValidationError('Bản ghi không hợp lệ.')
-    req = env['hocba.attendance.request'].sudo().create({
+    # --- Auto-approve first 2 requests per month ---
+    today = fields.Date.context_today(env.user)
+    first_of_month = today.replace(day=1)
+    last_of_month = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+
+    # Count requests created by this employee in the current month
+    request_count = env['hocba.attendance.request'].sudo().search_count([
+        ('employee_id', '=', emp.id),
+        ('create_date', '>=', fields.Datetime.to_string(datetime.combine(first_of_month, time.min))),
+        ('create_date', '<=', fields.Datetime.to_string(datetime.combine(last_of_month, time.max))),
+    ])
+
+    req_vals = {
         'employee_id': emp.id,
         'request_date': attendance.date,
         'attendance_id': attendance.id,
         'proposed_check_in': _to_utc(env, body.get('checkIn')),
         'proposed_check_out': _to_utc(env, body.get('checkOut')),
         'reason': reason,
-    })
+    }
+
+    if request_count < 2:
+        # Auto-approve
+        req_vals.update({
+            'state': 'approved',
+            'review_note': 'Hệ thống tự động duyệt (2 lần đầu trong tháng).',
+            'decision_date': fields.Datetime.now(),
+        })
+        req = env['hocba.attendance.request'].sudo().create(req_vals)
+        # Apply the changes to attendance record
+        _request_apply(env, req, req.proposed_check_in, req.proposed_check_out)
+    else:
+        req = env['hocba.attendance.request'].sudo().create(req_vals)
+
     return _req_row(req)
 
 
@@ -1160,8 +1222,8 @@ def _shift_scope_domain(env, type_filter=None):
             dom.append(('shift_type', '=', type_filter))
         return dom
     emp = env.user.employee_id
-    is_ctv = bool(emp) and emp.x_employment_status == 'ctv'
-    return [('shift_type', '=', 'ctv' if is_ctv else 'ot')]
+    is_official = bool(emp) and emp.x_employment_status == 'official'
+    return [('shift_type', '=', 'ot' if is_official else 'ctv')]
 
 
 def _shift_row(s):
@@ -1250,9 +1312,8 @@ def _shifts_week(env, monday_str, type_filter=None):
     if can_manage:
         visible = scope
     else:
-        # NV thường/CTV: ca approved của mọi người cùng loại + ca của mình mọi state
-        visible = scope + ['|', ('state', '=', 'approved'),
-                           ('employee_id', '=', me.id if me else -1)]
+        # NV thường/CTV: CHỈ thấy ca của chính mình (thuộc loại ca tương ứng)
+        visible = scope + [('employee_id', '=', me.id if me else -1)]
     domain = [('start', '>=', start_utc), ('start', '<', end_utc)] + visible
     recs = env['hocba.work_shift'].sudo().search(domain)
     by_day = {}
@@ -4339,38 +4400,38 @@ class HocBaHRM(http.Controller):
 
     @http.route('/hocba-hrm/api/attendance/me/history', auth='user',
                 type='http', methods=['GET'])
-    def api_attendance_history(self, month=None, **kw):
-        data = _att_me_history(request.env, month)
+    def api_attendance_history(self, month=None, dateFrom=None, dateTo=None, **kw):
+        data = _att_me_history(request.env, month, date_from=dateFrom, date_to=dateTo)
         if data is None:
             return request.make_json_response({'error': 'no_employee'}, status=400)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/attendance/me/history-full', auth='user',
                 type='http', methods=['GET'])
-    def api_attendance_history_full(self, month=None, type=None, **kw):
+    def api_attendance_history_full(self, month=None, dateFrom=None, dateTo=None, type=None, **kw):
         att_type = type if type in ('regular', 'ot', 'ctv', 'all') else 'all'
-        data = _att_me_history_full(request.env, month, att_type)
+        data = _att_me_history_full(request.env, month, att_type, date_from=dateFrom, date_to=dateTo)
         if data is None:
             return request.make_json_response({'error': 'no_employee'}, status=400)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/attendance/manager-summary', auth='user',
                 type='http', methods=['GET'])
-    def api_attendance_manager_summary(self, month=None, **kw):
+    def api_attendance_manager_summary(self, month=None, dateFrom=None, dateTo=None, role=None, **kw):
         try:
-            data = _att_manager_summary(request.env, month)
+            data = _att_manager_summary(request.env, month, date_from=dateFrom, date_to=dateTo, role=role)
         except AccessError:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/attendance/emp-history', auth='user',
                 type='http', methods=['GET'])
-    def api_attendance_emp_history(self, empId=None, month=None, type=None, **kw):
+    def api_attendance_emp_history(self, empId=None, month=None, dateFrom=None, dateTo=None, type=None, **kw):
         if not empId:
             return request.make_json_response({'error': 'bad_request'}, status=400)
         att_type = type if type in ('regular', 'ot', 'ctv', 'all') else 'all'
         try:
-            data = _att_emp_history(request.env, int(empId), month, att_type)
+            data = _att_emp_history(request.env, int(empId), month, att_type, date_from=dateFrom, date_to=dateTo)
         except AccessError:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         except (UserError, ValidationError) as ex:
@@ -4573,8 +4634,8 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(_shifts_week(request.env, monday, type))
 
     @http.route('/hocba-hrm/api/shifts/ot', auth='user', type='http', methods=['GET'])
-    def api_shifts_ot(self, month=None, **kw):
-        return request.make_json_response(_ot_table(request.env, month))
+    def api_shifts_ot(self, month=None, dateFrom=None, dateTo=None, **kw):
+        return request.make_json_response(_ot_table(request.env, month, date_from=dateFrom, date_to=dateTo))
 
     def _decide_shift(self, shift_id, approve):
         try:

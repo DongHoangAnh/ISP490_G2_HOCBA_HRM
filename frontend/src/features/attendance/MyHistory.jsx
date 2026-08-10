@@ -5,7 +5,7 @@ import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchMyHistory } from '../../api/attendance';
 import { fmtDate } from '../../utils/format';
-import { fmtTime, attStatus, currentMonth, fmtCredit } from './util';
+import { fmtTime, attStatus, currentMonth, fmtCredit, firstDayOfMonth, lastDayOfMonth } from './util';
 import AttendanceDrawer from './AttendanceDrawer';
 
 function Sum({ val, lbl, col }) {
@@ -19,21 +19,38 @@ function Sum({ val, lbl, col }) {
 
 export default function MyHistory() {
   const [month, setMonth] = useState(currentMonth());
+  const [from, setFrom] = useState(firstDayOfMonth());
+  const [to, setTo] = useState(lastDayOfMonth());
+  const [useRange, setUseRange] = useState(false);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
 
   const load = () => {
     setErr(null); setData(null);
-    fetchMyHistory(month).then(setData).catch((e) => setErr(e.message));
+    fetchMyHistory(month, useRange ? from : null, useRange ? to : null)
+      .then(setData).catch((e) => setErr(e.message));
   };
-  useEffect(load, [month]);
+  useEffect(load, [month, from, to, useRange]);
 
   return (
     <div className="card" style={{ padding: 18 }}>
-      <div className="between" style={{ marginBottom: 14 }}>
+      <div className="between" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Lịch sử chấm công của tôi</h3>
-        <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {useRange ? (
+            <>
+              <input type="date" className="sel" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <span className="muted">→</span>
+              <input type="date" className="sel" value={to} onChange={(e) => setTo(e.target.value)} />
+            </>
+          ) : (
+            <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setUseRange(!useRange)}>
+            {useRange ? 'Xem theo tháng' : 'Xem theo khoảng ngày'}
+          </button>
+        </div>
       </div>
 
       {err && <ErrorState message={err} onRetry={load} />}
