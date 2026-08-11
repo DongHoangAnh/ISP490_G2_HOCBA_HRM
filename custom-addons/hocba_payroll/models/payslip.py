@@ -755,7 +755,7 @@ class HbPayslip(models.Model):
             for cfg in role_configs:
                 job_match = (not cfg.job_id or cfg.job_id.id == slip.employee_id.job_id.id)
                 dept_match = (not cfg.department_id or cfg.department_id.id == slip.employee_id.department_id.id)
-                if (cfg.job_id or cfg.department_id) and job_match and dept_match:
+                if job_match and dept_match:
                     matching_allowance += cfg.amount
             slip.x_role_allowance_amount = matching_allowance
 

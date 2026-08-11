@@ -472,6 +472,9 @@ export default function RoleAllowanceConfig() {
                       boxSizing: 'border-box',
                     }}
                   />
+                  <div style={{ fontSize: 11.5, color: '#059669', fontWeight: 600, marginTop: 4 }}>
+                    💡 Số tiền: {Number(form.amount || 0).toLocaleString('vi-VN')} ₫
+                  </div>
                 </div>
               </div>
 
