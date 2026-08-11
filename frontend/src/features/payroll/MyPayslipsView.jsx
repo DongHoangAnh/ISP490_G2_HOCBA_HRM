@@ -218,7 +218,7 @@ export default function MyPayslipsView({ targetSlipId }) {
         </div>
 
         {/* 2. Feedback Window Deadline Notification */}
-        {activeSlip.confirm_deadline && (
+        {(activeSlip.confirm_deadline || activeSlip.confirm_start_day) && (
           <div style={{
             padding: '12px 32px',
             background: activeSlip.is_expired ? '#fff5f5' : '#fffbeb',
@@ -233,14 +233,17 @@ export default function MyPayslipsView({ targetSlipId }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: activeSlip.is_expired ? '#dc2626' : '#d97706',
               }}>
-                <Icon name={activeSlip.is_expired ? 'xCircle' : 'clock'} size={16} />
+                <Icon name={activeSlip.is_expired ? 'lock' : 'clock'} size={16} />
               </div>
               <div>
                 <b style={{ color: activeSlip.is_expired ? '#991b1b' : '#92400e' }}>
-                  Thời hạn phản hồi phiếu lương:
+                  Khoảng thời gian phản hồi phiếu lương:
                 </b>{' '}
                 <span style={{ color: '#4b5563' }}>
-                  Đến <b style={{ color: '#111827' }}>{new Date(activeSlip.confirm_deadline).toLocaleString('vi-VN')}</b>
+                  Từ ngày <b>{String(activeSlip.confirm_start_day || 5).padStart(2, '0')}</b> đến ngày <b>{String(activeSlip.confirm_end_day || 10).padStart(2, '0')}</b> hàng tháng
+                  {activeSlip.confirm_deadline && !activeSlip.is_expired && (
+                    <> (Đến <b style={{ color: '#111827' }}>{new Date(activeSlip.confirm_deadline).toLocaleString('vi-VN')}</b>)</>
+                  )}
                 </span>
               </div>
             </div>
@@ -250,7 +253,7 @@ export default function MyPayslipsView({ targetSlipId }) {
               background: activeSlip.is_expired ? '#fee2e2' : '#fef08a',
               color: activeSlip.is_expired ? '#991b1b' : '#854d0e',
             }}>
-              {activeSlip.is_expired ? '⏰ Đã hết thời hạn' : '⚡ Đang mở phản hồi'}
+              {activeSlip.is_expired ? '🔒 Đã khóa phản hồi' : '⚡ Đang mở phản hồi'}
             </span>
           </div>
         )}
@@ -503,12 +506,24 @@ export default function MyPayslipsView({ targetSlipId }) {
 
           {activeSlip.is_expired ? (
             <div style={{
-              padding: '14px 18px', borderRadius: 10, background: '#fff7ed', border: '1px solid #ffedd5',
-              color: '#c2410c', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10,
+              padding: '16px 20px', borderRadius: 12, background: '#fff7ed', border: '1px solid #fed7aa',
+              color: '#c2410c', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 14,
             }}>
-              <Icon name="clock" size={18} style={{ color: '#ea580c' }} />
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%', background: '#ffedd5',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                color: '#ea580c',
+              }}>
+                <Icon name="lock" size={20} />
+              </div>
               <div>
-                <b>Hết thời hạn phản hồi:</b> Thời hạn phản hồi phiếu lương đã kết thúc. Nếu có thắc mắc về số liệu, vui lòng liên hệ phòng Nhân sự (HR).
+                <b style={{ fontSize: 14, color: '#9a3412', display: 'block', marginBottom: 2 }}>
+                  🔒 Đã khóa xác nhận & phản hồi phiếu lương
+                </b>
+                <div style={{ color: '#9a3412', fontSize: 13, lineHeight: 1.45 }}>
+                  Theo cấu hình hệ thống, thời gian phản hồi phiếu lương mở từ ngày <b>{String(activeSlip.confirm_start_day || 5).padStart(2, '0')}</b> đến ngày <b>{String(activeSlip.confirm_end_day || 10).padStart(2, '0')}</b> hàng tháng.
+                  Hiện tại đã hết thời hạn cho phép. Phiếu lương đã bị khóa chỉnh sửa để tránh thay đổi hoặc xác nhận lại.
+                </div>
               </div>
             </div>
           ) : (

@@ -107,6 +107,9 @@ export const employeeConfirmPayslip = (slipId, action, feedback) =>
 export const resetPayslipConfirm = (slipId) =>
   p(`/hocba-hrm/api/payroll/payslip/${slipId}/reset-confirm`, {});
 
+export const bulkResetPayslipConfirm = (payload) =>
+  p('/hocba-hrm/api/payroll/payslip/bulk-reset-confirm', payload);
+
 // ── Mail template config ────────────────────────────────
 export const fetchMailTemplate = () =>
   g('/hocba-hrm/api/payroll/mail-template');

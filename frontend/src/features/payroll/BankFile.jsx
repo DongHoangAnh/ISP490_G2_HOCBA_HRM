@@ -219,7 +219,8 @@ function CreateFileModal({ onClose, onCreated }) {
     if (creating) return;
     setCreating(true);
     try {
-      await createTransferFile(month, year, selCodes);
+      const payloadCodes = (selCodes.length === banks.length) ? [] : selCodes;
+      await createTransferFile(month, year, payloadCodes);
       onCreated();
     } catch (e) {
       alert(e.message || 'Lỗi tạo file');
@@ -228,7 +229,7 @@ function CreateFileModal({ onClose, onCreated }) {
     }
   };
 
-  const bankLabel = selCodes.length === 0
+  const bankLabel = (selCodes.length === 0 || selCodes.length === banks.length)
     ? 'Tất cả ngân hàng'
     : selCodes.length <= 3
       ? selCodes.join(', ')

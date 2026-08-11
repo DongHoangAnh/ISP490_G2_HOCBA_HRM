@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances, fetchComputeStatus } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, bulkResetPayslipConfirm, fetchBulkAllowances, fetchComputeStatus } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
@@ -379,6 +379,7 @@ export default function BatchList({ search }) {
   const [computeProgress, setComputeProgress] = useState(null);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [confirmFilter, setConfirmFilter] = useState('');
   const startPolling = useCallback((m, y) => {
@@ -700,6 +701,30 @@ export default function BatchList({ search }) {
     }
   };
 
+  const handleBulkResetConfirm = async () => {
+    if (resetting) return;
+    const pids = checkedIds;
+    const msg = pids.length > 0
+      ? `Phát hiện ${pids.length} nhân viên được tích chọn.\n\nBạn có XÁC NHẬN RESET trạng thái xác nhận về "Chờ xác nhận" cho ${pids.length} nhân viên này không?`
+      : `Bạn có XÁC NHẬN RESET trạng thái xác nhận của TẤT CẢ nhân viên trong tháng ${month}/${year} về "Chờ xác nhận" không?`;
+    if (!confirm(msg)) return;
+
+    setResetting(true);
+    try {
+      const payload = pids.length > 0
+        ? { payslip_ids: pids }
+        : { month: Number(month), year: Number(year) };
+      const res = await bulkResetPayslipConfirm(payload);
+      alert(`🎉 ${res.message || 'Đã reset thành công!'}`);
+      setChecked({});
+      load();
+    } catch (err) {
+      alert('Lỗi reset: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
     if (confirmFilter) {
@@ -897,6 +922,20 @@ export default function BatchList({ search }) {
           }}>
           <Icon name="mail" size={13} />
           {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
+        </button>
+
+        <button onClick={handleBulkResetConfirm} disabled={resetting}
+          title={checkedCount > 0 ? `Reset trạng thái xác nhận của ${checkedCount} NV được chọn về Chờ xác nhận` : 'Reset trạng thái xác nhận của TẤT CẢ nhân viên về Chờ xác nhận'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
+            border: '1px solid #d1d5db', background: resetting ? '#f3f4f6' : '#fff', color: '#374151',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            cursor: resetting ? 'not-allowed' : 'pointer',
+            opacity: resetting ? .6 : 1,
+          }}>
+          <Icon name="rotateCcw" size={13} style={{ color: '#4b5563' }} />
+          {resetting ? 'Đang reset...' : checkedCount > 0 ? `Reset XN (${checkedCount})` : 'Reset XN'}
         </button>
 
         <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
