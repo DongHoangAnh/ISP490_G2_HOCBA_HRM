@@ -90,21 +90,43 @@ export default function SaleLevelConfig() {
 
   return (
     <div style={{ padding: '16px 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      {/* Header Banner */}
+      <div
+        style={{
+          display: 'flex',
+          justify: 'space-between',
+          alignItems: 'center',
+          marginBottom: 20,
+          background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+          padding: '16px 20px',
+          borderRadius: 12,
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+        }}
+      >
         <div>
-          <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>
+          <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
             🎯 Cấu hình Bảng Lương Sale theo Level KPI
           </h4>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-            Chỉ áp dụng cho <b>Nhân viên Sale chính thức</b>. Cuối tháng tự động đối chiếu điểm KPI đạt được để áp mức Lương cơ bản tương ứng.
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
+            Áp dụng riêng cho <b>Nhân viên Sale chính thức</b>. Hệ thống tự động lấy điểm KPI tháng để áp mức Lương cơ bản tương ứng.
           </p>
         </div>
         <button
           onClick={() => handleOpenModal()}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '8px 14px', borderRadius: 8, background: '#2563eb', color: '#fff',
-            border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '9px 16px',
+            borderRadius: 8,
+            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+            color: '#fff',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: 'pointer',
+            boxShadow: '0 2px 4px rgba(37,99,235,0.2)',
           }}
         >
           <Icon name="plus" size={16} /> Thêm Level mới
@@ -112,121 +134,146 @@ export default function SaleLevelConfig() {
       </div>
 
       {loading ? (
-        <div style={{ padding: 20, textAlign: 'center', color: '#6b7280' }}>Đang tải cấu hình Level Sale...</div>
+        <div style={{ padding: 40, textAlign: 'center', color: '#64748b', fontSize: 14 }}>
+          🔄 Đang tải cấu hình Level Sale...
+        </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
-          <thead>
-            <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#374151' }}>
-              <th style={{ padding: '10px 14px', width: 60 }}>STT</th>
-              <th style={{ padding: '10px 14px' }}>Mã Level</th>
-              <th style={{ padding: '10px 14px' }}>Tên hiển thị</th>
-              <th style={{ padding: '10px 14px' }}>Chỉ số KPI tối thiểu</th>
-              <th style={{ padding: '10px 14px' }}>Lương cơ bản (VND)</th>
-              <th style={{ padding: '10px 14px', textAlign: 'right' }}>Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {levels.map((item, index) => (
-              <tr key={item.id} style={{ borderBottom: '1px solid #f3f4f6', fontSize: 13 }}>
-                <td style={{ padding: '12px 14px', color: '#6b7280', fontWeight: 600 }}>{index + 1}</td>
-                <td style={{ padding: '12px 14px', fontWeight: 700, color: '#2563eb' }}>{item.levelCode}</td>
-                <td style={{ padding: '12px 14px', fontWeight: 600, color: '#111827' }}>{item.name}</td>
-                <td style={{ padding: '12px 14px' }}>
-                  <span style={{ padding: '3px 8px', borderRadius: 12, background: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 12 }}>
-                    ≥ {item.kpiTarget} KPI
-                  </span>
-                </td>
-                <td style={{ padding: '12px 14px', fontWeight: 700, color: '#059669' }}>
-                  {item.baseWage ? item.baseWage.toLocaleString('vi-VN') : 0} đ
-                </td>
-                <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                  <button
-                    onClick={() => handleOpenModal(item)}
-                    style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', padding: 4, marginRight: 8 }}
-                    title="Chỉnh sửa"
-                  >
-                    <Icon name="edit" size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', padding: 4 }}
-                    title="Xóa"
-                  >
-                    <Icon name="trash2" size={16} />
-                  </button>
-                </td>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                <th style={{ padding: '12px 16px', width: 60 }}>STT</th>
+                <th style={{ padding: '12px 16px' }}>Mã Level</th>
+                <th style={{ padding: '12px 16px' }}>Tên ngạch hiển thị</th>
+                <th style={{ padding: '12px 16px' }}>Mốc KPI tối thiểu</th>
+                <th style={{ padding: '12px 16px', textAlign: 'right' }}>Lương cơ bản theo Level</th>
+                <th style={{ padding: '12px 16px', textAlign: 'right', width: 100 }}>Thao tác</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {levels.map((item, index) => (
+                <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '14px 16px', color: '#64748b', fontWeight: 600 }}>{index + 1}</td>
+                  <td style={{ padding: '14px 16px', fontWeight: 700, color: '#2563eb', fontFamily: 'monospace' }}>{item.levelCode}</td>
+                  <td style={{ padding: '14px 16px', fontWeight: 700, color: '#0f172a' }}>{item.name}</td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: 20, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 700, fontSize: 12 }}>
+                      ≥ {item.kpiTarget} KPI
+                    </span>
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700, color: '#059669', fontSize: 14, fontFamily: 'monospace' }}>
+                    {Number(item.baseWage || 0).toLocaleString('vi-VN')} ₫
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <button
+                        onClick={() => handleOpenModal(item)}
+                        style={{
+                          border: '1px solid #cbd5e1',
+                          background: '#fff',
+                          color: '#475569',
+                          borderRadius: 6,
+                          padding: '5px 8px',
+                          cursor: 'pointer',
+                        }}
+                        title="Chỉnh sửa"
+                      >
+                        <Icon name="edit" size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        style={{
+                          border: '1px solid #fca5a5',
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          borderRadius: 6,
+                          padding: '5px 8px',
+                          cursor: 'pointer',
+                        }}
+                        title="Xóa"
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
-          <div style={{ background: '#fff', width: 440, borderRadius: 12, padding: 20, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>
-              {editingItem ? 'Chỉnh sửa Level Sale' : 'Thêm mới Level Sale'}
-            </h3>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#fff', width: 440, borderRadius: 16, padding: 24, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0f172a' }}>
+                {editingItem ? '✏️ Chỉnh sửa Level Sale' : '✨ Thêm mới Level Sale'}
+              </h3>
+              <button onClick={() => setShowModal(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', fontSize: 18 }}>✕</button>
+            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Mã Level</label>
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>Mã Level <span style={{ color: '#dc2626' }}>*</span></label>
                 <input
                   type="text"
                   value={form.levelCode}
                   onChange={(e) => setForm({ ...form, levelCode: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13.5, fontFamily: 'monospace', boxSizing: 'border-box' }}
                   placeholder="LEVEL_1"
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Tên hiển thị</label>
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>Tên ngạch hiển thị <span style={{ color: '#dc2626' }}>*</span></label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13.5, boxSizing: 'border-box' }}
                   placeholder="Level 1 - Khởi đầu"
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Chỉ số KPI tối thiểu</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={form.kpiTarget}
-                  onChange={(e) => setForm({ ...form, kpiTarget: parseFloat(e.target.value) || 0 })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
-                />
-              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>Mốc KPI tối thiểu</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={form.kpiTarget}
+                    onChange={(e) => setForm({ ...form, kpiTarget: parseFloat(e.target.value) || 0 })}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13.5, boxSizing: 'border-box' }}
+                  />
+                </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Lương cơ bản theo Level (VND)</label>
-                <input
-                  type="number"
-                  step="500000"
-                  value={form.baseWage}
-                  onChange={(e) => setForm({ ...form, baseWage: parseFloat(e.target.value) || 0 })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
-                />
+                <div>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>Lương cơ bản (VND)</label>
+                  <input
+                    type="number"
+                    step="500000"
+                    value={form.baseWage}
+                    onChange={(e) => setForm({ ...form, baseWage: parseFloat(e.target.value) || 0 })}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13.5, fontFamily: 'monospace', fontWeight: 600, boxSizing: 'border-box' }}
+                  />
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
               <button
                 onClick={() => setShowModal(false)}
-                style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }}
+                style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', fontWeight: 600, cursor: 'pointer' }}
               >
                 Hủy
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', color: '#fff', fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 4px rgba(37,99,235,0.25)' }}
               >
-                {saving ? 'Đang lưu...' : 'Lưu Level'}
+                {saving ? '⏳ Đang lưu...' : 'Lưu Level'}
               </button>
             </div>
           </div>
