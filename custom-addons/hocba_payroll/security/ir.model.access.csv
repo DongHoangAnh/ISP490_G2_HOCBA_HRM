@@ -26,5 +26,8 @@ access_hb_payslip_worked_days_user,access.hb.payslip.worked.days.user,model_hb_p
 access_hb_payslip_worked_days_manager,access.hb.payslip.worked.days.manager,model_hb_payslip_worked_days,hr.group_hr_manager,1,1,1,1
 access_hb_payslip_input_user,access.hb.payslip.input.user,model_hb_payslip_input,hr.group_hr_user,1,0,0,0
 access_hb_payslip_input_manager,access.hb.payslip.input.manager,model_hb_payslip_input,hr.group_hr_manager,1,1,1,1
-access_hb_formula_help_wizard_manager,access.hb.formula.help.wizard.manager,model_hb_formula_help_wizard,hr.group_hr_manager,1,1,1,1
+access_hb_sale_salary_level_user,access.hb.sale.salary.level.user,model_hb_sale_salary_level,hr.group_hr_user,1,0,0,0
+access_hb_sale_salary_level_manager,access.hb.sale.salary.level.manager,model_hb_sale_salary_level,hr.group_hr_manager,1,1,1,1
+access_hb_role_allowance_config_user,access.hb.role.allowance.config.user,model_hb_role_allowance_config,hr.group_hr_user,1,0,0,0
+access_hb_role_allowance_config_manager,access.hb.role.allowance.config.manager,model_hb_role_allowance_config,hr.group_hr_manager,1,1,1,1
 
