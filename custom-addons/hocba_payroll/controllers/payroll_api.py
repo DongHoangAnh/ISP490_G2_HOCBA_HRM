@@ -2629,7 +2629,7 @@ class PayrollAPI(http.Controller):
     def create_sale_salary_level(self, **kw):
         """Create a new Sale Salary Level."""
         try:
-            data = _parse_json_request()
+            data = _get_json_body()
             vals = {
                 'level_code': data.get('levelCode') or f"LEVEL_{data.get('sequence', 10)}",
                 'name': data.get('name', 'Level mới'),
@@ -2658,7 +2658,7 @@ class PayrollAPI(http.Controller):
             rec = request.env['hb.sale.salary.level'].sudo().browse(level_id)
             if not rec.exists():
                 return _error_response('Không tìm thấy Level.', status=404)
-            data = _parse_json_request()
+            data = _get_json_body()
             vals = {}
             if 'levelCode' in data: vals['level_code'] = data['levelCode']
             if 'name' in data: vals['name'] = data['name']
