@@ -631,6 +631,30 @@ class HbPayslip(models.Model):
         help='Thời hạn nhân viên phản hồi. Quá hạn → hệ thống tự động xác nhận.',
     )
 
+    # ── KPI Sale Levels & Dynamic Bonus/Penalty ──────────────────────────────
+    x_kpi_score = fields.Float(
+        string='Điểm KPI tháng', default=1.0, digits=(8, 2),
+        help='Điểm/chỉ số KPI đạt được trong tháng của nhân viên (mặc định 1.0)',
+    )
+    x_sale_level_id = fields.Many2one(
+        'hb.sale.salary.level', string='Level Sale KPI',
+        help='Ngạch Level Sale khớp được dựa theo điểm KPI (chỉ áp dụng cho Sale chính thức)',
+    )
+    x_role_allowance_amount = fields.Float(
+        string='Thưởng & PC theo Role (VND)', default=0.0, digits=(16, 0),
+        help='Tổng thưởng & phụ cấp tự động tính theo Chức vụ / Phòng ban',
+    )
+    x_bonus_extra = fields.Float(
+        string='Thưởng cá nhân (VND)', default=0.0, digits=(16, 0),
+        help='Thưởng cá nhân biến động theo tháng',
+    )
+    x_bonus_reason = fields.Char(string='Lý do thưởng cá nhân')
+    x_penalty_amount = fields.Float(
+        string='Phạt cá nhân (VND)', default=0.0, digits=(16, 0),
+        help='Phạt cá nhân biến động theo tháng',
+    )
+    x_penalty_reason = fields.Char(string='Lý do phạt cá nhân')
+
     # ── Aggregated amounts ───────────────────────────────────────────────────
     gross_amount = fields.Float(
         string='Gross', digits=(16, 0),
@@ -703,11 +727,51 @@ class HbPayslip(models.Model):
             slip._ensure_draft_state()
             contract = slip._resolve_contract()
 
+            # ── 1. Calculate Sale Level KPI Base Wage ─────────────────────────
+            base_wage_override = None
+            is_official = (slip.employee_id.x_employment_status == 'official')
+            job_name = (slip.employee_id.job_id.name or '').lower()
+            pos_type = getattr(slip.employee_id, 'x_position_type', '') or ''
+            is_sales = ('sale' in job_name or 'kinh doanh' in job_name or pos_type == 'sales')
+
+            if is_official and is_sales:
+                LevelModel = self.env['hb.sale.salary.level'].sudo()
+                matched_level = LevelModel.search([
+                    ('active', '=', True),
+                    ('kpi_target', '<=', slip.x_kpi_score or 1.0)
+                ], order='kpi_target desc, sequence desc', limit=1)
+
+                if not matched_level:
+                    matched_level = LevelModel.search([('active', '=', True)], order='kpi_target asc', limit=1)
+
+                if matched_level:
+                    slip.x_sale_level_id = matched_level.id
+                    base_wage_override = matched_level.base_wage
+
+            # ── 2. Calculate Role / Department Allowances & Bonuses ───────────
+            RoleConfigModel = self.env['hb.role.allowance.config'].sudo()
+            role_configs = RoleConfigModel.search([('active', '=', True)])
+            matching_allowance = 0.0
+            for cfg in role_configs:
+                job_match = (not cfg.job_id or cfg.job_id.id == slip.employee_id.job_id.id)
+                dept_match = (not cfg.department_id or cfg.department_id.id == slip.employee_id.department_id.id)
+                if (cfg.job_id or cfg.department_id) and job_match and dept_match:
+                    matching_allowance += cfg.amount
+            slip.x_role_allowance_amount = matching_allowance
+
             # Clear old lines
             slip.line_ids.unlink()
 
             # Build evaluation namespace
-            localdict   = slip._build_localdict(contract)
+            localdict = slip._build_localdict(contract)
+            if base_wage_override is not None:
+                localdict['base_wage_override'] = base_wage_override
+                # Also override contract.wage_base attribute in localdict
+                if hasattr(localdict.get('contract'), 'wage_base'):
+                    localdict['contract_wage'] = base_wage_override
+            localdict['role_allowance'] = slip.x_role_allowance_amount
+            localdict['bonus_extra'] = slip.x_bonus_extra or 0.0
+            localdict['penalty_amount'] = slip.x_penalty_amount or 0.0
             _rules_order = localdict['_rules_order']
             _rules_pos   = localdict['_rules_pos']
 

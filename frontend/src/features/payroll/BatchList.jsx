@@ -3,6 +3,7 @@ import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPe
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
+import BulkBonusPenaltyModal from './BulkBonusPenaltyModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { currentMonth, currentYear } from './util';
@@ -380,6 +381,7 @@ export default function BatchList({ search }) {
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [confirmFilter, setConfirmFilter] = useState('');
   const startPolling = useCallback((m, y) => {
@@ -938,6 +940,19 @@ export default function BatchList({ search }) {
           {resetting ? 'Đang reset...' : checkedCount > 0 ? `Reset XN (${checkedCount})` : 'Reset XN'}
         </button>
 
+        <button onClick={() => setShowBulkModal(true)}
+          title="Mở công cụ Thưởng & Phạt Hàng Loạt với bộ lọc đa năng"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
+            border: 'none', background: '#10b981', color: '#fff',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            cursor: 'pointer',
+          }}>
+          <Icon name="gift" size={13} />
+          🎁 Thưởng & Phạt
+        </button>
+
         <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
           title={canSaveHistory ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận hoặc hết hạn trước khi lưu'}
           style={{
@@ -1231,6 +1246,14 @@ export default function BatchList({ search }) {
         <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
       {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} onChanged={load} />}
+      {showBulkModal && (
+        <BulkBonusPenaltyModal
+          batchId={data ? data.batch_id : null}
+          employees={data ? data.employees : []}
+          onClose={() => setShowBulkModal(false)}
+          onSuccess={() => load()}
+        />
+      )}
     </div>
   );
 }

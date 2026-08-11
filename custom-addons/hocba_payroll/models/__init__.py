@@ -8,6 +8,8 @@ from . import payslip_run
 from . import payslip_worked_days
 from . import payslip_input
 from . import employee_allowance
+from . import hb_sale_salary_level
+from . import hb_role_allowance_config
 from . import payslip
 from . import payslip_line
 from . import bank_format

@@ -2709,3 +2709,190 @@ class PayrollAPI(http.Controller):
         except Exception as e:
             _logger.exception('bulk_employee_allowances error')
             return _error_response(str(e), status=500)
+
+    # ── SALE SALARY LEVELS API ──────────────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_sale_salary_levels(self, **kw):
+        """Get all configured Sale Salary Levels (or auto-seed defaults if empty)."""
+        try:
+            Model = request.env['hb.sale.salary.level'].sudo()
+            Model.init_default_sale_levels()
+            recs = Model.search([('active', '=', True)], order='sequence, id')
+            res = [{
+                'id': r.id,
+                'levelCode': r.level_code,
+                'name': r.name,
+                'sequence': r.sequence,
+                'kpiTarget': r.kpi_target,
+                'baseWage': r.base_wage,
+            } for r in recs]
+            return _success_response(res)
+        except Exception as e:
+            _logger.exception('get_sale_salary_levels error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def create_sale_salary_level(self, **kw):
+        """Create a new Sale Salary Level."""
+        try:
+            data = _parse_json_request()
+            vals = {
+                'level_code': data.get('levelCode') or f"LEVEL_{data.get('sequence', 10)}",
+                'name': data.get('name', 'Level mới'),
+                'sequence': int(data.get('sequence', 10)),
+                'kpi_target': float(data.get('kpiTarget', 1.0)),
+                'base_wage': float(data.get('baseWage', 7000000.0)),
+            }
+            rec = request.env['hb.sale.salary.level'].sudo().create(vals)
+            return _success_response({
+                'id': rec.id,
+                'levelCode': rec.level_code,
+                'name': rec.name,
+                'sequence': rec.sequence,
+                'kpiTarget': rec.kpi_target,
+                'baseWage': rec.base_wage,
+            }, message='Đã thêm Level mới thành công.')
+        except Exception as e:
+            _logger.exception('create_sale_salary_level error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level/<int:level_id>', type='http',
+                auth='user', methods=['PUT', 'POST'], csrf=False)
+    def update_sale_salary_level(self, level_id, **kw):
+        """Update an existing Sale Salary Level."""
+        try:
+            rec = request.env['hb.sale.salary.level'].sudo().browse(level_id)
+            if not rec.exists():
+                return _error_response('Không tìm thấy Level.', status=404)
+            data = _parse_json_request()
+            vals = {}
+            if 'levelCode' in data: vals['level_code'] = data['levelCode']
+            if 'name' in data: vals['name'] = data['name']
+            if 'sequence' in data: vals['sequence'] = int(data['sequence'])
+            if 'kpiTarget' in data: vals['kpi_target'] = float(data['kpiTarget'])
+            if 'baseWage' in data: vals['base_wage'] = float(data['baseWage'])
+            rec.write(vals)
+            return _success_response({'id': rec.id}, message='Đã cập nhật Level thành công.')
+        except Exception as e:
+            _logger.exception('update_sale_salary_level error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level/<int:level_id>/delete', type='http',
+                auth='user', methods=['POST', 'DELETE'], csrf=False)
+    def delete_sale_salary_level(self, level_id, **kw):
+        """Delete / archive a Sale Salary Level."""
+        try:
+            rec = request.env['hb.sale.salary.level'].sudo().browse(level_id)
+            if not rec.exists():
+                return _error_response('Không tìm thấy Level.', status=404)
+            rec.unlink()
+            return _success_response({}, message='Đã xóa Level thành công.')
+        except Exception as e:
+            _logger.exception('delete_sale_salary_level error')
+            return _error_response(str(e), status=500)
+
+    # ── ROLE ALLOWANCE CONFIG API ───────────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/role-allowance-config', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_role_allowance_configs(self, **kw):
+        """Get all Role & Department Allowance Configurations."""
+        try:
+            recs = request.env['hb.role.allowance.config'].sudo().search([('active', '=', True)], order='id desc')
+            res = [{
+                'id': r.id,
+                'name': r.name,
+                'jobId': r.job_id.id if r.job_id else None,
+                'jobName': r.job_id.name if r.job_id else 'Tất cả chức vụ',
+                'departmentId': r.department_id.id if r.department_id else None,
+                'departmentName': r.department_id.name if r.department_id else 'Tất cả phòng ban',
+                'allowanceType': r.allowance_type,
+                'amount': r.amount,
+                'notes': r.notes or '',
+            } for r in recs]
+            return _success_response(res)
+        except Exception as e:
+            _logger.exception('get_role_allowance_configs error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/role-allowance-config', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def create_role_allowance_config(self, **kw):
+        """Create a new Role & Department Allowance Config."""
+        try:
+            data = _parse_json_request()
+            vals = {
+                'name': data.get('name', 'Phụ cấp chức vụ'),
+                'job_id': data.get('jobId') or False,
+                'department_id': data.get('departmentId') or False,
+                'allowance_type': data.get('allowanceType', 'position_allowance'),
+                'amount': float(data.get('amount', 0.0)),
+                'notes': data.get('notes', ''),
+            }
+            rec = request.env['hb.role.allowance.config'].sudo().create(vals)
+            return _success_response({'id': rec.id}, message='Đã thêm cấu hình thưởng/phụ cấp thành công.')
+        except Exception as e:
+            _logger.exception('create_role_allowance_config error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/role-allowance-config/<int:cfg_id>/delete', type='http',
+                auth='user', methods=['POST', 'DELETE'], csrf=False)
+    def delete_role_allowance_config(self, cfg_id, **kw):
+        """Delete a Role & Department Allowance Config."""
+        try:
+            rec = request.env['hb.role.allowance.config'].sudo().browse(cfg_id)
+            if not rec.exists():
+                return _error_response('Không tìm thấy cấu hình.', status=404)
+            rec.unlink()
+            return _success_response({}, message='Đã xóa cấu hình thành công.')
+        except Exception as e:
+            _logger.exception('delete_role_allowance_config error')
+            return _error_response(str(e), status=500)
+
+    # ── BULK BONUS & PENALTY WIZARD API ─────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/batch/<int:batch_id>/bulk-bonus-penalty', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def apply_bulk_bonus_penalty(self, batch_id, **kw):
+        """Apply dynamic bonus and/or penalty to multiple payslips in a batch."""
+        try:
+            data = _parse_json_request()
+            payslip_ids = data.get('payslip_ids') or data.get('payslipIds') or []
+            bonus_amount = float(data.get('bonusAmount', 0.0))
+            bonus_reason = data.get('bonusReason', '')
+            penalty_amount = float(data.get('penaltyAmount', 0.0))
+            penalty_reason = data.get('penaltyReason', '')
+
+            PayslipModel = request.env['hb.payslip'].sudo()
+
+            if payslip_ids:
+                slips = PayslipModel.browse(payslip_ids)
+            else:
+                slips = PayslipModel.search([('payslip_run_id', '=', batch_id)])
+
+            if not slips:
+                return _error_response('Không tìm thấy phiếu lương phù hợp.')
+
+            vals = {}
+            if bonus_amount >= 0:
+                vals['x_bonus_extra'] = bonus_amount
+                if bonus_reason:
+                    vals['x_bonus_reason'] = bonus_reason
+            if penalty_amount >= 0:
+                vals['x_penalty_amount'] = penalty_amount
+                if penalty_reason:
+                    vals['x_penalty_reason'] = penalty_reason
+
+            if vals:
+                slips.write(vals)
+
+            # Recompute payslips to update NET/GROSS amounts
+            slips.action_compute_batch()
+
+            return _success_response({
+                'updatedCount': len(slips),
+            }, message=f'🎉 Đã áp dụng thưởng/phạt thành công cho {len(slips)} nhân viên!')
+        except Exception as e:
+            _logger.exception('apply_bulk_bonus_penalty error')
+            return _error_response(str(e), status=500)
+

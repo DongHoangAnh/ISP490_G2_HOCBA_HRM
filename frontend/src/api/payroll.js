@@ -137,3 +137,26 @@ export const deleteEmployeeAllowance = (id) =>
   p(`/hocba-hrm/api/payroll/employee-allowance/${id}/delete`, {});
 export const fetchBulkAllowances = (employeeIds) =>
   g(`/hocba-hrm/api/payroll/employee-allowance/bulk?employee_ids=${employeeIds.join(',')}`);
+
+// ── Sale Salary Levels (KPI-based) ──────────────────────
+export const fetchSaleSalaryLevels = () =>
+  g('/hocba-hrm/api/payroll/sale-salary-level');
+export const createSaleSalaryLevel = (payload) =>
+  p('/hocba-hrm/api/payroll/sale-salary-level', payload);
+export const updateSaleSalaryLevel = (id, payload) =>
+  p(`/hocba-hrm/api/payroll/sale-salary-level/${id}`, payload);
+export const deleteSaleSalaryLevel = (id) =>
+  p(`/hocba-hrm/api/payroll/sale-salary-level/${id}/delete`, {});
+
+// ── Role & Position Allowance Config ────────────────────
+export const fetchRoleAllowanceConfigs = () =>
+  g('/hocba-hrm/api/payroll/role-allowance-config');
+export const createRoleAllowanceConfig = (payload) =>
+  p('/hocba-hrm/api/payroll/role-allowance-config', payload);
+export const deleteRoleAllowanceConfig = (id) =>
+  p(`/hocba-hrm/api/payroll/role-allowance-config/${id}/delete`, {});
+
+// ── Bulk Bonus & Penalty Assignment Wizard ──────────────
+export const applyBulkBonusPenalty = (batchId, payload) =>
+  p(`/hocba-hrm/api/payroll/batch/${batchId}/bulk-bonus-penalty`, payload);
+

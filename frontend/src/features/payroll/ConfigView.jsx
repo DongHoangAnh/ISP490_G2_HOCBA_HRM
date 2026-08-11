@@ -11,9 +11,18 @@ import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import SalaryRuleForm from './SalaryRuleForm';
 import TblWrap from '../../components/TblWrap';
+import SaleLevelConfig from './SaleLevelConfig';
+import RoleAllowanceConfig from './RoleAllowanceConfig';
 
 const TYPE_LABEL = { fixed: 'Số tiền cố định', formula: 'Công thức tính toán', lookup: 'Tra bảng biểu / Định mức' };
-const SUB_TABS = [['rules', 'Thành phần lương'], ['banks', 'Mẫu file Bank'], ['confirm', 'Quy trình chốt lương'], ['mail', 'Mẫu Email gửi phiếu lương']];
+const SUB_TABS = [
+  ['rules', 'Thành phần lương'],
+  ['sale_levels', '🎯 Lương Sale Level KPI'],
+  ['role_allowances', '🏛️ Thưởng/PC theo Role'],
+  ['banks', 'Mẫu file Bank'],
+  ['confirm', 'Quy trình chốt lương'],
+  ['mail', 'Mẫu Email gửi phiếu lương'],
+];
 
 const segWrap = {
   display: 'inline-flex', gap: 0, background: 'var(--gray-100)',
@@ -292,6 +301,12 @@ export default function ConfigView() {
           )}
         </div>
       )}
+
+      {/* ── TAB: LƯƠNG SALE LEVEL KPI ── */}
+      {tab === 'sale_levels' && <SaleLevelConfig />}
+
+      {/* ── TAB: THƯỞNG / PHỤ CẤP THEO ROLE ── */}
+      {tab === 'role_allowances' && <RoleAllowanceConfig />}
 
       {/* ════════════════════════════════════════════════════════
           TAB: NGÂN HÀNG (unified)
