@@ -451,12 +451,25 @@ class PayrollAPI(http.Controller):
             employees = env['hr.employee'].sudo().search(
                 [('active', '=', True)], order='id',
             )
+
+            # Đồng bộ lương cơ bản trên hợp đồng với phiên bản hồ sơ NV mới nhất
+            for emp in employees:
+                ver = emp.version_id
+                if ver and hasattr(ver, 'wage') and ver.wage:
+                    cnts = env['hb.contract'].sudo().search([('employee_id', '=', emp.id)])
+                    if cnts:
+                        cnts.filtered(lambda c: c.wage != ver.wage).write({'wage': ver.wage})
+
             # Gom vals rồi bulk INSERT 1 lần thay vì N+1 INSERT riêng lẻ
             slip_vals_list = []
             for emp in employees:
-                if emp.id in existing_emp_ids:
-                    continue
                 contract = contract_map.get(emp.id)
+                if emp.id in existing_emp_ids:
+                    # Cập nhật contract_id mới nhất cho các phiếu đã tồn tại nếu chưa có
+                    existing_s = Slip.search([('payslip_run_id', '=', batch.id), ('employee_id', '=', emp.id)], limit=1)
+                    if existing_s and contract and existing_s.contract_id.id != contract.id:
+                        existing_s.write({'contract_id': contract.id})
+                    continue
                 vals = {
                     'employee_id': emp.id,
                     'date_from': batch.date_start,
@@ -1083,19 +1096,41 @@ class PayrollAPI(http.Controller):
 
     @staticmethod
     def _resolve_bank_name(bank_acc, bank_lookup):
-        """Resolve employee bank account → format full name."""
+        """Resolve employee bank account → format full name and code.
+
+        Robust matching order:
+        1. BIC code match: bic contains code or code contains bic
+        2. Exact code match: bank name / code matches format code exactly
+        3. Full name inclusion match: format name in bank name OR bank name in format name
+        4. Substring / acronym match: code in bank name
+        """
         if not bank_acc:
             return '', ''
         bank = bank_acc.bank_id
         if not bank:
             return '', ''
-        bname = bank.name or ''
-        bic = (bank.bic or '').upper()
+        bname = (bank.name or '').strip()
+        bic = (bank.bic or '').strip().upper()
+        bname_lower = bname.lower()
+
         for code, full in bank_lookup.items():
-            if bic and code in bic:
-                return code, full
-            if code.lower() in bname.lower():
-                return code, full
+            code_upper = code.upper()
+            code_lower = code.lower()
+            full_lower = (full or '').lower()
+
+            # 1. BIC match
+            if bic and (code_upper in bic or bic in code_upper):
+                return code_upper, full
+            # 2. Exact code match in bank name or code
+            if code_upper == bname.upper():
+                return code_upper, full
+            # 3. Full format name match
+            if full_lower and (full_lower in bname_lower or bname_lower in full_lower):
+                return code_upper, full
+            # 4. Code substring / acronym match
+            if code_lower and code_lower in bname_lower:
+                return code_upper, full
+
         return '', bname
 
     def _build_transfer_rows(self, month, year, bank_codes_filter=None):
@@ -1105,12 +1140,16 @@ class PayrollAPI(http.Controller):
         Returns (rows, bank_formats_list).
         """
         import calendar
-        env = request.env
+        try:
+            env = request.env
+        except Exception:
+            env = getattr(self, 'env', None)
         last_day = calendar.monthrange(year, month)[1]
         date_start = f'{year}-{month:02d}-01'
         date_end = f'{year}-{month:02d}-{last_day}'
 
         bank_lookup = self._build_bank_lookup(env)
+        all_codes = set(bank_lookup.keys())
 
         # Find CLOSED batches for this period
         batches = env['hb.payslip.run'].sudo().search([
@@ -1136,10 +1175,13 @@ class PayrollAPI(http.Controller):
             [('active', '=', True)], order='x_employee_code, id',
         )
 
-        codes_upper = (
-            {c.upper() for c in bank_codes_filter}
-            if bank_codes_filter else None
-        )
+        codes_upper = None
+        if bank_codes_filter:
+            cleaned = {c.strip().upper() for c in bank_codes_filter if c.strip()}
+            if 'ALL' in cleaned or (all_codes and cleaned >= all_codes):
+                codes_upper = None
+            else:
+                codes_upper = cleaned
 
         rows = []
         for emp in employees:
@@ -1256,8 +1298,16 @@ class PayrollAPI(http.Controller):
             rows, _ = self._build_transfer_rows(
                 month, year, bank_codes or None)
 
-            codes_str = ','.join(bank_codes) if bank_codes else 'ALL'
-            bank_label = codes_str if codes_str != 'ALL' else 'Tất cả NH'
+            all_bank_lookup = self._build_bank_lookup(env)
+            all_codes = set(all_bank_lookup.keys())
+            req_codes = {c.strip().upper() for c in bank_codes} if bank_codes else set()
+
+            if not bank_codes or 'ALL' in req_codes or (all_codes and req_codes >= all_codes):
+                codes_str = 'ALL'
+            else:
+                codes_str = ','.join(c.strip().upper() for c in bank_codes if c.strip())
+
+            bank_label = 'Tất cả NH' if codes_str == 'ALL' else codes_str
             filename = f'CK_T{month:02d}_{year}_{codes_str}'
 
             bf = env['hb.bank.file'].sudo().create({
@@ -2144,8 +2194,9 @@ class PayrollAPI(http.Controller):
 
             # Current user → employee
             user = request.env.user
-            employee = request.env['hr.employee'].sudo().search(
-                [('user_id', '=', user.id)], limit=1)
+            employee = request.env['hr.employee'].sudo().search([
+                '|', ('user_id', '=', user.id), ('work_email', '=ilike', user.partner_id.email or '')
+            ], limit=1)
             if not employee:
                 return _error_response(
                     'Không tìm thấy hồ sơ nhân viên của bạn.', status=403)
@@ -2168,14 +2219,17 @@ class PayrollAPI(http.Controller):
                     'x_employee_confirm': 'confirmed',
                     'x_confirmed_date': now,
                 })
-                slip.message_post(
-                    body=_(
-                        'Nhân viên <b>%(name)s</b> đã <b>xác nhận (đồng ý)</b> phiếu lương.',
-                        name=employee.name,
-                    ),
-                    message_type='comment',
-                    subtype_xmlid='mail.mt_note',
-                )
+                try:
+                    slip.message_post(
+                        body=_(
+                            'Nhân viên <b>%(name)s</b> đã <b>xác nhận (đồng ý)</b> phiếu lương.',
+                            name=employee.name,
+                        ),
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                except Exception as msg_err:
+                    _logger.warning('message_post note failed: %s', msg_err)
             else:
                 feedback = (body.get('feedback') or '').strip()
                 if not feedback:
@@ -2185,15 +2239,18 @@ class PayrollAPI(http.Controller):
                     'x_employee_feedback': feedback,
                     'x_confirmed_date': fields.Datetime.now(),
                 })
-                slip.message_post(
-                    body=_(
-                        'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. '
-                        'Lý do: %(fb)s',
-                        name=employee.name, fb=feedback,
-                    ),
-                    message_type='comment',
-                    subtype_xmlid='mail.mt_note',
-                )
+                try:
+                    slip.message_post(
+                        body=_(
+                            'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. '
+                            'Lý do: %(fb)s',
+                            name=employee.name, fb=feedback,
+                        ),
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                except Exception as msg_err:
+                    _logger.warning('message_post note failed: %s', msg_err)
 
             return _success_response({
                 'status': slip.x_employee_confirm,
@@ -2223,23 +2280,80 @@ class PayrollAPI(http.Controller):
                 'x_employee_confirm': 'pending',
                 'x_employee_feedback': False,
                 'x_confirm_deadline': False,  # #6: clear deadline on reset
+                'x_email_sent': False,
+                'x_email_sent_date': False,
             })
-            slip.message_post(
-                body=_(
-                    'HR đã reset xác nhận của %(name)s '
-                    '(%(old)s → chờ xác nhận). Bởi: %(user)s',
-                    name=slip.employee_id.name,
-                    old=old_status,
-                    user=request.env.user.name,
-                ),
-                message_type='comment',
-                subtype_xmlid='mail.mt_note',
-            )
+            try:
+                slip.message_post(
+                    body=_(
+                        'HR đã reset trạng thái xác nhận của %(name)s '
+                        '(%(old)s → chờ xác nhận). Bởi: %(user)s',
+                        name=slip.employee_id.name,
+                        old=old_status,
+                        user=request.env.user.name,
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            except Exception:
+                pass
             return _success_response({
                 'status': 'pending',
             }, message='Đã reset xác nhận.')
         except Exception as e:
             _logger.exception('reset_payslip_confirm error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/payslip/bulk-reset-confirm',
+                type='http', auth='user', methods=['POST'], csrf=False)
+    def bulk_reset_payslip_confirm(self, **kw):
+        """Bulk reset employee confirmation back to pending for specified payslips or all in batch.
+
+        - Instant 1-query DB write for ultra-fast performance on 100+ employees.
+        - Resets confirm status, feedback, deadline AND email sent flags back to 'Chưa gửi mail'.
+        """
+        try:
+            body = _get_json_body()
+            ids = body.get('payslip_ids', [])
+            month = int(body.get('month', 0))
+            year = int(body.get('year', 0))
+
+            env = request.env
+            if ids:
+                slips = env['hb.payslip'].sudo().browse(ids)
+            elif month and year:
+                import calendar
+                last_day = calendar.monthrange(year, month)[1]
+                date_start = f'{year}-{month:02d}-01'
+                date_end = f'{year}-{month:02d}-{last_day:02d}'
+                batch = env['hb.payslip.run'].sudo().search([
+                    ('date_start', '=', date_start),
+                    ('date_end', '=', date_end),
+                    ('state', '=', 'draft'),
+                ], limit=1)
+                if not batch:
+                    return _error_response('Không tìm thấy kỳ lương nháp.')
+                slips = env['hb.payslip'].sudo().search([('payslip_run_id', '=', batch.id)])
+            else:
+                return _error_response('Missing payslip_ids or month/year.')
+
+            valid_slips = slips.filtered(lambda s: s.exists() and (not s.payslip_run_id or s.payslip_run_id.state != 'close'))
+            if not valid_slips:
+                return _error_response('Không có phiếu lương hợp lệ để reset.')
+
+            # ⚡ Bulk update 100% records in 1 single SQL trip (Ultra fast performance)
+            valid_slips.write({
+                'x_employee_confirm': 'pending',
+                'x_employee_feedback': False,
+                'x_confirm_deadline': False,
+                'x_email_sent': False,
+                'x_email_sent_date': False,
+            })
+            count = len(valid_slips)
+
+            return _success_response({'count': count}, message=f'Đã reset trạng thái xác nhận và mail về Chưa gửi cho {count} phiếu lương.')
+        except Exception as e:
+            _logger.exception('bulk_reset_payslip_confirm error')
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════

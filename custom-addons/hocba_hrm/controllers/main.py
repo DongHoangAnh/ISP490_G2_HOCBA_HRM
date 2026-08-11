@@ -3956,6 +3956,10 @@ class HocBaHRM(http.Controller):
                 e.sudo().write(emp_vals)
             if ver_vals:
                 e.version_id.sudo().write(ver_vals)
+                if 'wage' in ver_vals and ver_vals['wage'] is not None:
+                    contracts = request.env['hb.contract'].sudo().search([('employee_id', '=', e.id)])
+                    if contracts:
+                        contracts.write({'wage': ver_vals['wage']})
         except IntegrityError:
             request.env.cr.rollback()
             return request.make_json_response(
