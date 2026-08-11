@@ -128,16 +128,6 @@ export const fetchEmailjsConfig = () =>
 export const saveEmailjsConfig = (payload) =>
   p('/hocba-hrm/api/payroll/emailjs-config', payload);
 
-// ── Employee Allowance (standalone per-employee custom amounts) ──
-export const fetchEmployeeAllowances = (employeeId) =>
-  g(`/hocba-hrm/api/payroll/employee-allowance?employee_id=${employeeId}`);
-export const saveEmployeeAllowance = (payload) =>
-  p('/hocba-hrm/api/payroll/employee-allowance', payload);
-export const deleteEmployeeAllowance = (id) =>
-  p(`/hocba-hrm/api/payroll/employee-allowance/${id}/delete`, {});
-export const fetchBulkAllowances = (employeeIds) =>
-  g(`/hocba-hrm/api/payroll/employee-allowance/bulk?employee_ids=${employeeIds.join(',')}`);
-
 // ── Sale Salary Levels (KPI-based) ──────────────────────
 export const fetchSaleSalaryLevels = () =>
   g('/hocba-hrm/api/payroll/sale-salary-level');
