@@ -2713,7 +2713,7 @@ class PayrollAPI(http.Controller):
     def create_role_allowance_config(self, **kw):
         """Create a new Role & Department Allowance Config."""
         try:
-            data = _parse_json_request()
+            data = _get_json_body()
             vals = {
                 'name': data.get('name', 'Phụ cấp chức vụ'),
                 'job_id': data.get('jobId') or False,
@@ -2748,7 +2748,7 @@ class PayrollAPI(http.Controller):
     def apply_bulk_bonus_penalty(self, batch_id, **kw):
         """Apply dynamic bonus and/or penalty to multiple payslips in a batch."""
         try:
-            data = _parse_json_request()
+            data = _get_json_body()
             payslip_ids = data.get('payslip_ids') or data.get('payslipIds') or []
             bonus_amount = float(data.get('bonusAmount', 0.0))
             bonus_reason = data.get('bonusReason', '')
