@@ -17,7 +17,9 @@ const REASON_LABEL = {
   contract_end: 'Hết hạn HĐ', other: 'Khác',
 };
 
-export default function Offboarding({ search }) {
+/* onQueueChanged: báo App nạp lại badge "Nghỉ việc" sau mỗi thao tác. Không
+   tự trừ số ở client — phạm vi đếm là quyền phía server, đoán ở đây sẽ lệch. */
+export default function Offboarding({ search, onQueueChanged }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -37,7 +39,7 @@ export default function Offboarding({ search }) {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setBusy(row.id);
     offboardingAction(row.id, action)
-      .then(load)
+      .then(() => { load(); if (onQueueChanged) onQueueChanged(); })
       .catch((e) => alert('Không thực hiện được: ' + e.message))
       .finally(() => setBusy(null));
   };

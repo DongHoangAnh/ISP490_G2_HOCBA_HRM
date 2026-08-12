@@ -10,7 +10,11 @@
     'category': 'Human Resources',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
-    'depends': ['base', 'hr', 'hocba_employees', 'hocba_attendance'],
+    # hocba_reviews: nhập liệu đánh giá + thăng tiến gộp về màn Đánh giá, nên
+    # hr.promotion.history cần trỏ sang hb.performance.review (spec
+    # 2026-08-12-gop-danh-gia-thang-tien-vao-reviews-design.md §2).
+    'depends': ['base', 'hr', 'hocba_employees', 'hocba_attendance',
+                'hocba_reviews'],
     'data': [
         'views/menu.xml',
         'views/webclient_templates.xml',

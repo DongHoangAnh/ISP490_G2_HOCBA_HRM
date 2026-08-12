@@ -87,7 +87,12 @@ class HrPromotionHistory(models.Model):
                 if not rec.reason:
                     raise ValidationError(_(
                         'Cần nhập Lý do / Căn cứ khi thay đổi mức lương.'))
-                if not rec.x_evidence_url:
+                # Phiếu đánh giá gắn kèm (review_id — hocba_hrm bổ sung khi
+                # nhập liệu thăng tiến đi từ màn Đánh giá) CHÍNH LÀ bằng
+                # chứng, còn chặt hơn một cái link dán tay. Dùng _fields để
+                # module này không phải phụ thuộc ngược vào hocba_reviews.
+                has_review = 'review_id' in rec._fields and rec.review_id
+                if not rec.x_evidence_url and not has_review:
                     raise ValidationError(_(
                         'Cần đính Link bằng chứng (đánh giá/KPI) khi đổi lương.'))
 

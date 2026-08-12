@@ -10,6 +10,7 @@ import Badge from '../../components/Badge';
 import TblWrap from '../../components/TblWrap';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import ReviewDrawer from './ReviewDrawer';
+import ReviewGuide from './ReviewGuide';
 import {
   GRADE_LABEL, GRADE_KIND, STATE_LABEL, STATE_KIND,
   PERIOD_TYPES, periodCount, periodLabel, unitLabel,
@@ -18,6 +19,8 @@ import {
 const TABS = [
   ['teacher', 'Giảng viên'],
   ['office', 'Nhân viên văn phòng'],
+  // Tài liệu cho người chấm: công thức, bảng quy đổi, cách chấm từng tiêu chí.
+  ['guide', 'Hướng dẫn chấm điểm'],
 ];
 
 const sel = {
@@ -35,7 +38,7 @@ function Kpi({ label, value, hint }) {
   );
 }
 
-function GroupPanel({ group, search }) {
+function GroupPanel({ group, search, canPromote }) {
   const thisYear = new Date().getFullYear();
   const [periodType, setPeriodType] = useState('quarter');
   const [year, setYear] = useState(thisYear);
@@ -183,7 +186,7 @@ function GroupPanel({ group, search }) {
       )}
 
       {openId && (
-        <ReviewDrawer reviewId={openId}
+        <ReviewDrawer reviewId={openId} canPromote={canPromote}
           onClose={() => setOpenId(null)}
           onSaved={reload} />
       )}
@@ -191,7 +194,9 @@ function GroupPanel({ group, search }) {
   );
 }
 
-export default function Reviews({ search }) {
+/* canPromote: chỉ HR Manager mới tạo được quyết định thăng tiến từ
+   phiếu đã chốt (khớp guard _hr_flags của route promotion). */
+export default function Reviews({ search, canPromote }) {
   const [tab, setTab] = useState(
     () => localStorage.getItem('hocba_review_tab') || 'teacher');
   const activeTab = TABS.some(([id]) => id === tab) ? tab : 'teacher';
@@ -214,7 +219,10 @@ export default function Reviews({ search }) {
         ))}
       </div>
 
-      <GroupPanel key={activeTab} group={activeTab} search={search} />
+      {activeTab === 'guide'
+        ? <ReviewGuide />
+        : <GroupPanel key={activeTab} group={activeTab} search={search}
+            canPromote={canPromote} />}
     </div>
   );
 }

@@ -8,9 +8,9 @@ from pytz import timezone, utc
 
 from odoo import http, fields, SUPERUSER_ID
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.fields import Domain
 from odoo.http import request, Response
 from odoo.tools import file_open
-from odoo.osv import expression
 
 from odoo.addons.hocba_attendance.utils.cms_connector import (
     get_sessions_for_tutor, get_sessions_for_week, session_to_dict
@@ -1752,7 +1752,10 @@ def _career_insights(evaluations, criteria_radar, months_since, onb):
     KHÔNG nhắc tới lương ở đây: insight hiện cho mọi người xem được trang,
     trong đó có vai trò không được xem lương (_cap_see_salary)."""
     out = []
-    confirmed = [e for e in evaluations if e['state'] == 'confirmed']
+    # 'published' là trạng thái chốt của phiếu hocba_reviews; đợt cũ dừng ở
+    # 'confirmed'. Cả hai đều là kết quả đã chốt.
+    confirmed = [e for e in evaluations
+                 if e['state'] in ('confirmed', 'published')]
     if not confirmed:
         out.append({'kind': 'info', 'text': 'Chưa có đợt đánh giá nào được '
                                             'xác nhận.'})
@@ -1872,6 +1875,11 @@ def _career_payload(env, emp_id):
         timeline.append(item)
 
     # 3. Đợt đánh giá thăng tiến — bản nháp chỉ người quản lý thấy.
+    # 3a. Đợt đánh giá thăng tiến CŨ (hr.promotion.evaluation) — chỉ còn là
+    # lịch sử: từ 2026-08-12 nhập liệu chuyển hẳn sang phiếu của hocba_reviews
+    # và hệ thống chỉ giữ MỘT bộ tiêu chí (hb.review.criteria). Vì vậy mốc cũ
+    # KHÔNG mang 'lines': bày điểm của bộ tiêu chí đã ngừng dùng cạnh bộ mới
+    # đúng là chỗ gây loạn mà khách bảo bỏ.
     ev_domain = [('employee_id', '=', emp.id)]
     if not can_manage:
         ev_domain.append(('state', '=', 'confirmed'))
@@ -1880,41 +1888,79 @@ def _career_payload(env, emp_id):
     evaluations = []
     score_trend = []
     for ev in evals:
-        lines = [{'name': l.criteria_id.name, 'score': l.score,
-                  'maxScore': l.max_score, 'weight': l.weight,
-                  'note': l.note or ''} for l in ev.line_ids]
         verdict = ev.verdict_final or ev.verdict_auto or ''
         evaluations.append({
-            'id': ev.id, 'date': _d(ev.eval_date),
+            'id': ev.id, 'date': _d(ev.eval_date), 'source': 'legacy',
             'evaluator': ev.evaluator_id.name or '',
             'state': ev.state, 'totalScore': round(ev.total_score, 1),
             'verdictFinal': verdict,
             'verdictLabel': VERDICT_LABELS.get(verdict, ''),
-            'note': ev.conclusion_note or '', 'lines': lines})
+            'note': ev.conclusion_note or '', 'lines': []})
         score_trend.append({'date': _d(ev.eval_date),
                             'score': round(ev.total_score, 1),
-                            'verdict': verdict})
+                            'verdict': verdict, 'source': 'legacy'})
         timeline.append({
             'kind': 'evaluation', 'date': _d(ev.eval_date), 'sort': 2,
-            'title': 'Đợt đánh giá — %.0f%%' % ev.total_score,
+            'title': 'Đợt đánh giá (bộ tiêu chí cũ) — %.0f%%' % ev.total_score,
             'detail': ev.conclusion_note or '',
             'badge': (VERDICT_LABELS.get(verdict, '') if ev.state == 'confirmed'
                       else 'Nháp'),
             'badgeKind': ('green' if verdict == 'qualified'
                           else 'amber' if verdict == 'consider' else 'gray'),
+            'lines': []})
+
+    # 3b. Phiếu đánh giá định kỳ (hocba_reviews) — nguồn CHÍNH từ 2026-08-12.
+    # Người tự xem hồ sơ mình chỉ thấy phiếu ĐÃ CÔNG BỐ: hocba_reviews chỉ báo
+    # nhân viên ở bước publish, cho xem phiếu vừa chốt là lộ kết quả trước khi
+    # HR công bố. Vai trò quản lý thì thấy cả phiếu đã chốt.
+    rv_states = ['confirmed', 'published'] if can_manage else ['published']
+    reviews = env['hb.performance.review'].sudo().search(
+        [('employee_id', '=', emp.id), ('state', 'in', rv_states)],
+        order='date_from, id')
+    grade_labels = dict(
+        env['hb.performance.review']._fields['grade']._description_selection(env))
+    for rv in reviews:
+        lines = [{'name': l.criteria_id.name, 'score': l.score,
+                  'maxScore': l.max_score, 'weight': l.weight,
+                  'note': l.note or ''} for l in rv.line_ids]
+        grade = rv.grade or ''
+        evaluations.append({
+            'id': rv.id, 'date': _d(rv.date_to), 'source': 'review',
+            'evaluator': rv.evaluator_id.name or '',
+            'state': rv.state, 'totalScore': round(rv.total_score, 1),
+            'periodLabel': rv.period_label or '',
+            'grade': grade, 'gradeLabel': grade_labels.get(grade, ''),
+            'note': rv.manager_note or '', 'lines': lines})
+        score_trend.append({'date': _d(rv.date_to),
+                            'score': round(rv.total_score, 1),
+                            'grade': grade, 'source': 'review'})
+        timeline.append({
+            'kind': 'evaluation', 'date': _d(rv.date_to), 'sort': 2,
+            'title': 'Đánh giá %s — %.0f điểm' % (rv.period_label or '',
+                                                  rv.total_score),
+            'detail': rv.manager_note or '',
+            'badge': grade_labels.get(grade, ''),
+            'badgeKind': ('green' if grade == 'a' else 'teal' if grade == 'b'
+                          else 'amber' if grade == 'c' else 'gray'),
             'lines': lines})
 
-    # Radar tiêu chí: đợt gần nhất, kèm điểm đợt LIỀN TRƯỚC của cùng tiêu chí
-    # để nhìn ra tiến bộ/thụt lùi từng mặt. Ghép theo TÊN tiêu chí (đợt cũ có
-    # thể chấm bộ tiêu chí khác); thiếu thì để None, không bịa 0 — 0 điểm và
-    # "chưa từng chấm" là hai chuyện khác nhau.
+    # Sắp lại theo ngày: 2 nguồn ghép vào cùng một danh sách nên thứ tự create
+    # không còn là thứ tự thời gian — mọi thứ tính "đợt gần nhất/liền trước"
+    # bên dưới đều dựa vào đây.
+    evaluations.sort(key=lambda x: x['date'] or '')
+    score_trend.sort(key=lambda x: x['date'] or '')
+
+    # Radar tiêu chí: CHỈ dựng từ phiếu đánh giá định kỳ — hệ thống giờ chỉ
+    # còn một bộ tiêu chí. Lấy phiếu gần nhất, kèm điểm phiếu LIỀN TRƯỚC của
+    # cùng tiêu chí để nhìn ra tiến bộ/thụt lùi từng mặt; thiếu thì để None,
+    # không bịa 0 — 0 điểm và "chưa từng chấm" là hai chuyện khác nhau.
     criteria_radar = []
-    if evaluations:
+    scored = [e for e in evaluations if e['source'] == 'review' and e['lines']]
+    if scored:
         prev_by_name = {}
-        if len(evaluations) > 1:
-            prev_by_name = {l['name']: l['score']
-                            for l in evaluations[-2]['lines']}
-        for l in evaluations[-1]['lines']:
+        if len(scored) > 1:
+            prev_by_name = {l['name']: l['score'] for l in scored[-2]['lines']}
+        for l in scored[-1]['lines']:
             criteria_radar.append({
                 'name': l['name'], 'score': l['score'],
                 'maxScore': l['maxScore'],
@@ -1960,7 +2006,8 @@ def _career_payload(env, emp_id):
     # Mới nhất trên cùng; cùng ngày thì theo sort/kind để kết quả ổn định.
     timeline.sort(key=lambda t: (t['date'] or '', t['sort']), reverse=True)
 
-    scores = [e['totalScore'] for e in evaluations if e['state'] == 'confirmed']
+    scores = [e['totalScore'] for e in evaluations
+              if e['state'] in ('confirmed', 'published')]
     # KHÔNG dùng emp._promo_auto_metrics(): nó kéo thêm tổng hợp chấm công 90
     # ngày (module khác) mà trang này không dùng, và tính "tháng từ thăng
     # tiến" theo bản ghi gần nhất BẤT KỲ LOẠI — hồ sơ nào cũng có snapshot
@@ -3236,6 +3283,52 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(res)
 
     # ------------------------------------------------------------------
+    # Badge "Nhận việc" ở thanh menu. Đếm ĐÚNG bước mà user bấm được —
+    # phạm vi bám sát _onb_can_act, đếm rộng hơn là mời người ta bấm vào
+    # 403. Chỉ search_count (gọi ở mọi màn nên phải rẻ); không quyền thì
+    # 200 + count 0, để SPA khỏi bắt 403 cho một chi tiết trang trí.
+    # Spec: docs/superpowers/specs/
+    # 2026-08-12-nav-badge-viec-can-xu-ly-design.md §3.1
+    # ------------------------------------------------------------------
+    def _onb_pending_count(self, env):
+        user = env.user
+        Step = env['hb.onboarding.step'].sudo()
+        waiting = Domain([('state', '=', 'open')])
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_manager')):
+            return {'canAct': True, 'count': Step.search_count(waiting)}
+        scopes = []
+        emp = user.employee_id
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            scopes.append(Domain([('employee_id.department_id', 'in',
+                                   dept_ids)]))
+        # child_ids: chỉ người THỰC SỰ có cấp dưới mới là quản lý trực tiếp.
+        # Thiếu vế này thì mọi nhân viên có hồ sơ đều ra canAct=True/count=0 —
+        # cờ nói "có quyền" trong khi họ không duyệt được gì.
+        if emp and emp.child_ids:
+            scopes.append(Domain([('employee_id.parent_id.user_id', '=',
+                                   user.id)]))
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            # Giáo vụ chỉ đụng bước việc-cần-làm của giáo viên, không chấm
+            # bước đánh giá (_onb_can_act).
+            scopes.append(Domain([
+                ('step_type', '=', 'task'),
+                ('employee_id.x_employee_type_id.code', '=', 'teacher')]))
+        if not scopes:
+            return {'canAct': False, 'count': 0}
+        # OR chứ không cộng dồn: người kiêm 2 vai (trưởng phòng + giáo vụ)
+        # có bước khớp cả hai nhánh, cộng lại sẽ ra số ảo.
+        return {'canAct': True,
+                'count': Step.search_count(waiting & Domain.OR(scopes))}
+
+    @http.route('/hocba-hrm/api/onboarding/pending-count', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_onb_pending_count(self, **kw):
+        return request.make_json_response(
+            self._onb_pending_count(request.env))
+
+    # ------------------------------------------------------------------
     # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
     # trả về hồ sơ đã cập nhật để FE refresh tab Thông tin.
     # ------------------------------------------------------------------
@@ -3440,6 +3533,50 @@ class HocBaHRM(http.Controller):
         ids.discard(emp.id if emp else -1)
         return list(ids)
 
+    # ------------------------------------------------------------------
+    # Badge "Nghỉ việc" ở thanh menu — đếm đơn user có NÚT bấm, khớp cờ
+    # can* của _offb_json: submitted→quản lý duyệt, mgr_approved→HR duyệt,
+    # hr_approved→HR hoàn tất (vẫn là việc phải bấm mới xong).
+    # KHÔNG dùng _offb_managed_employee_ids: helper đó trả toàn bộ NV cho
+    # cả HR officer, trong khi _ensure_manages KHÔNG cho HR officer duyệt
+    # → badge sẽ đếm những đơn họ không bấm được.
+    # Spec: docs/superpowers/specs/
+    # 2026-08-12-nav-badge-viec-can-xu-ly-design.md §3.2
+    # ------------------------------------------------------------------
+    def _offb_pending_count(self, env):
+        user = env.user
+        Off = env['hocba.offboarding'].sudo()
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_manager')):
+            return {'canAct': True, 'count': Off.search_count(
+                [('state', 'in', ['submitted', 'mgr_approved',
+                                  'hr_approved'])])}
+        emp = user.employee_id
+        emp_ids = set()
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            emp_ids.update(env['hr.employee'].sudo().search(
+                [('department_id', 'in', dept_ids)]).ids)
+        if emp:
+            emp_ids.update(env['hr.employee'].sudo().search(
+                [('parent_id', '=', emp.id)]).ids)
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            emp_ids.update(env['hr.employee'].sudo().search(
+                [('x_employee_type_id.code', '=', 'teacher')]).ids)
+        # Đơn của chính mình là việc của người khác duyệt, không phải của mình.
+        emp_ids.discard(emp.id if emp else -1)
+        if not emp_ids:
+            return {'canAct': False, 'count': 0}
+        return {'canAct': True, 'count': Off.search_count(
+            [('state', '=', 'submitted'),
+             ('employee_id', 'in', list(emp_ids))])}
+
+    @http.route('/hocba-hrm/api/offboarding/pending-count', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_offb_pending_count(self, **kw):
+        return request.make_json_response(
+            self._offb_pending_count(request.env))
+
     @http.route('/hocba-hrm/api/offboarding/submit', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_offboarding_submit(self, **kw):
@@ -3514,6 +3651,59 @@ class HocBaHRM(http.Controller):
     # Thăng tiến (F-007) — thêm mốc thăng tiến inline (HR Manager). Tạo
     # bản ghi sẽ tự cập nhật chức vụ/phòng ban NV (model). KHÔNG xoá.
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Nhập liệu thăng tiến nay đi từ màn Đánh giá: phiếu là CĂN CỨ của quyết
+    # định, nên 3 ràng buộc dưới phải ở server — FE gửi gì cũng không lách
+    # được. Spec: docs/superpowers/specs/
+    # 2026-08-12-gop-danh-gia-thang-tien-vao-reviews-design.md §3
+    # ------------------------------------------------------------------
+    def _promo_validate_review(self, env, emp_id, review_id):
+        """Kiểm phiếu TRƯỚC khi tạo bản ghi thăng tiến, không phải sau.
+
+        Phiếu vừa là căn cứ vừa là BẰNG CHỨNG đổi lương (_check_rules), nên
+        review_id phải nằm ngay trong vals của create — gắn sau thì ràng buộc
+        bằng chứng đã nổ mất rồi."""
+        rv = env['hb.performance.review'].sudo().browse(review_id)
+        if not rv.exists():
+            raise ValidationError('Không tìm thấy phiếu đánh giá.')
+        if rv.employee_id.id != emp_id:
+            raise ValidationError(
+                'Phiếu đánh giá không phải của nhân viên này.')
+        if rv.state not in ('confirmed', 'published'):
+            raise ValidationError(
+                'Phiếu đánh giá còn ở trạng thái Nháp — chốt phiếu trước khi '
+                'tạo thăng tiến.')
+        if env['hr.promotion.history'].sudo().search_count(
+                [('review_id', '=', rv.id)]):
+            raise ValidationError(
+                'Phiếu đánh giá này đã gắn với một quyết định thăng tiến.')
+        return rv
+
+    @http.route('/hocba-hrm/api/review/<int:review_id>/promotion',
+                auth='user', type='http', methods=['GET'], csrf=False)
+    def api_review_promotion(self, review_id, **kw):
+        """Phiếu này đã dẫn tới quyết định thăng tiến nào chưa — để màn Đánh
+        giá hiện liên kết thay vì mời bấm tạo lần hai. Đặt ở hocba_hrm chứ
+        không thêm vào payload của hocba_reviews: review_id là trường của
+        module này."""
+        rv = request.env['hb.performance.review'].sudo().browse(review_id)
+        if not rv.exists():
+            return request.make_json_response({'error': 'not_found'},
+                                              status=404)
+        if not self._emp_in_scope(rv.employee_id):
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        promo = request.env['hr.promotion.history'].sudo().search(
+            [('review_id', '=', rv.id)], limit=1)
+        if not promo:
+            return request.make_json_response({'promotion': None})
+        return request.make_json_response({'promotion': {
+            'id': promo.id,
+            'date': _d(promo.date_effective),
+            'toJob': promo.to_job_id.name or '',
+            'decisionRef': promo.decision_ref or '',
+        }})
+
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/promotion', auth='user',
                 type='http', methods=['POST'], csrf=False)
     def api_promotion_create(self, emp_id, **kw):
@@ -3539,92 +3729,16 @@ class HocBaHRM(http.Controller):
                     v = v if v not in ('', None) else False
                 vals[field] = v
         try:
-            promo = request.env['hr.promotion.history'].create(vals)
-            ev_id = self._conv_id(payload.get('evaluationId'))
-            if ev_id:
-                ev = request.env['hr.promotion.evaluation'].sudo().browse(ev_id)
-                if ev.exists() and ev.employee_id.id == emp_id:
-                    ev.promotion_id = promo.id
+            rv_id = self._conv_id(payload.get('reviewId'))
+            if rv_id:
+                self._promo_validate_review(request.env, emp_id, rv_id)
+                vals['review_id'] = rv_id
+            request.env['hr.promotion.history'].create(vals)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return self._detail_response(e)
-
-    @http.route('/hocba-hrm/api/promotion/eval/<int:emp_id>', auth='user',
-                type='http', methods=['GET'], csrf=False)
-    def api_eval_get(self, emp_id, **kw):
-        e = request.env['hr.employee'].browse(emp_id)
-        if not e.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-        if not self._can_eval_emp(e):
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        crits = request.env['hr.promotion.criteria'].sudo().search(
-            [('active', '=', True)])
-        criteria = [{'id': c.id, 'name': c.name, 'code': c.code,
-                     'weight': c.weight, 'maxScore': c.max_score,
-                     'guideline': c.guideline or ''} for c in crits]
-        evals = []
-        for ev in e.sudo().x_evaluation_ids.sorted('eval_date'):
-            evals.append({
-                'id': ev.id,
-                'date': _d(ev.eval_date),
-                'evaluator': ev.evaluator_id.name or '',
-                'state': ev.state,
-                'totalScore': round(ev.total_score, 1),
-                'verdictAuto': ev.verdict_auto or '',
-                'verdictFinal': ev.verdict_final or '',
-                'note': ev.conclusion_note or '',
-                'lines': [{'criteriaId': l.criteria_id.id,
-                           'name': l.criteria_id.name,
-                           'score': l.score, 'maxScore': l.max_score,
-                           'weight': l.weight, 'note': l.note or ''}
-                          for l in ev.line_ids],
-            })
-        return request.make_json_response({
-            'criteria': criteria,
-            'autoMetrics': e.sudo()._promo_auto_metrics(),
-            'evaluations': evals,
-        })
-
-    @http.route('/hocba-hrm/api/promotion/eval/save', auth='user',
-                type='http', methods=['POST'], csrf=False)
-    def api_eval_save(self, **kw):
-        payload = request.get_json_data()
-        emp_id = self._conv_id(payload.get('employeeId'))
-        e = request.env['hr.employee'].browse(emp_id)
-        if not e.exists():
-            return request.make_json_response({'error': 'not_found'}, status=404)
-        if not self._can_eval_emp(e):
-            return request.make_json_response({'error': 'forbidden'}, status=403)
-        lines = []
-        for ln in payload.get('lines', []):
-            cid = self._conv_id(ln.get('criteriaId'))
-            if not cid:
-                continue
-            lines.append((0, 0, {
-                'criteria_id': cid,
-                'score': float(ln.get('score') or 0),
-                'note': ln.get('note') or False,
-            }))
-        vals = {
-            'employee_id': emp_id,
-            'eval_date': payload.get('date') or fields.Date.context_today(
-                request.env['hr.promotion.evaluation']),
-            'verdict_final': payload.get('verdictFinal') or False,
-            'conclusion_note': payload.get('note') or False,
-            'line_ids': lines,
-            'snapshot_job_id': e.job_id.id or False,
-        }
-        try:
-            ev = request.env['hr.promotion.evaluation'].sudo().create(vals)
-            if payload.get('confirm'):
-                ev.action_confirm()
-        except (AccessError, ValidationError, UserError) as ex:
-            request.env.cr.rollback()
-            return request.make_json_response(
-                {'error': 'rejected', 'message': str(ex)}, status=400)
-        return self.api_eval_get(emp_id)
 
     # ------------------------------------------------------------------
     # Lộ trình sự nghiệp (ý C họp 2026-08-07). emp_id = 0 → chính mình.

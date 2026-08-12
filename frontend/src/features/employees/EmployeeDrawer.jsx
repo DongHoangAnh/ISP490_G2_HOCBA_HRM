@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
+import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, deleteAsset } from '../../api/employees';
 import { fetchCareer } from '../../api/career';
 import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
@@ -11,10 +11,8 @@ import Modal from '../../components/Modal';
 import EmployeeForm from './EmployeeForm';
 import DependentForm from './DependentForm';
 import AssetForm from './AssetForm';
-import PromotionForm from './PromotionForm';
 import CertForm from './CertForm';
 import AccountForm from './AccountForm';
-import EvaluationForm from './EvaluationForm';
 import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_CERT } from '../../utils/format';
@@ -79,7 +77,7 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
         {det && tab === 'info' && <InfoTab det={det} isHr={canEdit} isMgr={canSeeSalary} editable={canEdit} onUpdated={update} />}
         {det && tab === 'probation' && <ProbationTab det={det} isHr={canEdit} isMgr={isMgr} onUpdated={update} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={canEdit} onUpdated={update} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr}
           onOpenCareer={onOpenCareer && (() => { onOpenCareer(det.id); onClose(); })} />}
         {det && tab === 'account' && canManageAccount && <AccountTab det={det} emp={emp} onUpdated={update} />}
       </div>
@@ -284,26 +282,24 @@ export function AssetsTab({ det, editable, onUpdated }) {
   );
 }
 
-export function PromoTab({ det, isMgr, editable, onUpdated, onOpenCareer }) {
-  const [adding, setAdding] = useState(false);
-  const [evaluating, setEvaluating] = useState(false);
-  const [evalData, setEvalData] = useState(null);
-  const canAct = editable && onUpdated;
+/* Tab Lộ trình trong hồ sơ NV — CHỈ ĐỌC từ 2026-08-12.
+   Nhập liệu (chấm đánh giá + tạo thăng tiến) đã gộp về màn Đánh giá của
+   hocba_reviews; ở đây chỉ còn kết quả và biểu đồ.
+   Spec: docs/superpowers/specs/
+   2026-08-12-gop-danh-gia-thang-tien-vao-reviews-design.md §4 */
+export function PromoTab({ det, isMgr, onOpenCareer }) {
+  const [career, setCareer] = useState(null);
 
   useEffect(() => {
-    setEvalData(null); // tránh nháy dữ liệu NV cũ khi đổi hồ sơ
-    // Người chấm được: /promotion/eval trả kèm criteria cho form đánh giá.
-    // Người chỉ xem (nhân viên tự xem hồ sơ mình, giáo vụ/trưởng phòng):
-    // route đó gác _can_eval_emp nên phải lấy qua /career — khách yêu cầu
-    // "họ vẫn sẽ xem được cái đánh giá của họ" (08:13).
-    const p = canAct
-      ? fetchEvaluations(det.id)
-      : fetchCareer(det.id).then((d) => ({ evaluations: d.evaluations }));
-    p.then(setEvalData).catch(() => setEvalData(null));
-  }, [det.id, canAct]);
+    setCareer(null); // tránh nháy dữ liệu NV cũ khi đổi hồ sơ
+    // MỘT nguồn duy nhất cho mọi vai trò: /career đã gác đúng phạm vi
+    // (_emp_in_scope) và tự lọc phiếu chưa công bố với người tự xem.
+    fetchCareer(det.id).then(setCareer).catch(() => setCareer(null));
+  }, [det.id]);
 
-  const latest = evalData?.evaluations?.[evalData.evaluations.length - 1];
-  const am = evalData?.autoMetrics;
+  const evals = career?.evaluations || [];
+  const latest = evals[evals.length - 1];
+  const st = career?.stats;
 
   return (
     <div>
@@ -313,12 +309,13 @@ export function PromoTab({ det, isMgr, editable, onUpdated, onOpenCareer }) {
             <Icon name="trend" size={13} />Mở trang lộ trình đầy đủ</button>
         </div>
       )}
-      {am && (
+      {st && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-          <MetricCard label="Thâm niên (tháng)" value={am.tenureMonths} />
-          <MetricCard label="Từ thăng tiến" value={am.monthsSincePromo ?? '—'} />
-          <MetricCard label="Chấm công 3T" value={am.attendance ? `${am.attendance.days} ngày` : 'Chưa có'} />
-          <MetricCard label="Kết luận gần nhất" value={latest ? `${latest.totalScore}%` : '—'} />
+          <MetricCard label="Thâm niên (tháng)" value={st.tenureMonths ?? '—'} />
+          <MetricCard label="Từ thăng tiến" value={st.monthsSincePromo ?? '—'} />
+          <MetricCard label="Số đợt đánh giá" value={st.evalCount} />
+          <MetricCard label="Điểm gần nhất"
+            value={st.lastScore != null ? st.lastScore : '—'} />
         </div>
       )}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -327,43 +324,23 @@ export function PromoTab({ det, isMgr, editable, onUpdated, onOpenCareer }) {
           <SalaryJourneyChart promotions={det.promotions} />
         </div>
         <div style={{ flex: '1 1 260px' }}>
-          <SectionTitle>Radar tiêu chí (đợt gần nhất)</SectionTitle>
+          <SectionTitle>Radar tiêu chí (kỳ gần nhất)</SectionTitle>
+          {/* Chỉ phiếu đánh giá định kỳ mới có tiêu chí — đợt cũ đã bỏ chi
+              tiết theo bộ tiêu chí ngừng dùng. */}
           <CriteriaRadar lines={latest?.lines} />
         </div>
       </div>
 
-      {canAct && (
-        <div className="between" style={{ margin: '16px 0' }}>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>
-            Lịch sử ({det.promotions.length} mốc · {evalData?.evaluations?.length || 0} đợt đánh giá)
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-soft btn-sm" disabled={!evalData}
-              onClick={() => setEvaluating(true)}>
-              <Icon name="checkCircle" size={13} />Đánh giá mới</button>
-            {isMgr && (
-              <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
-                <Icon name="arrowUp" size={13} />Tạo thăng tiến</button>
-            )}
-          </div>
+      <div className="between" style={{ margin: '16px 0' }}>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>
+          Lịch sử ({det.promotions.length} mốc · {evals.length} đợt đánh giá)
         </div>
-      )}
+      </div>
 
       {!det.promotions.length ? (
         <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>
       ) : (
         <PromoTimeline path={det.promotions} isMgr={isMgr} />
-      )}
-
-      {adding && (
-        <PromotionForm det={det} evaluationId={latest?.id}
-          onClose={() => setAdding(false)}
-          onSaved={(d) => { setAdding(false); onUpdated(d); }} />
-      )}
-      {evaluating && evalData && (
-        <EvaluationForm empId={det.id} criteria={evalData.criteria}
-          onClose={() => setEvaluating(false)}
-          onSaved={(d) => { setEvaluating(false); setEvalData(d); }} />
       )}
     </div>
   );

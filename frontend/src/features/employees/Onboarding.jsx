@@ -61,7 +61,9 @@ function ProgressCell({ o }) {
   );
 }
 
-export default function Onboarding({ search }) {
+/* onQueueChanged: báo App nạp lại badge "Nhận việc" sau khi xử lý bước.
+   Không tự trừ số ở client — phạm vi đếm là quyền phía server. */
+export default function Onboarding({ search, onQueueChanged }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
@@ -173,7 +175,14 @@ export default function Onboarding({ search }) {
           initialTab="probation"
           isHr={data.isHr} isMgr={data.isHrManager}
           onChanged={() => { dirtyRef.current = true; }}
-          onClose={() => { setSel(null); if (dirtyRef.current) { dirtyRef.current = false; reloadQuiet(); } }} />
+          onClose={() => {
+            setSel(null);
+            if (dirtyRef.current) {
+              dirtyRef.current = false;
+              reloadQuiet();
+              if (onQueueChanged) onQueueChanged();
+            }
+          }} />
       )}
     </div>
   );

@@ -271,6 +271,15 @@ table.tbl th {
 table.tbl td { padding: 10px 16px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0; }
 table.tbl tr:last-child td { border-bottom: none; }
 
+/* Opt-in: bảng TÀI LIỆU — ô chứa văn xuôi (diễn giải, hướng dẫn, mốc chấm điểm)
+   phải xuống dòng đầy đủ. Mặc định td cắt một dòng + ellipsis cho bảng dữ liệu,
+   áp lên đoạn văn thì nội dung nhiều dòng biến mất hẳn. Dùng cho tab Hướng dẫn. */
+table.tbl.tbl-prose td {
+  white-space: normal; max-width: none; overflow: visible;
+  text-overflow: clip; vertical-align: top;
+}
+table.tbl.tbl-prose th { white-space: normal; }
+
 /* Opt-in: bảng cho phép CUỘN NGANG để xem đủ thông tin (cột co theo nội dung,
    không ép vừa khung & không cắt chữ). Dùng cho bảng nhiều cột/nội dung rộng. */
 .tbl-wrap.tbl-scroll { overflow-x: auto; }
