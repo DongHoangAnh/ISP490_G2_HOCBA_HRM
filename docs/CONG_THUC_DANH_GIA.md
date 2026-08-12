@@ -3,6 +3,12 @@
 > Tài liệu nghiệp vụ cho module `hocba_reviews`. Mọi con số dưới đây là **cấu
 > hình được** (`ir.config_parameter`), không hard-code trong công thức.
 > Thiết kế tổng thể: [spec đánh giá định kỳ](superpowers/specs/2026-07-26-performance-review-design.md).
+>
+> **Bản cho người chấm:** tab **Hướng dẫn chấm điểm** trong màn Đánh giá nhân
+> viên trình bày lại đúng nội dung này ngay trong app, số liệu đọc động từ API
+> `GET /hocba-hrm/api/reviews/guide` (ngưỡng xếp loại, trọng số tiêu chí, bảng
+> quy đổi lấy thẳng từ cấu hình + hằng số model). Sửa công thức/tham số ở đây
+> thì phải sửa cả endpoint đó nếu nguồn số thay đổi — đừng chép cứng vào SPA.
 
 ---
 
@@ -48,6 +54,35 @@ khỏi cả tử và mẫu.
 | **B — Tốt** | `70 ≤ TOTAL < 85` | Hoàn thành tốt | `hocba_reviews.grade_b` |
 | **C — Đạt** | `55 ≤ TOTAL < 70` | Hoàn thành, cần cải thiện vài điểm | `hocba_reviews.grade_c` |
 | **D — Cần cải thiện** | `TOTAL < 55` | Lập kế hoạch cải thiện, tái đánh giá kỳ sau | — |
+
+---
+
+## 2b. Chọn điểm nào trên thang 0–5 (thang mô tả hành vi)
+
+Công thức ở §2 chỉ nói cách **cộng** điểm, không nói cách **chọn** điểm. Với các
+tiêu chí chấm tay, mỗi tiêu chí có ba mốc hành vi quan sát được lưu trên
+`hb.review.criteria`:
+
+| Trường | Mức | Vai trò |
+|---|---|---|
+| `anchor_top` | `max_score` (mặc định 5) | Hành vi vượt hẳn yêu cầu vị trí |
+| `anchor_mid` | `(max_score + 1) // 2` = 3 | **Mốc chuẩn** — làm đúng những gì vị trí cần |
+| `anchor_low` | 1 | Chưa đạt yêu cầu cơ bản |
+
+Hai mức xen giữa (4 và 2) **cố ý không có mô tả riêng**: chúng là "nằm giữa hai
+mốc liền kề". Mức **0 không phải một bậc đánh giá** mà là "chưa chấm" — nhưng
+vẫn được tính là 0 điểm trong công thức §2, nên bỏ sót một dòng sẽ âm thầm kéo
+tổng điểm xuống.
+
+Tiêu chí **tự động** không có mốc hành vi: thang của chúng là bảng quy đổi ở §4.
+
+Nội dung mốc mặc định nằm trong `DEFAULT_ANCHORS`
+(`models/hb_review_criteria.py`), được nạp vào DB bằng `post_init_hook` (cài
+mới) và migration `19.0.2.0.0` (nâng cấp). Cả hai **chỉ điền ô đang rỗng** nên
+HR sửa lại mốc cho phù hợp trung tâm thì không bị ghi đè ở lần nâng cấp sau.
+
+Người chấm đọc mốc ở hai chỗ: tab **Hướng dẫn chấm điểm** (mục 4 và 5) và ngay
+trong phiếu chấm (mục "Mốc chấm điểm" của từng tiêu chí).
 
 ---
 

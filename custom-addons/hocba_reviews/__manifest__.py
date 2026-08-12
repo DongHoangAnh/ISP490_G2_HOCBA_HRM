@@ -1,6 +1,6 @@
 {
     'name': 'Đánh giá nhân viên Học Bá',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
     'category': 'Human Resources/Appraisal',
@@ -26,6 +26,7 @@
         'security/ir.model.access.csv',
         'data/hb_review_criteria_data.xml',
     ],
+    'post_init_hook': 'post_init_hook',
     'installable': True,
     'application': False,
     'auto_install': False,

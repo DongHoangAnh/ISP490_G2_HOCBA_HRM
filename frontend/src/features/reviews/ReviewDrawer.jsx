@@ -7,6 +7,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import ModalHeader from '../../components/ModalHeader';
+import AnchorList from './AnchorList';
 import { GRADE_LABEL, GRADE_KIND, STATE_LABEL, STATE_KIND, AUTO_SOURCE_LABEL, gradeOf, unitLabel } from './util';
 
 const inp = {
@@ -204,6 +205,19 @@ export default function ReviewDrawer({ reviewId, onClose, onSaved }) {
                       Hệ thống đề xuất: {l.autoScore}/{l.maxScore}
                       {l.autoScore === 0 && ' (thiếu dữ liệu — cần chấm tay)'}
                     </div>
+                  )}
+                  {/* Mốc hành vi ngay tại chỗ bấm điểm — người chấm không phải
+                      rời phiếu sang tab hướng dẫn để nhớ 4 khác 3 ở chỗ nào. */}
+                  {l.anchors?.length > 0 && (
+                    <details style={{ marginTop: 5 }}>
+                      <summary style={{
+                        cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                        color: 'var(--red-700, var(--ink))',
+                      }}>Mốc chấm điểm</summary>
+                      <div style={{ marginTop: 6 }}>
+                        <AnchorList anchors={l.anchors} current={l.score} />
+                      </div>
+                    </details>
                   )}
                 </div>
                 <ScorePicker value={l.score} max={l.maxScore} disabled={!editable}

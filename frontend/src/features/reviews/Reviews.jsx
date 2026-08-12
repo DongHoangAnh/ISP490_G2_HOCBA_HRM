@@ -10,6 +10,7 @@ import Badge from '../../components/Badge';
 import TblWrap from '../../components/TblWrap';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import ReviewDrawer from './ReviewDrawer';
+import ReviewGuide from './ReviewGuide';
 import {
   GRADE_LABEL, GRADE_KIND, STATE_LABEL, STATE_KIND,
   PERIOD_TYPES, periodCount, periodLabel, unitLabel,
@@ -18,6 +19,8 @@ import {
 const TABS = [
   ['teacher', 'Giảng viên'],
   ['office', 'Nhân viên văn phòng'],
+  // Tài liệu cho người chấm: công thức, bảng quy đổi, cách chấm từng tiêu chí.
+  ['guide', 'Hướng dẫn chấm điểm'],
 ];
 
 const sel = {
@@ -214,7 +217,9 @@ export default function Reviews({ search }) {
         ))}
       </div>
 
-      <GroupPanel key={activeTab} group={activeTab} search={search} />
+      {activeTab === 'guide'
+        ? <ReviewGuide />
+        : <GroupPanel key={activeTab} group={activeTab} search={search} />}
     </div>
   );
 }

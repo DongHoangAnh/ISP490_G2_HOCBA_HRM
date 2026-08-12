@@ -3,12 +3,15 @@
 Spec: docs/superpowers/specs/2026-07-26-performance-review-design.md
 Công thức + ví dụ tính tay: docs/CONG_THUC_DANH_GIA.md
 """
+import json
 from datetime import date, datetime, timedelta
 
 from odoo import fields
 from odoo.exceptions import UserError, ValidationError
-from odoo.tests import TransactionCase, tagged
+from odoo.tests import HttpCase, TransactionCase, tagged
 from odoo.tools import mute_logger
+
+PWD = 'Hocba@2026'
 
 
 @tagged('post_install', '-at_install')
@@ -340,3 +343,226 @@ class TestReviewFlow(TestReviewBase):
             'teacher', 'quarter', self.year, 4)
         self.assertEqual(second['created'], 0)
         self.assertGreaterEqual(second['skipped'], 1)
+
+
+@tagged('post_install', '-at_install')
+class TestReviewGuideApi(HttpCase):
+    """Tab "Hướng dẫn chấm điểm" — nội dung phải LẤY TỪ cấu hình đang chạy.
+
+    Giá trị hiển thị cho HR mà lệch với điểm hệ thống thực sự chấm còn tệ hơn
+    không có hướng dẫn, nên test khoá chặt: ngưỡng xếp loại, trọng số tiêu chí
+    và bảng quy đổi phải trùng nguồn gốc (ir.config_parameter / hằng số model).
+    """
+
+    URL = '/hocba-hrm/api/reviews/guide'
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.ICP = cls.env['ir.config_parameter'].sudo()
+        cls.user_hr = cls.env['res.users'].create({
+            'name': 'HR (test guide)', 'login': 'test_guide_hr',
+            'password': PWD,
+            'group_ids': [(4, cls.env.ref('hr.group_hr_manager').id)],
+        })
+        cls.user_plain = cls.env['res.users'].create({
+            'name': 'NV thường (test guide)', 'login': 'test_guide_nv',
+            'password': PWD,
+            'group_ids': [(4, cls.env.ref('base.group_user').id)],
+        })
+
+    def _guide(self, login='test_guide_hr', expect=200):
+        self.authenticate(login, PWD)
+        res = self.url_open(self.URL)
+        self.assertEqual(res.status_code, expect, res.text[:400])
+        return res.json()
+
+    def test_40_grades_follow_config(self):
+        """Đổi ngưỡng trong cấu hình -> bảng quy đổi trong hướng dẫn đổi theo."""
+        self.ICP.set_param('hocba_reviews.grade_a', '90')
+        self.ICP.set_param('hocba_reviews.grade_b', '75')
+        self.ICP.set_param('hocba_reviews.grade_c', '60')
+        grades = {g['key']: g for g in self._guide()['grades']}
+        self.assertEqual(grades['a']['min'], 90)
+        self.assertIsNone(grades['a']['max'])
+        # Khoảng phải liền mạch: max của loại dưới = min của loại trên.
+        self.assertEqual((grades['b']['min'], grades['b']['max']), (75, 90))
+        self.assertEqual((grades['c']['min'], grades['c']['max']), (60, 75))
+        self.assertEqual((grades['d']['min'], grades['d']['max']), (0, 60))
+        self.assertTrue(all(g['meaning'] for g in grades.values()))
+
+    def test_41_criteria_match_database(self):
+        body = self._guide()
+        for group in ('teacher', 'office'):
+            rows = body['criteria'][group]
+            crits = self.env['hb.review.criteria'].sudo().search(
+                [('role_group', '=', group)], order='sequence, id')
+            self.assertEqual([r['code'] for r in rows], crits.mapped('code'))
+            self.assertEqual([r['weight'] for r in rows],
+                             crits.mapped('weight'))
+            self.assertAlmostEqual(body['weightSum'][group],
+                                   sum(crits.mapped('weight')), places=2)
+
+    def test_42_auto_tables_match_model(self):
+        """Bảng quy đổi hiển thị = đúng bảng model dùng để chấm."""
+        body = self._guide()
+        Review = self.env['hb.performance.review']
+        self.assertEqual(
+            [(r['min'], r['score']) for r in body['autoTables']['punctuality']],
+            [(t, s) for t, s in Review.PCT_TABLE])
+        self.assertEqual(
+            [(r['min'], r['score']) for r in body['autoTables']['workload']],
+            [(t, s) for t, s in Review.WORKLOAD_TABLE])
+        # Quy đổi chứng chỉ mô tả đúng 5 nhánh của _auto_score_for('cert').
+        self.assertEqual([r['score'] for r in body['autoTables']['cert']],
+                         [1, 2, 3, 4, 5])
+
+    def test_43_session_target_scales_with_period(self):
+        """Chỉ tiêu buổi dạy quy đổi theo độ dài kỳ (60/quý -> 120/nửa năm)."""
+        self.ICP.set_param('hocba_reviews.teacher_sessions_target', '60')
+        periods = {p['type']: p for p in self._guide()['periods']}
+        self.assertEqual(periods['quarter']['sessionTarget'], 60)
+        self.assertEqual(periods['half']['sessionTarget'], 120)
+        self.assertEqual(periods['year']['sessionTarget'], 240)
+        self.assertEqual(periods['quarter']['count'], 4)
+
+    def test_44_plain_user_forbidden(self):
+        """Hướng dẫn là tài liệu nội bộ của người chấm — NV thường không xem."""
+        self._guide(login='test_guide_nv', expect=403)
+
+    def test_45_manual_criteria_have_behaviour_anchors(self):
+        """Mọi tiêu chí CHẤM TAY phải có đủ 3 mốc hành vi.
+
+        Thiếu mốc là người chấm lại quay về cảm tính — đúng vấn đề mà thang này
+        sinh ra để giải quyết."""
+        body = self._guide()
+        for group in ('teacher', 'office'):
+            for c in body['criteria'][group]:
+                if c['autoSource'] != 'none':
+                    continue
+                scores = [a['score'] for a in c['anchors']]
+                self.assertEqual(
+                    scores, [c['maxScore'], 3, 1],
+                    'Tiêu chí "%s" thiếu mốc mô tả hành vi' % c['name'])
+                self.assertTrue(all(a['text'].strip() for a in c['anchors']))
+
+    def test_46_auto_criteria_have_no_anchors(self):
+        """Tiêu chí tự động lấy thang từ bảng quy đổi, không dùng mốc hành vi."""
+        body = self._guide()
+        auto = [c for c in body['criteria']['teacher']
+                if c['autoSource'] != 'none']
+        self.assertTrue(auto, 'Bộ giảng viên phải có tiêu chí tự động')
+        for c in auto:
+            self.assertEqual(c['anchors'], [])
+
+    def test_47_scale_covers_every_level(self):
+        """Thang 0–5 phải giải thích đủ 6 mức, kể cả 2 mức xen giữa và mức 0."""
+        body = self._guide()
+        self.assertEqual(body['scaleMax'], 5)
+        self.assertEqual([r['score'] for r in body['scale']], [5, 4, 3, 2, 1, 0])
+        self.assertTrue(all(r['label'] and r['desc'] for r in body['scale']))
+
+    def test_48_anchor_seed_keeps_hr_edits(self):
+        """Backfill chỉ điền ô rỗng — nội dung HR đã sửa không bị ghi đè."""
+        from odoo.addons.hocba_reviews.models.hb_review_criteria import (
+            seed_default_anchors,
+        )
+        crit = self.env['hb.review.criteria'].sudo().search(
+            [('code', '=', 'o_result')], limit=1)
+        self.assertTrue(crit)
+        crit.write({'anchor_top': 'Mốc do HR tự viết.', 'anchor_mid': False})
+        seed_default_anchors(self.env)
+        self.assertEqual(crit.anchor_top, 'Mốc do HR tự viết.')
+        self.assertTrue(crit.anchor_mid, 'Ô rỗng phải được điền lại')
+
+    def test_50_recompute_button_refreshes_metrics(self):
+        """Nút "Tính lại chỉ số" trong phiếu: POST action=compute.
+
+        Phiếu tạo TRƯỚC khi có dữ liệu chấm công nên chỉ số ban đầu rỗng — sau
+        khi bấm phải thấy số liệu mới và điểm đề xuất được điền lại."""
+        year = fields.Date.today().year - 1
+        emp = self.env['hr.employee'].create({
+            'name': 'NV VP Recompute Test', 'identification_id': '090000000105',
+        })
+        review = self.env['hb.performance.review'].sudo().create({
+            'employee_id': emp.id, 'period_type': 'quarter',
+            'period_year': year, 'period_index': 1,
+        })
+        self.assertEqual(review.metric_total_units, 0,
+                         'Chưa có chấm công thì chỉ số phải rỗng')
+
+        # 10 ngày công trong kỳ, 1 ngày đi trễ -> 9/10 = 90% -> 3 điểm.
+        # late_minutes là computed-store theo giờ vào (ngưỡng trễ mặc định 9h30
+        # giờ địa phương) nên phải tạo lệch giờ THẬT, ghi đè thẳng vào field sẽ
+        # bị tính lại khi flush sang môi trường của request. Hai mốc dưới đây
+        # cho cùng kết luận dù server chạy múi giờ UTC hay +7.
+        for day in range(1, 11):
+            self.env['hocba.attendance'].sudo().create({
+                'employee_id': emp.id,
+                'check_in': (datetime(year, 2, day, 9, 45)   # trễ
+                             if day == 1
+                             else datetime(year, 2, day, 0, 30)),  # đúng giờ
+            })
+        self.env.flush_all()
+
+        self.authenticate('test_guide_hr', PWD)
+        res = self.url_open(
+            '/hocba-hrm/api/reviews/%s/action' % review.id,
+            data=json.dumps({'action': 'compute'}),
+            headers={'Content-Type': 'application/json'})
+        self.assertEqual(res.status_code, 200, res.text[:400])
+        body = res.json()
+
+        self.assertEqual(body['metrics']['totalUnits'], 10)
+        self.assertEqual(body['metrics']['okUnits'], 9)
+        self.assertEqual(body['metrics']['punctualPct'], 90.0)
+        self.assertEqual(body['metrics']['lateCount'], 1)
+        self.assertTrue(body['metrics']['computedOn'])
+        punctual = next(l for l in body['lines']
+                        if l['autoSource'] == 'punctuality')
+        self.assertEqual(punctual['autoScore'], 3)
+        self.assertEqual(punctual['score'], 3,
+                         'Dòng chưa bị sửa tay phải nhận điểm đề xuất mới')
+
+    def test_51_recompute_respects_confirmed_review(self):
+        """Phiếu đã chốt: bấm tính lại KHÔNG được làm đổi chỉ số đã đóng băng."""
+        year = fields.Date.today().year - 1
+        emp = self.env['hr.employee'].create({
+            'name': 'NV VP Frozen Test', 'identification_id': '090000000106',
+        })
+        review = self.env['hb.performance.review'].sudo().create({
+            'employee_id': emp.id, 'period_type': 'quarter',
+            'period_year': year, 'period_index': 2,
+        })
+        review.line_ids[0].score = 4
+        review.manager_note = 'Đủ điều kiện chốt.'
+        review.action_confirm()
+        self.env['hocba.attendance'].sudo().create({
+            'employee_id': emp.id,
+            'check_in': datetime(year, 5, 6, 0, 30),
+        })
+        self.env.flush_all()
+
+        self.authenticate('test_guide_hr', PWD)
+        res = self.url_open(
+            '/hocba-hrm/api/reviews/%s/action' % review.id,
+            data=json.dumps({'action': 'compute'}),
+            headers={'Content-Type': 'application/json'})
+        self.assertEqual(res.status_code, 200, res.text[:400])
+        self.assertEqual(res.json()['metrics']['totalUnits'], 0,
+                         'Phiếu đã chốt phải giữ nguyên ảnh chụp chỉ số')
+
+    def test_49_anchors_reach_the_scoring_drawer(self):
+        """Mốc hành vi phải có mặt trong phiếu chấm, không chỉ ở tab hướng dẫn."""
+        emp = self.env['hr.employee'].create({
+            'name': 'NV VP Anchor Test', 'identification_id': '090000000104',
+        })
+        review = self.env['hb.performance.review'].sudo().create({
+            'employee_id': emp.id, 'period_type': 'quarter',
+            'period_year': fields.Date.today().year - 1, 'period_index': 1,
+        })
+        self.authenticate('test_guide_hr', PWD)
+        body = self.url_open('/hocba-hrm/api/reviews/%s' % review.id).json()
+        manual = [l for l in body['lines'] if l['autoSource'] == 'none']
+        self.assertTrue(manual)
+        self.assertTrue(all(len(l['anchors']) == 3 for l in manual))

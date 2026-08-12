@@ -8,6 +8,10 @@ export const fetchReviews = ({ group, periodType, year, index }) =>
 
 export const fetchReview = (id) => hbGet(`/hocba-hrm/api/reviews/${id}`);
 
+/* Nội dung tab Hướng dẫn chấm điểm: ngưỡng xếp loại, bộ tiêu chí, bảng quy đổi
+   chỉ số tự động — lấy từ cấu hình đang chạy để không lệch với điểm thực chấm. */
+export const fetchReviewGuide = () => hbGet('/hocba-hrm/api/reviews/guide');
+
 export const createReview = (payload) =>
   hbPost('/hocba-hrm/api/reviews', payload);
 
