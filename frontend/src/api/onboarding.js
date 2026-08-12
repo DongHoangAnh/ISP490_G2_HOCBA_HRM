@@ -13,6 +13,12 @@ export const assignPendingOnb = () =>
 export const reorderOnbTemplates = (ids) =>
   hbPost('/hocba-hrm/api/onboarding/templates/reorder', { ids });
 
+/* Số bước đang chờ mà chính mình xử lý được — badge cạnh "Nhận việc" ở
+   thanh menu. Chỉ đếm, và trả {canAct:false, count:0} thay vì 403 khi user
+   không duyệt được bước nào. */
+export const fetchOnbPendingCount = () =>
+  hbGet('/hocba-hrm/api/onboarding/pending-count');
+
 /* Vận hành bước — mỗi call trả item NV đã refresh (steps + progress). */
 export const completeOnbStep = (stepId, payload = {}) =>
   hbPost(`/hocba-hrm/api/onboarding/steps/${stepId}/complete`, payload);

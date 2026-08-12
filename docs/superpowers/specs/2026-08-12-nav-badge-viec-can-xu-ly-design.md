@@ -79,8 +79,11 @@ Trả `{'canAct': bool, 'count': int}`.
 - `App.jsx`: thay `setTimeoffBadge` riêng lẻ bằng helper
   `setBadge(key)(n)`; gọi 2 route mới song song với `fetchPendingCount`
   sẵn có sau khi biết vai trò.
-- `Onboarding` và `Offboarding` nhận thêm prop `onPendingCount`, đẩy số mới
-  về sau mỗi thao tác duyệt — không phải F5 (giống `TimeOff`).
+- `Onboarding` và `Offboarding` nhận thêm prop `onQueueChanged()` — gọi sau
+  mỗi thao tác duyệt để App **hỏi lại server**, không phải F5.
+  Khác `TimeOff.onPendingCount(n)` (nhận thẳng số): phạm vi đếm ở đây là
+  quyền duyệt phía server (phòng ban con, cấp dưới `parent_id`, giáo vụ),
+  tự trừ ở client chắc chắn lệch.
 - API client: thêm `fetchOnboardingPendingCount`, `fetchOffboardingPendingCount`.
 - **`Shell.jsx` không sửa.** `Sidebar` đã đọc `badges[it.id]`, mà key trùng
   luôn với view id `onboarding` / `offboarding`.

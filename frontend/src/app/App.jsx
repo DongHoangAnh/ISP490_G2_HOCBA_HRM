@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Sidebar, Topbar, allowedViews, defaultView } from './Shell';
 import { fetchRoles } from '../api/employees';
 import { fetchPendingCount } from '../api/timeoff';
+import { fetchOnbPendingCount } from '../api/onboarding';
+import { fetchOffbPendingCount } from '../api/offboarding';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
@@ -38,9 +40,18 @@ export default function App() {
 
   const openCareer = (empId) => { setCareerEmp(empId || 0); setView('career'); };
 
-  // Badge "việc cần xử lý" cạnh tên mục menu (hiện chỉ Nghỉ phép: đơn chờ duyệt).
+  /* Badge "việc cần xử lý" cạnh tên mục menu: Nghỉ phép (đơn chờ duyệt),
+     Nhận việc (bước đang chờ), Nghỉ việc (đơn chờ duyệt/hoàn tất).
+     Key trùng view id nên Sidebar đọc thẳng badges[it.id]. */
   const [navBadges, setNavBadges] = useState({});
-  const setTimeoffBadge = (n) => setNavBadges((b) => ({ ...b, timeoff: n }));
+  const setBadge = (key) => (n) => setNavBadges((b) => ({ ...b, [key]: n }));
+  const setTimeoffBadge = setBadge('timeoff');
+  // Sau mỗi thao tác, hỏi lại server thay vì tự trừ ở client: phạm vi đếm là
+  // quyền duyệt phía server, đoán ở FE sẽ lệch với số nút bấm được.
+  const reloadOnbBadge = () => fetchOnbPendingCount()
+    .then((d) => setBadge('onboarding')(d.count || 0)).catch(() => {});
+  const reloadOffbBadge = () => fetchOffbPendingCount()
+    .then((d) => setBadge('offboarding')(d.count || 0)).catch(() => {});
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -80,14 +91,16 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('hocba_view', view); setSearch(''); }, [view]);
 
-  // Số đơn chờ duyệt cho badge sidebar: nạp 1 lần sau khi biết vai trò. Người
-  // không có quyền duyệt vẫn nhận count 0 → badge tự ẩn. Màn Nghỉ phép sẽ đẩy
+  // Số việc chờ cho badge sidebar: nạp 1 lần sau khi biết vai trò. Người
+  // không có quyền duyệt vẫn nhận count 0 → badge tự ẩn. Từng màn sẽ đẩy
   // số mới về (onPendingCount) mỗi khi duyệt/từ chối, khỏi phải F5.
   useEffect(() => {
     if (!me) return;
     fetchPendingCount()
       .then((d) => setTimeoffBadge(d.count || 0))
       .catch(() => {});
+    reloadOnbBadge();
+    reloadOffbBadge();
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -125,13 +138,17 @@ export default function App() {
           <Career canManage={canManage} focusEmpId={careerEmp}
             onBack={canManage ? () => setView('employees') : null} />
         )}
-        {view === 'onboarding' && canManage && <Onboarding search={search} />}
+        {view === 'onboarding' && canManage && (
+          <Onboarding search={search} onQueueChanged={reloadOnbBadge} />
+        )}
         {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
         {view === 'timeoff' && (
           <TimeOff search={search} focus={focus} onPendingCount={setTimeoffBadge} />
         )}
         {view === 'service' && <Service search={search} focus={focus} />}
-        {view === 'offboarding' && <Offboarding search={search} />}
+        {view === 'offboarding' && (
+          <Offboarding search={search} onQueueChanged={reloadOffbBadge} />
+        )}
         {view === 'payroll' && <Payroll search={search} me={me} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
         {view === 'reviews' && canManage && <Reviews search={search} />}
