@@ -62,6 +62,22 @@ class TestCareer(TransactionCase):
             ev.action_confirm()
         return ev
 
+    def _review(self, index=1, state='published', scores=None, emp=None):
+        """Phiếu đánh giá định kỳ (hocba_reviews) — nguồn CHÍNH của mốc đánh
+        giá từ 2026-08-12. create() tự sinh dòng chấm từ bộ tiêu chí.
+        scores: dict {thứ_tự_dòng: điểm}; dòng không khai thì chấm tối đa."""
+        rec = self.env['hb.performance.review'].create({
+            'employee_id': (emp or self.emp).id, 'period_type': 'quarter',
+            'period_year': 2026, 'period_index': index})
+        for i, line in enumerate(rec.line_ids):
+            line.score = (scores or {}).get(i, line.max_score)
+        rec.manager_note = 'Nhận xét của quản lý cho kỳ %s.' % index
+        if state in ('confirmed', 'published'):
+            rec.action_confirm()
+        if state == 'published':
+            rec.action_publish()
+        return rec
+
     def _kinds(self, out):
         return [t['kind'] for t in out['timeline']]
 
@@ -239,35 +255,30 @@ class TestCareer(TransactionCase):
 
     # --- dữ liệu cho biểu đồ (thiết kế lại 2026-08-09: 1 màn dashboard) ---
     def test_criteria_radar_compares_latest_with_previous(self):
-        self._eval(when=date(2026, 6, 1), score=6)
-        self._eval(when=date(2026, 7, 1), score=9)
+        self._review(index=1)
+        self._review(index=2)
         out = _career_payload(self._env(self.hr_mgr), self.emp.id)
-        # 2 đợt dùng 2 tiêu chí khác nhau (code theo ngày) → radar phải gộp
-        # theo TÊN tiêu chí, đợt trước thiếu thì để None chứ không bịa 0.
         rows = {r['name']: r for r in out['criteriaRadar']}
-        self.assertTrue(rows, 'Radar phải có dòng của đợt gần nhất')
-        latest = [r for r in out['criteriaRadar'] if r['score'] is not None]
-        self.assertTrue(latest)
-        self.assertTrue(all(r['maxScore'] > 0 for r in latest))
+        self.assertTrue(rows, 'Radar phải có dòng của phiếu gần nhất')
+        self.assertTrue(all(r['maxScore'] > 0 for r in rows.values()))
 
     def test_criteria_radar_carries_previous_score_same_criterion(self):
-        crit = self.env['hr.promotion.criteria'].create({
-            'name': 'Tiêu chí chung', 'code': 'car_shared',
-            'weight': 100, 'max_score': 10})
-
-        def mk(when, score):
-            ev = self.env['hr.promotion.evaluation'].create({
-                'employee_id': self.emp.id, 'eval_date': when,
-                'verdict_final': 'qualified',
-                'line_ids': [(0, 0, {'criteria_id': crit.id, 'score': score})]})
-            ev.action_confirm()
-
-        mk(date(2026, 6, 1), 6)
-        mk(date(2026, 7, 1), 9)
+        # Cùng bộ tiêu chí qua 2 kỳ → dòng radar phải mang điểm kỳ liền trước.
+        self._review(index=1, scores={0: 1})
+        latest = self._review(index=2, scores={0: 3})
+        name = latest.line_ids[0].criteria_id.name
         out = _career_payload(self._env(self.hr_mgr), self.emp.id)
-        row = next(r for r in out['criteriaRadar'] if r['name'] == 'Tiêu chí chung')
-        self.assertEqual(row['score'], 9)
-        self.assertEqual(row['previous'], 6)
+        row = next(r for r in out['criteriaRadar'] if r['name'] == name)
+        self.assertEqual(row['score'], 3)
+        self.assertEqual(row['previous'], 1)
+
+    def test_criteria_radar_bo_qua_dot_danh_gia_cu(self):
+        """Chỉ còn MỘT bộ tiêu chí (hb.review.criteria): đợt cũ vẫn nằm trên
+        timeline nhưng KHÔNG được góp tiêu chí vào radar."""
+        self._eval(when=date(2026, 6, 1), score=8)
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        self.assertEqual(out['criteriaRadar'], [])
+        self.assertIn('evaluation', self._kinds(out))
 
     def test_criteria_radar_empty_without_evaluation(self):
         out = _career_payload(self._env(self.hr_mgr), self.emp.id)
@@ -300,44 +311,69 @@ class TestCareer(TransactionCase):
         self.assertEqual(drop['kind'], 'down')
 
     def test_insight_weakest_criterion(self):
-        crit_lo = self.env['hr.promotion.criteria'].create({
-            'name': 'Kỹ năng yếu', 'code': 'car_lo', 'weight': 50,
-            'max_score': 10})
-        crit_hi = self.env['hr.promotion.criteria'].create({
-            'name': 'Kỹ năng mạnh', 'code': 'car_hi', 'weight': 50,
-            'max_score': 10})
-        ev = self.env['hr.promotion.evaluation'].create({
-            'employee_id': self.emp.id, 'eval_date': date(2026, 7, 1),
-            'verdict_final': 'qualified',
-            'line_ids': [(0, 0, {'criteria_id': crit_lo.id, 'score': 3}),
-                         (0, 0, {'criteria_id': crit_hi.id, 'score': 10})]})
-        ev.action_confirm()
+        rv = self._review(index=1, scores={0: 1})   # dòng đầu điểm thấp nhất
+        weakest = rv.line_ids[0].criteria_id.name
         texts = ' | '.join(i['text'] for i in _career_payload(
             self._env(self.hr_mgr), self.emp.id)['insights'])
-        self.assertIn('Kỹ năng yếu', texts)
-        self.assertNotIn('Kỹ năng mạnh', texts.split('thấp nhất')[-1][:40])
+        self.assertIn('thấp nhất', texts)
+        self.assertIn(weakest, texts.split('thấp nhất')[-1][:80])
 
     def test_insight_tied_criteria_says_even(self):
         # Điểm bằng nhau hết: min() và max() trả cùng một tiêu chí → hiện
         # "thấp nhất X" ngay cạnh "cao nhất X" thì vô nghĩa (thấy trên Neon
         # 2026-08-09, NV nào cũng 4/5 cả 4 tiêu chí).
-        crit_a = self.env['hr.promotion.criteria'].create({
-            'name': 'Tiêu chí A', 'code': 'car_tie_a', 'weight': 50,
-            'max_score': 10})
-        crit_b = self.env['hr.promotion.criteria'].create({
-            'name': 'Tiêu chí B', 'code': 'car_tie_b', 'weight': 50,
-            'max_score': 10})
-        ev = self.env['hr.promotion.evaluation'].create({
-            'employee_id': self.emp.id, 'eval_date': date(2026, 7, 1),
-            'verdict_final': 'qualified',
-            'line_ids': [(0, 0, {'criteria_id': crit_a.id, 'score': 8}),
-                         (0, 0, {'criteria_id': crit_b.id, 'score': 8})]})
-        ev.action_confirm()
+        self._review(index=1)   # mọi tiêu chí đều chấm tối đa → hoà tuyệt đối
         texts = ' | '.join(i['text'] for i in _career_payload(
             self._env(self.hr_mgr), self.emp.id)['insights'])
         self.assertNotIn('thấp nhất', texts)
         self.assertNotIn('cao nhất', texts)
         self.assertIn('đều nhau', texts)
+
+    # --- nguồn đánh giá mới: phạm vi trạng thái theo người xem ---
+    def test_nhan_vien_chi_thay_phieu_da_cong_bo(self):
+        """hocba_reviews chỉ báo NV ở bước publish; cho NV thấy phiếu vừa chốt
+        là lộ kết quả trước khi HR công bố."""
+        self._review(index=1, state='confirmed')
+        out = _career_payload(self._env(self.plain), 0)
+        self.assertEqual(
+            [e for e in out['evaluations'] if e['source'] == 'review'], [])
+
+    def test_nhan_vien_thay_phieu_da_cong_bo(self):
+        self._review(index=1, state='published')
+        out = _career_payload(self._env(self.plain), 0)
+        got = [e for e in out['evaluations'] if e['source'] == 'review']
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]['state'], 'published')
+
+    def test_quan_ly_thay_ca_phieu_moi_chot(self):
+        self._review(index=1, state='confirmed')
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        got = [e for e in out['evaluations'] if e['source'] == 'review']
+        self.assertEqual([e['state'] for e in got], ['confirmed'])
+
+    def test_timeline_gop_ca_hai_nguon(self):
+        self._eval(when=date(2026, 3, 1), score=8)      # nguồn cũ
+        self._review(index=2, state='published')        # nguồn mới
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        srcs = sorted(e['source'] for e in out['evaluations'])
+        self.assertEqual(srcs, ['legacy', 'review'])
+        self.assertEqual(
+            len([k for k in self._kinds(out) if k == 'evaluation']), 2)
+
+    def test_dot_cu_khong_con_chi_tiet_tieu_chi(self):
+        """Mốc cũ giữ lại làm lịch sử nhưng không bày điểm bộ tiêu chí đã bỏ."""
+        self._eval(when=date(2026, 3, 1), score=8)
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        legacy = next(e for e in out['evaluations'] if e['source'] == 'legacy')
+        self.assertEqual(legacy['lines'], [])
+
+    def test_score_trend_gom_ca_hai_nguon_theo_thu_tu_ngay(self):
+        self._eval(when=date(2026, 3, 1), score=8)
+        self._review(index=2, state='published')
+        out = _career_payload(self._env(self.hr_mgr), self.emp.id)
+        dates = [p['date'] for p in out['scoreTrend']]
+        self.assertEqual(dates, sorted(dates))
+        self.assertEqual(len(dates), 2)
 
     def test_insight_no_evaluation_yet(self):
         ins = _career_payload(self._env(self.hr_mgr), self.emp.id)['insights']
