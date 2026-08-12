@@ -62,6 +62,9 @@ export const fetchAccounts = () => hbGet('/hocba-hrm/api/accounts');
 export const setAccountActive = (empId, active) =>
   hbPost(`/hocba-hrm/api/employee/${empId}/account/active`, { active: !!active });
 
-/* Dashboard đánh giá thăng tiến — lấy danh sách đánh giá của NV + lưu đánh giá mới. */
-export const fetchEvaluations = (empId) => hbGet(`/hocba-hrm/api/promotion/eval/${empId}`);
-export const saveEvaluation = (payload) => hbPost('/hocba-hrm/api/promotion/eval/save', payload);
+/* Nhập liệu đánh giá đã chuyển hẳn sang màn Đánh giá (hocba_reviews) từ
+   2026-08-12 — hồ sơ NV chỉ còn đọc kết quả qua /api/career. */
+
+/* Phiếu đánh giá này đã dẫn tới quyết định thăng tiến nào chưa. */
+export const fetchReviewPromotion = (reviewId) =>
+  hbGet(`/hocba-hrm/api/review/${reviewId}/promotion`);

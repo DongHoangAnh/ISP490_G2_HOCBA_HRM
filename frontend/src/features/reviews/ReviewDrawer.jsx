@@ -3,11 +3,13 @@
    Công thức hiển thị: docs/CONG_THUC_DANH_GIA.md */
 import { useEffect, useState } from 'react';
 import { fetchReview, saveReview, reviewAction } from '../../api/reviews';
+import { fetchReviewPromotion } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import ModalHeader from '../../components/ModalHeader';
 import AnchorList from './AnchorList';
+import PromotionForm from '../employees/PromotionForm';
 import { GRADE_LABEL, GRADE_KIND, STATE_LABEL, STATE_KIND, AUTO_SOURCE_LABEL, gradeOf, unitLabel } from './util';
 
 const inp = {
@@ -67,15 +69,26 @@ function Metrics({ m, group }) {
   );
 }
 
-export default function ReviewDrawer({ reviewId, onClose, onSaved }) {
+export default function ReviewDrawer({ reviewId, canPromote, onClose, onSaved }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // Quyết định thăng tiến đã gắn với phiếu này (null = chưa gắn).
+  const [promo, setPromo] = useState(null);
+  const [promoting, setPromoting] = useState(false);
 
   useEffect(() => {
     fetchReview(reviewId).then(setD).catch((e) => setErr(e.message));
   }, [reviewId]);
+
+  // Chỉ hỏi khi người dùng thật sự có quyền tạo — người khác không cần biết.
+  const loadPromo = () => {
+    if (!canPromote) return;
+    fetchReviewPromotion(reviewId)
+      .then((r) => setPromo(r.promotion)).catch(() => setPromo(null));
+  };
+  useEffect(loadPromo, [reviewId, canPromote]);
 
   if (err && !d) {
     return (
@@ -258,6 +271,36 @@ export default function ReviewDrawer({ reviewId, onClose, onSaved }) {
           </label>
         </div>
 
+        {/* Thăng tiến — nhập liệu gộp về đây từ 2026-08-12 (trước nằm trong
+            hồ sơ NV). Chỉ mở khi phiếu ĐÃ CHỐT: phiếu là căn cứ của quyết
+            định, gắn vào bản nháp thì căn cứ có thể đổi sau lưng. */}
+        {canPromote && d.state !== 'draft' && (
+          <div style={{
+            marginTop: 16, padding: '12px 16px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--gold-50, #fdf8ec)',
+            display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+          }}>
+            <Icon name="arrowUp" size={16} />
+            {promo ? (
+              <div style={{ fontSize: 12.5 }}>
+                Đã có quyết định thăng tiến từ phiếu này:{' '}
+                <b>{promo.toJob || '—'}</b>
+                {promo.date ? ` · hiệu lực ${promo.date}` : ''}
+                {promo.decisionRef ? ` · ${promo.decisionRef}` : ''}
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12.5, flex: 1, minWidth: 200 }}>
+                  Kết quả kỳ này đủ căn cứ để điều chỉnh chức vụ hoặc mức lương?
+                </div>
+                <button className="btn btn-soft btn-sm" disabled={busy}
+                  onClick={() => setPromoting(true)}>
+                  <Icon name="arrowUp" size={14} />Tạo thăng tiến</button>
+              </>
+            )}
+          </div>
+        )}
+
         {err && <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--red-700)' }}>{err}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
@@ -283,6 +326,17 @@ export default function ReviewDrawer({ reviewId, onClose, onSaved }) {
           )}
         </div>
       </div>
+
+      {promoting && (
+        <PromotionForm
+          /* payload phiếu chỉ có TÊN phòng ban, không có id → để trống, form
+             mặc định "Giữ nguyên phòng ban". */
+          det={{ id: d.empId, jobTitle: d.jobTitle || '', dep: '' }}
+          reviewId={d.id}
+          reasonHint={`Đánh giá ${d.periodLabel}${d.grade ? ` — xếp loại ${String(d.grade).toUpperCase()}` : ''}`}
+          onClose={() => setPromoting(false)}
+          onSaved={() => { setPromoting(false); loadPromo(); onSaved?.(); }} />
+      )}
     </Modal>
   );
 }

@@ -38,7 +38,7 @@ function Kpi({ label, value, hint }) {
   );
 }
 
-function GroupPanel({ group, search }) {
+function GroupPanel({ group, search, canPromote }) {
   const thisYear = new Date().getFullYear();
   const [periodType, setPeriodType] = useState('quarter');
   const [year, setYear] = useState(thisYear);
@@ -186,7 +186,7 @@ function GroupPanel({ group, search }) {
       )}
 
       {openId && (
-        <ReviewDrawer reviewId={openId}
+        <ReviewDrawer reviewId={openId} canPromote={canPromote}
           onClose={() => setOpenId(null)}
           onSaved={reload} />
       )}
@@ -194,7 +194,9 @@ function GroupPanel({ group, search }) {
   );
 }
 
-export default function Reviews({ search }) {
+/* canPromote: chỉ HR Manager mới tạo được quyết định thăng tiến từ
+   phiếu đã chốt (khớp guard _hr_flags của route promotion). */
+export default function Reviews({ search, canPromote }) {
   const [tab, setTab] = useState(
     () => localStorage.getItem('hocba_review_tab') || 'teacher');
   const activeTab = TABS.some(([id]) => id === tab) ? tab : 'teacher';
@@ -219,7 +221,8 @@ export default function Reviews({ search }) {
 
       {activeTab === 'guide'
         ? <ReviewGuide />
-        : <GroupPanel key={activeTab} group={activeTab} search={search} />}
+        : <GroupPanel key={activeTab} group={activeTab} search={search}
+            canPromote={canPromote} />}
     </div>
   );
 }

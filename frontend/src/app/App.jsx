@@ -151,7 +151,9 @@ export default function App() {
         )}
         {view === 'payroll' && <Payroll search={search} me={me} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
-        {view === 'reviews' && canManage && <Reviews search={search} />}
+        {view === 'reviews' && canManage && (
+          <Reviews search={search} canPromote={me.isHrManager} />
+        )}
         {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
         {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
