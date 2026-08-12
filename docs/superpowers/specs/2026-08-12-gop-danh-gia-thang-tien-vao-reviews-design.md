@@ -71,7 +71,23 @@ Chuỗi `hocba_hrm → hocba_reviews → hocba_employees` không có vòng, và
   điểm mang nhãn nguồn để không ai đọc nhầm.
 - `criteriaRadar` + "Tiến bộ từng tiêu chí": **chỉ** dựng từ
   `hb.review.criteria` (bộ của Việt). Không trộn 2 bộ tiêu chí.
-- `stats.evalCount / lastScore / avgScore`: đếm theo phiếu mới.
+- `stats.evalCount / lastScore / avgScore`: đếm **cả hai nguồn**. Lịch sử
+  vẫn là lịch sử — bỏ đợt cũ ra khỏi thống kê sẽ làm "số đợt đánh giá" của
+  người đã làm lâu năm tụt xuống thấp hơn sự thật.
+
+## 5b. Bằng chứng đổi lương (phát sinh khi implement)
+
+`hr.promotion.history._check_rules` (họp #2) bắt buộc `x_evidence_url` khi
+đổi lương, **nhưng SPA chưa bao giờ có ô nhập trường đó** — nghĩa là mọi lần
+"Tạo thăng tiến" có thay đổi lương từ SPA đều bị chặn. Lỗi có sẵn, không do
+đợt này.
+
+Nay phiếu đánh giá gắn kèm chính là bằng chứng, chặt hơn một cái link dán
+tay: `_check_rules` chấp nhận `review_id` thay cho `x_evidence_url`. Đường
+tạo tay không gắn phiếu vẫn phải có link như cũ.
+
+Hệ quả kỹ thuật: `review_id` phải nằm ngay trong `vals` của `create()` —
+kiểm phiếu **trước** khi tạo, vì gắn sau thì ràng buộc bằng chứng đã nổ.
 
 ## 6. Bộ tiêu chí cũ
 
