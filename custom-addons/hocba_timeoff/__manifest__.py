@@ -1,6 +1,6 @@
 {
     'name': 'Học Bá — Nghỉ phép (Time Off)',
-    'version': '19.0.18.0.1',
+    'version': '19.0.19.0.0',
     'category': 'Human Resources/Time Off',
     'summary': (
         'Module nghỉ phép hợp nhất cho Trung tâm Học Bá: cấu hình loại nghỉ, '
