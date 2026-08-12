@@ -21,3 +21,4 @@ from . import test_onboarding_api
 from . import test_honor_board
 from . import test_career
 from . import test_promotion_payload
+from . import test_nav_badges

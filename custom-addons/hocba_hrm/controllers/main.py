@@ -8,9 +8,9 @@ from pytz import timezone, utc
 
 from odoo import http, fields, SUPERUSER_ID
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.fields import Domain
 from odoo.http import request, Response
 from odoo.tools import file_open
-from odoo.osv import expression
 
 from odoo.addons.hocba_attendance.utils.cms_connector import (
     get_sessions_for_tutor, get_sessions_for_week, session_to_dict
@@ -3236,6 +3236,52 @@ class HocBaHRM(http.Controller):
         return request.make_json_response(res)
 
     # ------------------------------------------------------------------
+    # Badge "Nhận việc" ở thanh menu. Đếm ĐÚNG bước mà user bấm được —
+    # phạm vi bám sát _onb_can_act, đếm rộng hơn là mời người ta bấm vào
+    # 403. Chỉ search_count (gọi ở mọi màn nên phải rẻ); không quyền thì
+    # 200 + count 0, để SPA khỏi bắt 403 cho một chi tiết trang trí.
+    # Spec: docs/superpowers/specs/
+    # 2026-08-12-nav-badge-viec-can-xu-ly-design.md §3.1
+    # ------------------------------------------------------------------
+    def _onb_pending_count(self, env):
+        user = env.user
+        Step = env['hb.onboarding.step'].sudo()
+        waiting = Domain([('state', '=', 'open')])
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_manager')):
+            return {'canAct': True, 'count': Step.search_count(waiting)}
+        scopes = []
+        emp = user.employee_id
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            scopes.append(Domain([('employee_id.department_id', 'in',
+                                   dept_ids)]))
+        # child_ids: chỉ người THỰC SỰ có cấp dưới mới là quản lý trực tiếp.
+        # Thiếu vế này thì mọi nhân viên có hồ sơ đều ra canAct=True/count=0 —
+        # cờ nói "có quyền" trong khi họ không duyệt được gì.
+        if emp and emp.child_ids:
+            scopes.append(Domain([('employee_id.parent_id.user_id', '=',
+                                   user.id)]))
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            # Giáo vụ chỉ đụng bước việc-cần-làm của giáo viên, không chấm
+            # bước đánh giá (_onb_can_act).
+            scopes.append(Domain([
+                ('step_type', '=', 'task'),
+                ('employee_id.x_employee_type_id.code', '=', 'teacher')]))
+        if not scopes:
+            return {'canAct': False, 'count': 0}
+        # OR chứ không cộng dồn: người kiêm 2 vai (trưởng phòng + giáo vụ)
+        # có bước khớp cả hai nhánh, cộng lại sẽ ra số ảo.
+        return {'canAct': True,
+                'count': Step.search_count(waiting & Domain.OR(scopes))}
+
+    @http.route('/hocba-hrm/api/onboarding/pending-count', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_onb_pending_count(self, **kw):
+        return request.make_json_response(
+            self._onb_pending_count(request.env))
+
+    # ------------------------------------------------------------------
     # Người phụ thuộc (F-003) — CRUD inline trong SPA (chỉ HR). Mỗi thao tác
     # trả về hồ sơ đã cập nhật để FE refresh tab Thông tin.
     # ------------------------------------------------------------------
@@ -3439,6 +3485,50 @@ class HocBaHRM(http.Controller):
                 [('x_employee_type_id.code', '=', 'teacher')]).ids)
         ids.discard(emp.id if emp else -1)
         return list(ids)
+
+    # ------------------------------------------------------------------
+    # Badge "Nghỉ việc" ở thanh menu — đếm đơn user có NÚT bấm, khớp cờ
+    # can* của _offb_json: submitted→quản lý duyệt, mgr_approved→HR duyệt,
+    # hr_approved→HR hoàn tất (vẫn là việc phải bấm mới xong).
+    # KHÔNG dùng _offb_managed_employee_ids: helper đó trả toàn bộ NV cho
+    # cả HR officer, trong khi _ensure_manages KHÔNG cho HR officer duyệt
+    # → badge sẽ đếm những đơn họ không bấm được.
+    # Spec: docs/superpowers/specs/
+    # 2026-08-12-nav-badge-viec-can-xu-ly-design.md §3.2
+    # ------------------------------------------------------------------
+    def _offb_pending_count(self, env):
+        user = env.user
+        Off = env['hocba.offboarding'].sudo()
+        if (user.has_group('base.group_system')
+                or user.has_group('hr.group_hr_manager')):
+            return {'canAct': True, 'count': Off.search_count(
+                [('state', 'in', ['submitted', 'mgr_approved',
+                                  'hr_approved'])])}
+        emp = user.employee_id
+        emp_ids = set()
+        dept_ids = _managed_department_ids(env, emp)
+        if dept_ids:
+            emp_ids.update(env['hr.employee'].sudo().search(
+                [('department_id', 'in', dept_ids)]).ids)
+        if emp:
+            emp_ids.update(env['hr.employee'].sudo().search(
+                [('parent_id', '=', emp.id)]).ids)
+        if user.has_group('hocba_employees.group_hocba_giaovu'):
+            emp_ids.update(env['hr.employee'].sudo().search(
+                [('x_employee_type_id.code', '=', 'teacher')]).ids)
+        # Đơn của chính mình là việc của người khác duyệt, không phải của mình.
+        emp_ids.discard(emp.id if emp else -1)
+        if not emp_ids:
+            return {'canAct': False, 'count': 0}
+        return {'canAct': True, 'count': Off.search_count(
+            [('state', '=', 'submitted'),
+             ('employee_id', 'in', list(emp_ids))])}
+
+    @http.route('/hocba-hrm/api/offboarding/pending-count', auth='user',
+                type='http', methods=['GET'], csrf=False)
+    def api_offb_pending_count(self, **kw):
+        return request.make_json_response(
+            self._offb_pending_count(request.env))
 
     @http.route('/hocba-hrm/api/offboarding/submit', auth='user',
                 type='http', methods=['POST'], csrf=False)
