@@ -8,8 +8,10 @@ class HbRoleAllowanceConfig(models.Model):
     _order = 'id desc'
 
     name = fields.Char(string='Tên khoản Thưởng / Phụ cấp', required=True)
-    job_id = fields.Many2one('hr.job', string='Chức vụ / Vị trí áp dụng', ondelete='cascade')
-    department_id = fields.Many2one('hr.department', string='Phòng ban áp dụng', ondelete='cascade')
+    job_id = fields.Many2one('hr.job', string='Chức vụ / Vị trí áp dụng (Đơn lẻ)', ondelete='cascade')
+    department_id = fields.Many2one('hr.department', string='Phòng ban áp dụng (Đơn lẻ)', ondelete='cascade')
+    job_ids = fields.Many2many('hr.job', 'hb_role_allowance_job_rel', 'cfg_id', 'job_id', string='Các Chức vụ áp dụng')
+    department_ids = fields.Many2many('hr.department', 'hb_role_allowance_dept_rel', 'cfg_id', 'dept_id', string='Các Phòng ban áp dụng')
     allowance_type = fields.Selection([
         ('responsibility', 'Phụ cấp Trách nhiệm'),
         ('holiday_bonus', 'Thưởng Lễ / Tết'),

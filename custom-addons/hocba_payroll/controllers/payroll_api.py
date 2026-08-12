@@ -2692,17 +2692,25 @@ class PayrollAPI(http.Controller):
         """Get all Role & Department Allowance Configurations."""
         try:
             recs = request.env['hb.role.allowance.config'].sudo().search([('active', '=', True)], order='id desc')
-            res = [{
-                'id': r.id,
-                'name': r.name,
-                'jobId': r.job_id.id if r.job_id else None,
-                'jobName': r.job_id.name if r.job_id else 'Tất cả chức vụ',
-                'departmentId': r.department_id.id if r.department_id else None,
-                'departmentName': r.department_id.name if r.department_id else 'Tất cả phòng ban',
-                'allowanceType': r.allowance_type,
-                'amount': r.amount,
-                'notes': r.notes or '',
-            } for r in recs]
+            res = []
+            for r in recs:
+                j_ids = r.job_ids.ids if r.job_ids else ([r.job_id.id] if r.job_id else [])
+                d_ids = r.department_ids.ids if r.department_ids else ([r.department_id.id] if r.department_id else [])
+                j_name = ', '.join(r.job_ids.mapped('name')) if r.job_ids else (r.job_id.name if r.job_id else 'Tất cả chức vụ')
+                d_name = ', '.join(r.department_ids.mapped('name')) if r.department_ids else (r.department_id.name if r.department_id else 'Tất cả phòng ban')
+                res.append({
+                    'id': r.id,
+                    'name': r.name,
+                    'jobId': r.job_id.id if r.job_id else None,
+                    'jobIds': j_ids,
+                    'jobName': j_name,
+                    'departmentId': r.department_id.id if r.department_id else None,
+                    'departmentIds': d_ids,
+                    'departmentName': d_name,
+                    'allowanceType': r.allowance_type,
+                    'amount': r.amount,
+                    'notes': r.notes or '',
+                })
             return _success_response(res)
         except Exception as e:
             _logger.exception('get_role_allowance_configs error')
@@ -2711,19 +2719,34 @@ class PayrollAPI(http.Controller):
     @http.route('/hocba-hrm/api/payroll/role-allowance-config', type='http',
                 auth='user', methods=['POST'], csrf=False)
     def create_role_allowance_config(self, **kw):
-        """Create a new Role & Department Allowance Config."""
+        """Create or Update a Role & Department Allowance Config."""
         try:
             data = _get_json_body()
+            cfg_id = data.get('id')
+            raw_jids = data.get('jobIds') or ([data.get('jobId')] if data.get('jobId') else [])
+            raw_dids = data.get('departmentIds') or ([data.get('departmentId')] if data.get('departmentId') else [])
+            jids = [int(x) for x in raw_jids if x]
+            dids = [int(x) for x in raw_dids if x]
+
             vals = {
                 'name': data.get('name', 'Phụ cấp chức vụ'),
-                'job_id': data.get('jobId') or False,
-                'department_id': data.get('departmentId') or False,
+                'job_id': jids[0] if len(jids) == 1 else False,
+                'department_id': dids[0] if len(dids) == 1 else False,
+                'job_ids': [(6, 0, jids)],
+                'department_ids': [(6, 0, dids)],
                 'allowance_type': data.get('allowanceType', 'position_allowance'),
                 'amount': float(data.get('amount', 0.0)),
                 'notes': data.get('notes', ''),
             }
-            rec = request.env['hb.role.allowance.config'].sudo().create(vals)
-            return _success_response({'id': rec.id}, message='Đã thêm cấu hình thưởng/phụ cấp thành công.')
+            if cfg_id:
+                rec = request.env['hb.role.allowance.config'].sudo().browse(cfg_id)
+                if rec.exists():
+                    rec.write(vals)
+                else:
+                    rec = request.env['hb.role.allowance.config'].sudo().create(vals)
+            else:
+                rec = request.env['hb.role.allowance.config'].sudo().create(vals)
+            return _success_response({'id': rec.id}, message='Đã lưu cấu hình thưởng/phụ cấp thành công.')
         except Exception as e:
             _logger.exception('create_role_allowance_config error')
             return _error_response(str(e), status=500)

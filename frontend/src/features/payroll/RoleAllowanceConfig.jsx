@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchRoleAllowanceConfigs, createRoleAllowanceConfig, deleteRoleAllowanceConfig } from '../../api/payroll';
 import { fetchFormMeta } from '../../api/employees';
 import Icon from '../../components/Icon';
@@ -9,6 +9,205 @@ const TYPE_CONFIG = {
   holiday_bonus: { label: 'Thưởng Lễ / Tết', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0', icon: 'gift' },
   other: { label: 'Khoản trợ cấp khác', bg: '#f3e8ff', color: '#6b21a8', border: '#e9d5ff', icon: 'tag' },
 };
+
+function MultiSelectPicker({ label, items, selectedIds, onChange, placeholder, iconPrefix = '💼' }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredItems = items.filter((item) =>
+    item.name.toLowerCase().includes(search.toLowerCase().trim())
+  );
+
+  const isAll = selectedIds.length === 0;
+
+  const toggleItem = (id) => {
+    if (isAll) {
+      // If currently "All" selected, clicking an item selects ONLY that item
+      onChange([id]);
+    } else if (selectedIds.includes(id)) {
+      // If item is already selected, remove it
+      const next = selectedIds.filter((x) => x !== id);
+      onChange(next); // if next is [], isAll becomes true automatically
+    } else {
+      // Add item to selection
+      onChange([...selectedIds, id]);
+    }
+  };
+
+  const selectAll = () => onChange([]);
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative' }}>
+      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>
+        {label} <b style={{ color: isAll ? '#64748b' : '#2563eb' }}>({isAll ? 'Tất cả' : `${selectedIds.length} được chọn`})</b>
+      </label>
+
+      {/* Trigger Area */}
+      <div
+        onClick={() => setOpen(!open)}
+        style={{
+          width: '100%',
+          minHeight: 38,
+          padding: '6px 10px',
+          borderRadius: 8,
+          border: open ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+          background: '#fff',
+          boxSizing: 'border-box',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 6,
+          boxShadow: open ? '0 0 0 3px rgba(37,99,235,0.12)' : 'none',
+          transition: 'all 0.15s ease-in-out',
+        }}
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, overflow: 'hidden', minWidth: 0 }}>
+          {isAll ? (
+            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              🌐 Tất cả {placeholder}
+            </span>
+          ) : (
+            selectedIds.map((id) => {
+              const itemObj = items.find((x) => x.id === id);
+              return (
+                <span
+                  key={id}
+                  style={{
+                    fontSize: 11.5,
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
+                    border: '1px solid #bfdbfe',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    whiteSpace: 'nowrap',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleItem(id);
+                  }}
+                >
+                  {iconPrefix} {itemObj ? itemObj.name : id} ✕
+                </span>
+              );
+            })
+          )}
+        </div>
+        <span style={{ fontSize: 10, color: '#94a3b8', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}>▼</span>
+      </div>
+
+      {/* Popover Dropdown Panel */}
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            minWidth: 240,
+            background: '#fff',
+            borderRadius: 10,
+            border: '1px solid #cbd5e1',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            zIndex: 1050,
+            padding: 8,
+            maxHeight: 220,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Search bar */}
+          <div style={{ marginBottom: 8 }}>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="🔍 Tìm nhanh..."
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                fontSize: 12,
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          {/* List items with checkboxes */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div
+              onClick={selectAll}
+              style={{
+                padding: '6px 8px',
+                borderRadius: 6,
+                fontSize: 12,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: isAll ? '#eff6ff' : 'transparent',
+                fontWeight: isAll ? 700 : 400,
+                color: isAll ? '#1d4ed8' : '#334155',
+              }}
+            >
+              <input type="checkbox" checked={isAll} readOnly style={{ cursor: 'pointer' }} />
+              🌐 Tất cả {placeholder}
+            </div>
+
+            {filteredItems.map((item) => {
+              const checked = !isAll && selectedIds.includes(item.id);
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => toggleItem(item.id)}
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: checked ? '#f0fdf4' : 'transparent',
+                    fontWeight: checked ? 600 : 400,
+                    color: checked ? '#15803d' : '#334155',
+                  }}
+                >
+                  <input type="checkbox" checked={checked} readOnly style={{ cursor: 'pointer' }} />
+                  {iconPrefix} {item.name}
+                </div>
+              );
+            })}
+
+            {filteredItems.length === 0 && (
+              <div style={{ padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+                Không tìm thấy kết quả phù hợp
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function RoleAllowanceConfig() {
   const [configs, setConfigs] = useState([]);
@@ -22,8 +221,8 @@ export default function RoleAllowanceConfig() {
   const [form, setForm] = useState({
     id: null,
     name: '',
-    jobId: '',
-    departmentId: '',
+    jobIds: [],
+    departmentIds: [],
     allowanceType: 'position_allowance',
     amount: 1000000,
     notes: '',
@@ -55,8 +254,8 @@ export default function RoleAllowanceConfig() {
     setForm({
       id: null,
       name: '',
-      jobId: '',
-      departmentId: '',
+      jobIds: [],
+      departmentIds: [],
       allowanceType: 'position_allowance',
       amount: 1000000,
       notes: '',
@@ -69,8 +268,8 @@ export default function RoleAllowanceConfig() {
     setForm({
       id: item.id,
       name: item.name,
-      jobId: item.jobId || '',
-      departmentId: item.departmentId || '',
+      jobIds: item.jobIds || (item.jobId ? [item.jobId] : []),
+      departmentIds: item.departmentIds || (item.departmentId ? [item.departmentId] : []),
       allowanceType: item.allowanceType || 'position_allowance',
       amount: item.amount || 0,
       notes: item.notes || '',
@@ -92,8 +291,8 @@ export default function RoleAllowanceConfig() {
       await createRoleAllowanceConfig({
         id: form.id || undefined,
         name: form.name.trim(),
-        jobId: form.jobId ? parseInt(form.jobId) : null,
-        departmentId: form.departmentId ? parseInt(form.departmentId) : null,
+        jobIds: form.jobIds,
+        departmentIds: form.departmentIds,
         allowanceType: form.allowanceType,
         amount: parseFloat(form.amount) || 0,
         notes: form.notes.trim(),
@@ -123,7 +322,7 @@ export default function RoleAllowanceConfig() {
       <div
         style={{
           display: 'flex',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 20,
           background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
@@ -136,7 +335,7 @@ export default function RoleAllowanceConfig() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
-              🏛️ Cấu hình Thưởng & Phụ cấp cố định theo Chức vụ / Phòng ban
+              Cấu hình Thưởng & Phụ cấp cố định theo Chức vụ / Phòng ban
             </h4>
           </div>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -161,7 +360,7 @@ export default function RoleAllowanceConfig() {
             transition: 'all 0.2s',
           }}
         >
-          <Icon name="plus" size={16} /> Thêm Cấu hình Phụ cấp
+          + Thêm Cấu hình Phụ cấp
         </button>
       </div>
 
@@ -319,7 +518,7 @@ export default function RoleAllowanceConfig() {
             backdropFilter: 'blur(3px)',
             display: 'flex',
             alignItems: 'center',
-            justify: 'center',
+            justifyContent: 'center',
             zIndex: 9999,
           }}
         >
@@ -336,7 +535,7 @@ export default function RoleAllowanceConfig() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0f172a' }}>
-                {editingItem ? '✏️ Chỉnh sửa Cấu hình Phụ cấp' : '✨ Thêm mới Thưởng / Phụ cấp theo Role'}
+                {editingItem ? 'Chỉnh sửa Cấu hình Phụ cấp' : 'Thêm mới Thưởng / Phụ cấp theo Role'}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -369,61 +568,24 @@ export default function RoleAllowanceConfig() {
                 />
               </div>
 
-              {/* Grid: Job Position & Department Selects */}
+              {/* Grid: Job Position & Department Multi-Selects */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {/* Select Chức vụ */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>
-                    Chức vụ áp dụng
-                  </label>
-                  <select
-                    value={form.jobId}
-                    onChange={(e) => setForm({ ...form, jobId: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: 8,
-                      border: '1px solid #cbd5e1',
-                      fontSize: 13,
-                      background: '#fff',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    <option value="">🌐 Tất cả chức vụ</option>
-                    {jobs.map((j) => (
-                      <option key={j.id} value={j.id}>
-                        💼 {j.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Select Phòng ban */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 5, color: '#334155' }}>
-                    Phòng ban áp dụng
-                  </label>
-                  <select
-                    value={form.departmentId}
-                    onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: 8,
-                      border: '1px solid #cbd5e1',
-                      fontSize: 13,
-                      background: '#fff',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    <option value="">🌐 Tất cả phòng ban</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        🏢 {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <MultiSelectPicker
+                  label="Chức vụ áp dụng"
+                  items={jobs}
+                  selectedIds={form.jobIds}
+                  onChange={(newIds) => setForm({ ...form, jobIds: newIds })}
+                  placeholder="chức vụ"
+                  iconPrefix="💼"
+                />
+                <MultiSelectPicker
+                  label="Phòng ban áp dụng"
+                  items={departments}
+                  selectedIds={form.departmentIds}
+                  onChange={(newIds) => setForm({ ...form, departmentIds: newIds })}
+                  placeholder="phòng ban"
+                  iconPrefix="🏢"
+                />
               </div>
 
               {/* Grid: Allowance Type & Amount */}

@@ -168,7 +168,7 @@ export default function MyPayslipsView({ targetSlipId }) {
           padding: '28px 32px',
           color: '#fff',
           display: 'flex',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           alignItems: 'flex-start',
           position: 'relative',
         }}>

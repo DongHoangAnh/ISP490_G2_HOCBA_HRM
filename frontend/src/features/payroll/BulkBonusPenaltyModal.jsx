@@ -109,7 +109,7 @@ export default function BulkBonusPenaltyModal({ batchId, employees, onClose, onS
         <div style={{ padding: '16px 20px', background: '#1e293b', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🎁 Cong cụ Thưởng & Phạt Hàng Loạt Theo Tháng
+              Công cụ Thưởng & Phạt Hàng Loạt Theo Tháng
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: '#94a3b8' }}>
               Điền số tiền Thưởng/Phạt và tích chọn nhân viên cần áp dụng cho đợt lương này.
@@ -129,7 +129,7 @@ export default function BulkBonusPenaltyModal({ batchId, employees, onClose, onS
             {/* Bonus Section */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label style={{ fontSize: 13, fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Icon name="gift" size={16} /> Thưởng thêm (VND)
+                Thưởng thêm (VND)
               </label>
               <input
                 type="number"
@@ -151,7 +151,7 @@ export default function BulkBonusPenaltyModal({ batchId, employees, onClose, onS
             {/* Penalty Section */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Icon name="alertTriangle" size={16} /> Phạt vi phạm (VND)
+                Phạt vi phạm (VND)
               </label>
               <input
                 type="number"
@@ -272,7 +272,7 @@ export default function BulkBonusPenaltyModal({ batchId, employees, onClose, onS
                 fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1,
               }}
             >
-              {saving ? 'Đang áp dụng...' : '⚡ Áp Dụng Cho Nhân Viên'}
+              {saving ? 'Đang áp dụng...' : 'Áp Dụng Cho Nhân Viên'}
             </button>
           </div>
         </div>

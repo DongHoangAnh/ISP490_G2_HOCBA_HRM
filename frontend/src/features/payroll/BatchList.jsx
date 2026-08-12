@@ -909,7 +909,6 @@ export default function BatchList({ search }) {
             cursor: computing ? 'not-allowed' : 'pointer',
             opacity: computing ? .5 : 1,
           }}>
-          <Icon name="zap" size={13} />
           {computing ? (computeProgress ? `Đang tính (${computeProgress.percent}%)...` : 'Đang khởi chạy...') : 'Tính lương'}
         </button>
 
@@ -922,7 +921,6 @@ export default function BatchList({ search }) {
             cursor: (sending || checkedCount === 0) ? 'not-allowed' : 'pointer',
             opacity: (sending || checkedCount === 0) ? .5 : 1,
           }}>
-          <Icon name="mail" size={13} />
           {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
         </button>
 
@@ -936,7 +934,6 @@ export default function BatchList({ search }) {
             cursor: resetting ? 'not-allowed' : 'pointer',
             opacity: resetting ? .6 : 1,
           }}>
-          <Icon name="rotateCcw" size={13} style={{ color: '#4b5563' }} />
           {resetting ? 'Đang reset...' : checkedCount > 0 ? `Reset XN (${checkedCount})` : 'Reset XN'}
         </button>
 
@@ -949,8 +946,7 @@ export default function BatchList({ search }) {
             fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
             cursor: 'pointer',
           }}>
-          <Icon name="gift" size={13} />
-          🎁 Thưởng & Phạt
+          Thưởng & Phạt
         </button>
 
         <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
@@ -963,7 +959,6 @@ export default function BatchList({ search }) {
             cursor: (saving || !canSaveHistory) ? 'not-allowed' : 'pointer',
             opacity: (saving || !canSaveHistory) ? .6 : 1,
           }}>
-          <Icon name="check" size={13} />
           {saving ? 'Đang lưu...' : 'Lưu lịch sử'}
         </button>
 
@@ -975,7 +970,6 @@ export default function BatchList({ search }) {
             fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
             color: '#374151', cursor: 'pointer',
           }}>
-          <Icon name="settings" size={13} />
           Cột&nbsp;<b>{visCols.length}/{allCols.length}</b>
         </button>
       </div>
@@ -990,8 +984,7 @@ export default function BatchList({ search }) {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, fontWeight: 600, color: '#1e40af' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="zap" size={15} style={{ color: '#2563eb' }} />
-              ⚡ Đang tính toán lương ngầm theo Batch (Đã xử lý: {computeProgress.computed} / {computeProgress.total} phiếu)...
+              Đang tính toán lương ngầm theo Batch (Đã xử lý: {computeProgress.computed} / {computeProgress.total} phiếu)...
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <b style={{ fontSize: 13, color: '#1d4ed8' }}>{computeProgress.percent}%</b>
@@ -1003,7 +996,7 @@ export default function BatchList({ search }) {
                 }}
                 title="Bấm để khởi động lại tiến trình nếu bị đứng"
               >
-                🔄 Khởi chạy lại
+                Khởi chạy lại
               </button>
             </div>
           </div>

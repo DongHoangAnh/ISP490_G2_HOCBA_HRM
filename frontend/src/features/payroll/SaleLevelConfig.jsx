@@ -94,7 +94,7 @@ export default function SaleLevelConfig() {
       <div
         style={{
           display: 'flex',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 20,
           background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
@@ -106,7 +106,7 @@ export default function SaleLevelConfig() {
       >
         <div>
           <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
-            🎯 Cấu hình Bảng Lương Sale theo Level KPI
+            Cấu hình Bảng Lương Sale theo Level KPI
           </h4>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
             Áp dụng riêng cho <b>Nhân viên Sale chính thức</b>. Hệ thống tự động lấy điểm KPI tháng để áp mức Lương cơ bản tương ứng.
@@ -129,7 +129,7 @@ export default function SaleLevelConfig() {
             boxShadow: '0 2px 4px rgba(37,99,235,0.2)',
           }}
         >
-          <Icon name="plus" size={16} /> Thêm Level mới
+          + Thêm Level mới
         </button>
       </div>
 
@@ -208,7 +208,7 @@ export default function SaleLevelConfig() {
           <div style={{ background: '#fff', width: 440, borderRadius: 16, padding: 24, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0f172a' }}>
-                {editingItem ? '✏️ Chỉnh sửa Level Sale' : '✨ Thêm mới Level Sale'}
+                {editingItem ? 'Chỉnh sửa Level Sale' : 'Thêm mới Level Sale'}
               </h3>
               <button onClick={() => setShowModal(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', fontSize: 18 }}>✕</button>
             </div>

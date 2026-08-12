@@ -752,9 +752,26 @@ class HbPayslip(models.Model):
             RoleConfigModel = self.env['hb.role.allowance.config'].sudo()
             role_configs = RoleConfigModel.search([('active', '=', True)])
             matching_allowance = 0.0
+            emp_job_id = slip.employee_id.job_id.id if slip.employee_id.job_id else None
+            emp_dept_id = slip.employee_id.department_id.id if slip.employee_id.department_id else None
+
             for cfg in role_configs:
-                job_match = (not cfg.job_id or cfg.job_id.id == slip.employee_id.job_id.id)
-                dept_match = (not cfg.department_id or cfg.department_id.id == slip.employee_id.department_id.id)
+                # Job matching: if job_ids exist, check if emp_job_id in job_ids; else fallback to single job_id; if neither, match all
+                if cfg.job_ids:
+                    job_match = (emp_job_id in cfg.job_ids.ids) if emp_job_id else False
+                elif cfg.job_id:
+                    job_match = (cfg.job_id.id == emp_job_id) if emp_job_id else False
+                else:
+                    job_match = True
+
+                # Department matching: if department_ids exist, check if emp_dept_id in department_ids; else fallback to single department_id; if neither, match all
+                if cfg.department_ids:
+                    dept_match = (emp_dept_id in cfg.department_ids.ids) if emp_dept_id else False
+                elif cfg.department_id:
+                    dept_match = (cfg.department_id.id == emp_dept_id) if emp_dept_id else False
+                else:
+                    dept_match = True
+
                 if job_match and dept_match:
                     matching_allowance += cfg.amount
             slip.x_role_allowance_amount = matching_allowance
