@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { useSort, SortTh } from '../../components/sortable';
 import Pagination, { usePaged } from '../../components/Pagination';
 import { fmtDate } from '../../utils/format';
 import Badge from '../../components/Badge';
@@ -37,6 +38,12 @@ const STAGE_KIND = {
   hb_stage_hired:      'green',
 };
 
+/* Sắp cột "Bước hiện tại" theo chặng đường thật, không theo bảng chữ cái.
+   Bước lạ (admin thêm mới) rơi xuống cuối. */
+const STAGE_ORDER = {
+  hb_stage_result: 1, hb_stage_offer: 2, hb_stage_onboarding: 3, hb_stage_hired: 4,
+};
+
 export default function Offers({ search }) {
   const [cv, setCv] = useState(null);
   const [tmpls, setTmpls] = useState(null);
@@ -44,6 +51,12 @@ export default function Offers({ search }) {
   const [mailFor, setMailFor] = useState(null); // ứng viên đang gửi mail
 
   const [savingId, setSavingId] = useState(null);
+  const sort = useSort();
+  const [fStage, setFStage] = useState('all');     // theo mã bước
+  const [fJob, setFJob] = useState('all');         // vị trí ứng tuyển
+  const [fResult, setFResult] = useState('all');   // kết quả nhận việc ('' = chưa xác định)
+  const [fNoOffer, setFNoOffer] = useState(false); // chưa điền nội dung offer
+  const [fNoDate, setFNoDate] = useState(false);   // chưa hẹn ngày nhận việc
 
   const load = () => { setErr(null); setCv(null); fetchCvList().then(setCv).catch((e) => setErr(e.message)); };
   useEffect(load, []);
@@ -81,15 +94,57 @@ export default function Offers({ search }) {
   };
 
   /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
-  const rows = (cv ? cv.rows : [])
+  const searched = (cv ? cv.rows : [])
     .filter(inOfferScope)
     .filter((r) => {
       if (!search) return true;
       const q = search.toLowerCase();
       return [r.name, r.phone, r.email, r.jobName].some((v) => (v || '').toLowerCase().includes(q));
     })
+    // Mặc định: hẹn nhận việc gần nhất lên đầu. Bấm tiêu đề cột thì sort đè lên.
     .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
-  const pg = usePaged(rows, [search]);
+
+  /* Chip bước dựng từ chính dữ liệu, giữ đúng thứ tự chặng đường. */
+  const stageChips = [];
+  for (const r of searched) {
+    const k = r.stageRef || '';
+    const c = stageChips.find((x) => x.k === k);
+    if (c) c.n += 1;
+    else stageChips.push({ k, lbl: r.stage || 'Chưa có bước', n: 1 });
+  }
+  stageChips.sort((a, b) => (STAGE_ORDER[a.k] || 99) - (STAGE_ORDER[b.k] || 99));
+  const jobOptions = [...new Set(searched.map((r) => r.jobName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'vi'));
+  const noOfferCount = searched.filter((r) => !r.offerContent).length;
+  const noDateCount = searched.filter((r) => !r.startDate).length;
+
+  const filtered = searched.filter((r) => {
+    if (fStage !== 'all' && (r.stageRef || '') !== fStage) return false;
+    if (fJob !== 'all' && r.jobName !== fJob) return false;
+    // fResult === '' → lọc đúng nhóm CHƯA xác định kết quả.
+    if (fResult !== 'all' && (r.onboardResult || '') !== fResult) return false;
+    if (fNoOffer && r.offerContent) return false;
+    if (fNoDate && r.startDate) return false;
+    return true;
+  });
+  const hasFilter = fStage !== 'all' || fJob !== 'all' || fResult !== 'all' || fNoOffer || fNoDate;
+  const clearFilter = () => {
+    setFStage('all'); setFJob('all'); setFResult('all');
+    setFNoOffer(false); setFNoDate(false);
+  };
+
+  const rows = sort.apply(filtered, {
+    name: (r) => r.name,
+    applied: (r) => r.dateReceived,
+    job: (r) => r.jobName,
+    stage: (r) => STAGE_ORDER[r.stageRef] || 99,
+    start: (r) => r.startDate,
+    // Chưa xác định xuống cuối; còn lại: Đã đến trước, Không nhận việc sau.
+    result: (r) => (r.onboardResult === 'arrived' ? 1
+      : r.onboardResult === 'no_show' ? 2 : null),
+  });
+  const pg = usePaged(rows, [search, fStage, fJob, fResult, fNoOffer, fNoDate,
+    sort.key, sort.dir]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!cv) return <LoadingState label="Đang tải danh sách offer…" />;
@@ -101,16 +156,58 @@ export default function Offers({ search }) {
   return (
     <div>
       <div className="filterbar">
-        <span className="muted" style={{ fontSize: 13 }}>{rows.length} ứng viên đã Pass phỏng vấn</span>
+        <button className={'chip' + (fStage === 'all' ? ' active' : '')}
+          onClick={() => setFStage('all')}>
+          Tất cả <span className="ct">{searched.length}</span></button>
+        {stageChips.map((c) => (
+          <button key={c.k} className={'chip' + (fStage === c.k ? ' active' : '')}
+            onClick={() => setFStage(c.k)}>
+            {c.lbl} <span className="ct">{c.n}</span></button>
+        ))}
+        <button className={'chip' + (fNoOffer ? ' active' : '')}
+          title="Ứng viên chưa được điền nội dung offer"
+          onClick={() => setFNoOffer((v) => !v)}>
+          Chưa điền offer <span className="ct">{noOfferCount}</span></button>
+        <button className={'chip' + (fNoDate ? ' active' : '')}
+          title="Ứng viên chưa chốt ngày nhận việc"
+          onClick={() => setFNoDate((v) => !v)}>
+          Chưa hẹn ngày <span className="ct">{noDateCount}</span></button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
+          <select className="sel" value={fJob} onChange={(e) => setFJob(e.target.value)}>
+            <option value="all">Mọi vị trí</option>
+            {jobOptions.map((j) => <option key={j}>{j}</option>)}
+          </select>
+          <select className="sel" value={fResult} onChange={(e) => setFResult(e.target.value)}>
+            <option value="all">Mọi kết quả nhận việc</option>
+            <option value="">— Chưa xác định —</option>
+            {Object.entries(onboardLabels).map(([k, l]) => (
+              <option key={k} value={k}>{l}</option>
+            ))}
+          </select>
+          {hasFilter && (
+            <button className="btn btn-ghost btn-sm" onClick={clearFilter}>Xoá lọc</button>
+          )}
+        </div>
+      </div>
+      <div className="muted" style={{ fontSize: 13, margin: '0 0 10px' }}>
+        {rows.length} ứng viên
+        {hasFilter ? ` (lọc từ ${searched.length} đã Pass phỏng vấn)` : ' đã Pass phỏng vấn'}
       </div>
 
       <div className="card">
         <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
+            {/* Cột Offer không sắp xếp được: ô nhập nhiều dòng, sắp theo nội dung
+                tự do không giúp gì cho người dùng. */}
             <thead><tr>
-              <th>Họ tên ứng viên</th><th>Ngày ứng tuyển</th><th>Vị trí ứng tuyển</th>
-              <th>Bước hiện tại</th><th>Offer</th><th>Ngày nhận việc</th>
-              <th>Kết quả nhận việc</th><th></th>
+              <SortTh sort={sort} k="name">Họ tên ứng viên</SortTh>
+              <SortTh sort={sort} k="applied">Ngày ứng tuyển</SortTh>
+              <SortTh sort={sort} k="job">Vị trí ứng tuyển</SortTh>
+              <SortTh sort={sort} k="stage">Bước hiện tại</SortTh>
+              <th>Offer</th>
+              <SortTh sort={sort} k="start">Ngày nhận việc</SortTh>
+              <SortTh sort={sort} k="result">Kết quả nhận việc</SortTh>
+              <th></th>
             </tr></thead>
             <tbody>
               {pg.rows.map((r) => (
@@ -227,11 +324,16 @@ export default function Offers({ search }) {
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <EmptyState>Chưa có ứng viên nào Pass phỏng vấn.</EmptyState>}
+        {rows.length === 0 && (
+          <EmptyState>
+            {hasFilter || search ? 'Không có ứng viên nào khớp bộ lọc hiện tại.'
+              : 'Chưa có ứng viên nào Pass phỏng vấn.'}
+          </EmptyState>
+        )}
         <Pagination {...pg} />
       </div>
 
-      <GuideNote title="Các bước bộ phận tuyển dụng cần làm ở màn này"
+      <GuideNote title="Các bước cần làm ở màn này"
         steps={STEPS} note={GUIDE_NOTE} />
 
       {mailFor && (
@@ -244,46 +346,33 @@ export default function Offers({ search }) {
 
 /* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
 const STEPS = [
-  ['Kiểm tra danh sách',
-   <>Ứng viên có <b>Kết quả PV = Pass</b> tự xuất hiện ở đây, không cần kéo thẻ
-     trên kanban. Cột <b>Bước hiện tại</b> cho biết họ đang ở đâu: vàng
-     “Kết quả phỏng vấn” = chưa gửi offer, còn việc phải làm.</>],
+  ['Xem danh sách',
+   <>Ứng viên <b>Pass phỏng vấn</b> tự vào đây, không cần kéo thẻ kanban. Cột
+     <b> Bước hiện tại</b> màu vàng = chưa gửi offer, còn việc phải làm.</>],
   ['Điền Offer & Ngày nhận việc',
-   <>Gõ nội dung offer (lương, chế độ, thời gian thử việc) và chọn
-     <b> Ngày nhận việc</b>. Nội dung tự lưu khi bạn bấm ra ngoài ô. Nên điền
-     <b> trước</b> khi gửi mail vì mẫu thư mời nhận việc lấy dữ liệu từ hai ô này,
-     và ngày nhận việc sẽ thành mốc bắt đầu thử việc của hồ sơ nhân viên.</>],
+   <>Gõ nội dung offer và chọn ngày — tự lưu khi bấm ra ngoài ô. Điền
+     <b> trước</b> khi gửi mail, vì thư mời lấy dữ liệu từ hai ô này và ngày nhận
+     việc là mốc bắt đầu thử việc.</>],
   ['Gửi thư mời nhận việc',
-   <>Bấm <b>Gửi mail</b> → chọn mẫu <b>“Thư mời nhận việc – Học Bá”</b> →
-     <b> Xem trước</b> để kiểm tra và chỉnh nội dung → <b>Mở Gmail</b> → bấm Gửi
-     trong Gmail → quay lại bấm <b>“Đã gửi — lưu lịch sử”</b>. Bấm xong hệ thống
-     tự chuyển ứng viên sang bước <b>Gửi Offer</b> và ghi vào Lịch sử gửi mail.</>],
-  ['Chốt phản hồi của ứng viên',
-   <>Ứng viên đồng ý thì ghi lại vào ô <b>Ghi chú Offer</b> / <b>UV xác nhận mail</b>
-     ở hồ sơ ứng viên (tab Danh sách CV). Ứng viên từ chối thì kéo thẻ về bước phù
-     hợp trên kanban — hệ thống không tự xử lý trường hợp từ chối.</>],
-  ['Tới ngày hẹn: chốt Kết quả nhận việc',
-   <>Gửi thư mời xong thì <b>chưa tạo hồ sơ</b> — chờ tới ngày hẹn xem ứng viên có
-     đến không, rồi điền cột <b>Kết quả nhận việc</b>. <b>Đã đến</b> → làm tiếp bước
-     dưới. <b>Không nhận việc</b> → dòng chuyển đỏ, nút Onboard biến mất, ứng viên
-     vẫn nằm lại đây để còn theo dõi; chọn nhầm thì đổi lại được. Bỏ trống nghĩa là
-     chưa xác định.</>],
+   <><b>Gửi mail</b> → mẫu <b>“Thư mời nhận việc”</b> → <b>Xem trước</b> →
+     <b> Mở Gmail</b> → gửi → quay lại bấm <b>“Đã gửi — lưu lịch sử”</b>. Bấm xong
+     ứng viên tự sang bước <b>Gửi Offer</b>.</>],
+  ['Chốt Kết quả nhận việc',
+   <>Tới ngày hẹn mới chốt: <b>Đã đến</b> hoặc <b>Không nhận việc</b> (bỏ trống =
+     chưa xác định). Chọn “Không nhận việc” thì nút Onboard ẩn đi; chọn nhầm đổi
+     lại được.</>],
   ['Onboard',
-   <>Nút <b>Onboard</b> chỉ hiện sau khi bạn chốt <b>Kết quả nhận việc = Đã đến</b>;
-     chưa chốt thì cột này ghi “Chờ kết quả nhận việc”. Bấm <b>Onboard</b> để tạo hồ
-     sơ nhân viên (trạng thái <b>Thử việc</b>), ứng viên tự chuyển sang bước
-     <b> Onboarding</b>. Bấm nhầm 2 lần không tạo trùng hồ sơ.</>],
-  ['Hoàn tất hồ sơ & hết thử việc',
-   <>Sang module <b>Nhân sự</b> điền nốt CCCD · MST · BHXH cho hồ sơ vừa tạo —
-     thiếu ba mục này thì không chuyển Chính thức được. Hết thử việc, khi nhân
-     viên <b>đạt cổng đánh giá và lên Chính thức</b>, ứng viên tự chuyển sang bước
-     <b> Bàn giao nhân sự</b>; bước này mới trừ chỉ tiêu tuyển và kích hoạt tự ngừng
-     đăng tin khi tuyển đủ.</>],
+   <>Nút <b>Onboard</b> chỉ hiện khi kết quả là <b>Đã đến</b>. Bấm để tạo hồ sơ
+     nhân viên (<b>Thử việc</b>); bấm hai lần không tạo trùng.</>],
+  ['Hoàn tất hồ sơ',
+   <>Sang module <b>Nhân sự</b> điền CCCD · MST · BHXH — thiếu thì không lên
+     Chính thức được. Khi nhân viên lên Chính thức, ứng viên tự sang bước
+     <b> Bàn giao nhân sự</b> và mới trừ chỉ tiêu tuyển.</>],
 ];
 
 const GUIDE_NOTE = (
-  <>Ba bước <b>3</b>, <b>6</b> và <b>7</b> tự đổi bước cho ứng viên, mỗi lần đều
-    ghi một dòng vào lịch sử trao đổi của hồ sơ để truy lại được ai/khi nào. Hệ
-    thống chỉ đẩy tới, không kéo lùi — ứng viên đã đi xa hơn thì đứng yên.</>
+  <>Ứng viên <b>từ chối offer</b> thì kéo thẻ trên kanban — hệ thống không tự xử
+    lý. Mọi lần đổi bước đều ghi vào lịch sử hồ sơ, và chỉ đẩy tới chứ không kéo
+    lùi: ai đã đi xa hơn thì đứng yên.</>
 );
 

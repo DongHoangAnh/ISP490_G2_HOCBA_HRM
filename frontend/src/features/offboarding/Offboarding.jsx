@@ -8,6 +8,7 @@ import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { useSort, SortTh } from '../../components/sortable';
 import { fmtDate } from '../../utils/format';
 import { fetchOffboarding, offboardingAction } from '../../api/offboarding';
 import OffboardingForm from './OffboardingForm';
@@ -25,6 +26,9 @@ export default function Offboarding({ search, onQueueChanged }) {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(null); // id đơn đang thao tác
   const [detail, setDetail] = useState(null);
+  const [fState, setFState] = useState('all');
+  const [fReason, setFReason] = useState('all');
+  const [fTodo, setFTodo] = useState(false);   // chỉ đơn đang chờ chính tôi bấm
 
   const load = () => {
     setErr(null); setData(null);
@@ -49,6 +53,30 @@ export default function Offboarding({ search, onQueueChanged }) {
     || (r.name || '').toLowerCase().includes(q)
     || (r.reason || '').toLowerCase().includes(q);
 
+  /* Lọc chạy trên tập đang hiển thị (officer xem đơn trong phạm vi, NV xem đơn
+     của mình) nên dùng chung một bộ state cho cả 2 bảng. */
+  const base = (data.isOfficer ? data.managed : data.mine).filter(match);
+  // Chip trạng thái dựng từ chính dữ liệu (khỏi phải đồng bộ tay với backend
+  // mỗi lần thêm state mới); nhãn lấy từ stateLabel server trả về.
+  const stateChips = [{ k: 'all', lbl: 'Tất cả', n: base.length }];
+  for (const r of base) {
+    const c = stateChips.find((x) => x.k === r.state);
+    if (c) c.n += 1;
+    else stateChips.push({ k: r.state, lbl: r.stateLabel, n: 1 });
+  }
+  const reasonOptions = [...new Set(base.map((r) => r.reasonType).filter(Boolean))];
+  const isTodo = (r) => r.canMgrApprove || r.canHrApprove || r.canDone;
+  const todoCount = base.filter(isTodo).length;
+
+  const rows = base.filter((r) => {
+    if (fState !== 'all' && r.state !== fState) return false;
+    if (fReason !== 'all' && r.reasonType !== fReason) return false;
+    if (fTodo && !isTodo(r)) return false;
+    return true;
+  });
+  const hasFilter = fState !== 'all' || fReason !== 'all' || fTodo;
+  const clearFilter = () => { setFState('all'); setFReason('all'); setFTodo(false); };
+
   return (
     <div className="content fade-in">
       <div className="page-head">
@@ -64,9 +92,34 @@ export default function Offboarding({ search, onQueueChanged }) {
         </div>
       </div>
 
+      <div className="filterbar">
+        {stateChips.map((c) => (
+          <button key={c.k} className={'chip' + (fState === c.k ? ' active' : '')}
+            onClick={() => setFState(c.k)}>
+            {c.lbl} <span className="ct">{c.n}</span></button>
+        ))}
+        {data.isOfficer && (
+          <button className={'chip' + (fTodo ? ' active' : '')}
+            title="Chỉ hiện đơn đang chờ chính bạn bấm duyệt / hoàn tất"
+            onClick={() => setFTodo((v) => !v)}>
+            Chờ tôi xử lý <span className="ct">{todoCount}</span></button>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
+          <select className="sel" value={fReason} onChange={(e) => setFReason(e.target.value)}>
+            <option value="all">Mọi lý do</option>
+            {reasonOptions.map((k) => (
+              <option key={k} value={k}>{REASON_LABEL[k] || k}</option>
+            ))}
+          </select>
+          {hasFilter && (
+            <button className="btn btn-ghost btn-sm" onClick={clearFilter}>Xoá lọc</button>
+          )}
+        </div>
+      </div>
+
       {data.isOfficer
-        ? <ManagedTable rows={data.managed.filter(match)} busy={busy} act={act} />
-        : <MineTable rows={data.mine.filter(match)} busy={busy} act={act}
+        ? <ManagedTable rows={rows} busy={busy} act={act} filtering={hasFilter} />
+        : <MineTable rows={rows} busy={busy} act={act} filtering={hasFilter}
             onOpen={setDetail} />}
 
       {creating && (
@@ -79,27 +132,42 @@ export default function Offboarding({ search, onQueueChanged }) {
 }
 
 /* ---- Bảng officer: mọi đơn trong phạm vi, nút thao tác theo cờ can* ---- */
-function ManagedTable({ rows, busy, act }) {
+function ManagedTable({ rows, busy, act, filtering }) {
+  const sort = useSort();
+  const sorted = sort.apply(rows, {
+    code: (r) => r.name,
+    emp: (r) => r.employeeName,
+    reason: (r) => REASON_LABEL[r.reasonType] || r.reasonType,
+    requested: (r) => r.requestDate,
+    leave: (r) => r.expectedLeaveDate,
+    asset: (r) => r.assetCount || 0,
+    state: (r) => r.stateLabel,
+  });
   return (
     <div className="card">
       <div className="card-head"><h3>Đơn nghỉ việc — chờ xử lý</h3></div>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Mã đơn</th><th>Nhân viên</th><th>Loại lý do</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</th>
-            <th className="tbl-num" style={{ width: '1%', whiteSpace: 'nowrap' }}>Tài sản</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+            <SortTh sort={sort} k="code">Mã đơn</SortTh>
+            <SortTh sort={sort} k="emp">Nhân viên</SortTh>
+            <SortTh sort={sort} k="reason">Loại lý do</SortTh>
+            <SortTh sort={sort} k="requested" style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</SortTh>
+            <SortTh sort={sort} k="leave" style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</SortTh>
+            <SortTh sort={sort} k="asset" className="tbl-num" style={{ width: '1%', whiteSpace: 'nowrap' }}>Tài sản</SortTh>
+            <SortTh sort={sort} k="state" style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</SortTh>
             <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => <ManagedRow key={r.id} r={r} busy={busy} act={act} />)}
+            {sorted.map((r) => <ManagedRow key={r.id} r={r} busy={busy} act={act} />)}
           </tbody>
         </table>
       </div>
       {rows.length === 0 && (
-        <EmptyState>Không có đơn nghỉ việc nào trong phạm vi của bạn.</EmptyState>
+        <EmptyState>
+          {filtering ? 'Không có đơn nào khớp bộ lọc hiện tại.'
+            : 'Không có đơn nghỉ việc nào trong phạm vi của bạn.'}
+        </EmptyState>
       )}
     </div>
   );
@@ -151,21 +219,30 @@ function ManagedRow({ r, busy, act }) {
 }
 
 /* ---- Bảng nhân viên: đơn của tôi ---- */
-function MineTable({ rows, busy, act, onOpen }) {
+function MineTable({ rows, busy, act, onOpen, filtering }) {
+  const sort = useSort();
+  const sorted = sort.apply(rows, {
+    code: (r) => r.name,
+    reason: (r) => REASON_LABEL[r.reasonType] || r.reasonType,
+    requested: (r) => r.requestDate,
+    leave: (r) => r.expectedLeaveDate,
+    state: (r) => r.stateLabel,
+  });
   return (
     <div className="card">
       <div className="card-head"><h3>Đơn nghỉ việc của tôi</h3></div>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Mã đơn</th><th>Loại lý do</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+            <SortTh sort={sort} k="code">Mã đơn</SortTh>
+            <SortTh sort={sort} k="reason">Loại lý do</SortTh>
+            <SortTh sort={sort} k="requested" style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</SortTh>
+            <SortTh sort={sort} k="leave" style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</SortTh>
+            <SortTh sort={sort} k="state" style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</SortTh>
             <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {sorted.map((r) => (
               <tr key={r.id} onClick={() => onOpen(r)} style={{ cursor: 'pointer' }}>
                 <td className="mono" style={{ fontWeight: 600 }}>{r.name}</td>
                 <td>{REASON_LABEL[r.reasonType] || r.reasonType}</td>
@@ -189,7 +266,12 @@ function MineTable({ rows, busy, act, onOpen }) {
           </tbody>
         </table>
       </div>
-      {rows.length === 0 && <EmptyState>Chưa có đơn nghỉ việc nào.</EmptyState>}
+      {rows.length === 0 && (
+        <EmptyState>
+          {filtering ? 'Không có đơn nào khớp bộ lọc hiện tại.'
+            : 'Chưa có đơn nghỉ việc nào.'}
+        </EmptyState>
+      )}
     </div>
   );
 }

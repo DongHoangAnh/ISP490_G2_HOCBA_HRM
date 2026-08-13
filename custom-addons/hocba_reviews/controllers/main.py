@@ -312,7 +312,11 @@ class HocBaReviews(http.Controller):
                 'done': len(done),
                 'pending': len(rows) - len(done),
                 'avgScore': avg,
+                # Đủ 4 bậc để SPA vẽ phân bố xếp loại (A/B/C/D), chỉ đếm trên
+                # phiếu ĐÃ chấm — người chưa có phiếu không thuộc bậc nào.
                 'gradeA': len([r for r in done if r['grade'] == 'a']),
+                'gradeB': len([r for r in done if r['grade'] == 'b']),
+                'gradeC': len([r for r in done if r['grade'] == 'c']),
                 'gradeD': len([r for r in done if r['grade'] == 'd']),
             },
         })

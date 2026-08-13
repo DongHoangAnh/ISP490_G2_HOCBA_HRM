@@ -32,6 +32,14 @@ export default function App() {
   const [unauthenticated, setUnauthenticated] = useState(false);
   const [view, setView] = useState(() => localStorage.getItem('hocba_view') || 'dashboard');
   const [search, setSearch] = useState('');
+  // Thu gọn thanh menu trái (chỉ còn icon). Nhớ lựa chọn giữa các lần vào app.
+  const [navCollapsed, setNavCollapsed] = useState(
+    () => localStorage.getItem('hocba_nav_collapsed') === '1'
+  );
+  const toggleNav = () => setNavCollapsed((v) => {
+    localStorage.setItem('hocba_nav_collapsed', v ? '0' : '1');
+    return !v;
+  });
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
   const [focus, setFocus] = useState(null);
   // NV cần mở trên trang Lộ trình sự nghiệp (0 = chính mình). Đặt khi bấm
@@ -128,10 +136,11 @@ export default function App() {
 
   const canManage = me.canManage;
   return (
-    <div className="app">
-      <Sidebar view={view} setView={setView} me={me} badges={navBadges} />
+    <div className={'app' + (navCollapsed ? ' nav-collapsed' : '')}>
+      <Sidebar view={view} setView={setView} me={me} badges={navBadges} collapsed={navCollapsed} />
       <div className="main">
-        <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
+        <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification}
+          navCollapsed={navCollapsed} onToggleNav={toggleNav} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
         {view === 'employees' && canManage && <Employees search={search} focus={focus} onOpenCareer={openCareer} />}
         {view === 'career' && (
