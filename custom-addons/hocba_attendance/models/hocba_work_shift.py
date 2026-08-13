@@ -41,6 +41,8 @@ class WorkShift(models.Model):
     department_id = fields.Many2one(
         'hr.department', string='Phòng ban',
         related='employee_id.department_id', store=True, readonly=True)
+    attendance_id = fields.One2many(
+        'hocba.shift.attendance', 'shift_id', string='Bản ghi chấm công')
 
     _OT_RATE = {'100': 1.0, '150': 1.5, '300': 3.0}
 
@@ -80,5 +82,79 @@ class WorkShift(models.Model):
             if rec.start and rec.end and rec.end <= rec.start:
                 raise ValidationError('Giờ kết thúc phải sau giờ bắt đầu.')
 
-    # NOTE: Ràng buộc chống trùng giờ đã được gỡ theo yêu cầu nghiệp vụ — cho
-    # phép mỗi ngày nhiều người & một người nhiều ca OT, kể cả khi giờ chồng nhau.
+    @api.model_create_multi
+    def create(self, vals_list):
+        recs = super().create(vals_list)
+        for rec in recs:
+            if rec.state == 'pending':
+                rec._notify_managers()
+        return recs
+
+    def write(self, vals):
+        old_states = {r.id: r.state for r in self}
+        res = super().write(vals)
+        if 'state' in vals:
+            for rec in self:
+                if old_states[rec.id] == 'pending' and vals['state'] != 'pending':
+                    rec._notify_employee_decision()
+        return res
+
+    def _notify_managers(self):
+        """Thông báo cho quản lý trực tiếp + trưởng phòng + HR khi có ca mới."""
+        self.ensure_one()
+        if 'hb.notification' not in self.env:
+            return
+
+        recipients = self.env['res.users']
+        if self.employee_id.parent_id.user_id:
+            recipients |= self.employee_id.parent_id.user_id
+        if self.employee_id.department_id.manager_id.user_id:
+            recipients |= self.employee_id.department_id.manager_id.user_id
+
+        hr_mgr_grp = self.env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if hr_mgr_grp:
+            recipients |= self.env['res.users'].sudo().search([
+                ('all_group_ids', 'in', hr_mgr_grp.id), ('active', '=', True)])
+
+        recipients -= self.env.user
+
+        type_lbl = 'CTV' if self.shift_type == 'ctv' else 'OT'
+        title = 'Đăng ký ca %s mới: %s' % (type_lbl, self.employee_id.name)
+
+        emp_tz = self.employee_id.user_id.tz or 'UTC'
+        local_start = fields.Datetime.context_timestamp(self.with_context(tz=emp_tz), self.start)
+        local_end = fields.Datetime.context_timestamp(self.with_context(tz=emp_tz), self.end)
+
+        body = '%s đăng ký ca %s ngày %s (%s–%s). Lý do: "%s"' % (
+            self.employee_id.name, type_lbl, local_start.strftime('%d/%m/%Y'),
+            local_start.strftime('%H:%M'), local_end.strftime('%H:%M'),
+            self.reason or '')
+
+        self.env['hb.notification'].sudo()._notify(
+            recipients, category='attendance', kind='shift_pending', level='warning',
+            title=title, body=body, target_view='attendance', target_tab='ot',
+            target_ref=self.id)
+
+    def _notify_employee_decision(self):
+        """Thông báo cho nhân viên khi ca được duyệt/từ chối."""
+        self.ensure_one()
+        if 'hb.notification' not in self.env or not self.employee_id.user_id:
+            return
+
+        type_lbl = 'CTV' if self.shift_type == 'ctv' else 'OT'
+        state_lbl = 'được DUYỆT' if self.state == 'approved' else 'bị TỪ CHỐI'
+        level = 'success' if self.state == 'approved' else 'danger'
+
+        emp_tz = self.employee_id.user_id.tz or 'UTC'
+        local_start = fields.Datetime.context_timestamp(self.with_context(tz=emp_tz), self.start)
+
+        title = 'Ca %s ngày %s đã %s' % (
+            type_lbl, local_start.strftime('%d/%m/%Y'), state_lbl)
+        body = 'Người duyệt: %s. %s' % (
+            self.reviewer_id.name or 'Hệ thống',
+            ('Ghi chú: "%s"' % self.review_note) if self.review_note else '')
+
+        self.env['hb.notification'].sudo()._notify(
+            self.employee_id.user_id, category='attendance', kind='shift_decision',
+            level=level, title=title, body=body, target_view='attendance',
+            target_tab='ot', target_ref=self.id)

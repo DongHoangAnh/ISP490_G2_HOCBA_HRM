@@ -4,6 +4,7 @@ import { fetchRoles } from '../api/employees';
 import { fetchPendingCount } from '../api/timeoff';
 import { fetchOnbPendingCount } from '../api/onboarding';
 import { fetchOffbPendingCount } from '../api/offboarding';
+import { fetchAttendancePendingCount } from '../api/attendance';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
@@ -54,12 +55,16 @@ export default function App() {
   const [navBadges, setNavBadges] = useState({});
   const setBadge = (key) => (n) => setNavBadges((b) => ({ ...b, [key]: n }));
   const setTimeoffBadge = setBadge('timeoff');
+  const setAttendanceBadge = setBadge('attendance');
+
   // Sau mỗi thao tác, hỏi lại server thay vì tự trừ ở client: phạm vi đếm là
   // quyền duyệt phía server, đoán ở FE sẽ lệch với số nút bấm được.
   const reloadOnbBadge = () => fetchOnbPendingCount()
     .then((d) => setBadge('onboarding')(d.count || 0)).catch(() => {});
   const reloadOffbBadge = () => fetchOffbPendingCount()
     .then((d) => setBadge('offboarding')(d.count || 0)).catch(() => {});
+  const reloadAttendanceBadge = () => fetchAttendancePendingCount()
+    .then((d) => setAttendanceBadge(d.count || 0)).catch(() => {});
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -69,12 +74,13 @@ export default function App() {
     const view = n.targetView || 'timeoff';
     if (!allowedViews(me).has(view)) return;
     setView(view);
-    // timeoff + service + recruitment + employees đều cần focus để mở đúng
-    // đơn/ứng viên/hồ sơ. targetTab: service chọn tab người gửi / người xử lý;
+    // timeoff + service + recruitment + employees + attendance đều cần focus để mở đúng
+    // đơn/ứng viên/hồ sơ/tab. targetTab: service chọn tab người gửi / người xử lý;
     // recruitment chọn tab 'cv' rồi mở drawer ứng viên quá hạn; employees mở
-    // drawer hồ sơ (vd nhắc "cần hoàn thiện hồ sơ" sau khi Onboard).
+    // drawer hồ sơ (vd nhắc "cần hoàn thiện hồ sơ" sau khi Onboard);
+    // attendance chọn tab 'requests' hoặc 'ot'.
     if (view === 'timeoff' || view === 'service' || view === 'recruitment'
-        || view === 'employees') {
+        || view === 'employees' || view === 'attendance') {
       setFocus({
         requestId: n.targetRef, kind: n.kind,
         targetTab: n.targetTab, nonce: Date.now(),
@@ -109,6 +115,7 @@ export default function App() {
       .catch(() => {});
     reloadOnbBadge();
     reloadOffbBadge();
+    reloadAttendanceBadge();
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -150,7 +157,7 @@ export default function App() {
         {view === 'onboarding' && canManage && (
           <Onboarding search={search} onQueueChanged={reloadOnbBadge} />
         )}
-        {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
+        {view === 'attendance' && <Attendance search={search} onNavigate={setView} onPendingCount={setAttendanceBadge} focus={focus} />}
         {view === 'timeoff' && (
           <TimeOff search={search} focus={focus} onPendingCount={setTimeoffBadge} />
         )}

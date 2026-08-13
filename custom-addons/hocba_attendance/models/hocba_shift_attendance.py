@@ -28,6 +28,7 @@ class ShiftAttendance(models.Model):
     face_suspect = fields.Boolean(string='Nghi ngờ khuôn mặt')
     out_of_zone = fields.Boolean(string='Ngoài vùng')
     out_of_window = fields.Boolean(string='Ngoài cửa sổ ca')
+    notes = fields.Text(string='Ghi chú giải trình')
     worked_hours = fields.Float(
         string='Số giờ chấm', compute='_compute_worked_hours', store=True,
         help='check_out - check_in (giờ); 0 nếu thiếu mốc.')
@@ -46,8 +47,9 @@ class ShiftAttendance(models.Model):
                 rec.worked_hours = 0.0
 
     @api.model
-    def _assert_allowed(self, shift, kind):
-        """Validate chấm công 1 ca. Raise UserError mã lỗi để controller map HTTP."""
+    def _assert_allowed(self, shift, kind, has_note=False):
+        """Validate chấm công 1 ca. Raise UserError mã lỗi để controller map HTTP.
+        Nếu has_note=True, cho phép đi tiếp để cập nhật ghi chú giải trình."""
         if not shift or not shift.exists():
             raise UserError('no_shift')
         if shift.state != 'approved':
@@ -60,12 +62,12 @@ class ShiftAttendance(models.Model):
             raise UserError('outside_shift_window')
         rec = self.sudo().search([('shift_id', '=', shift.id)], limit=1)
         if kind == 'in':
-            if rec and rec.check_in:
+            if rec and rec.check_in and not has_note:
                 raise UserError('already_checked_in')
         else:
             if not rec or not rec.check_in:
                 raise UserError('not_checked_in')
-            if rec.check_out:
+            if rec.check_out and not has_note:
                 raise UserError('already_checked_out')
 
     @api.model
@@ -93,6 +95,17 @@ class ShiftAttendance(models.Model):
                     'check_out_lat': lat, 'check_out_lng': lng}
             if fg['face_score'] is not None:
                 vals['check_out_face_score'] = fg['face_score']
+
+        note = payload.get('note')
+        if note:
+            existing_notes = rec.notes or ""
+            new_note = "[%s] %s: %s" % (
+                fields.Datetime.context_timestamp(self, now).strftime('%H:%M'),
+                'Vào' if kind == 'in' else 'Ra',
+                note
+            )
+            vals['notes'] = (existing_notes + "\n" + new_note) if existing_notes else new_note
+
         vals.update({'face_suspect': fg['face_suspect'],
                      'out_of_zone': fg['out_of_zone'], 'out_of_window': out_of_window})
         if rec:

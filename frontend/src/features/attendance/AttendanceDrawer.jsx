@@ -43,7 +43,13 @@ export default function AttendanceDrawer({ rec, onClose, canManage, onChanged })
   }
 
   const [stLabel, stKind] = attStatus(rec.statusKey);
-  const img = (field) => `/web/image/hocba.attendance/${rec.id}/${field}`;
+  const img = (field) => {
+    const isShift = rec.rowType === 'ot' || rec.rowType === 'ctv';
+    const model = isShift ? 'hocba.shift.attendance' : 'hocba.attendance';
+    const id = isShift ? rec.attId : rec.id;
+    const photoField = isShift ? (field === 'check_in_photo' ? 'check_in_photo' : 'check_out_photo') : field;
+    return `/web/image/${model}/${id}/${photoField}`;
+  };
   return (
     <Modal onClose={onClose} lg>
       <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
@@ -76,6 +82,15 @@ export default function AttendanceDrawer({ rec, onClose, canManage, onChanged })
             {!rec.faceSuspect && !rec.outOfZone && !rec.outOfWindow && <span className="faint">Không có</span>}
           </div></div>
         </div>
+
+        {rec.notes && (
+          <div style={{ marginTop: 20, padding: 12, background: 'var(--amber-bg)', borderRadius: 10, border: '1px solid var(--amber)' }}>
+            <div className="kv">
+              <div className="k" style={{ color: 'var(--amber-700,#b45309)', fontSize: 11 }}>Lý do / Ghi chú giải trình</div>
+              <div className="v" style={{ whiteSpace: 'pre-wrap', marginTop: 4, fontSize: 13.5 }}>{rec.notes}</div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 16, marginTop: 20, flexWrap: 'wrap' }}>
           {rec.hasImg && (
