@@ -10,6 +10,36 @@ import { fetchRequests } from '../../api/recruitment';
 import { REQUEST_STATE_KIND } from './util';
 import RequestDrawer from './RequestDrawer';
 import RequestForm from './RequestForm';
+import GuideNote from './GuideNote';
+
+/* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx.
+   Các bước bám đúng ACTIONS_BY_STATE trong RequestDrawer.jsx và state của
+   hb.recruitment.request; đổi luồng duyệt thì sửa cả đây. */
+const REQ_STEPS = [
+  ['Tạo phiếu',
+   <>Bấm <b>Thêm phiếu</b>, chọn phòng ban rồi chọn <b>JD từ kho</b> — tên vị trí
+     và link JD tự điền. Điền số lượng, lý do tuyển và <b>Ngày cần onboard</b>
+     (đây chính là deadline ở tab Theo dõi tuyển dụng).</>],
+  ['Gửi duyệt',
+   <>Phiếu mới ở trạng thái <b>Nháp</b>. Bấm <b>Gửi duyệt</b> để chuyển sang
+     <b> Chờ BP duyệt</b> — người duyệt sẽ nhận thông báo ở chuông.</>],
+  ['Duyệt hoặc từ chối',
+   <>HR / bộ phận tuyển dụng bấm <b>Duyệt</b> (phiếu sang <b>Đang tuyển</b> và cộng
+     chỉ tiêu vào vị trí) hoặc <b>Từ chối</b> kèm lý do. Người order chỉ gửi duyệt
+     hoặc đưa phiếu <b>về nháp</b>.</>],
+  ['Bắt đầu nhận CV',
+   <>Phiếu <b>Đang tuyển</b> mới lên tab <b>Theo dõi tuyển dụng</b> và mới nhận CV
+     — CV nộp vào vị trí sẽ tự gắn vào phiếu đang mở của vị trí đó.</>],
+  ['Đóng hoặc mở lại',
+   <>Tuyển đủ chỉ tiêu thì hệ thống <b>tự đóng phiếu</b>; cần đóng sớm thì bấm
+     <b> Đóng phiếu</b>. Phiếu <b>Đã đóng</b> / <b>Từ chối</b> vẫn mở lại được bằng
+     <b> Mở lại (về nháp)</b>.</>],
+];
+
+const REQ_GUIDE_NOTE = (
+  <>Mã phiếu do hệ thống tự sinh. Hàng chip ở đầu bảng lọc theo trạng thái và đếm
+    trên dữ liệu thật — bấm <b>Chờ BP duyệt</b> là ra ngay việc cần xử lý.</>
+);
 
 export default function Requests({ search, focus }) {
   const [data, setData] = useState(null);
@@ -102,6 +132,9 @@ export default function Requests({ search, focus }) {
         {filtered.length === 0 && <EmptyState>Không có phiếu yêu cầu phù hợp.</EmptyState>}
         <Pagination {...pg} />
       </div>
+
+      <GuideNote title="Các bước cần làm ở màn này"
+        steps={REQ_STEPS} note={REQ_GUIDE_NOTE} />
 
       {sel && (
         <RequestDrawer req={sel} meta={meta} isRecruiter={isRecruiter} canApprove={canApprove}
