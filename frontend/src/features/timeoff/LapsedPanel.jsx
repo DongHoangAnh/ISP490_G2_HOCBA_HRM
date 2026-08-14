@@ -1,7 +1,8 @@
 /* Tab "Kiểm duyệt phát sinh" (Phase 12) — đơn QUÁ HẠN duyệt (qua ngày bắt đầu
    nghỉ mà vẫn chờ duyệt) + đối chiếu chấm công + KPI. Payload vẫn dùng tên
    lapsed* của spec gốc; nhãn hiển thị thống nhất là "quá hạn".
-   Chỉ officer (HR/Admin mọi phòng, Trưởng phòng phòng mình).
+   Chỉ officer (HR Manager/Admin mọi phòng, Trưởng phòng phòng mình, HR User
+   chỉ xem — canApprove=false thì không có nút xử lý theo đề xuất).
    Spec: docs/superpowers/specs/2026-07-03-timeoff-lapsed-approvals-design.md
    Owner: Nhật Anh. */
 import { useState } from 'react';
@@ -24,6 +25,9 @@ export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
 
   const k = data.kpi;
   const maxDept = Math.max(...data.byDepartment.map((r) => r.count), 1);
+  // HR User mở được tab này nhưng chỉ XEM (canApprove=false) → bỏ nút xử lý
+  // nhanh theo đề xuất, chỉ còn đường dẫn sang tab Chờ duyệt để tra cứu.
+  const canApprove = !!data.canApprove;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -95,13 +99,13 @@ export default function LapsedPanel({ dept, onDeptChange, onOpenApproval }) {
                     {!r.suggestion && <Badge kind="gray">Xem tay</Badge>}
                   </td>
                   <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
-                    {r.suggestion ? (
+                    {canApprove && r.suggestion ? (
                       <button className="btn btn-primary btn-sm"
                         onClick={() => setConfirming(r)}>Xử lý theo đề xuất</button>
                     ) : (
                       <button className="btn btn-ghost btn-sm"
                         onClick={() => onOpenApproval && onOpenApproval(r.requestId)}>
-                        Xử lý ở tab Chờ duyệt →
+                        {canApprove ? 'Xử lý ở tab Chờ duyệt →' : 'Xem ở tab Chờ duyệt →'}
                       </button>
                     )}
                   </td>

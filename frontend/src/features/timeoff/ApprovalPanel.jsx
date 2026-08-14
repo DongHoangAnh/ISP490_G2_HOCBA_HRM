@@ -54,6 +54,10 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <TableSkeleton />;
 
+  // HR User mở được tab này nhưng chỉ XEM: backend trả canApprove=false →
+  // nút đổi thành "Xem" và modal ẩn toàn bộ nút quyết định.
+  const canApprove = !!data.canApprove;
+
   // Lọc phòng ban chỉ áp dụng khi role HR đang sắp xếp theo phòng ban + đã chọn 1 phòng.
   const deptFilterOn = data.seeAll && sort.key === 'department' && dept;
   const filtered = deptFilterOn
@@ -121,11 +125,13 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
                     không bị quy tắc .tbl td (max-width:0; overflow:hidden) cắt mất nút. */}
                 <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                   {r.withdrawState === 'pending' ? (
-                    <button className="btn btn-primary btn-sm"
-                      onClick={() => setWithdrawDecision(r)}>Xử lý rút</button>
+                    <button className={canApprove ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                      onClick={() => setWithdrawDecision(r)}>
+                      {canApprove ? 'Xử lý rút' : 'Xem'}</button>
                   ) : (
-                    <button className="btn btn-primary btn-sm"
-                      onClick={() => setDecision(r)}>Xử lý</button>
+                    <button className={canApprove ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                      onClick={() => setDecision(r)}>
+                      {canApprove ? 'Xử lý' : 'Xem'}</button>
                   )}
                 </td>
               </tr>
@@ -136,7 +142,7 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
       {data.requests.length === 0 && <EmptyState>Không có đơn nào chờ duyệt.</EmptyState>}
 
       {decision && (
-        <DecisionModal req={decision} isHrManager={isHrManager}
+        <DecisionModal req={decision} isHrManager={isHrManager} canApprove={canApprove}
           onClose={() => setDecision(null)}
           onDone={(payload) => {
             setDecision(null); setData(payload);
@@ -146,7 +152,7 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
       )}
 
       {withdrawDecision && (
-        <WithdrawDecisionModal req={withdrawDecision}
+        <WithdrawDecisionModal req={withdrawDecision} canApprove={canApprove}
           onClose={() => setWithdrawDecision(null)}
           onDone={(payload) => {
             setWithdrawDecision(null); setData(payload);
@@ -159,7 +165,7 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
 
 /* Phase 7 — modal duyệt/từ chối yêu cầu rút đơn. Duyệt rút = đơn về 'refuse'
    và quỹ phép tự hoàn lại; Từ chối rút = đơn giữ 'validate'. */
-function WithdrawDecisionModal({ req, onClose, onDone }) {
+function WithdrawDecisionModal({ req, canApprove, onClose, onDone }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -174,7 +180,8 @@ function WithdrawDecisionModal({ req, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <ModalHeader lg icon="alertCircle" title="Xử lý yêu cầu rút đơn"
+      <ModalHeader lg icon="alertCircle"
+        title={canApprove ? 'Xử lý yêu cầu rút đơn' : 'Yêu cầu rút đơn'}
         sub={`${req.employee} · ${req.leaveType} · ${fmtDate(req.from)} → ${fmtDate(req.to)} (${req.days} ngày)`}
         onClose={onClose} />
 
@@ -186,25 +193,31 @@ function WithdrawDecisionModal({ req, onClose, onDone }) {
           </div>
         )}
 
-        <div className="muted" style={{ fontSize: 12.5 }}>
-          <b>Duyệt rút</b>: đơn chuyển sang <i>Từ chối</i> và quỹ phép được hoàn lại đầy đủ.
-          {' '}<b>Từ chối rút</b>: đơn giữ nguyên <i>Đã duyệt</i>, quỹ phép không đổi.
-        </div>
+        {canApprove ? (
+          <>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              <b>Duyệt rút</b>: đơn chuyển sang <i>Từ chối</i> và quỹ phép được hoàn lại đầy đủ.
+              {' '}<b>Từ chối rút</b>: đơn giữ nguyên <i>Đã duyệt</i>, quỹ phép không đổi.
+            </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
-            Ghi chú (tùy chọn)
-          </span>
-          <textarea rows={2}
-            style={{
-              width: '100%', padding: '9px 12px', borderRadius: 10,
-              border: '1px solid var(--border-strong)', background: '#fff',
-              fontSize: 13.5, color: 'var(--ink)', outline: 'none',
-              fontFamily: 'inherit', resize: 'vertical',
-            }}
-            value={note} onChange={(e) => setNote(e.target.value)}
-            placeholder="Ghi chú cho nhân viên (hiển thị ở lịch sử xử lý)…" />
-        </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+                Ghi chú (tùy chọn)
+              </span>
+              <textarea rows={2}
+                style={{
+                  width: '100%', padding: '9px 12px', borderRadius: 10,
+                  border: '1px solid var(--border-strong)', background: '#fff',
+                  fontSize: 13.5, color: 'var(--ink)', outline: 'none',
+                  fontFamily: 'inherit', resize: 'vertical',
+                }}
+                value={note} onChange={(e) => setNote(e.target.value)}
+                placeholder="Ghi chú cho nhân viên (hiển thị ở lịch sử xử lý)…" />
+            </label>
+          </>
+        ) : (
+          <ViewOnlyNote />
+        )}
 
         {err && (
           <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
@@ -215,19 +228,37 @@ function WithdrawDecisionModal({ req, onClose, onDone }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
         <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Đóng</button>
-        <button className="btn btn-soft" onClick={() => decide(false)} disabled={busy}>
-          <Icon name="x" size={16} />Từ chối rút
-        </button>
-        <button className="btn btn-primary" onClick={() => decide(true)} disabled={busy}>
-          <Icon name="check" size={16} />{busy ? 'Đang xử lý…' : 'Duyệt rút'}
-        </button>
+        {canApprove && (
+          <>
+            <button className="btn btn-soft" onClick={() => decide(false)} disabled={busy}>
+              <Icon name="x" size={16} />Từ chối rút
+            </button>
+            <button className="btn btn-primary" onClick={() => decide(true)} disabled={busy}>
+              <Icon name="check" size={16} />{busy ? 'Đang xử lý…' : 'Duyệt rút'}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );
 }
 
+/* Ghi chú cho vai trò chỉ-xem (HR User): modal mở ra để tra cứu, không có nút
+   quyết định. Backend cũng chặn (canApprove=false → 403), đây chỉ là lớp UI. */
+function ViewOnlyNote() {
+  return (
+    <div className="muted" style={{
+      padding: '10px 13px', background: 'var(--surface-2)',
+      border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5,
+    }}>
+      Bạn có quyền <b>xem</b> đơn này. Việc duyệt / từ chối do HR Manager hoặc
+      trưởng phòng phụ trách thực hiện.
+    </div>
+  );
+}
+
 /* Modal xử lý 1 đơn: duyệt (kèm override chứng từ) hoặc từ chối. */
-function DecisionModal({ req, isHrManager, onClose, onDone }) {
+function DecisionModal({ req, isHrManager, canApprove, onClose, onDone }) {
   const [override, setOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -250,7 +281,7 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
 
   return (
     <Modal onClose={onClose}>
-      <ModalHeader lg icon="checkCircle" title="Xử lý đơn nghỉ"
+      <ModalHeader lg icon="checkCircle" title={canApprove ? 'Xử lý đơn nghỉ' : 'Chi tiết đơn nghỉ'}
         sub={`${req.employee} · ${req.leaveType} · ${fmtDate(req.from)} → ${fmtDate(req.to)} (${req.days} ngày)`}
         onClose={onClose} />
 
@@ -328,6 +359,8 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
           </div>
         )}
 
+        {!canApprove && <ViewOnlyNote />}
+
         {err && (
           <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>
             {err}
@@ -337,7 +370,7 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
         <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Đóng</button>
-        {req.lapsed && req.lapsed.suggestion && (
+        {canApprove && req.lapsed && req.lapsed.suggestion && (
           <button className="btn btn-soft" disabled={busy}
             style={{ marginRight: 'auto', borderColor: 'var(--red-600)', color: 'var(--red-700)' }}
             onClick={() => decide(req.lapsed.suggestion)}>
@@ -345,10 +378,14 @@ function DecisionModal({ req, isHrManager, onClose, onDone }) {
             {req.lapsed.suggestion === 'approve' ? 'Duyệt trễ theo đề xuất' : 'Từ chối theo đề xuất'}
           </button>
         )}
-        <button className="btn btn-soft" onClick={() => decide('refuse')} disabled={busy}>
-          <Icon name="x" size={16} />Từ chối</button>
-        <button className="btn btn-primary" onClick={() => decide('approve')} disabled={busy}>
-          <Icon name="check" size={16} />{busy ? 'Đang xử lý…' : 'Duyệt'}</button>
+        {canApprove && (
+          <>
+            <button className="btn btn-soft" onClick={() => decide('refuse')} disabled={busy}>
+              <Icon name="x" size={16} />Từ chối</button>
+            <button className="btn btn-primary" onClick={() => decide('approve')} disabled={busy}>
+              <Icon name="check" size={16} />{busy ? 'Đang xử lý…' : 'Duyệt'}</button>
+          </>
+        )}
       </div>
     </Modal>
   );

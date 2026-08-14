@@ -50,6 +50,12 @@ class TestTimeoffBalances(TransactionCase):
             'name': 'HR User', 'login': 'to_hr_user',
             'group_ids': [(4, self.env.ref('hr.group_hr_manager').id)]})
 
+        # Nhân viên phòng HR: hr.group_hr_user (KHÔNG phải manager) — xem mọi
+        # phòng ban nhưng không được duyệt đơn.
+        self.hr_view_user = self.env['res.users'].create({
+            'name': 'HR Nhan Vien', 'login': 'to_hr_view_user',
+            'group_ids': [(4, self.env.ref('hr.group_hr_user').id)]})
+
         # --- Loại nghỉ Phép Năm + cấp 12 ngày cho NV Khối A, nghỉ vài ngày ---
         self.annual = self.env.ref('hocba_timeoff.hb_leave_type_annual')
         self._allocate(self.emp_a, 12)
@@ -101,18 +107,41 @@ class TestTimeoffBalances(TransactionCase):
     # ----- scope -----
     def test_scope_normal_user_cannot_approve(self):
         scope = _scope_for(self.env(user=self.normal_user))
-        self.assertFalse(scope['canApprove'])   # → endpoint trả 403
+        self.assertFalse(scope['canReview'])    # → endpoint xem trả 403
+        self.assertFalse(scope['canApprove'])   # → endpoint duyệt trả 403
         self.assertTrue(scope['isEmployee'])
         self.assertFalse(scope['seeAll'])
 
     def test_scope_hr_sees_all(self):
         scope = _scope_for(self.env(user=self.hr_user))
         self.assertTrue(scope['seeAll'])
+        self.assertTrue(scope['canReview'])
         self.assertTrue(scope['canApprove'])
         self.assertTrue(scope['isHrManager'])
 
+    def test_scope_hr_user_can_review_but_not_approve(self):
+        """Nhân viên phòng HR (hr.group_hr_user, không phải manager): xem được
+        mọi phòng ban nhưng KHÔNG được duyệt/từ chối đơn."""
+        scope = _scope_for(self.env(user=self.hr_view_user))
+        self.assertTrue(scope['seeAll'])        # vẫn thấy dữ liệu toàn công ty
+        self.assertTrue(scope['canReview'])     # mở được tab quản lý
+        self.assertFalse(scope['canApprove'])   # nhưng không ra quyết định
+        self.assertFalse(scope['isHrManager'])  # không chỉnh quỹ / override
+        self.assertFalse(scope['isEmployee'])   # là tài khoản vai trò
+
+    def test_hr_user_sees_full_balances_table(self):
+        """Chỉ-xem không đồng nghĩa với bị thu hẹp phạm vi: HR User vẫn đọc
+        được bảng quỹ phép của mọi phòng ban như HR Manager."""
+        scope = _scope_for(self.env(user=self.hr_view_user))
+        env_hr = self.env(user=self.hr_view_user)
+        rows = _balances_table(env_hr, scope, 2026)['rows']
+        names = {r['employee'] for r in rows}
+        self.assertIn(self.emp_a.name, names)
+        self.assertIn(self.emp_b.name, names)   # phòng ban khác vẫn thấy
+
     def test_scope_dept_manager_includes_child_dept(self):
         scope = self._mgr_scope()
+        self.assertTrue(scope['canReview'])
         self.assertTrue(scope['canApprove'])
         self.assertFalse(scope['seeAll'])
         self.assertIn(self.dept_parent.id, scope['deptIds'])

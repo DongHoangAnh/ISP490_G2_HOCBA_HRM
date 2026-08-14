@@ -135,11 +135,11 @@ def _managed_department_ids(env, emp):
 def _scope_for(env):
     """Phân quyền Nghỉ phép (xem docstring chi tiết ở HocBaTimeoff._scope)."""
     user = env.user
-    see_all = (user.has_group('base.group_system')
-               or user.has_group('hr.group_hr_manager')
-               or user.has_group('hr.group_hr_user'))
     is_hr_manager = (user.has_group('base.group_system')
                      or user.has_group('hr.group_hr_manager'))
+    # HR User = nhân viên phòng HR: thấy dữ liệu mọi phòng ban NHƯNG chỉ được
+    # xem, không quyết định đơn (xem canReview vs canApprove bên dưới).
+    see_all = is_hr_manager or user.has_group('hr.group_hr_user')
     is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
     dept_ids = [] if see_all else _managed_department_ids(env, user.employee_id)
     is_role_account = see_all or is_giaovu or bool(dept_ids)
@@ -148,7 +148,12 @@ def _scope_for(env):
         'isDeptManager': bool(dept_ids),
         'isGiaovu': is_giaovu,
         'isEmployee': not is_role_account,
-        'canApprove': see_all or bool(dept_ids),
+        # canReview = mở được các màn quản lý (Chờ duyệt, Kiểm duyệt phát sinh,
+        # Tổng quan, Quỹ phép…) — HR Manager/Admin, HR User, Trưởng phòng.
+        'canReview': see_all or bool(dept_ids),
+        # canApprove = ra QUYẾT ĐỊNH trên đơn (duyệt/từ chối, duyệt rút đơn).
+        # HR User bị loại trừ có chủ đích: chỉ xem, không duyệt.
+        'canApprove': is_hr_manager or bool(dept_ids),
         'seeAll': see_all,
         'deptIds': dept_ids,
     }
@@ -1082,7 +1087,7 @@ def _request_history(env, scope, leave_id):
         return None
     emp = env.user.employee_id
     is_owner = bool(emp) and leave.employee_id.id == emp.id
-    in_scope = scope['canApprove'] and (
+    in_scope = scope['canReview'] and (
         scope['seeAll'] or leave.department_id.id in scope['deptIds'])
     if not (is_owner or in_scope):
         return False
@@ -1110,12 +1115,20 @@ class HocBaTimeoff(http.Controller):
         """Phân quyền Nghỉ phép — đồng bộ cách phân vai trò của SPA hocba_hrm.
 
         Hệ thống role mới KHÔNG gán group hr_holidays cho ai; quyền lấy từ:
-        - Admin/HR : base.group_system / hr.group_hr_manager / hr.group_hr_user
-                     → mọi phòng ban (HR Manager/Admin còn được override chứng từ).
+        - Admin/HR Manager : base.group_system / hr.group_hr_manager
+                     → mọi phòng ban, XEM và DUYỆT, còn được override chứng từ.
+        - HR User  : hr.group_hr_user → mọi phòng ban nhưng CHỈ XEM. Mở được
+                     mọi màn quản lý (Chờ duyệt, Kiểm duyệt phát sinh, Tổng
+                     quan, Quỹ phép…) mà không ra quyết định trên đơn.
         - Quản lý  : trưởng phòng ban qua hr.department.manager_id (gồm phòng con)
-                     → chỉ phòng ban mình quản lý. Khớp _is_dept_manager của
-                     hocba_hrm nên chắc chắn qua được cổng canManage của SPA.
+                     → chỉ phòng ban mình quản lý, XEM và DUYỆT. Khớp
+                     _is_dept_manager của hocba_hrm nên chắc chắn qua được
+                     cổng canManage của SPA.
         - Nhân viên: còn lại → chỉ dữ liệu cá nhân.
+
+        Hai cổng tách bạch: canReview (mở màn quản lý / đọc dữ liệu phạm vi)
+        và canApprove (duyệt/từ chối đơn, duyệt yêu cầu rút). HR User có
+        canReview=True, canApprove=False.
 
         "Tài khoản nhân viên" (isEmployee) = KHÔNG thuộc bất kỳ vai trò quản lý
         nào (Admin/HR Manager/HR User/Giáo vụ/Trưởng phòng) — khớp đúng
@@ -1136,8 +1149,11 @@ class HocBaTimeoff(http.Controller):
     def _scope_flags(self, scope):
         """Cờ trả cho SPA. isOfficer/isManager giữ tên cũ để tương thích frontend."""
         return {
-            'isOfficer': scope['canApprove'],     # tab Chờ duyệt/Tổng hợp, lịch cả đội
-            'isManager': scope['canApprove'],     # dashboard chế độ quản lý
+            'isOfficer': scope['canReview'],     # tab Chờ duyệt/Tổng hợp, lịch cả đội
+            'isManager': scope['canReview'],     # dashboard chế độ quản lý
+            # canApprove: hiện/ẩn nút Xử lý·Duyệt·Từ chối. HR User mở được các
+            # tab quản lý (isOfficer=True) nhưng cờ này False → chỉ xem.
+            'canApprove': scope['canApprove'],
             'isHrManager': scope['isHrManager'],  # override chứng từ y tế (BR-011)
             'isEmployee': scope['isEmployee'],    # chỉ NV thường mới tạo được đơn
             'seeAll': scope['seeAll'],            # HR/Admin: lọc được mọi phòng ban
@@ -1362,7 +1378,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_approvals(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
         # FE phân biệt đơn mới / yêu cầu rút bằng withdrawState + Badge riêng.
@@ -1381,17 +1397,19 @@ class HocBaTimeoff(http.Controller):
     # ------------------------------------------------------------------
     # 3.2a. GET /pending-count — badge "Nghỉ phép" ở thanh menu (sidebar).
     # Chỉ đếm (search_count), KHÔNG dựng payload đơn như /approvals: gọi ở
-    # mọi màn nên phải rẻ. Không có quyền duyệt → 200 + count 0 (badge ẩn),
-    # để SPA khỏi phải bắt 403 cho một chi tiết trang trí.
+    # mọi màn nên phải rẻ. Không mở được tab Chờ duyệt → 200 + count 0 (badge
+    # ẩn), để SPA khỏi phải bắt 403 cho một chi tiết trang trí. Gate theo
+    # canReview (không phải canApprove): HR User chỉ xem vẫn thấy badge khớp
+    # với danh sách trong tab.
     # ------------------------------------------------------------------
     @http.route('/hocba-hrm/api/timeoff/pending-count', auth='user',
                 type='http', methods=['GET'])
     def api_pending_count(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
-            return request.make_json_response({'canApprove': False, 'count': 0})
+        if not scope['canReview']:
+            return request.make_json_response({'canReview': False, 'count': 0})
         return request.make_json_response({
-            'canApprove': True,
+            'canReview': True,
             # Cùng _approvals_domain với tab "Đơn chờ duyệt" → 2 badge không lệch.
             'count': request.env['hr.leave'].sudo().search_count(
                 self._approvals_domain(scope)),
@@ -1887,7 +1905,7 @@ class HocBaTimeoff(http.Controller):
             year = int(kw.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
-        if scope['canApprove']:
+        if scope['canReview']:
             data = self._dashboard_manager(year, kw.get('dept'), scope)
         else:
             data = self._dashboard_employee(year)
@@ -1902,7 +1920,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_lapsed_dashboard(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             dept_id = int(kw.get('dept')) if kw.get('dept') else False
@@ -1927,7 +1945,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_burnout(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             dept_id = int(kw.get('dept')) if kw.get('dept') else False
@@ -2142,7 +2160,7 @@ class HocBaTimeoff(http.Controller):
         overlap = [('date_from', '<=', end), ('date_to', '>=', start)]
         Leave = request.env['hr.leave'].sudo()
         dept_filter = False
-        if not scope['canApprove']:
+        if not scope['canReview']:
             emp = request.env.user.employee_id
             domain = ([('employee_id', '=', emp.id)] + overlap) if emp else [('id', '=', 0)]
         else:
@@ -2593,7 +2611,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_approved(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             year = int(kw.get('year') or self._this_year())
@@ -2663,7 +2681,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_balances(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             year = int(kw.get('year') or self._this_year())
@@ -2753,7 +2771,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_balance_history(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             employee_id = int(kw.get('employeeId')) if kw.get('employeeId') else False
@@ -2777,7 +2795,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_coverage(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         year = self._this_year()
         date_from = (kw.get('from') or '').strip() or '%d-01-01' % year
@@ -2816,7 +2834,7 @@ class HocBaTimeoff(http.Controller):
         emp = request.env.user.employee_id
         is_owner = bool(emp) and leave.employee_id.id == emp.id
         in_scope = scope['seeAll'] or (
-            scope['canApprove'] and leave.department_id.id in scope['deptIds'])
+            scope['canReview'] and leave.department_id.id in scope['deptIds'])
         if not (is_owner or in_scope):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
