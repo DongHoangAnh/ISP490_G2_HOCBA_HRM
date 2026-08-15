@@ -123,6 +123,7 @@ export function Sidebar({ view, setView, me, badges }) {
   // trò quản lý — HR/Admin/Giáo vụ — không thấy màn hồ sơ cá nhân.
   const [pwOpen, setPwOpen] = useState(false);
   return (
+    <>
     <aside className="sidebar">
       <div className="brand">
         <div className="brand-mark">HB</div>
@@ -173,8 +174,13 @@ export function Sidebar({ view, setView, me, badges }) {
           </button>
         </div>
       </div>
-      {pwOpen && <ChangePasswordForm onClose={() => setPwOpen(false)} />}
     </aside>
+    {/* Modal PHẢI nằm ngoài <aside>: sidebar là position:sticky nên tạo
+        stacking context riêng — để bên trong thì z-index:100 của .overlay chỉ
+        có tác dụng trong phạm vi sidebar, và topbar (z:30) cùng nội dung trang
+        vẫn đè lên modal. */}
+    {pwOpen && <ChangePasswordForm onClose={() => setPwOpen(false)} />}
+    </>
   );
 }
 
