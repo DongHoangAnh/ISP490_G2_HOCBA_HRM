@@ -12,6 +12,8 @@ export default function CheckInPanel({ me, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null); // {kind:'ok'|'warn'|'err', text}
   const [enrolled, setEnrolled] = useState(me.enrolled);
+  const [pendingCheck, setPendingCheck] = useState(null); // {kind, cap, flags}
+  const [note, setNote] = useState('');
 
   const p = me.policy;
   const t = me.today;
@@ -30,35 +32,52 @@ export default function CheckInPanel({ me, onChanged }) {
     } finally { setBusy(false); }
   }
 
-  async function doCheck(kind) {
+  async function doCheck(kind, finalNote = null) {
     setBusy(true); setMsg(null);
     try {
-      const cap = await capture();
+      const cap = pendingCheck?.cap || await capture();
       if (!cap) { setMsg({ kind: 'err', text: 'Camera chưa sẵn sàng.' }); return; }
       if (cap.error === 'no_face') { setMsg({ kind: 'warn', text: 'Không phát hiện khuôn mặt. Thử lại.' }); return; }
-      const res = await (kind === 'in' ? checkIn(cap) : checkOut(cap));
+
+      const res = await (kind === 'in' ? checkIn({ ...cap, note: finalNote }) : checkOut({ ...cap, note: finalNote }));
       const flags = [];
       if (res.faceSuspect) flags.push('khuôn mặt nghi ngờ');
       if (res.outOfZone) flags.push('ngoài vùng văn phòng');
       if (res.outOfWindow && me.isOfficial) flags.push('ngoài khung giờ');
+
+      if (flags.length > 0 && !finalNote) {
+        setPendingCheck({ kind, cap, flags });
+        setMsg({ kind: 'warn', text: 'Phát hiện vấn đề: ' + flags.join(', ') + '. Vui lòng nhập lý do giải thích bên dưới.' });
+        setBusy(false);
+        return;
+      }
+
       setMsg({
         kind: flags.length ? 'warn' : 'ok',
         text: (kind === 'in' ? 'Đã check-in' : 'Đã check-out')
           + (flags.length ? ' ⚠ ' + flags.join(', ') : ' thành công'),
       });
+      setPendingCheck(null);
+      setNote('');
       onChanged && onChanged();
     } catch (e) {
       const M = {
         manager_no_checkin: 'Tài khoản quản lý không điểm danh.',
         not_workday: 'Hôm nay không phải ngày làm việc.',
         already_checked_in: 'Bạn đã check-in hôm nay rồi.',
-        not_checked_in: 'Bạn chưa check-in nên không thể check-out.',
         already_checked_out: 'Bạn đã check-out hôm nay rồi.',
+        not_checked_in: 'Bạn chưa check-in nên không thể check-out.',
         no_shift_today: 'Chưa có ca được duyệt hôm nay.',
         outside_shift_window: 'Ngoài cửa sổ check-in của ca (±15 phút).',
         on_approved_leave: 'Bạn đang trong kỳ nghỉ phép đã duyệt — không thể chấm công hôm nay.',
       };
       setMsg({ kind: 'err', text: M[e.code] || ('Điểm danh thất bại (' + e.message + ').') });
+      if (pendingCheck && (e.code === 'already_checked_in' || e.code === 'already_checked_out')) {
+        // Fallback: If it failed due to already checked but we had a note,
+        // it might be out of sync. Refresh anyway.
+        setPendingCheck(null); setNote('');
+        onChanged && onChanged();
+      }
     } finally { setBusy(false); }
   }
 
@@ -94,7 +113,20 @@ export default function CheckInPanel({ me, onChanged }) {
 
         <div className="divider" style={{ margin: '14px 0' }}></div>
 
-        {!me.isOfficial ? (
+        {pendingCheck ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ padding: 10, background: 'var(--amber-bg)', borderRadius: 8, fontSize: 13, border: '1px solid var(--amber)' }}>
+              <b>Xác nhận chấm công:</b> {pendingCheck.flags.join(', ')}
+            </div>
+            <textarea className="sel" placeholder="Nhập lý do giải thích (VD: Quên máy, đi gặp khách...)"
+              value={note} onChange={e => setNote(e.target.value)} rows={3} autoFocus />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-primary btn-sm" disabled={busy || !note.trim()}
+                onClick={() => doCheck(pendingCheck.kind, note)}>Gửi &amp; Xác nhận</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setPendingCheck(null); setNote(''); setMsg(null); }}>Hủy</button>
+            </div>
+          </div>
+        ) : !me.isOfficial ? (
           <div className="empty">Bạn chấm công theo ca ở tab "Chấm công".</div>
         ) : !enrolled ? (
           <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
@@ -102,6 +134,19 @@ export default function CheckInPanel({ me, onChanged }) {
           </button>
         ) : !me.isWorkdayToday ? (
           <div className="empty">Hôm nay không phải ngày làm việc — không điểm danh.</div>
+        ) : pendingCheck ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ padding: 10, background: 'var(--amber-bg)', borderRadius: 8, fontSize: 13, border: '1px solid var(--amber)' }}>
+              <b>Xác nhận chấm công:</b> {pendingCheck.flags.join(', ')}
+            </div>
+            <textarea className="sel" placeholder="Nhập lý do giải thích (VD: Quên máy, đi gặp khách...)"
+              value={note} onChange={e => setNote(e.target.value)} rows={3} autoFocus />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-primary btn-sm" disabled={busy || !note.trim()}
+                onClick={() => doCheck(pendingCheck.kind, note)}>Gửi &amp; Xác nhận</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setPendingCheck(null); setNote(''); setMsg(null); }}>Hủy</button>
+            </div>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {t && t.checkIn ? (

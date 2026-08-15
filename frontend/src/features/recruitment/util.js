@@ -14,7 +14,9 @@ export const REQUEST_STATE_KIND = {
 
 /* Tham gia PV (đã đến / không đến) + kết quả phỏng vấn */
 export const ATTENDANCE_KIND = { present: 'green', absent: 'red' };
-export const INTERVIEW_RESULT_KIND = { pass: 'green', fail: 'red', potential: 'amber' };
+/* Tiềm năng đi chung màu đỏ với Fail: cả hai đều là "không nhận lần này",
+   khác nhau ở chỗ Tiềm năng còn giữ hồ sơ cho đợt sau. */
+export const INTERVIEW_RESULT_KIND = { pass: 'green', fail: 'red', potential: 'red' };
 
 /* Link tuyển dụng công khai: BE trả đường dẫn tương đối (/jobs/detail/...) →
    ghép origin hiện tại thành URL tuyệt đối để copy đi truyền thông. */

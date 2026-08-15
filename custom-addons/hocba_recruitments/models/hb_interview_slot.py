@@ -7,18 +7,27 @@ from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
-# Khung giờ 09:00–17:00, mỗi 30 phút — giá trị là string float để Selection lưu được
-_HOUR_SLOTS = [
-    ('9.0',  '09:00'), ('9.5',  '09:30'),
-    ('10.0', '10:00'), ('10.5', '10:30'),
-    ('11.0', '11:00'), ('11.5', '11:30'),
-    ('12.0', '12:00'), ('12.5', '12:30'),
-    ('13.0', '13:00'), ('13.5', '13:30'),
-    ('14.0', '14:00'), ('14.5', '14:30'),
-    ('15.0', '15:00'), ('15.5', '15:30'),
-    ('16.0', '16:00'), ('16.5', '16:30'),
-    ('17.0', '17:00'),
-]
+# Khung giờ khai lịch rảnh — CẤU HÌNH ĐƯỢC, mặc định 09:00–17:00 mỗi 30 phút.
+# Spec: docs/superpowers/specs/2026-08-11-interview-hours-config-design.md
+# Trung tâm dạy buổi tối cần khai slot sau 17:00; trước đây danh sách này là hằng
+# số nên phải sửa code + upgrade module mới đổi được.
+P_SLOT_OPEN = 'hocba_recruitments.slot_hour_open'
+P_SLOT_CLOSE = 'hocba_recruitments.slot_hour_close'
+P_SLOT_STEP = 'hocba_recruitments.slot_step_minutes'
+
+SLOT_HOUR_OPEN_DEFAULT = 9.0
+SLOT_HOUR_CLOSE_DEFAULT = 17.0
+SLOT_STEP_DEFAULT = 30
+SLOT_STEPS_ALLOWED = (15, 30, 60)
+
+
+def _hour_label(value):
+    """9.25 -> '09:15'. Làm tròn phút để 1/3 tiếng không ra 09:19.999."""
+    hh = int(value)
+    mm = int(round((value - hh) * 60))
+    if mm == 60:            # 9.999 -> 10:00 chứ không phải 09:60
+        hh, mm = hh + 1, 0
+    return '%02d:%02d' % (hh, mm)
 
 
 class HbInterviewSlot(models.Model):
@@ -26,6 +35,61 @@ class HbInterviewSlot(models.Model):
     _name = 'hb.interview.slot'
     _description = 'Lịch rảnh phỏng vấn'
     _order = 'start_datetime'
+
+    # ── Khung giờ khai slot (cấu hình được) ─────────────────────────────────
+
+    @api.model
+    def _hb_slot_hour_config(self):
+        """(open, close, step_minutes) đã làm sạch — luôn trả giá trị dùng được.
+
+        Tham số hỏng (ai đó gõ tay vào ir.config_parameter, hoặc chuỗi rỗng do
+        module data ghi đè) thì rơi về mặc định thay vì nổ lỗi giữa lúc TBP đang
+        khai lịch. Cấu hình sai là việc của màn cấu hình, không phải của form.
+        """
+        ICP = self.env['ir.config_parameter'].sudo()
+
+        def _f(key, fallback):
+            try:
+                return float(ICP.get_param(key) or fallback)
+            except (TypeError, ValueError):
+                return fallback
+
+        open_h = _f(P_SLOT_OPEN, SLOT_HOUR_OPEN_DEFAULT)
+        close_h = _f(P_SLOT_CLOSE, SLOT_HOUR_CLOSE_DEFAULT)
+        step = int(_f(P_SLOT_STEP, SLOT_STEP_DEFAULT))
+        if step not in SLOT_STEPS_ALLOWED:
+            step = SLOT_STEP_DEFAULT
+        if not (0 <= open_h < close_h <= 24):
+            open_h, close_h = SLOT_HOUR_OPEN_DEFAULT, SLOT_HOUR_CLOSE_DEFAULT
+        return open_h, close_h, step
+
+    @api.model
+    def _hb_hour_slots(self):
+        """[(9.0, '09:00'), (9.5, '09:30'), …] theo cấu hình hiện hành."""
+        open_h, close_h, step = self._hb_slot_hour_config()
+        inc = step / 60.0
+        out, cur = [], open_h
+        # Cộng dồn theo chỉ số thay vì cur += inc: cộng float 121 lần thì 17.0
+        # thành 16.999999 và mốc cuối biến mất khỏi danh sách.
+        i = 0
+        while cur <= close_h + 1e-9:
+            out.append((round(cur, 4), _hour_label(cur)))
+            i += 1
+            cur = open_h + i * inc
+        return out
+
+    @api.model
+    def _hb_hour_selection(self):
+        """Selection cho wizard — string float để Odoo lưu được."""
+        return [(str(v), lbl) for v, lbl in self._hb_hour_slots()]
+
+    @api.model
+    def _hb_hour_selection_start(self):
+        return self._hb_hour_selection()[:-1]
+
+    @api.model
+    def _hb_hour_selection_end(self):
+        return self._hb_hour_selection()[1:]
 
     name = fields.Char(compute='_compute_name', store=True)
     start_datetime = fields.Datetime(string='Bắt đầu', required=True)
@@ -226,11 +290,13 @@ class HbInterviewSlotWizardLine(models.TransientModel):
         'hb.interview.slot.wizard', required=True, ondelete='cascade',
     )
     date = fields.Date(string='Ngày', required=True)
+    # Callable chứ không phải list: list bị đóng băng lúc load module, đổi cấu
+    # hình phải restart Odoo mới thấy. Callable đọc lại mỗi lần dựng form.
     start_hour = fields.Selection(
-        selection=_HOUR_SLOTS[:-1],
+        selection=lambda self: self.env['hb.interview.slot']._hb_hour_selection_start(),
         string='Bắt đầu', required=True,
     )
     end_hour = fields.Selection(
-        selection=_HOUR_SLOTS[1:],
+        selection=lambda self: self.env['hb.interview.slot']._hb_hour_selection_end(),
         string='Kết thúc', required=True,
     )

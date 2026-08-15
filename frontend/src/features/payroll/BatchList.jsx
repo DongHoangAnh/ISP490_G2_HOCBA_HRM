@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, fetchBulkAllowances, fetchComputeStatus } from '../../api/payroll';
+import { fetchEmployeePayroll, sendPayslipMail, markPayslipsSent, closeBatchByPeriod, computeAllPayslips, computePayslip, fetchEmailjsConfig, resetPayslipConfirm, bulkResetPayslipConfirm, fetchComputeStatus } from '../../api/payroll';
 import emailjs from '@emailjs/browser';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
+import BulkBonusPenaltyModal from './BulkBonusPenaltyModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
 import { currentMonth, currentYear } from './util';
@@ -379,6 +380,8 @@ export default function BatchList({ search }) {
   const [computeProgress, setComputeProgress] = useState(null);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
   const [confirmFilter, setConfirmFilter] = useState('');
   const startPolling = useCallback((m, y) => {
@@ -700,6 +703,30 @@ export default function BatchList({ search }) {
     }
   };
 
+  const handleBulkResetConfirm = async () => {
+    if (resetting) return;
+    const pids = checkedIds;
+    const msg = pids.length > 0
+      ? `Phát hiện ${pids.length} nhân viên được tích chọn.\n\nBạn có XÁC NHẬN RESET trạng thái xác nhận về "Chờ xác nhận" cho ${pids.length} nhân viên này không?`
+      : `Bạn có XÁC NHẬN RESET trạng thái xác nhận của TẤT CẢ nhân viên trong tháng ${month}/${year} về "Chờ xác nhận" không?`;
+    if (!confirm(msg)) return;
+
+    setResetting(true);
+    try {
+      const payload = pids.length > 0
+        ? { payslip_ids: pids }
+        : { month: Number(month), year: Number(year) };
+      const res = await bulkResetPayslipConfirm(payload);
+      alert(`🎉 ${res.message || 'Đã reset thành công!'}`);
+      setChecked({});
+      load();
+    } catch (err) {
+      alert('Lỗi reset: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
     if (confirmFilter) {
@@ -882,7 +909,6 @@ export default function BatchList({ search }) {
             cursor: computing ? 'not-allowed' : 'pointer',
             opacity: computing ? .5 : 1,
           }}>
-          <Icon name="zap" size={13} />
           {computing ? (computeProgress ? `Đang tính (${computeProgress.percent}%)...` : 'Đang khởi chạy...') : 'Tính lương'}
         </button>
 
@@ -895,8 +921,32 @@ export default function BatchList({ search }) {
             cursor: (sending || checkedCount === 0) ? 'not-allowed' : 'pointer',
             opacity: (sending || checkedCount === 0) ? .5 : 1,
           }}>
-          <Icon name="mail" size={13} />
           {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
+        </button>
+
+        <button onClick={handleBulkResetConfirm} disabled={resetting}
+          title={checkedCount > 0 ? `Reset trạng thái xác nhận của ${checkedCount} NV được chọn về Chờ xác nhận` : 'Reset trạng thái xác nhận của TẤT CẢ nhân viên về Chờ xác nhận'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
+            border: '1px solid #d1d5db', background: resetting ? '#f3f4f6' : '#fff', color: '#374151',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            cursor: resetting ? 'not-allowed' : 'pointer',
+            opacity: resetting ? .6 : 1,
+          }}>
+          {resetting ? 'Đang reset...' : checkedCount > 0 ? `Reset XN (${checkedCount})` : 'Reset XN'}
+        </button>
+
+        <button onClick={() => setShowBulkModal(true)}
+          title="Mở công cụ Thưởng & Phạt Hàng Loạt với bộ lọc đa năng"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6,
+            border: 'none', background: '#10b981', color: '#fff',
+            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+            cursor: 'pointer',
+          }}>
+          Thưởng & Phạt
         </button>
 
         <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
@@ -909,7 +959,6 @@ export default function BatchList({ search }) {
             cursor: (saving || !canSaveHistory) ? 'not-allowed' : 'pointer',
             opacity: (saving || !canSaveHistory) ? .6 : 1,
           }}>
-          <Icon name="check" size={13} />
           {saving ? 'Đang lưu...' : 'Lưu lịch sử'}
         </button>
 
@@ -921,7 +970,6 @@ export default function BatchList({ search }) {
             fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
             color: '#374151', cursor: 'pointer',
           }}>
-          <Icon name="settings" size={13} />
           Cột&nbsp;<b>{visCols.length}/{allCols.length}</b>
         </button>
       </div>
@@ -936,8 +984,7 @@ export default function BatchList({ search }) {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, fontWeight: 600, color: '#1e40af' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="zap" size={15} style={{ color: '#2563eb' }} />
-              ⚡ Đang tính toán lương ngầm theo Batch (Đã xử lý: {computeProgress.computed} / {computeProgress.total} phiếu)...
+              Đang tính toán lương ngầm theo Batch (Đã xử lý: {computeProgress.computed} / {computeProgress.total} phiếu)...
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <b style={{ fontSize: 13, color: '#1d4ed8' }}>{computeProgress.percent}%</b>
@@ -949,7 +996,7 @@ export default function BatchList({ search }) {
                 }}
                 title="Bấm để khởi động lại tiến trình nếu bị đứng"
               >
-                🔄 Khởi chạy lại
+                Khởi chạy lại
               </button>
             </div>
           </div>
@@ -1192,6 +1239,14 @@ export default function BatchList({ search }) {
         <CfgModal dataCols={allCols} cfg={cfg} onApply={applyCfg} onClose={() => setCfgOpen(false)} />
       )}
       {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} onChanged={load} />}
+      {showBulkModal && (
+        <BulkBonusPenaltyModal
+          batchId={data ? data.batch_id : null}
+          employees={data ? data.employees : []}
+          onClose={() => setShowBulkModal(false)}
+          onSuccess={() => load()}
+        />
+      )}
     </div>
   );
 }

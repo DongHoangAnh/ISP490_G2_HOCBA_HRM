@@ -12,8 +12,29 @@
             <field name="sequence">20</field>
             <field name="name">Đi muộn</field>
             <field name="code">late</field>
-            <field name="color_code">#dc3545</field>
+            <field name="color_code">#f59e0b</field>
             <field name="description">Check-in sau giờ bắt đầu làm việc theo chính sách.</field>
+        </record>
+        <record id="status_early_leave" model="hocba.attendance.status">
+            <field name="sequence">30</field>
+            <field name="name">Về sớm</field>
+            <field name="code">early_leave</field>
+            <field name="color_code">#f59e0b</field>
+            <field name="description">Check-out trước giờ quy định.</field>
+        </record>
+        <record id="status_forget" model="hocba.attendance.status">
+            <field name="sequence">40</field>
+            <field name="name">Quên chấm công</field>
+            <field name="code">forget</field>
+            <field name="color_code">#ef4444</field>
+            <field name="description">Thiếu giờ vào hoặc giờ ra.</field>
+        </record>
+        <record id="status_none" model="hocba.attendance.status">
+            <field name="sequence">50</field>
+            <field name="name">Chưa chấm</field>
+            <field name="code">none</field>
+            <field name="color_code">#6b7280</field>
+            <field name="description">Chưa có dữ liệu chấm công.</field>
         </record>
     </data>
 </odoo>

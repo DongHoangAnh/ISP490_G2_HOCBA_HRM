@@ -9,6 +9,32 @@ import { fetchCvList, changeStage, updateApplicant } from '../../api/recruitment
 import { CV_RESULT_KIND, INTERVIEW_RESULT_KIND } from './util';
 import ApplicantDrawer from './ApplicantDrawer';
 import ApplicantForm from './ApplicantForm';
+import GuideNote from './GuideNote';
+
+/* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
+const CV_STEPS = [
+  ['Thêm CV',
+   <>Bấm <b>Thêm CV</b> để nhập ứng viên mới. Nhớ chọn <b>Vị trí</b> — CV được gắn
+     vào đợt tuyển đang mở của vị trí đó, bỏ trống thì không lên bảng theo dõi.</>],
+  ['Lọc CV',
+   <>Chọn <b>Trạng thái CV</b> ngay trên bảng (tự lưu), hoặc bấm mũi tên để mở hồ
+     sơ đầy đủ. Cột <b>CV</b> có nút <b>Xem PDF</b> để đọc file gốc.</>],
+  ['Xem theo bước',
+   <>Đổi sang <b>Kanban</b> để nhìn ứng viên theo bước và kéo thẻ sang bước khác.
+     Hệ thống chỉ cho đẩy tới, chặn kéo lùi và báo rõ lý do khi bị chặn.</>],
+  ['Để ý thẻ quá hạn',
+   <>Thẻ đỏ <b>“Quá hạn N ngày”</b> = ứng viên đứng ở bước đó lâu hơn hạn xử lý.
+     Màu thẻ đọc theo chú thích ngay dưới bảng Kanban.</>],
+  ['Bước tiếp theo',
+   <>Xếp lịch và chấm kết quả phỏng vấn ở tab <b>Danh sách PV</b>. Ứng viên
+     <b> Pass PV</b> tự sang tab <b>Offer &amp; Nhận việc</b>.</>],
+];
+
+const CV_GUIDE_NOTE = (
+  <>Các ô sửa trực tiếp trên bảng chỉ mở cho bộ phận tuyển dụng, người khác chỉ
+    xem. <b>Kết quả PV</b> ở đây và ở tab Danh sách PV là cùng một trường — sửa
+    bên nào cũng như nhau.</>
+);
 
 /* Chip lọc nhanh — sinh động từ nhãn Selection do BE trả về, bắc qua 2 trường:
    kết quả lọc CV (cvResult) và kết quả phỏng vấn (interviewResult).
@@ -25,11 +51,12 @@ const buildFilters = (cvLabels = {}, pvLabels = {}) => [
 /* Màu card kanban — lái theo KẾT QUẢ (lọc CV + phỏng vấn), KHÔNG theo tên bước
    (bước cấu hình được nên tên/thứ tự có thể đổi):
      xanh = đã Pass PV (giữ nguyên qua Offer/Nhận việc) ·
-     đỏ   = đã dừng, do Fail PV HOẶC Fail CV ·
+     đỏ   = không đi tiếp: Fail PV / Tiềm năng PV, HOẶC Fail CV ·
      vàng = chưa có kết quả (còn đang chạy). */
 const CARD_TONE = {
-  pass: { bd: 'var(--green)',   bg: 'var(--green-bg)' },
-  fail: { bd: 'var(--red-600)', bg: 'var(--red-50)' },
+  pass:      { bd: 'var(--green)',   bg: 'var(--green-bg)' },
+  fail:      { bd: 'var(--red-600)', bg: 'var(--red-50)' },
+  potential: { bd: 'var(--red-600)', bg: 'var(--red-50)' },
 };
 const TONE_PENDING = { bd: 'var(--amber)', bg: 'var(--amber-bg)' };
 
@@ -132,6 +159,9 @@ export default function CvList({ search, focus }) {
         <KanbanView rows={filtered} stages={stages}
           isRecruiter={isRecruiter} onOpen={setSel} onMoved={applyRow} onError={load} />
       )}
+
+      <GuideNote title="Các bước cần làm ở màn này"
+        steps={CV_STEPS} note={CV_GUIDE_NOTE} />
 
       {sel && (
         <ApplicantDrawer app={sel} meta={meta} isRecruiter={isRecruiter}
@@ -282,6 +312,10 @@ function KanbanView({ rows, stages, isRecruiter, onOpen, onMoved, onError }) {
       const det = await changeStage(id, stageId);
       onMoved(det);
     } catch (e) {
+      // Thẻ đã nhảy sang cột mới theo lối lạc quan; onError() tải lại nên nó tự
+      // bật về chỗ cũ. Không báo gì thì HR chỉ thấy thẻ "không chịu sang" —
+      // phải nói rõ BE từ chối vì lý do gì (vd chặn kéo lùi khỏi Bàn giao).
+      alert(e.message || 'Không chuyển được bước cho ứng viên này.');
       onError();
     }
   };
@@ -346,8 +380,8 @@ function KanbanView({ rows, stages, isRecruiter, onOpen, onMoved, onError }) {
    TONE_PENDING để chú thích không bao giờ lệch với card thật. */
 const LEGEND = [
   [CARD_TONE.pass, 'Đã Pass PV', 'gồm cả các bước sau: Offer, Nhận việc, Đã tuyển'],
-  [TONE_PENDING,   'Đang chạy', 'chưa có kết quả lọc CV / phỏng vấn, hoặc đang ở mức Tiềm năng'],
-  [CARD_TONE.fail, 'Fail CV hoặc Fail PV', 'ứng viên đã dừng'],
+  [TONE_PENDING,   'Đang chạy', 'chưa có kết quả lọc CV / phỏng vấn'],
+  [CARD_TONE.fail, 'Fail hoặc Tiềm năng PV, Fail CV', 'không đi tiếp lần này'],
 ];
 
 function ColorLegend() {

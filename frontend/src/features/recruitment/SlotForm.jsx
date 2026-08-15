@@ -11,25 +11,23 @@ const inp = {
   fontSize: 13, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
 };
 
-/* 09:00 → 17:00 mỗi 30 phút */
-export const HOUR_OPTIONS = (() => {
-  const out = [];
-  for (let h = 9; h <= 17; h += 0.5) {
-    const hh = Math.floor(h);
-    const mm = h % 1 ? '30' : '00';
-    out.push([h, `${String(hh).padStart(2, '0')}:${mm}`]);
-  }
-  return out;
-})();
+/* Khung giờ do BE quyết (cấu hình ở màn Cấu hình tuyển dụng → Khung giờ phỏng
+   vấn), truyền xuống qua payload interview-slots. Trước đây danh sách này tính
+   tay ở đây và cứng 09:00–17:00, lệch hẳn với Selection bên Odoo — sửa một chỗ
+   quên chỗ kia. FALLBACK chỉ để form không vỡ nếu payload thiếu. */
+const FALLBACK_HOURS = [[9, '09:00'], [17, '17:00']];
 
-export default function SlotForm({ interviewers, meId, weekDates, defaultDate, onClose, onSaved }) {
+export default function SlotForm({ interviewers, meId, weekDates, defaultDate, hourOptions, onClose, onSaved }) {
+  const hours = (hourOptions && hourOptions.length) ? hourOptions : FALLBACK_HOURS;
+  const firstHour = Number(hours[0][0]);
+  const secondHour = Number((hours[1] || hours[0])[0]);
   const [userId, setUserId] = useState(meId);
-  const [lines, setLines] = useState([{ date: defaultDate || weekDates[0], startHour: 9, endHour: 10 }]);
+  const [lines, setLines] = useState([{ date: defaultDate || weekDates[0], startHour: firstHour, endHour: secondHour }]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
   const setLine = (i, k, v) => setLines((p) => p.map((l, idx) => (idx === i ? { ...l, [k]: v } : l)));
-  const addLine = () => setLines((p) => [...p, { date: defaultDate || weekDates[0], startHour: 9, endHour: 10 }]);
+  const addLine = () => setLines((p) => [...p, { date: defaultDate || weekDates[0], startHour: firstHour, endHour: secondHour }]);
   const delLine = (i) => setLines((p) => p.filter((_, idx) => idx !== i));
 
   const submit = async () => {
@@ -73,10 +71,10 @@ export default function SlotForm({ interviewers, meId, weekDates, defaultDate, o
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
               <input type="date" style={inp} value={l.date} onChange={(e) => setLine(i, 'date', e.target.value)} />
               <select style={inp} value={l.startHour} onChange={(e) => setLine(i, 'startHour', e.target.value)}>
-                {HOUR_OPTIONS.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
+                {hours.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
               </select>
               <select style={inp} value={l.endHour} onChange={(e) => setLine(i, 'endHour', e.target.value)}>
-                {HOUR_OPTIONS.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
+                {hours.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
               </select>
               <button className="icon-btn" title="Xoá dòng" onClick={() => delLine(i)} disabled={lines.length === 1}>
                 <Icon name="trash" size={16} className="faint" /></button>

@@ -16,7 +16,7 @@ export const uploadCvFile = (id, file) =>
 export const createEmployeeFromApplicant = (id) =>
   hbPost(`/hocba-hrm/api/recruitment/applicant/${id}/create-employee`, {});
 
-/* Vị trí tuyển dụng / JD */
+/* Vị trí (hr.job) — dùng cho tab "Theo dõi tuyển dụng" và "Kho quản lý JD" */
 export const fetchJobs = () => hbGet('/hocba-hrm/api/recruitment/jobs');
 export const fetchJob = (id) => hbGet(`/hocba-hrm/api/recruitment/job/${id}`);
 export const createJob = (payload) => hbPost('/hocba-hrm/api/recruitment/jobs', payload);
@@ -31,6 +31,11 @@ export const updateRequest = (id, payload) =>
   hbPost(`/hocba-hrm/api/recruitment/request/${id}`, payload);
 export const requestAction = (id, action, extra) =>
   hbPost(`/hocba-hrm/api/recruitment/request/${id}/action`, { action, ...extra });
+/* Ứng viên của 1 phiếu theo nhóm trong phễu tuyển dụng
+   (cv | cv_pass | fail_cv | pv | pv_pass | fail_pv | onboard | hired) — popup
+   "xem chi tiết số ứng viên" ở tab Theo dõi tuyển dụng. Trả kèm khối JD. */
+export const fetchRequestApplicants = (id, group) =>
+  hbGet(`/hocba-hrm/api/recruitment/request/${id}/applicants?group=${group || 'cv'}`);
 
 /* Mail mẫu tuyển dụng */
 export const fetchMailTemplates = () => hbGet('/hocba-hrm/api/recruitment/mail-templates');
@@ -63,6 +68,8 @@ export const reorderRecruitStages = (ids) =>
   hbPost('/hocba-hrm/api/recruitment/config/stages/reorder', { ids });
 export const saveRecruitSettings = (payload) =>
   hbPost('/hocba-hrm/api/recruitment/config/settings', payload);
+export const saveSlotHours = (payload) =>
+  hbPost('/hocba-hrm/api/recruitment/config/slot-hours', payload);
 
 /* Lịch rảnh phỏng vấn (hb.interview.slot) */
 export const fetchInterviewSlots = (from, to) =>

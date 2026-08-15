@@ -23,7 +23,7 @@ function mondayOf(date) {
   return d;
 }
 
-export default function ShiftCalendar({ canManage }) {
+export default function ShiftCalendar({ canManage, me, onChanged }) {
   const [monday, setMonday] = useState(() => mondayOf(new Date()));
   const [typeFilter, setTypeFilter] = useState('');   // '' | 'ot' | 'ctv' (manager only)
   const [data, setData] = useState(null);
@@ -34,6 +34,7 @@ export default function ShiftCalendar({ canManage }) {
   const load = () => {
     setErr(null); setData(null);
     fetchWeekShifts(ymd(monday), typeFilter || undefined).then(setData).catch((e) => setErr(e.message));
+    if (canManage) onChanged && onChanged();
   };
   useEffect(load, [monday, typeFilter]);
 
@@ -83,9 +84,9 @@ export default function ShiftCalendar({ canManage }) {
         ))}
       </div>
 
-      {showForm && <ShiftForm canManage={canManage} onClose={() => setShowForm(false)} onSaved={load} />}
+      {showForm && <ShiftForm canManage={canManage} me={me} onClose={() => setShowForm(false)} onSaved={load} />}
       {sel && <ShiftDrawer shift={sel} canManage={canManage}
-        onClose={() => setSel(null)} onChanged={() => { setSel(null); load(); }} />}
+        onClose={() => setSel(null)} onChanged={() => { setSel(null); load(); if (onChanged) onChanged(); }} />}
     </div>
   );
 }

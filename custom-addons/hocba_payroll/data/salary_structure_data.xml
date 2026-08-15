@@ -144,7 +144,7 @@
             <field name="structure_id" ref="struct_offline"/>
             <field name="category_id" ref="rule_categ_gross"/>
             <field name="amount_type">formula</field>
-            <field name="amount_formula">(an_ca + xang_xe + dien_thoai + luong_co_ban) / 25 * nctt</field>
+            <field name="amount_formula">(an_ca + xang_xe + dien_thoai + luong_co_ban) / 25 * nctt + role_allowance + bonus_extra</field>
         </record>
 
         <!-- Thu nhập miễn thuế TNCN — cố định 730,000 -->
@@ -249,7 +249,7 @@
 
         <!-- ── NHÓM THỰC LĨNH & BẢO HIỂM CÔNG TY ─────────────── -->
 
-        <!-- Tổng lương thực lĩnh = ROUND(Tổng thu nhập − (BHXH+BHYT+BHTN) − Thuế TNCN) -->
+        <!-- Tổng lương thực lĩnh = ROUND(Tổng thu nhập − (BHXH+BHYT+BHTN) − Thuế TNCN - Phạt vi phạm) -->
         <record id="rule_off_net" model="hb.salary.rule">
             <field name="name">Tổng lương thực lĩnh</field>
             <field name="code">thuc_lanh</field>

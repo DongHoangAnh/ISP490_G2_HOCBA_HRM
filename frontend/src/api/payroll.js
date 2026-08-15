@@ -107,6 +107,9 @@ export const employeeConfirmPayslip = (slipId, action, feedback) =>
 export const resetPayslipConfirm = (slipId) =>
   p(`/hocba-hrm/api/payroll/payslip/${slipId}/reset-confirm`, {});
 
+export const bulkResetPayslipConfirm = (payload) =>
+  p('/hocba-hrm/api/payroll/payslip/bulk-reset-confirm', payload);
+
 // ── Mail template config ────────────────────────────────
 export const fetchMailTemplate = () =>
   g('/hocba-hrm/api/payroll/mail-template');
@@ -125,12 +128,25 @@ export const fetchEmailjsConfig = () =>
 export const saveEmailjsConfig = (payload) =>
   p('/hocba-hrm/api/payroll/emailjs-config', payload);
 
-// ── Employee Allowance (standalone per-employee custom amounts) ──
-export const fetchEmployeeAllowances = (employeeId) =>
-  g(`/hocba-hrm/api/payroll/employee-allowance?employee_id=${employeeId}`);
-export const saveEmployeeAllowance = (payload) =>
-  p('/hocba-hrm/api/payroll/employee-allowance', payload);
-export const deleteEmployeeAllowance = (id) =>
-  p(`/hocba-hrm/api/payroll/employee-allowance/${id}/delete`, {});
-export const fetchBulkAllowances = (employeeIds) =>
-  g(`/hocba-hrm/api/payroll/employee-allowance/bulk?employee_ids=${employeeIds.join(',')}`);
+// ── Sale Salary Levels (KPI-based) ──────────────────────
+export const fetchSaleSalaryLevels = () =>
+  g('/hocba-hrm/api/payroll/sale-salary-level');
+export const createSaleSalaryLevel = (payload) =>
+  p('/hocba-hrm/api/payroll/sale-salary-level', payload);
+export const updateSaleSalaryLevel = (id, payload) =>
+  p(`/hocba-hrm/api/payroll/sale-salary-level/${id}`, payload);
+export const deleteSaleSalaryLevel = (id) =>
+  p(`/hocba-hrm/api/payroll/sale-salary-level/${id}/delete`, {});
+
+// ── Role & Position Allowance Config ────────────────────
+export const fetchRoleAllowanceConfigs = () =>
+  g('/hocba-hrm/api/payroll/role-allowance-config');
+export const createRoleAllowanceConfig = (payload) =>
+  p('/hocba-hrm/api/payroll/role-allowance-config', payload);
+export const deleteRoleAllowanceConfig = (id) =>
+  p(`/hocba-hrm/api/payroll/role-allowance-config/${id}/delete`, {});
+
+// ── Bulk Bonus & Penalty Assignment Wizard ──────────────
+export const applyBulkBonusPenalty = (batchId, payload) =>
+  p(`/hocba-hrm/api/payroll/batch/${batchId}/bulk-bonus-penalty`, payload);
+

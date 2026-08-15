@@ -450,18 +450,30 @@ class HrEmployee(models.Model):
                 if emp.birthday and emp.x_id_date_issue < emp.birthday + relativedelta(years=14):
                     raise ValidationError(_('Ngày cấp CCCD phải sau sinh nhật 14 tuổi.'))
 
+    def _hocba_missing_official_fields(self):
+        """Các mục BR-010 còn thiếu để lên chính thức — [] là đã đủ.
+
+        Tách khỏi constrains để chỗ khác dùng lại được mà không phải chép luật:
+        hiện dùng ở thông báo "cần hoàn thiện hồ sơ" lúc Onboard tạo hồ sơ từ
+        ứng viên (tuyển dụng không nắm CCCD/MST/BHXH nên hồ sơ mới luôn thiếu).
+        """
+        self.ensure_one()
+        emp = self.sudo()
+        missing = []
+        if not emp.identification_id:
+            missing.append('CCCD')
+        if not emp.x_pit_code:
+            missing.append('MST TNCN')
+        if not emp.x_social_insurance_no:
+            missing.append('Số sổ BHXH')
+        return missing
+
     @api.constrains('x_employment_status', 'x_pit_code', 'x_social_insurance_no')
     def _check_official_required_fields(self):
         # BR-010 (mở rộng họp #2): chính thức bắt buộc CCCD + MST + BHXH
         for emp in self.sudo():
             if emp.x_employment_status == 'official':
-                missing = []
-                if not emp.identification_id:
-                    missing.append('CCCD')
-                if not emp.x_pit_code:
-                    missing.append('MST TNCN')
-                if not emp.x_social_insurance_no:
-                    missing.append('Số sổ BHXH')
+                missing = emp._hocba_missing_official_fields()
                 if missing:
                     raise ValidationError(_(
                         'Nhân viên chính thức cần khai: %s (BR-010).') % ', '.join(missing))
@@ -751,6 +763,7 @@ class HrEmployee(models.Model):
             'step_type': ts.step_type,
             'pass_completes': ts.pass_completes,
             'is_extension': ts.is_extension,
+            'is_independent': ts.is_independent,
             'auto_action': ts.auto_action,
             'note': ts.note,
             'due_date': (start + timedelta(days=ts.due_days)
@@ -758,8 +771,14 @@ class HrEmployee(models.Model):
         } for ts in tpl.step_ids.sorted(lambda s: (s.sequence, s.id))])
         self.sudo().with_context(hocba_onb_assigning=True).write(
             {'x_onboarding_template_id': tpl.id})
-        if steps:
-            steps.sorted(lambda s: (s.sequence, s.id))[0]._open()
+        # Bước độc lập nằm ngoài chuỗi → mở hết ngay. Chuỗi tuần tự vẫn
+        # chỉ mở bước KHÔNG độc lập đầu tiên.
+        ordered = steps.sorted(lambda s: (s.sequence, s.id))
+        for step in ordered.filtered('is_independent'):
+            step._open()
+        chain = ordered.filtered(lambda s: not s.is_independent)
+        if chain:
+            chain[0]._open()
         return steps
 
     def _hocba_maybe_assign_onboarding(self):

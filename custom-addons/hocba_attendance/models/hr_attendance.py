@@ -161,26 +161,26 @@ class Attendance(models.Model):
                 rec.afternoon_credit = 0.0
             rec.work_credit = rec.morning_credit + rec.afternoon_credit
 
-    @api.depends('check_in')
+    @api.depends('check_in', 'check_out', 'late_minutes', 'early_leave_minutes')
     def _compute_status(self):
         Status = self.env['hocba.attendance.status']
-        on_time_status = Status.search([('code', '=', 'on_time')], limit=1)
-        late_status = Status.search([('code', '=', 'late')], limit=1)
-        policy = self.env['hocba.attendance.policy'].get_policy()
-        cutoff = policy.late_cutoff
+        on_time = Status.search([('code', '=', 'on_time')], limit=1)
+        late = Status.search([('code', '=', 'late')], limit=1)
+        early = Status.search([('code', '=', 'early_leave')], limit=1)
+        forget = Status.search([('code', '=', 'forget')], limit=1)
+        none = Status.search([('code', '=', 'none')], limit=1)
 
         for record in self:
-            if not record.check_in:
-                record.status_id = False
-                continue
-
-            # check_in is stored in UTC; lateness is judged in local time.
-            local_dt = fields.Datetime.context_timestamp(record, record.check_in)
-            check_in_hour = local_dt.hour + local_dt.minute / 60.0
-            if check_in_hour <= cutoff:
-                record.status_id = on_time_status
+            if not record.check_in and not record.check_out:
+                record.status_id = none
+            elif not record.check_in or not record.check_out:
+                record.status_id = forget
+            elif record.late_minutes > 0:
+                record.status_id = late
+            elif record.early_leave_minutes > 0:
+                record.status_id = early
             else:
-                record.status_id = late_status
+                record.status_id = on_time
 
     @api.constrains('check_in', 'check_out')
     def _check_dates(self):
@@ -308,6 +308,16 @@ class Attendance(models.Model):
                 vals['employee_id'] = employee.id
                 vals['check_in'] = now
 
+        note = payload.get('note')
+        if note:
+            existing_notes = record.notes or ""
+            new_note = "[%s] %s: %s" % (
+                fields.Datetime.context_timestamp(self, now).strftime('%H:%M'),
+                'Vào' if kind == 'in' else 'Ra',
+                note
+            )
+            vals['notes'] = (existing_notes + "\n" + new_note) if existing_notes else new_note
+
         vals.update({
             'face_suspect': face_suspect,
             'out_of_zone': out_of_zone,
@@ -331,15 +341,20 @@ class Attendance(models.Model):
             'face_score': face_score,
         }
 
-    def _assert_check_allowed(self, employee, kind):
+    def _assert_check_allowed(self, employee, kind, has_note=False):
         """Chặn check-in/out sai luật: ngày nghỉ, đã check-in/out, chưa check-in.
-        Raise UserError với mã lỗi làm message để controller map sang HTTP."""
+        Nếu has_note=True, cho phép đi tiếp để cập nhật ghi chú giải trình (kể cả khi đã có giờ)."""
         policy = self.env['hocba.attendance.policy'].sudo().get_policy()
         now_local = fields.Datetime.context_timestamp(
             self.with_context(tz=self.env.user.tz or 'UTC'),
             fields.Datetime.now()).replace(tzinfo=None)
         if not policy.is_workday(now_local):
             raise UserError('not_workday')
+
+        # Nếu có note, chúng ta cho phép 'ghi đè/cập nhật' bản ghi cũ để lưu note.
+        if has_note:
+            return
+
         rec = self.sudo().search([
             ('employee_id', '=', employee.id),
             ('date', '=', now_local.date()),
@@ -362,10 +377,9 @@ class Attendance(models.Model):
         return shifts.filtered(
             lambda s: fields.Datetime.context_timestamp(tz_ctx, s.start).date() == today)
 
-    def _assert_shift_check_allowed(self, employee, kind):
+    def _assert_shift_check_allowed(self, employee, kind, has_note=False):
         """CTV/OT (non-official): check-in/out theo ca approved + cửa sổ ±W phút.
-        Raise UserError mã lỗi: no_shift_today / outside_shift_window /
-        already_checked_in / not_checked_in / already_checked_out."""
+        Nếu has_note=True, cho phép đi tiếp để cập nhật ghi chú giải trình."""
         policy = self.env['hocba.attendance.policy'].sudo().get_policy()
         window = policy.shift_window_minutes or 15
         emp_tz = employee.user_id.tz or 'UTC'
@@ -373,6 +387,10 @@ class Attendance(models.Model):
             self.with_context(tz=emp_tz),
             fields.Datetime.now()).replace(tzinfo=None)
         today = now_local.date()
+
+        if has_note:
+            return
+
         shifts = self._todays_approved_shifts(employee, today)
         if not shifts:
             raise UserError('no_shift_today')
@@ -389,12 +407,12 @@ class Attendance(models.Model):
         rec = self.sudo().search([
             ('employee_id', '=', employee.id), ('date', '=', today)], limit=1)
         if kind == 'in':
-            if rec and rec.check_in:
+            if rec and rec.check_in and not has_note:
                 raise UserError('already_checked_in')
         else:
             if not rec or not rec.check_in:
                 raise UserError('not_checked_in')
-            if rec.check_out:
+            if rec.check_out and not has_note:
                 raise UserError('already_checked_out')
 
     @api.model
@@ -405,10 +423,7 @@ class Attendance(models.Model):
         if not employee:
             raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
         payload['employee_id'] = employee.id
-        # Self-service: regular employees aren't in the HR groups that own the
-        # ACL on attendance/policy/status, so run the write under sudo. The
-        # employee is already pinned to the caller above, preventing spoofing.
-        self._assert_check_allowed(employee, 'in')
+        self._assert_check_allowed(employee, 'in', has_note=bool(payload.get('note')))
         return self.sudo()._do_check(payload, 'in')
 
     @api.model
@@ -419,5 +434,5 @@ class Attendance(models.Model):
         if not employee:
             raise UserError('Tài khoản của bạn chưa được gắn với hồ sơ nhân viên.')
         payload['employee_id'] = employee.id
-        self._assert_check_allowed(employee, 'out')
+        self._assert_check_allowed(employee, 'out', has_note=bool(payload.get('note')))
         return self.sudo()._do_check(payload, 'out')

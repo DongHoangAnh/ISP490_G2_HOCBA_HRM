@@ -6,7 +6,7 @@ import Icon from '../../components/Icon';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchMyHistoryFull } from '../../api/attendance';
 import { fmtDate } from '../../utils/format';
-import { fmtTime, attStatus, currentMonth, fmtCredit } from './util';
+import { fmtTime, attStatus, currentMonth, fmtCredit, firstDayOfMonth, lastDayOfMonth } from './util';
 import AttendanceDrawer from './AttendanceDrawer';
 
 function Sum({ val, lbl, col }) {
@@ -63,15 +63,19 @@ export default function AttendanceHistory({ me }) {
   const defaultFilter = isCtv ? 'ctv' : 'all';
   const [filter, setFilter] = useState(defaultFilter);
   const [month, setMonth] = useState(currentMonth());
+  const [from, setFrom] = useState(firstDayOfMonth());
+  const [to, setTo] = useState(lastDayOfMonth());
+  const [useRange, setUseRange] = useState(false);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
 
   const load = () => {
     setErr(null); setData(null);
-    fetchMyHistoryFull(month, filter).then(setData).catch((e) => setErr(e.message));
+    fetchMyHistoryFull(month, filter, useRange ? from : null, useRange ? to : null)
+      .then(setData).catch((e) => setErr(e.message));
   };
-  useEffect(load, [month, filter]);
+  useEffect(load, [month, filter, from, to, useRange]);
 
   const FILTERS = isCtv
     ? [['ctv', 'Công CTV']]
@@ -79,10 +83,26 @@ export default function AttendanceHistory({ me }) {
 
   return (
     <div className="card" style={{ padding: 18 }}>
-      <div className="between" style={{ marginBottom: 14 }}>
+      <div className="between" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Lịch sử chấm công của tôi</h3>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {useRange ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="muted" style={{ fontSize: 12 }}>Từ</span>
+                <input type="date" className="sel" value={from} onChange={(e) => setFrom(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="muted" style={{ fontSize: 12 }}>Đến</span>
+                <input type="date" className="sel" value={to} onChange={(e) => setTo(e.target.value)} />
+              </div>
+            </>
+          ) : (
+            <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setUseRange(!useRange)}>
+            {useRange ? 'Xem theo tháng' : 'Xem theo khoảng ngày'}
+          </button>
         </div>
       </div>
 

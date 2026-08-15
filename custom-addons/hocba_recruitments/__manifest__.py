@@ -1,6 +1,6 @@
 {
     'name': 'Tuyển dụng Học Bá',
-    'version': '19.0.2.6.0',
+    'version': '19.0.2.8.0',
     'author': 'Học Bá Education',
     'license': 'LGPL-3',
     'category': 'Human Resources/Recruitment',

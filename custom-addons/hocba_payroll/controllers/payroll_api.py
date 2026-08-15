@@ -451,12 +451,25 @@ class PayrollAPI(http.Controller):
             employees = env['hr.employee'].sudo().search(
                 [('active', '=', True)], order='id',
             )
+
+            # Đồng bộ lương cơ bản trên hợp đồng với phiên bản hồ sơ NV mới nhất
+            for emp in employees:
+                ver = emp.version_id
+                if ver and hasattr(ver, 'wage') and ver.wage:
+                    cnts = env['hb.contract'].sudo().search([('employee_id', '=', emp.id)])
+                    if cnts:
+                        cnts.filtered(lambda c: c.wage != ver.wage).write({'wage': ver.wage})
+
             # Gom vals rồi bulk INSERT 1 lần thay vì N+1 INSERT riêng lẻ
             slip_vals_list = []
             for emp in employees:
-                if emp.id in existing_emp_ids:
-                    continue
                 contract = contract_map.get(emp.id)
+                if emp.id in existing_emp_ids:
+                    # Cập nhật contract_id mới nhất cho các phiếu đã tồn tại nếu chưa có
+                    existing_s = Slip.search([('payslip_run_id', '=', batch.id), ('employee_id', '=', emp.id)], limit=1)
+                    if existing_s and contract and existing_s.contract_id.id != contract.id:
+                        existing_s.write({'contract_id': contract.id})
+                    continue
                 vals = {
                     'employee_id': emp.id,
                     'date_from': batch.date_start,
@@ -1083,19 +1096,41 @@ class PayrollAPI(http.Controller):
 
     @staticmethod
     def _resolve_bank_name(bank_acc, bank_lookup):
-        """Resolve employee bank account → format full name."""
+        """Resolve employee bank account → format full name and code.
+
+        Robust matching order:
+        1. BIC code match: bic contains code or code contains bic
+        2. Exact code match: bank name / code matches format code exactly
+        3. Full name inclusion match: format name in bank name OR bank name in format name
+        4. Substring / acronym match: code in bank name
+        """
         if not bank_acc:
             return '', ''
         bank = bank_acc.bank_id
         if not bank:
             return '', ''
-        bname = bank.name or ''
-        bic = (bank.bic or '').upper()
+        bname = (bank.name or '').strip()
+        bic = (bank.bic or '').strip().upper()
+        bname_lower = bname.lower()
+
         for code, full in bank_lookup.items():
-            if bic and code in bic:
-                return code, full
-            if code.lower() in bname.lower():
-                return code, full
+            code_upper = code.upper()
+            code_lower = code.lower()
+            full_lower = (full or '').lower()
+
+            # 1. BIC match
+            if bic and (code_upper in bic or bic in code_upper):
+                return code_upper, full
+            # 2. Exact code match in bank name or code
+            if code_upper == bname.upper():
+                return code_upper, full
+            # 3. Full format name match
+            if full_lower and (full_lower in bname_lower or bname_lower in full_lower):
+                return code_upper, full
+            # 4. Code substring / acronym match
+            if code_lower and code_lower in bname_lower:
+                return code_upper, full
+
         return '', bname
 
     def _build_transfer_rows(self, month, year, bank_codes_filter=None):
@@ -1105,12 +1140,16 @@ class PayrollAPI(http.Controller):
         Returns (rows, bank_formats_list).
         """
         import calendar
-        env = request.env
+        try:
+            env = request.env
+        except Exception:
+            env = getattr(self, 'env', None)
         last_day = calendar.monthrange(year, month)[1]
         date_start = f'{year}-{month:02d}-01'
         date_end = f'{year}-{month:02d}-{last_day}'
 
         bank_lookup = self._build_bank_lookup(env)
+        all_codes = set(bank_lookup.keys())
 
         # Find CLOSED batches for this period
         batches = env['hb.payslip.run'].sudo().search([
@@ -1136,10 +1175,13 @@ class PayrollAPI(http.Controller):
             [('active', '=', True)], order='x_employee_code, id',
         )
 
-        codes_upper = (
-            {c.upper() for c in bank_codes_filter}
-            if bank_codes_filter else None
-        )
+        codes_upper = None
+        if bank_codes_filter:
+            cleaned = {c.strip().upper() for c in bank_codes_filter if c.strip()}
+            if 'ALL' in cleaned or (all_codes and cleaned >= all_codes):
+                codes_upper = None
+            else:
+                codes_upper = cleaned
 
         rows = []
         for emp in employees:
@@ -1256,8 +1298,16 @@ class PayrollAPI(http.Controller):
             rows, _ = self._build_transfer_rows(
                 month, year, bank_codes or None)
 
-            codes_str = ','.join(bank_codes) if bank_codes else 'ALL'
-            bank_label = codes_str if codes_str != 'ALL' else 'Tất cả NH'
+            all_bank_lookup = self._build_bank_lookup(env)
+            all_codes = set(all_bank_lookup.keys())
+            req_codes = {c.strip().upper() for c in bank_codes} if bank_codes else set()
+
+            if not bank_codes or 'ALL' in req_codes or (all_codes and req_codes >= all_codes):
+                codes_str = 'ALL'
+            else:
+                codes_str = ','.join(c.strip().upper() for c in bank_codes if c.strip())
+
+            bank_label = 'Tất cả NH' if codes_str == 'ALL' else codes_str
             filename = f'CK_T{month:02d}_{year}_{codes_str}'
 
             bf = env['hb.bank.file'].sudo().create({
@@ -2144,8 +2194,9 @@ class PayrollAPI(http.Controller):
 
             # Current user → employee
             user = request.env.user
-            employee = request.env['hr.employee'].sudo().search(
-                [('user_id', '=', user.id)], limit=1)
+            employee = request.env['hr.employee'].sudo().search([
+                '|', ('user_id', '=', user.id), ('work_email', '=ilike', user.partner_id.email or '')
+            ], limit=1)
             if not employee:
                 return _error_response(
                     'Không tìm thấy hồ sơ nhân viên của bạn.', status=403)
@@ -2168,14 +2219,17 @@ class PayrollAPI(http.Controller):
                     'x_employee_confirm': 'confirmed',
                     'x_confirmed_date': now,
                 })
-                slip.message_post(
-                    body=_(
-                        'Nhân viên <b>%(name)s</b> đã <b>xác nhận (đồng ý)</b> phiếu lương.',
-                        name=employee.name,
-                    ),
-                    message_type='comment',
-                    subtype_xmlid='mail.mt_note',
-                )
+                try:
+                    slip.message_post(
+                        body=_(
+                            'Nhân viên <b>%(name)s</b> đã <b>xác nhận (đồng ý)</b> phiếu lương.',
+                            name=employee.name,
+                        ),
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                except Exception as msg_err:
+                    _logger.warning('message_post note failed: %s', msg_err)
             else:
                 feedback = (body.get('feedback') or '').strip()
                 if not feedback:
@@ -2185,15 +2239,18 @@ class PayrollAPI(http.Controller):
                     'x_employee_feedback': feedback,
                     'x_confirmed_date': fields.Datetime.now(),
                 })
-                slip.message_post(
-                    body=_(
-                        'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. '
-                        'Lý do: %(fb)s',
-                        name=employee.name, fb=feedback,
-                    ),
-                    message_type='comment',
-                    subtype_xmlid='mail.mt_note',
-                )
+                try:
+                    slip.message_post(
+                        body=_(
+                            'Nhân viên <b>%(name)s</b> đã <b>từ chối</b> phiếu lương. '
+                            'Lý do: %(fb)s',
+                            name=employee.name, fb=feedback,
+                        ),
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                except Exception as msg_err:
+                    _logger.warning('message_post note failed: %s', msg_err)
 
             return _success_response({
                 'status': slip.x_employee_confirm,
@@ -2223,23 +2280,80 @@ class PayrollAPI(http.Controller):
                 'x_employee_confirm': 'pending',
                 'x_employee_feedback': False,
                 'x_confirm_deadline': False,  # #6: clear deadline on reset
+                'x_email_sent': False,
+                'x_email_sent_date': False,
             })
-            slip.message_post(
-                body=_(
-                    'HR đã reset xác nhận của %(name)s '
-                    '(%(old)s → chờ xác nhận). Bởi: %(user)s',
-                    name=slip.employee_id.name,
-                    old=old_status,
-                    user=request.env.user.name,
-                ),
-                message_type='comment',
-                subtype_xmlid='mail.mt_note',
-            )
+            try:
+                slip.message_post(
+                    body=_(
+                        'HR đã reset trạng thái xác nhận của %(name)s '
+                        '(%(old)s → chờ xác nhận). Bởi: %(user)s',
+                        name=slip.employee_id.name,
+                        old=old_status,
+                        user=request.env.user.name,
+                    ),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+            except Exception:
+                pass
             return _success_response({
                 'status': 'pending',
             }, message='Đã reset xác nhận.')
         except Exception as e:
             _logger.exception('reset_payslip_confirm error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/payslip/bulk-reset-confirm',
+                type='http', auth='user', methods=['POST'], csrf=False)
+    def bulk_reset_payslip_confirm(self, **kw):
+        """Bulk reset employee confirmation back to pending for specified payslips or all in batch.
+
+        - Instant 1-query DB write for ultra-fast performance on 100+ employees.
+        - Resets confirm status, feedback, deadline AND email sent flags back to 'Chưa gửi mail'.
+        """
+        try:
+            body = _get_json_body()
+            ids = body.get('payslip_ids', [])
+            month = int(body.get('month', 0))
+            year = int(body.get('year', 0))
+
+            env = request.env
+            if ids:
+                slips = env['hb.payslip'].sudo().browse(ids)
+            elif month and year:
+                import calendar
+                last_day = calendar.monthrange(year, month)[1]
+                date_start = f'{year}-{month:02d}-01'
+                date_end = f'{year}-{month:02d}-{last_day:02d}'
+                batch = env['hb.payslip.run'].sudo().search([
+                    ('date_start', '=', date_start),
+                    ('date_end', '=', date_end),
+                    ('state', '=', 'draft'),
+                ], limit=1)
+                if not batch:
+                    return _error_response('Không tìm thấy kỳ lương nháp.')
+                slips = env['hb.payslip'].sudo().search([('payslip_run_id', '=', batch.id)])
+            else:
+                return _error_response('Missing payslip_ids or month/year.')
+
+            valid_slips = slips.filtered(lambda s: s.exists() and (not s.payslip_run_id or s.payslip_run_id.state != 'close'))
+            if not valid_slips:
+                return _error_response('Không có phiếu lương hợp lệ để reset.')
+
+            # ⚡ Bulk update 100% records in 1 single SQL trip (Ultra fast performance)
+            valid_slips.write({
+                'x_employee_confirm': 'pending',
+                'x_employee_feedback': False,
+                'x_confirm_deadline': False,
+                'x_email_sent': False,
+                'x_email_sent_date': False,
+            })
+            count = len(valid_slips)
+
+            return _success_response({'count': count}, message=f'Đã reset trạng thái xác nhận và mail về Chưa gửi cho {count} phiếu lương.')
+        except Exception as e:
+            _logger.exception('bulk_reset_payslip_confirm error')
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════
@@ -2486,112 +2600,214 @@ class PayrollAPI(http.Controller):
             _logger.exception('seed_salary_history error')
             return _error_response(str(e), status=500)
 
-    # ═════════════════════════════════════════════════════════════════
-    # EMPLOYEE ALLOWANCE (standalone EAV per-employee amounts)
-    # ═════════════════════════════════════════════════════════════════
-    @http.route('/hocba-hrm/api/payroll/employee-allowance', type='http',
+
+
+    # ── SALE SALARY LEVELS API ──────────────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level', type='http',
                 auth='user', methods=['GET'], csrf=False)
-    def list_employee_allowances(self, **kw):
-        """List allowances, optionally filtered by employee_id."""
+    def get_sale_salary_levels(self, **kw):
+        """Get all configured Sale Salary Levels (or auto-seed defaults if empty)."""
         try:
-            domain = [('active', '=', True)]
-            if kw.get('employee_id'):
-                domain.append(('employee_id', '=', int(kw['employee_id'])))
-            recs = request.env['hb.employee.allowance'].sudo().search(
-                domain, order='name')
-            data = [{
+            Model = request.env['hb.sale.salary.level'].sudo()
+            Model.init_default_sale_levels()
+            recs = Model.search([('active', '=', True)], order='sequence, id')
+            res = [{
                 'id': r.id,
-                'employee_id': r.employee_id.id,
+                'levelCode': r.level_code,
                 'name': r.name,
-                'amount': r.amount,
-                'note': r.note or '',
+                'sequence': r.sequence,
+                'kpiTarget': r.kpi_target,
+                'baseWage': r.base_wage,
             } for r in recs]
-            return _success_response(data)
+            return _success_response(res)
         except Exception as e:
-            _logger.exception('list_employee_allowances error')
+            _logger.exception('get_sale_salary_levels error')
             return _error_response(str(e), status=500)
 
-    @http.route('/hocba-hrm/api/payroll/employee-allowance', type='http',
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level', type='http',
                 auth='user', methods=['POST'], csrf=False)
-    def save_employee_allowance(self, **kw):
-        """Create or update an employee allowance."""
+    def create_sale_salary_level(self, **kw):
+        """Create a new Sale Salary Level."""
         try:
-            body = _get_json_body()
-            allow_id = int(body.get('id', 0))
-            emp_id = int(body.get('employee_id', 0))
-            name = (body.get('name') or '').strip()
-            amount = float(body.get('amount', 0))
-            note = (body.get('note') or '').strip()
-            if not emp_id or not name:
-                return _error_response('employee_id và name là bắt buộc.')
-
-            Allowance = request.env['hb.employee.allowance'].sudo()
-            if allow_id:
-                rec = Allowance.browse(allow_id)
-                if not rec.exists():
-                    return _error_response('Không tìm thấy phụ cấp.', status=404)
-                rec.write({'name': name, 'amount': amount, 'note': note})
-            else:
-                rec = Allowance.create({
-                    'employee_id': emp_id,
-                    'name': name,
-                    'amount': amount,
-                    'note': note,
-                })
+            data = _get_json_body()
+            vals = {
+                'level_code': data.get('levelCode') or f"LEVEL_{data.get('sequence', 10)}",
+                'name': data.get('name', 'Level mới'),
+                'sequence': int(data.get('sequence', 10)),
+                'kpi_target': float(data.get('kpiTarget', 1.0)),
+                'base_wage': float(data.get('baseWage', 7000000.0)),
+            }
+            rec = request.env['hb.sale.salary.level'].sudo().create(vals)
             return _success_response({
                 'id': rec.id,
-                'employee_id': rec.employee_id.id,
+                'levelCode': rec.level_code,
                 'name': rec.name,
-                'amount': rec.amount,
-                'note': rec.note or '',
-            }, message='Đã lưu phụ cấp.')
-        except (ValidationError, UserError) as e:
-            return _error_response(str(e))
+                'sequence': rec.sequence,
+                'kpiTarget': rec.kpi_target,
+                'baseWage': rec.base_wage,
+            }, message='Đã thêm Level mới thành công.')
         except Exception as e:
-            _logger.exception('save_employee_allowance error')
+            _logger.exception('create_sale_salary_level error')
             return _error_response(str(e), status=500)
 
-    @http.route('/hocba-hrm/api/payroll/employee-allowance/<int:allow_id>/delete',
-                type='http', auth='user', methods=['POST'], csrf=False)
-    def delete_employee_allowance(self, allow_id, **kw):
-        """Delete an employee allowance."""
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level/<int:level_id>', type='http',
+                auth='user', methods=['PUT', 'POST'], csrf=False)
+    def update_sale_salary_level(self, level_id, **kw):
+        """Update an existing Sale Salary Level."""
         try:
-            rec = request.env['hb.employee.allowance'].sudo().browse(allow_id)
+            rec = request.env['hb.sale.salary.level'].sudo().browse(level_id)
             if not rec.exists():
-                return _error_response('Không tìm thấy.', status=404)
-            rec.unlink()
-            return _success_response({}, message='Đã xoá phụ cấp.')
+                return _error_response('Không tìm thấy Level.', status=404)
+            data = _get_json_body()
+            vals = {}
+            if 'levelCode' in data: vals['level_code'] = data['levelCode']
+            if 'name' in data: vals['name'] = data['name']
+            if 'sequence' in data: vals['sequence'] = int(data['sequence'])
+            if 'kpiTarget' in data: vals['kpi_target'] = float(data['kpiTarget'])
+            if 'baseWage' in data: vals['base_wage'] = float(data['baseWage'])
+            rec.write(vals)
+            return _success_response({'id': rec.id}, message='Đã cập nhật Level thành công.')
         except Exception as e:
-            _logger.exception('delete_employee_allowance error')
+            _logger.exception('update_sale_salary_level error')
             return _error_response(str(e), status=500)
 
-    @http.route('/hocba-hrm/api/payroll/employee-allowance/bulk', type='http',
-                auth='user', methods=['GET'], csrf=False)
-    def bulk_employee_allowances(self, **kw):
-        """Get all allowances for a list of employees (for BatchList columns).
-
-        Query: employee_ids = comma-separated IDs.
-        Returns: { columns: ['PC Xăng xe', ...], data: { emp_id: { name: amount } } }
-        """
+    @http.route('/hocba-hrm/api/payroll/sale-salary-level/<int:level_id>/delete', type='http',
+                auth='user', methods=['POST', 'DELETE'], csrf=False)
+    def delete_sale_salary_level(self, level_id, **kw):
+        """Delete / archive a Sale Salary Level."""
         try:
-            raw = kw.get('employee_ids', '')
-            if not raw:
-                return _success_response({'columns': [], 'data': {}})
-            emp_ids = [int(x) for x in raw.split(',') if x.strip()]
-            recs = request.env['hb.employee.allowance'].sudo().search([
-                ('employee_id', 'in', emp_ids),
-                ('active', '=', True),
-            ], order='name')
-            columns_set = []
-            data = {}
-            for r in recs:
-                if r.name not in columns_set:
-                    columns_set.append(r.name)
-                data.setdefault(r.employee_id.id, {})[r.name] = r.amount
-            return _success_response({
-                'columns': columns_set,
-                'data': {str(k): v for k, v in data.items()},
-            })
+            rec = request.env['hb.sale.salary.level'].sudo().browse(level_id)
+            if not rec.exists():
+                return _error_response('Không tìm thấy Level.', status=404)
+            rec.unlink()
+            return _success_response({}, message='Đã xóa Level thành công.')
         except Exception as e:
-            _logger.exception('bulk_employee_allowances error')
+            _logger.exception('delete_sale_salary_level error')
             return _error_response(str(e), status=500)
+
+    # ── ROLE ALLOWANCE CONFIG API ───────────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/role-allowance-config', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_role_allowance_configs(self, **kw):
+        """Get all Role & Department Allowance Configurations."""
+        try:
+            recs = request.env['hb.role.allowance.config'].sudo().search([('active', '=', True)], order='id desc')
+            res = []
+            for r in recs:
+                j_ids = r.job_ids.ids if r.job_ids else ([r.job_id.id] if r.job_id else [])
+                d_ids = r.department_ids.ids if r.department_ids else ([r.department_id.id] if r.department_id else [])
+                j_name = ', '.join(r.job_ids.mapped('name')) if r.job_ids else (r.job_id.name if r.job_id else 'Tất cả chức vụ')
+                d_name = ', '.join(r.department_ids.mapped('name')) if r.department_ids else (r.department_id.name if r.department_id else 'Tất cả phòng ban')
+                res.append({
+                    'id': r.id,
+                    'name': r.name,
+                    'jobId': r.job_id.id if r.job_id else None,
+                    'jobIds': j_ids,
+                    'jobName': j_name,
+                    'departmentId': r.department_id.id if r.department_id else None,
+                    'departmentIds': d_ids,
+                    'departmentName': d_name,
+                    'allowanceType': r.allowance_type,
+                    'amount': r.amount,
+                    'notes': r.notes or '',
+                })
+            return _success_response(res)
+        except Exception as e:
+            _logger.exception('get_role_allowance_configs error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/role-allowance-config', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def create_role_allowance_config(self, **kw):
+        """Create or Update a Role & Department Allowance Config."""
+        try:
+            data = _get_json_body()
+            cfg_id = data.get('id')
+            raw_jids = data.get('jobIds') or ([data.get('jobId')] if data.get('jobId') else [])
+            raw_dids = data.get('departmentIds') or ([data.get('departmentId')] if data.get('departmentId') else [])
+            jids = [int(x) for x in raw_jids if x]
+            dids = [int(x) for x in raw_dids if x]
+
+            vals = {
+                'name': data.get('name', 'Phụ cấp chức vụ'),
+                'job_id': jids[0] if len(jids) == 1 else False,
+                'department_id': dids[0] if len(dids) == 1 else False,
+                'job_ids': [(6, 0, jids)],
+                'department_ids': [(6, 0, dids)],
+                'allowance_type': data.get('allowanceType', 'position_allowance'),
+                'amount': float(data.get('amount', 0.0)),
+                'notes': data.get('notes', ''),
+            }
+            if cfg_id:
+                rec = request.env['hb.role.allowance.config'].sudo().browse(cfg_id)
+                if rec.exists():
+                    rec.write(vals)
+                else:
+                    rec = request.env['hb.role.allowance.config'].sudo().create(vals)
+            else:
+                rec = request.env['hb.role.allowance.config'].sudo().create(vals)
+            return _success_response({'id': rec.id}, message='Đã lưu cấu hình thưởng/phụ cấp thành công.')
+        except Exception as e:
+            _logger.exception('create_role_allowance_config error')
+            return _error_response(str(e), status=500)
+
+    @http.route('/hocba-hrm/api/payroll/role-allowance-config/<int:cfg_id>/delete', type='http',
+                auth='user', methods=['POST', 'DELETE'], csrf=False)
+    def delete_role_allowance_config(self, cfg_id, **kw):
+        """Delete a Role & Department Allowance Config."""
+        try:
+            rec = request.env['hb.role.allowance.config'].sudo().browse(cfg_id)
+            if not rec.exists():
+                return _error_response('Không tìm thấy cấu hình.', status=404)
+            rec.unlink()
+            return _success_response({}, message='Đã xóa cấu hình thành công.')
+        except Exception as e:
+            _logger.exception('delete_role_allowance_config error')
+            return _error_response(str(e), status=500)
+
+    # ── BULK BONUS & PENALTY WIZARD API ─────────────────────────────────────
+    @http.route('/hocba-hrm/api/payroll/batch/<int:batch_id>/bulk-bonus-penalty', type='http',
+                auth='user', methods=['POST'], csrf=False)
+    def apply_bulk_bonus_penalty(self, batch_id, **kw):
+        """Apply dynamic bonus and/or penalty to multiple payslips in a batch."""
+        try:
+            data = _get_json_body()
+            payslip_ids = data.get('payslip_ids') or data.get('payslipIds') or []
+            bonus_amount = float(data.get('bonusAmount', 0.0))
+            bonus_reason = data.get('bonusReason', '')
+            penalty_amount = float(data.get('penaltyAmount', 0.0))
+            penalty_reason = data.get('penaltyReason', '')
+
+            PayslipModel = request.env['hb.payslip'].sudo()
+
+            if payslip_ids:
+                slips = PayslipModel.browse(payslip_ids)
+            else:
+                slips = PayslipModel.search([('payslip_run_id', '=', batch_id)])
+
+            if not slips:
+                return _error_response('Không tìm thấy phiếu lương phù hợp.')
+
+            vals = {}
+            if bonus_amount >= 0:
+                vals['x_bonus_extra'] = bonus_amount
+                if bonus_reason:
+                    vals['x_bonus_reason'] = bonus_reason
+            if penalty_amount >= 0:
+                vals['x_penalty_amount'] = penalty_amount
+                if penalty_reason:
+                    vals['x_penalty_reason'] = penalty_reason
+
+            if vals:
+                slips.write(vals)
+
+            # Recompute payslips to update NET/GROSS amounts
+            slips.action_compute_batch()
+
+            return _success_response({
+                'updatedCount': len(slips),
+            }, message=f'🎉 Đã áp dụng thưởng/phạt thành công cho {len(slips)} nhân viên!')
+        except Exception as e:
+            _logger.exception('apply_bulk_bonus_penalty error')
+            return _error_response(str(e), status=500)
+

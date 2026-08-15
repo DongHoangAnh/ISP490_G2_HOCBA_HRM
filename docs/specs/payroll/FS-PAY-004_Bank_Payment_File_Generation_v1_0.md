@@ -26,6 +26,8 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 1.0 | Initial creation from bank payment BE/FE implementation | All | 21/06/2026 | Group G2 |
 | 2 | 1.1 | Full rewrite with correct Function ID (FS-PAY-004), FS-PAY-001 format, detailed field specs, strategy pattern documentation, validation rules, and SPA component details derived from actual source code | All | 21/06/2026 | Group G2 |
+| 3 | 1.2 | Fixed bank resolution fallback matching logic in `_resolve_bank_name()` and updated SPA `BankFile.jsx` modal to send `bank_codes: []` (ALL) when selecting all banks so employees are not filtered out when exporting. | Section 2, Section 4 | 08/08/2026 | Antigravity AI |
+| 4 | 1.3 | Synchronized complete strategy pattern registry (`BankFormatterRegistry`): 7 registered bank formatters (`VCBFormatter`, `TCBFormatter`, `MBFormatter`, `BIDVFormatter`, `ACBFormatter`, `VietinBankFormatter`, `VPBankFormatter`) with custom XLSX column schemas. | 1, 2, 4 | 09/08/2026 | Antigravity AI |
 
 ---
 
@@ -36,7 +38,7 @@
 | **Function ID** | FS-PAY-004 |
 | **Function Name** | Bank Payment File Generation |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 21/06/2026 |
+| **Last Modified Date** | 09/08/2026 |
 
 | Attribute | Value |
 | --- | --- |

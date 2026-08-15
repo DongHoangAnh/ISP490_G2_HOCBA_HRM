@@ -22,7 +22,8 @@ const POSITION_TYPES = [
 const WORK_FORMS = [['any', 'Tất cả'], ['offline', 'Offline'], ['online', 'Online']];
 const EMPTY_STEP = () => ({
   name: '', stepType: 'task', dueDays: 0,
-  passCompletes: false, isExtension: false, autoAction: 'none', note: '',
+  passCompletes: false, isExtension: false, isIndependent: false,
+  autoAction: 'none', note: '',
 });
 
 const inp = {
@@ -106,7 +107,10 @@ function TemplateEditor({ tpl, employeeTypes, activeList, myIndex, onClose, onSa
         dueDays: Number(s.dueDays) || 0,
         passCompletes: s.stepType === 'evaluation' && !!s.passCompletes,
         isExtension: s.stepType === 'evaluation' && !!s.isExtension,
-        autoAction: s.stepType === 'task' ? (s.autoAction || 'none') : 'none',
+        isIndependent: s.stepType === 'task' && !!s.isIndependent,
+        // Ràng buộc BE: bước độc lập không được có automation.
+        autoAction: (s.stepType === 'task' && !s.isIndependent)
+          ? (s.autoAction || 'none') : 'none',
         note: (s.note || '').trim(),
       })),
     };
@@ -260,14 +264,26 @@ function TemplateEditor({ tpl, employeeTypes, activeList, myIndex, onClose, onSa
                     </label>
                   </>
                 ) : (
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    Automation:
-                    <select style={{ ...inp, padding: '5px 8px' }} value={s.autoAction || 'none'}
-                      onChange={(e) => setStep(i, 'autoAction', e.target.value)}>
-                      <option value="none">Không</option>
-                      <option value="grant_assets">Tự cấp tài sản mặc định</option>
-                    </select>
-                  </label>
+                  <>
+                    <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}
+                      title="Bước mở ngay từ lúc gán quy trình, làm lúc nào cũng được">
+                      <input type="checkbox" checked={!!s.isIndependent}
+                        onChange={(e) => setStep(i, 'isIndependent', e.target.checked)} />
+                      Không ràng buộc thứ tự
+                    </label>
+                    <label style={{
+                      display: 'flex', gap: 6, alignItems: 'center',
+                      opacity: s.isIndependent ? 0.45 : 1,
+                    }}>
+                      Automation:
+                      <select style={{ ...inp, padding: '5px 8px' }} value={s.autoAction || 'none'}
+                        disabled={!!s.isIndependent}
+                        onChange={(e) => setStep(i, 'autoAction', e.target.value)}>
+                        <option value="none">Không</option>
+                        <option value="grant_assets">Tự cấp tài sản mặc định</option>
+                      </select>
+                    </label>
+                  </>
                 )}
                 <input style={{ ...inp, flex: 1, minWidth: 180, padding: '5px 8px' }}
                   value={s.note || ''} placeholder="Hướng dẫn (tuỳ chọn)"
@@ -395,6 +411,7 @@ export default function OnboardingConfig() {
               {s.dueDays ? ` · +${s.dueDays}ng` : ''}
               {s.passCompletes ? ' · ✓chính thức' : ''}
               {s.isExtension ? ' · ↻gia hạn' : ''}
+              {s.isIndependent ? ' · ↗độc lập' : ''}
               {s.autoAction === 'grant_assets' ? ' · ⚙tài sản' : ''}
             </span>
           </div>

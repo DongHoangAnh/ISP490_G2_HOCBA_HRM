@@ -7,7 +7,7 @@ import Modal from '../../components/Modal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchEmpHistory } from '../../api/attendance';
 import { fmtDate } from '../../utils/format';
-import { fmtTime, attStatus, fmtCredit } from './util';
+import { fmtTime, attStatus, fmtCredit, firstDayOfMonth, lastDayOfMonth } from './util';
 import AttendanceDrawer from './AttendanceDrawer';
 
 function Sum({ val, lbl, col }) {
@@ -29,29 +29,54 @@ const FILTERS = [
   ['ctv', 'CTV'],
 ];
 
-export default function EmpAttendanceHistoryDrawer({ emp, month, onClose, onChanged }) {
+export default function EmpAttendanceHistoryDrawer({ emp, month: initialMonth, onClose, onChanged }) {
   const [filter, setFilter] = useState('all');
+  const [month, setMonth] = useState(initialMonth);
+  const [from, setFrom] = useState(firstDayOfMonth());
+  const [to, setTo] = useState(lastDayOfMonth());
+  const [useRange, setUseRange] = useState(false);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
 
   const load = () => {
     setErr(null); setData(null);
-    fetchEmpHistory(emp.empId, month, filter).then(setData).catch((e) => setErr(e.message));
+    fetchEmpHistory(emp.empId, month, filter, useRange ? from : null, useRange ? to : null)
+      .then(setData).catch((e) => setErr(e.message));
   };
-  useEffect(load, [emp.empId, month, filter]);
+  useEffect(load, [emp.empId, month, filter, from, to, useRange]);
 
   return (
     <Modal onClose={onClose} lg>
       {/* Header */}
-      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)' }}>
-        <div style={{ flex: 1 }}>
+      <div className="drawer-head" style={{ background: 'linear-gradient(120deg,var(--red-50),#fff)', flexWrap: 'wrap', gap: '12px 20px', alignItems: 'center' }}>
+        <div style={{ flex: '1 1 240px' }}>
           <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>{emp.empName}</h2>
           <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>
-            {emp.code} · {emp.depName} · Tháng {month}
+            {emp.code} · {emp.depName}
           </div>
         </div>
-        <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'var(--surface-2)', padding: '4px 10px', borderRadius: 10, border: '1px solid var(--border)' }}>
+            {useRange ? (
+              <>
+                <input type="date" className="sel" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 125, border: 'none', background: 'none', padding: '4px 0' }} />
+                <span className="muted" style={{ padding: '0 4px' }}>→</span>
+                <input type="date" className="sel" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 125, border: 'none', background: 'none', padding: '4px 0' }} />
+              </>
+            ) : (
+              <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} style={{ border: 'none', background: 'none', padding: '4px 0' }} />
+            )}
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => setUseRange(!useRange)} title={useRange ? 'Xem theo tháng' : 'Xem theo khoảng ngày'} style={{ height: 36 }}>
+            <Icon name={useRange ? 'calendar' : 'filter'} size={16} />
+          </button>
+        </div>
+
+        <div style={{ marginLeft: 'auto' }}>
+          <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
+        </div>
       </div>
 
       <div style={{ padding: '16px 20px', maxHeight: '72vh', overflowY: 'auto' }}>

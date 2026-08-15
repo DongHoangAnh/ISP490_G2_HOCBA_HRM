@@ -31,6 +31,8 @@ class HbOnboardingStep(models.Model):
         string='Loại bước', default='task', required=True)
     pass_completes = fields.Boolean(string='Đạt → lên chính thức')
     is_extension = fields.Boolean(string='Bước gia hạn')
+    # Bước ngoài chuỗi: mở ngay lúc gán, điều hướng chuỗi không đụng tới.
+    is_independent = fields.Boolean(string='Không ràng buộc thứ tự')
     auto_action = fields.Selection(
         [('none', 'Không'), ('grant_assets', 'Tự cấp tài sản mặc định')],
         string='Automation', default='none', required=True)
@@ -46,6 +48,23 @@ class HbOnboardingStep(models.Model):
     done_by_id = fields.Many2one('res.users', string='Người thực hiện')
     result_note = fields.Text(string='Nhận xét')
 
+    @api.constrains('step_type', 'is_independent', 'auto_action')
+    def _check_independent_flags(self):
+        """Phản chiếu _check_step_flags của bước mẫu lên bản snapshot.
+
+        Snapshot không đi qua template khi ghi, mà ir.model.access cho
+        hr.group_hr_user quyền write thẳng model này — thiếu ràng buộc ở đây
+        thì mọi bất biến của spec §5.1 vá được bằng một lệnh write."""
+        for step in self:
+            if step.is_independent and step.step_type != 'task':
+                raise ValidationError(_(
+                    'Cờ "Không ràng buộc thứ tự" chỉ dùng cho bước Việc '
+                    'cần làm — các bước Đánh giá phải chạy tuần tự.'))
+            if step.is_independent and step.auto_action != 'none':
+                raise ValidationError(_(
+                    'Bước "không ràng buộc thứ tự" mở ngay từ đầu nên không '
+                    'được đặt Automation — nếu không nó sẽ tự chạy ngày đầu.'))
+
     # ------------------------------------------------------------------
     # Điều hướng chuỗi
     # ------------------------------------------------------------------
@@ -58,9 +77,14 @@ class HbOnboardingStep(models.Model):
             lambda s: (s.sequence, s.id))
 
     def _next_waiting(self):
-        """Bước 'waiting' đứng sau self gần nhất (rỗng nếu hết)."""
+        """Bước 'waiting' trong CHUỖI đứng sau self gần nhất (rỗng nếu hết).
+
+        Bước is_independent nằm ngoài chuỗi: không bao giờ được mở hay bỏ
+        qua bởi điều hướng — HR làm nó lúc nào cũng được."""
         self.ensure_one()
-        chain = list(self._chain())
+        if self.is_independent:
+            return self.browse()
+        chain = [s for s in self._chain() if not s.is_independent]
         idx = chain.index(self)
         for step in chain[idx + 1:]:
             if step.state == 'waiting':
@@ -92,6 +116,10 @@ class HbOnboardingStep(models.Model):
         """Sau khi self done/skipped: mở bước kế; skip bước gia hạn nếu self
         không Gia hạn; hết chuỗi mà chưa official → chuông HR chờ quyết định."""
         self.ensure_one()
+        if self.is_independent:
+            # Bước ngoài chuỗi: xong thì thôi, không mở bước nào và KHÔNG
+            # được coi là "hết chuỗi" (nếu không sẽ bắn chuông hoàn tất sai).
+            return
         nxt = self._next_waiting()
         if not nxt:
             emp = self.employee_id.sudo()
@@ -201,16 +229,20 @@ class HbOnboardingStep(models.Model):
         self.sudo().write(dict(done_vals, state='done', result=result))
         if result == 'fail':
             self._chain().filtered(
-                lambda s: s.state in ('waiting', 'open')).sudo().write(
-                    {'state': 'skipped'})
+                lambda s: s.state in ('waiting', 'open')
+                and not s.is_independent).sudo().write({'state': 'skipped'})
             if not self._skip_auto():
                 emp._hocba_start_offboarding(self.name)
             return
         # result == 'pass'
         if self.pass_completes and not self._skip_auto():
+            # Đối xứng với nhánh fail: bước độc lập không bao giờ bị điều
+            # hướng chuỗi chạm tới. Thực tế bước độc lập luôn ở 'open' (mở
+            # ngay lúc gán) nên clause này hiếm khi chạy — giữ để trạng thái
+            # 'waiting' do migration/gán lại quy trình sinh ra vẫn an toàn.
             self._chain().filtered(
-                lambda s: s.state == 'waiting').sudo().write(
-                    {'state': 'skipped'})
+                lambda s: s.state == 'waiting'
+                and not s.is_independent).sudo().write({'state': 'skipped'})
             emp._hocba_make_official(self.name)
             return
         emp.sudo().message_post(body=_('✅ Bước "%s" ĐẠT.') % self.name)

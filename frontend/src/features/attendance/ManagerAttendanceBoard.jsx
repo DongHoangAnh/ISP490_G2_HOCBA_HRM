@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Avatar from '../../components/Avatar';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchManagerSummary } from '../../api/attendance';
-import { currentMonth } from './util';
+import { currentMonth, firstDayOfMonth, lastDayOfMonth } from './util';
 import EmpAttendanceHistoryDrawer from './EmpAttendanceHistoryDrawer';
 
 function CreditCell({ val, col }) {
@@ -14,15 +14,20 @@ function CreditCell({ val, col }) {
 
 export default function ManagerAttendanceBoard({ search }) {
   const [month, setMonth] = useState(currentMonth());
+  const [from, setFrom] = useState(firstDayOfMonth());
+  const [to, setTo] = useState(lastDayOfMonth());
+  const [useRange, setUseRange] = useState(false);
+  const [role, setRole] = useState('all');
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [selEmp, setSelEmp] = useState(null);
 
   const load = () => {
     setErr(null); setData(null);
-    fetchManagerSummary(month).then(setData).catch((e) => setErr(e.message));
+    fetchManagerSummary(month, useRange ? from : null, useRange ? to : null, role)
+      .then(setData).catch((e) => setErr(e.message));
   };
-  useEffect(load, [month]);
+  useEffect(load, [month, from, to, useRange, role]);
 
   const rows = data
     ? data.rows.filter((r) => {
@@ -36,9 +41,31 @@ export default function ManagerAttendanceBoard({ search }) {
 
   return (
     <div>
-      <div className="filterbar">
-        <input type="month" className="sel" value={month}
-          onChange={(e) => setMonth(e.target.value)} />
+      <div className="filterbar" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select className="sel" value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="all">Tất cả vai trò</option>
+          <option value="official">Nhân viên chính thức</option>
+          <option value="teacher">Giáo viên</option>
+          <option value="ctv">Cộng tác viên (CTV)</option>
+        </select>
+        <div style={{ borderLeft: '1px solid var(--border)', height: 20, margin: '0 4px' }} />
+        {useRange ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Từ</span>
+              <input type="date" className="sel" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Đến</span>
+              <input type="date" className="sel" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+          </>
+        ) : (
+          <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+        )}
+        <button className="btn btn-ghost btn-sm" onClick={() => setUseRange(!useRange)}>
+          {useRange ? 'Xem theo tháng' : 'Xem theo khoảng ngày'}
+        </button>
       </div>
 
       {err && <ErrorState message={err} onRetry={load} />}

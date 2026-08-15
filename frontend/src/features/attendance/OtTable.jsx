@@ -5,21 +5,25 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fetchOtTable, setShiftLevel } from '../../api/attendance';
 import { fmtDate } from '../../utils/format';
-import { fmtTime, currentMonth } from './util';
+import { fmtTime, currentMonth, firstDayOfMonth, lastDayOfMonth } from './util';
 
 const LEVELS = ['100', '150', '300'];
 
 export default function OtTable() {
   const [month, setMonth] = useState(currentMonth());
+  const [from, setFrom] = useState(firstDayOfMonth());
+  const [to, setTo] = useState(lastDayOfMonth());
+  const [useRange, setUseRange] = useState(false);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
   const load = () => {
     setErr(null); setData(null);
-    fetchOtTable(month).then(setData).catch((e) => setErr(e.message));
+    fetchOtTable(month, useRange ? from : null, useRange ? to : null)
+      .then(setData).catch((e) => setErr(e.message));
   };
-  useEffect(load, [month]);
+  useEffect(load, [month, from, to, useRange]);
 
   async function changeLevel(id, level) {
     setBusyId(id);
@@ -30,9 +34,22 @@ export default function OtTable() {
 
   return (
     <div className="card" style={{ padding: 18 }}>
-      <div className="between" style={{ marginBottom: 14 }}>
+      <div className="between" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Chấm công OT</h3>
-        <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {useRange ? (
+            <>
+              <input type="date" className="sel" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <span className="muted">→</span>
+              <input type="date" className="sel" value={to} onChange={(e) => setTo(e.target.value)} />
+            </>
+          ) : (
+            <input type="month" className="sel" value={month} onChange={(e) => setMonth(e.target.value)} />
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setUseRange(!useRange)}>
+            {useRange ? 'Xem theo tháng' : 'Xem theo khoảng ngày'}
+          </button>
+        </div>
       </div>
 
       {err && <ErrorState message={err} onRetry={load} />}

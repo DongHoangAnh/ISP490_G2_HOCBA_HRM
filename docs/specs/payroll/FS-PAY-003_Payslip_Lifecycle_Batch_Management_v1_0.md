@@ -27,6 +27,7 @@
 | 1 | 1.0 | Initial formatted version from payroll BE/FE implementation | All | 21/06/2026 | Group G2 |
 | 2 | 1.1 | Full rewrite with detailed field specs, screen layouts, API endpoints, SPA component documentation, and business rules derived from actual source code | All | 21/06/2026 | Group G2 |
 | 3 | 1.2 | Added Async Batch Compute architecture, chunking strategy (50/chunk), polling status fields (`compute_status`, `computed_count`, `total_count`), and SPA progress bar integration | All | 07/08/2026 | Group G2 |
+| 4 | 1.3 | Documented financial accounting voucher creation on batch close (`action_create_voucher` -> `hocba.fin.voucher`), `voucher_id` relational link, and period lock confirmation guard | 1, 2, 4 | 09/08/2026 | Antigravity AI |
 
 ---
 
@@ -37,7 +38,7 @@
 | **Function ID** | FS-PAY-003 |
 | **Function Name** | Payslip Lifecycle & Batch Management |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 07/08/2026 |
+| **Last Modified Date** | 09/08/2026 |
 
 | Attribute | Value |
 | --- | --- |

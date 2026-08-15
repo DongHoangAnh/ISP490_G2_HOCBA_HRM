@@ -9,7 +9,7 @@ import { useRef, useState } from 'react';
 import useFetch from '../../hooks/useFetch';
 import {
   fetchRecruitConfig, createRecruitStage, updateRecruitStage,
-  deleteRecruitStage, reorderRecruitStages, saveRecruitSettings,
+  deleteRecruitStage, reorderRecruitStages, saveRecruitSettings, saveSlotHours,
 } from '../../api/recruitment';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
@@ -179,10 +179,102 @@ const AUTO_CLOSE_EFFECT = {
 
 const TABS = [
   ['stages', 'Quy trình & hạn xử lý'],
+  ['slothours', 'Khung giờ phỏng vấn'],
   ['autoclose', 'Tự đóng tuyển'],
   ['notify', 'Thông báo'],
   ['help', 'Cách hoạt động và chú thích'],
 ];
+
+/* Khung giờ khai lịch rảnh phỏng vấn. Nguồn sự thật là BE (ir.config_parameter);
+   ô chọn giờ dựng từ chính danh sách BE trả về nên xem trước luôn khớp cái mà
+   trưởng bộ phận sẽ thấy khi khai slot.
+   Spec: docs/superpowers/specs/2026-08-11-interview-hours-config-design.md */
+const ALL_HOURS = (() => {
+  const out = [];
+  for (let h = 0; h <= 24; h += 0.25) {
+    const hh = String(Math.floor(h)).padStart(2, '0');
+    const mm = String(Math.round((h % 1) * 60)).padStart(2, '0');
+    out.push([h, `${hh}:${mm}`]);
+  }
+  return out;
+})();
+
+function SlotHoursPanel({ cfg, onSaved, onError }) {
+  const [open, setOpen] = useState(cfg.open);
+  const [close, setClose] = useState(cfg.close);
+  const [step, setStep] = useState(cfg.stepMinutes);
+  const [busy, setBusy] = useState(false);
+
+  const dirty = open !== cfg.open || close !== cfg.close || step !== cfg.stepMinutes;
+  // Xem trước tính tại chỗ để admin thấy hệ quả TRƯỚC khi lưu; sau khi lưu thì
+  // danh sách thật của BE về qua reload và hai bên khớp nhau.
+  const preview = [];
+  for (let h = open; h <= close + 1e-9; h += step / 60) preview.push(h);
+  const fmt = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+  const invalid = !(open < close) || (close - open) < step / 60;
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await saveSlotHours({ open, close, stepMinutes: step });
+      await onSaved();
+    } catch (e) { onError(e.message || 'Lưu khung giờ thất bại.'); }
+    finally { setBusy(false); }
+  };
+
+  const sel = {
+    padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border-strong)',
+    background: '#fff', fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit',
+  };
+
+  return (
+    <div className="card" style={{ maxWidth: 760, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700 }}>Giờ mở</span>
+          <select style={sel} value={open} onChange={(e) => setOpen(Number(e.target.value))}>
+            {ALL_HOURS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700 }}>Giờ đóng</span>
+          <select style={sel} value={close} onChange={(e) => setClose(Number(e.target.value))}>
+            {ALL_HOURS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700 }}>Bước nhảy</span>
+          <select style={sel} value={step} onChange={(e) => setStep(Number(e.target.value))}>
+            {(cfg.stepChoices || [15, 30, 60]).map((s) => (
+              <option key={s} value={s}>{s} phút</option>
+            ))}
+          </select>
+        </label>
+        <button className="btn btn-primary btn-sm" disabled={busy || !dirty || invalid}
+          onClick={save}>
+          <Icon name="checkCircle" size={15} />{busy ? 'Đang lưu…' : 'Lưu khung giờ'}
+        </button>
+      </div>
+
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6 }}>
+          Xem trước ô chọn giờ {dirty && <span className="muted">(chưa lưu)</span>}
+        </div>
+        {invalid ? (
+          <div style={{ fontSize: 12.5, color: 'var(--red-700)' }}>
+            Giờ mở phải nhỏ hơn giờ đóng, và khung giờ phải rộng ít nhất một bước
+            nhảy — nếu không thì không khai được slot nào.
+          </div>
+        ) : (
+          <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+            {preview.map(fmt).join(' · ')}
+            <div style={{ marginTop: 4, fontWeight: 700 }}>{preview.length} mốc giờ</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* Hệ quả từng chế độ nhắc quá hạn — hiện dưới nhãn để admin biết mình đang tắt gì. */
 const OVERDUE_NOTIFY_EFFECT = {
@@ -306,6 +398,25 @@ export default function RecruitmentConfig() {
         </div>
       )}
 
+      {activeTab === 'slothours' && (
+        <>
+          <InfoNote title="Khung giờ này dùng ở đâu?">
+            Trưởng bộ phận khai lịch rảnh phỏng vấn ở tab <b>Danh sách PV</b> —
+            hai ô chọn giờ trong form đó dựng từ khung giờ dưới đây. Trung tâm
+            dạy buổi tối thì nới <b>giờ đóng</b> ra (vd 20:00) để còn xếp phỏng
+            vấn giáo viên ngoài giờ hành chính.
+            <div style={{ marginTop: 6 }}>
+              Thu hẹp khung giờ <b>không làm hỏng slot đã khai</b>: slot cũ vẫn
+              hiện và vẫn đặt lịch phỏng vấn được, chỉ là không khai <b>mới</b>
+              &nbsp;ngoài khung được nữa.
+            </div>
+          </InfoNote>
+          {data.slotHours
+            ? <SlotHoursPanel cfg={data.slotHours} onSaved={reload} onError={setMsg} />
+            : <EmptyState>Không đọc được khung giờ phỏng vấn.</EmptyState>}
+        </>
+      )}
+
       {activeTab === 'autoclose' && (
         <>
           <InfoNote title="Chế độ này chạy khi nào?">
@@ -367,10 +478,10 @@ export default function RecruitmentConfig() {
           <InfoNote title="Màu thẻ ứng viên trên Kanban nghĩa là gì?">
             <b style={{ color: 'var(--green)' }}>Xanh</b> = đã <b>Pass PV</b>, và
             giữ nguyên màu này qua các bước sau (Gửi Offer, Onboarding, Đã tuyển).
-            <b style={{ color: 'var(--red-700)' }}> Đỏ</b> = ứng viên đã dừng, do
-            <b> Fail PV</b> hoặc <b>Fail CV</b>.
+            <b style={{ color: 'var(--red-700)' }}> Đỏ</b> = <b>không đi tiếp lần
+              này</b>: <b>Fail PV</b>, <b>Tiềm năng PV</b> hoặc <b>Fail CV</b>.
             <b style={{ color: 'var(--amber)' }}> Vàng</b> = <b>đang chạy</b> —
-            chưa có kết quả lọc CV / phỏng vấn, hoặc đang ở mức "Tiềm năng".
+            chưa có kết quả lọc CV / phỏng vấn.
             <br /><br />
             Màu đọc từ hai ô <b>Trạng thái CV</b> và <b>Kết quả PV</b> chứ không
             đọc từ tên bước — vì bước quy trình sửa được nên bám vào tên bước sẽ
@@ -394,20 +505,29 @@ export default function RecruitmentConfig() {
             nghĩa là chưa có ai ở trạng thái đó.
           </InfoNote>
           <InfoNote title="Khi nào hệ thống tự chuyển bước?">
-            Bốn hành động của HR sẽ tự đẩy ứng viên đi tiếp, khỏi phải kéo tay
+            Các hành động dưới đây tự đẩy ứng viên đi tiếp, khỏi phải kéo tay
             trên kanban:
             <br /><br />
             • Đặt <b>Trạng thái CV = Pass</b> → sang <b>Lên lịch phỏng vấn</b><br />
             • Đặt <b>Ngày hẹn phỏng vấn</b> → sang <b>Hẹn &amp; mời phỏng vấn</b><br />
             • Gửi <b>Thư mời tham gia phỏng vấn</b> → sang <b>Phỏng vấn</b><br />
-            • Đặt <b>Kết quả PV = Pass</b> → sang <b>Gửi Offer</b>
+            • Điền <b>Kết quả PV</b> (Pass, Fail hay Tiềm năng đều vậy) → sang
+            <b> Kết quả phỏng vấn</b><br />
+            • Gửi <b>Thư mời nhận việc</b> → sang <b>Gửi Offer</b><br />
+            • Bấm <b>Onboard</b> (tạo hồ sơ nhân viên) → sang <b>Onboarding</b><br />
+            • Nhân viên <b>hết thử việc, lên Chính thức</b> ở module Nhân sự → sang
+            <b> Bàn giao nhân sự</b>
+            <br /><br />
+            Bước <b>Gửi Offer</b> vẫn kéo tay được: có kết quả Pass không đồng nghĩa
+            đã quyết định offer, nên máy không tự đẩy khi chấm Pass — chỉ đẩy khi
+            thư mời nhận việc đã gửi đi.
             <br /><br />
             Bốn quy tắc an toàn: <b>chỉ đẩy tới, không kéo lùi</b> (ứng viên đã
             đi xa hơn thì đứng yên); <b>xoá trắng giá trị không đổi bước</b>;
-            chỉ luồng <b>Pass</b> mới tự động, còn Fail / Tiềm năng / Liên hệ sau
-            do HR tự quyết; bước đích bị <b>xoá hoặc ẩn</b> thì bỏ qua im lặng,
-            không chặn thao tác. Mỗi lần máy đổi bước đều ghi một dòng vào lịch
-            sử trao đổi của ứng viên, xem lại được ai/khi nào.
+            ở khâu lọc CV chỉ luồng <b>Pass</b> mới tự động, còn Fail / Tiềm năng
+            / Liên hệ sau do HR tự quyết; bước đích bị <b>xoá hoặc ẩn</b> thì bỏ
+            qua im lặng, không chặn thao tác. Mỗi lần máy đổi bước đều ghi một
+            dòng vào lịch sử trao đổi của ứng viên, xem lại được ai/khi nào.
             <br /><br />
             Lưu ý: đổi bước làm <b>reset đồng hồ hạn xử lý</b> — ứng viên vừa tự
             nhảy bước sẽ hết badge "Quá hạn", vì họ vừa được xử lý xong.

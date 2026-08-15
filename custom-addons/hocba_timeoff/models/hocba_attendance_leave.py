@@ -63,13 +63,13 @@ class HocbaAttendanceLeave(models.Model):
         if self._approved_full_day_leave(employee, today):
             raise UserError('on_approved_leave')
 
-    def _assert_check_allowed(self, employee, kind):
+    def _assert_check_allowed(self, employee, kind, has_note=False):
         self._assert_not_on_full_day_leave(employee)   # nghỉ trước, rồi luật cũ
-        return super()._assert_check_allowed(employee, kind)
+        return super()._assert_check_allowed(employee, kind, has_note=has_note)
 
-    def _assert_shift_check_allowed(self, employee, kind):
+    def _assert_shift_check_allowed(self, employee, kind, has_note=False):
         self._assert_not_on_full_day_leave(employee)
-        return super()._assert_shift_check_allowed(employee, kind)
+        return super()._assert_shift_check_allowed(employee, kind, has_note=has_note)
 
     # ---- Nghỉ nửa ngày: gắn vào chấm công thật (Task 5) --------------------
     _HALF_LABEL = {'am': 'Nghỉ phép nửa buổi sáng', 'pm': 'Nghỉ phép nửa buổi chiều'}

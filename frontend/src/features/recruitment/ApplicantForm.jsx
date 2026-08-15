@@ -32,7 +32,8 @@ function Section({ title, children }) {
 function initForm(a) {
   return {
     name: a?.name || '', phone: a?.phone || '', email: a?.email || '',
-    jobId: a?.jobId || '', dateReceived: a?.dateReceived || '', ctv: a?.ctv || '',
+    jobId: a?.jobId || '', requestId: a?.requestId || '',
+    dateReceived: a?.dateReceived || '', ctv: a?.ctv || '',
     cvLink: a?.cvLink || '', cvResult: a?.cvResult || '', cvNote: a?.cvNote || '',
     callStatus: a?.callStatus || '', stageId: a?.stageId || '',
     interviewDate: a?.interviewDate || '', interviewTime: a?.interviewTime || '',
@@ -91,6 +92,21 @@ export default function ApplicantForm({ app, meta, onClose, onSaved }) {
             <select style={inp} value={f.jobId} onChange={set('jobId')}>
               <option value="">— Chọn —</option>
               {meta.jobs.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
+            </select></Field>
+          {/* Đợt tuyển: để trống thì BE tự gắn theo phiếu đang tuyển của vị trí.
+              Danh sách lọc theo vị trí đang chọn để khỏi phải dò giữa hàng chục
+              mã phiếu; chưa chọn vị trí thì hiện hết phiếu đang tuyển. */}
+          <Field label="Đợt tuyển (phiếu yêu cầu)">
+            <select style={inp} value={f.requestId} onChange={set('requestId')}>
+              <option value="">— Tự điền theo vị trí —</option>
+              {(meta.requests || [])
+                .filter((q) => !f.jobId || String(q.jobId) === String(f.jobId))
+                .map((q) => (
+                  <option key={q.id} value={q.id}>
+                    {q.code} · {q.jobTitle} · cần {q.qty}
+                    {q.deadline ? ` · hạn ${q.deadline}` : ''}
+                  </option>
+                ))}
             </select></Field>
           <Field label="Bước (stage)">
             <select style={inp} value={f.stageId} onChange={set('stageId')}>

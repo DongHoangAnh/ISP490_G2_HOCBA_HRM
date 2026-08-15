@@ -2,10 +2,14 @@ import { useState, useEffect } from 'react';
 import { Sidebar, Topbar, allowedViews, defaultView } from './Shell';
 import { fetchRoles } from '../api/employees';
 import { fetchPendingCount } from '../api/timeoff';
+import { fetchOnbPendingCount } from '../api/onboarding';
+import { fetchOffbPendingCount } from '../api/offboarding';
+import { fetchAttendancePendingCount } from '../api/attendance';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
 import Profile from '../features/employees/Profile';
+import Career from '../features/employees/Career';
 import Attendance from '../features/attendance/Attendance';
 import Recruitment from '../features/recruitment/Recruitment';
 import Reviews from '../features/reviews/Reviews';
@@ -29,11 +33,38 @@ export default function App() {
   const [unauthenticated, setUnauthenticated] = useState(false);
   const [view, setView] = useState(() => localStorage.getItem('hocba_view') || 'dashboard');
   const [search, setSearch] = useState('');
+  // Thu gọn thanh menu trái (chỉ còn icon). Nhớ lựa chọn giữa các lần vào app.
+  const [navCollapsed, setNavCollapsed] = useState(
+    () => localStorage.getItem('hocba_nav_collapsed') === '1'
+  );
+  const toggleNav = () => setNavCollapsed((v) => {
+    localStorage.setItem('hocba_nav_collapsed', v ? '0' : '1');
+    return !v;
+  });
   // Đơn cần mở khi bấm 1 thông báo ở chuông (Phase 5). nonce để re-trigger dù trùng id.
   const [focus, setFocus] = useState(null);
-  // Badge "việc cần xử lý" cạnh tên mục menu (hiện chỉ Nghỉ phép: đơn chờ duyệt).
+  // NV cần mở trên trang Lộ trình sự nghiệp (0 = chính mình). Đặt khi bấm
+  // "Mở trang đầy đủ" từ drawer hồ sơ.
+  const [careerEmp, setCareerEmp] = useState(0);
+
+  const openCareer = (empId) => { setCareerEmp(empId || 0); setView('career'); };
+
+  /* Badge "việc cần xử lý" cạnh tên mục menu: Nghỉ phép (đơn chờ duyệt),
+     Nhận việc (bước đang chờ), Nghỉ việc (đơn chờ duyệt/hoàn tất).
+     Key trùng view id nên Sidebar đọc thẳng badges[it.id]. */
   const [navBadges, setNavBadges] = useState({});
-  const setTimeoffBadge = (n) => setNavBadges((b) => ({ ...b, timeoff: n }));
+  const setBadge = (key) => (n) => setNavBadges((b) => ({ ...b, [key]: n }));
+  const setTimeoffBadge = setBadge('timeoff');
+  const setAttendanceBadge = setBadge('attendance');
+
+  // Sau mỗi thao tác, hỏi lại server thay vì tự trừ ở client: phạm vi đếm là
+  // quyền duyệt phía server, đoán ở FE sẽ lệch với số nút bấm được.
+  const reloadOnbBadge = () => fetchOnbPendingCount()
+    .then((d) => setBadge('onboarding')(d.count || 0)).catch(() => {});
+  const reloadOffbBadge = () => fetchOffbPendingCount()
+    .then((d) => setBadge('offboarding')(d.count || 0)).catch(() => {});
+  const reloadAttendanceBadge = () => fetchAttendancePendingCount()
+    .then((d) => setAttendanceBadge(d.count || 0)).catch(() => {});
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -43,10 +74,13 @@ export default function App() {
     const view = n.targetView || 'timeoff';
     if (!allowedViews(me).has(view)) return;
     setView(view);
-    // timeoff + service + recruitment đều cần focus để mở đúng đơn/ứng viên.
-    // targetTab: service chọn tab người gửi / người xử lý; recruitment chọn
-    // tab 'cv' rồi mở drawer ứng viên quá hạn.
-    if (view === 'timeoff' || view === 'service' || view === 'recruitment') {
+    // timeoff + service + recruitment + employees + attendance đều cần focus để mở đúng
+    // đơn/ứng viên/hồ sơ/tab. targetTab: service chọn tab người gửi / người xử lý;
+    // recruitment chọn tab 'cv' rồi mở drawer ứng viên quá hạn; employees mở
+    // drawer hồ sơ (vd nhắc "cần hoàn thiện hồ sơ" sau khi Onboard);
+    // attendance chọn tab 'requests' hoặc 'ot'.
+    if (view === 'timeoff' || view === 'service' || view === 'recruitment'
+        || view === 'employees' || view === 'attendance') {
       setFocus({
         requestId: n.targetRef, kind: n.kind,
         targetTab: n.targetTab, nonce: Date.now(),
@@ -71,14 +105,17 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('hocba_view', view); setSearch(''); }, [view]);
 
-  // Số đơn chờ duyệt cho badge sidebar: nạp 1 lần sau khi biết vai trò. Người
-  // không có quyền duyệt vẫn nhận count 0 → badge tự ẩn. Màn Nghỉ phép sẽ đẩy
+  // Số việc chờ cho badge sidebar: nạp 1 lần sau khi biết vai trò. Người
+  // không có quyền duyệt vẫn nhận count 0 → badge tự ẩn. Từng màn sẽ đẩy
   // số mới về (onPendingCount) mỗi khi duyệt/từ chối, khỏi phải F5.
   useEffect(() => {
     if (!me) return;
     fetchPendingCount()
       .then((d) => setTimeoffBadge(d.count || 0))
       .catch(() => {});
+    reloadOnbBadge();
+    reloadOffbBadge();
+    reloadAttendanceBadge();
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -106,22 +143,33 @@ export default function App() {
 
   const canManage = me.canManage;
   return (
-    <div className="app">
-      <Sidebar view={view} setView={setView} me={me} badges={navBadges} />
+    <div className={'app' + (navCollapsed ? ' nav-collapsed' : '')}>
+      <Sidebar view={view} setView={setView} me={me} badges={navBadges} collapsed={navCollapsed} />
       <div className="main">
-        <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification} />
+        <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification}
+          navCollapsed={navCollapsed} onToggleNav={toggleNav} />
         {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
-        {view === 'employees' && canManage && <Employees search={search} />}
-        {view === 'onboarding' && canManage && <Onboarding search={search} />}
-        {view === 'attendance' && <Attendance search={search} onNavigate={setView} />}
+        {view === 'employees' && canManage && <Employees search={search} focus={focus} onOpenCareer={openCareer} />}
+        {view === 'career' && (
+          <Career canManage={canManage} focusEmpId={careerEmp}
+            onBack={canManage ? () => setView('employees') : null} />
+        )}
+        {view === 'onboarding' && canManage && (
+          <Onboarding search={search} onQueueChanged={reloadOnbBadge} />
+        )}
+        {view === 'attendance' && <Attendance search={search} onNavigate={setView} onPendingCount={setAttendanceBadge} focus={focus} />}
         {view === 'timeoff' && (
           <TimeOff search={search} focus={focus} onPendingCount={setTimeoffBadge} />
         )}
         {view === 'service' && <Service search={search} focus={focus} />}
-        {view === 'offboarding' && <Offboarding search={search} />}
+        {view === 'offboarding' && (
+          <Offboarding search={search} onQueueChanged={reloadOffbBadge} />
+        )}
         {view === 'payroll' && <Payroll search={search} me={me} />}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
-        {view === 'reviews' && canManage && <Reviews search={search} />}
+        {view === 'reviews' && canManage && (
+          <Reviews search={search} canPromote={me.isHrManager} />
+        )}
         {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}
         {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
         {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}

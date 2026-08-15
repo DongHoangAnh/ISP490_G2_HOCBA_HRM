@@ -2,7 +2,7 @@
    Owner: Hoàng Anh. Spec: docs/superpowers/specs/2026-06-13-attendance-spa-screen-design.md */
 import { useState, useEffect } from 'react';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
-import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests } from '../../api/attendance';
+import { fetchMyAttendance, fetchMyRequests, fetchPendingRequests, fetchAttendancePendingCount } from '../../api/attendance';
 import { fetchRoles } from '../../api/employees';
 import CheckInPanel from './CheckInPanel';
 import AttendanceTable from './AttendanceTable';
@@ -15,17 +15,34 @@ import TeachingSchedule from './TeachingSchedule';
 import TeachingCalendar from './TeachingCalendar';
 import OtTable from './OtTable';
 
-export default function Attendance({ search, onNavigate }) {
+export default function Attendance({ search, onNavigate, onPendingCount, focus }) {
   const [me, setMe] = useState(null);
   const [err, setErr] = useState(null);
   const [tab, setTab] = useState(null);
   const [reqs, setReqs] = useState({ rows: null, loading: false, error: null });
+
+  // Handle focus from notifications
+  useEffect(() => {
+    if (focus && focus.targetTab) {
+      setTab(focus.targetTab);
+      if (focus.targetTab === 'requests' && me?.canManage) {
+        loadReqs(true);
+      }
+    }
+  }, [focus, me?.canManage]);
+
+  const refreshBadge = () => {
+    if (onPendingCount) {
+      fetchAttendancePendingCount().then(d => onPendingCount(d.count || 0)).catch(() => {});
+    }
+  };
 
   const loadReqs = (manager) => {
     setReqs({ rows: null, loading: true, error: null });
     const fn = manager ? fetchPendingRequests : fetchMyRequests;
     fn().then((d) => setReqs({ rows: d.rows, loading: false, error: null }))
       .catch((e) => setReqs({ rows: null, loading: false, error: e.message }));
+    if (manager) refreshBadge();
   };
 
   const load = () => {
@@ -51,7 +68,7 @@ export default function Attendance({ search, onNavigate }) {
   const isTeacher = !isManager && !!me.isTeacher;
   const isCtv = !isManager && !me.isOfficial && !isTeacher;
   const tabs = isManager
-    ? [['mgr', 'Bảng tổng hợp'], ['day', 'Chấm công ngày'], ['requests', 'Đơn chấm công'], ['ot', 'Lịch ca (OT/CTV)'], ['ot_list', 'Xử lý OT']]
+    ? [['mgr', 'Bảng tổng hợp'], ['day', 'Chấm công ngày'], ['requests', 'Đơn chấm công'], ['ot', 'Lịch ca (OT/CTV)'], ['ot_list', 'Chấm công OT']]
     : isTeacher
       ? [['teaching', 'Chấm công hôm nay'], ['cal', 'Lịch tuần'], ['history', 'Lịch sử chấm công'], ['requests', 'Đơn của tôi']]
       : isCtv
@@ -101,10 +118,10 @@ export default function Attendance({ search, onNavigate }) {
             </div>
           )}
           <RequestList rows={reqs.rows} loading={reqs.loading} error={reqs.error}
-            onReload={() => loadReqs(isManager)} canReview={isManager} />
+            onReload={() => { loadReqs(isManager); refreshBadge(); }} canReview={isManager} />
         </div>
       )}
-      {activeTab === 'ot' && <ShiftCalendar canManage={isManager} />}
+      {activeTab === 'ot' && <ShiftCalendar canManage={isManager} me={me} onChanged={refreshBadge} />}
       {activeTab === 'teaching' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <TeachingSchedule me={me} onChanged={load}

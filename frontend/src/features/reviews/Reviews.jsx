@@ -8,8 +8,10 @@ import { fetchReviews, createReview, bulkOpenReviews } from '../../api/reviews';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import TblWrap from '../../components/TblWrap';
+import { useSort, SortTh } from '../../components/sortable';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import ReviewDrawer from './ReviewDrawer';
+import ReviewGuide from './ReviewGuide';
 import {
   GRADE_LABEL, GRADE_KIND, STATE_LABEL, STATE_KIND,
   PERIOD_TYPES, periodCount, periodLabel, unitLabel,
@@ -18,6 +20,8 @@ import {
 const TABS = [
   ['teacher', 'Giảng viên'],
   ['office', 'Nhân viên văn phòng'],
+  // Tài liệu cho người chấm: công thức, bảng quy đổi, cách chấm từng tiêu chí.
+  ['guide', 'Hướng dẫn chấm điểm'],
 ];
 
 const sel = {
@@ -35,7 +39,35 @@ function Kpi({ label, value, hint }) {
   );
 }
 
-function GroupPanel({ group, search }) {
+/* Sắp cột Trạng thái theo tiến độ quy trình chấm, không theo bảng chữ cái. */
+const STATE_ORDER = { none: 0, draft: 1, confirmed: 2, published: 3 };
+
+/* Màu chấm theo bậc — cùng bảng màu với badge Xếp loại trong bảng. */
+const GRADE_DOT = { a: 'var(--green)', b: 'var(--blue)', c: 'var(--gold-600)', d: 'var(--red-600)' };
+
+/* Phân bố xếp loại A/B/C/D trong MỘT thẻ: 4 thẻ riêng sẽ đẩy hàng KPI quá dài,
+   mà người dùng luôn đọc 4 số này cùng nhau. Chỉ đếm phiếu đã chấm. */
+function GradeKpi({ s }) {
+  const items = [['a', s.gradeA], ['b', s.gradeB], ['c', s.gradeC], ['d', s.gradeD]];
+  return (
+    <div className="card" style={{ padding: '12px 16px', minWidth: 212, flex: 1.4 }}>
+      <div className="faint" style={{ fontSize: 11 }}>Phân bố xếp loại</div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
+        {items.map(([g, n]) => (
+          <div key={g} title={GRADE_LABEL[g]} style={{ minWidth: 34 }}>
+            <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.2 }}>{n || 0}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: GRADE_DOT[g] }} />
+              <span className="muted">{g.toUpperCase()}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupPanel({ group, search, canPromote }) {
   const thisYear = new Date().getFullYear();
   const [periodType, setPeriodType] = useState('quarter');
   const [year, setYear] = useState(thisYear);
@@ -43,6 +75,7 @@ function GroupPanel({ group, search }) {
   const [openId, setOpenId] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const sort = useSort();
 
   const { data, err, loading, reload } = useFetch(
     () => fetchReviews({ group, periodType, year, index }),
@@ -53,10 +86,22 @@ function GroupPanel({ group, search }) {
   if (loading || !data) return <LoadingState label="Đang tải dữ liệu đánh giá…" />;
 
   const q = (search || '').trim().toLowerCase();
-  const rows = q
+  const found = q
     ? data.rows.filter((r) => (r.empName + ' ' + r.empCode + ' ' + r.department)
       .toLowerCase().includes(q))
     : data.rows;
+
+  /* Xếp loại: 'a'…'d' đã đúng thứ tự giỏi→kém khi so chuỗi. Người chưa có phiếu
+     (state 'none') không có điểm/xếp loại → trả null để luôn nằm cuối bảng,
+     bất kể đang sắp tăng hay giảm. */
+  const rows = sort.apply(found, {
+    emp: (r) => r.empName,
+    dep: (r) => r.department,
+    punctual: (r) => (r.totalUnits ? r.punctualPct : null),
+    score: (r) => (r.state === 'none' ? null : r.totalScore),
+    grade: (r) => r.grade || null,
+    state: (r) => STATE_ORDER[r.state] ?? 99,
+  });
 
   const changeType = (t) => {
     setPeriodType(t);
@@ -122,7 +167,7 @@ function GroupPanel({ group, search }) {
         <Kpi label="Nhân sự trong nhóm" value={s.employees} />
         <Kpi label="Đã đánh giá" value={s.done} hint={`Còn ${s.pending} chưa chốt`} />
         <Kpi label="Điểm trung bình" value={s.avgScore} hint="Trên thang 100" />
-        <Kpi label="Xếp loại A" value={s.gradeA} hint={`${s.gradeD} loại D`} />
+        <GradeKpi s={s} />
       </div>
 
       {msg && (
@@ -139,12 +184,12 @@ function GroupPanel({ group, search }) {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Nhân viên</th>
-                <th>Phòng ban</th>
-                <th style={{ textAlign: 'right' }}>Đúng giờ</th>
-                <th style={{ textAlign: 'right' }}>Tổng điểm</th>
-                <th>Xếp loại</th>
-                <th>Trạng thái</th>
+                <SortTh sort={sort} k="emp">Nhân viên</SortTh>
+                <SortTh sort={sort} k="dep">Phòng ban</SortTh>
+                <SortTh sort={sort} k="punctual" className="tbl-num">Đúng giờ</SortTh>
+                <SortTh sort={sort} k="score" className="tbl-num">Tổng điểm</SortTh>
+                <SortTh sort={sort} k="grade">Xếp loại</SortTh>
+                <SortTh sort={sort} k="state">Trạng thái</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -183,7 +228,7 @@ function GroupPanel({ group, search }) {
       )}
 
       {openId && (
-        <ReviewDrawer reviewId={openId}
+        <ReviewDrawer reviewId={openId} canPromote={canPromote}
           onClose={() => setOpenId(null)}
           onSaved={reload} />
       )}
@@ -191,7 +236,9 @@ function GroupPanel({ group, search }) {
   );
 }
 
-export default function Reviews({ search }) {
+/* canPromote: chỉ HR Manager mới tạo được quyết định thăng tiến từ
+   phiếu đã chốt (khớp guard _hr_flags của route promotion). */
+export default function Reviews({ search, canPromote }) {
   const [tab, setTab] = useState(
     () => localStorage.getItem('hocba_review_tab') || 'teacher');
   const activeTab = TABS.some(([id]) => id === tab) ? tab : 'teacher';
@@ -214,7 +261,10 @@ export default function Reviews({ search }) {
         ))}
       </div>
 
-      <GroupPanel key={activeTab} group={activeTab} search={search} />
+      {activeTab === 'guide'
+        ? <ReviewGuide />
+        : <GroupPanel key={activeTab} group={activeTab} search={search}
+            canPromote={canPromote} />}
     </div>
   );
 }

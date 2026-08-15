@@ -1,13 +1,11 @@
-# FS-PAY-002 -- Payslip Computation Engine
-
 | Field        | Value                                                            |
 |------------- |----------------------------------------------------------------- |
 | **Code**     | FS-PAY-002                                                       |
 | **Title**    | Payslip Computation Engine                                       |
 | **Module**   | hocba_payroll                                                    |
 | **Model**    | hb.payslip (inherited mail.thread)                               |
-| **Version**  | 1.1                                                              |
-| **Date**     | 2026-08-07                                                       |
+| **Version**  | 1.2                                                              |
+| **Date**     | 2026-08-09                                                       |
 | **Status**   | Approved                                                         |
 | **Platform** | Odoo 19 Community                                                |
 
@@ -20,7 +18,8 @@ The Payslip Computation Engine is the core salary calculation subsystem of the `
 The engine is invoked through `action_compute_sheet()` for individual payslips or `action_compute_batch()` for multi-employee batch calculations. In batch mode, the engine utilizes **High-Performance In-Memory Optimizations**:
 1. **$O(1)$ Bulk Lookup Caching (`_prefetch_lookups_bulk`)**: Fetches all attendance/work-entry/lookup data across ALL employees in 1 single pass per model before looping, eliminating $O(N \times R)$ database queries.
 2. **Process-Level AST Caching (`_AST_CACHE`)**: Caches compiled Abstract Syntax Trees (AST) for formula expressions in CPython memory, eliminating `ast.parse` overhead across repeated calculations.
-3. **Single Topological Rule Pre-Sorting**: Sorts rules once using Kahn's algorithm per batch execution pass instead of per-slip.
+3. **Single Topological Rule Pre-Sorting (`_topo_sort_rules`)**: Sorts rules once using Kahn's algorithm per batch execution pass instead of per-slip.
+4. **Safe Pure AST Tree-Walking Evaluator (`_eval_formula_expr`)**: Evaluates formulas without executing arbitrary Python string `eval()` or `exec()`.
 
 | Concept               | Description                                                                                  |
 |----------------------- |--------------------------------------------------------------------------------------------- |
@@ -28,10 +27,10 @@ The engine is invoked through `action_compute_sheet()` for individual payslips o
 | Batch Entry point      | `hb.payslip.action_compute_batch()` -- optimized batch calculation pass                       |
 | Salary structure       | `hb.salary.structure` -- groups a set of ordered salary rules                                |
 | Salary rule            | `hb.salary.rule` -- defines one computation step (allowance, deduction, tax, net, etc.)      |
-| Payslip line           | `hb.payslip.line` -- stores the computed result of one salary rule                           |
+| Payslip line           | `hb.payslip.line` -- stores computed result of one rule with `int(round(amount))` for VND |
 | Worked days            | `hb.payslip.worked_days` -- attendance/work-entry data consumed by rules                     |
 | Payslip input          | `hb.payslip.input` -- ad-hoc monetary inputs (advances, bonuses) consumed by rules           |
-| Proxy classes          | Module-level Python classes providing attribute-access syntax inside rule evaluation          |
+| Proxy classes          | Module-level Python classes (`WorkedDaysProxy`, `InputsProxy`, `CategoryTotals`)             |
 | AST Cache              | Process-level `_AST_CACHE` dict caching parsed formula ASTs to avoid recompilation overhead  |
 | Bulk Lookup Prefetch   | `_prefetch_lookups_bulk()` pre-calculates lookup values for $N$ employees in 1 query pass    |
 | PIT calculator         | `_hocba_pit()` implements the 7-bracket Vietnam progressive personal income tax               |
@@ -49,16 +48,16 @@ The engine is invoked through `action_compute_sheet()` for individual payslips o
 | 3    | Call `_resolve_contract()`          | Resolves the employee's active contract for the payslip date range. See section 2.2.                                                                           |
 | 4    | Call `_resolve_structure(contract)` | Determines the salary structure to use for this payslip. See section 2.3.                                                                                      |
 | 5    | Clear existing lines                | Calls `slip.line_ids.unlink()` to remove all previously computed payslip lines before recomputation.                                                           |
-| 6    | Build evaluation namespace          | Calls `slip._build_localdict(contract)` to construct the Python namespace used by `safe_eval`. See section 2.4.                                               |
-| 7    | Collect active rules                | Retrieves `structure.rule_ids.filtered('active').sorted('sequence')` -- only active rules, sorted ascending by sequence number.                                |
+| 6    | Build evaluation namespace          | Calls `slip._build_localdict(contract)` to construct the Python namespace. See section 2.4.                                                                     |
+| 7    | Collect active rules & Topo-Sort    | Retrieves structure rules and applies Kahn's algorithm (`_topo_sort_rules`). Falls back to `sequence` order if a dependency cycle is detected.                 |
 | 8    | Initialize warnings list            | Creates an empty `warnings = []` list to capture non-fatal rule evaluation errors.                                                                             |
-| 9    | Iterate rules in sequence order     | For each rule, performs steps 9a through 9d.                                                                                                                   |
-| 9a   | Evaluate condition                  | Calls `_evaluate_rule_condition(rule, localdict)`. If the condition returns `False`, the rule is skipped (`continue`).                                          |
-| 9b   | Evaluate amount                     | Calls `_evaluate_rule_amount(rule, localdict)`. Returns a tuple `(amount, qty, rate)`.                                                                         |
-| 9c   | Store result in namespace           | Sets `localdict['rules'][rule.code] = amount` and calls `localdict['categories'].accumulate(rule.category_id.code, amount)` so subsequent rules can reference. |
-| 9d   | Create payslip line                 | If `rule.appears_on_payslip` is True, creates an `hb.payslip.line` record with code, name, sequence, quantity, rate, and `round(amount)`.                      |
-| 9e   | Error handling (per rule)           | If any exception occurs during 9a/9b, the error is logged via `_logger.warning`, a user-facing warning is appended, and the rule produces `(0.0, 1.0, 0.0)`.  |
-| 10   | Finalize payslip                    | Writes `structure_id`, sets `x_teaching_computed = True`, and stores `x_compute_warnings` (joined warnings or `False` if none).                                |
+| 9    | Iterate rules in topological order  | For each rule, performs steps 9a through 9d.                                                                                                                   |
+| 9a   | Evaluate condition                  | Calls `_evaluate_rule_condition(rule, localdict)`. If condition returns `False`, rule is skipped (`continue`).                                                |
+| 9b   | Evaluate amount                     | Calls `_evaluate_rule_amount(rule, localdict, prefetched_lookups)`. Returns a tuple `(amount, qty, rate)`.                                                     |
+| 9c   | Store result in namespace           | Sets `localdict['rules'][rule.code] = amount` and calls `localdict['categories'].accumulate(rule.category_id.code, amount)`.                                   |
+| 9d   | Create payslip line                 | If `rule.appears_on_payslip` is True, collects line dict with `amount = int(round(amount))` for bulk insert into `hb.payslip.line`.                            |
+| 9e   | Error handling (per rule)           | If any exception occurs during 9a/9b, error is logged, a warning is appended, and rule produces `(0.0, 1.0, 0.0)`.                                             |
+| 10   | Finalize payslip                    | Bulk-inserts lines in 1 DB trip, sets `x_teaching_computed = True`, and stores `x_compute_warnings`.                                                          |
 | 11   | Return                              | Returns `True`.                                                                                                                                                |
 
 ### 2.2 Contract Resolution -- _resolve_contract()
@@ -110,34 +109,30 @@ The engine is invoked through `action_compute_sheet()` for individual payslips o
 | `rule.condition_python` is empty/falsy             | `True` (rule always executes)                        |
 | `rule.condition_type == 'python'` and code present | `bool(safe_eval(rule.condition_python, localdict))`  |
 
-This is a `@staticmethod`. It does not modify `localdict`.
-
-### 2.6 Amount Evaluation -- _evaluate_rule_amount(rule, localdict)
+### 2.6 Amount Evaluation -- _evaluate_rule_amount(rule, localdict, prefetched_lookups=None)
 
 Returns a tuple `(amount, qty, rate)`.
 
 | amount_type    | Evaluation Logic                                                                                                                                                                  |
 |--------------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `code`         | Resets `result`, `result_qty`, `result_rate` in `localdict` to `0.0`, `1.0`, `0.0`. Executes `safe_eval(rule.amount_python_compute, localdict, mode='exec', nocopy=True)`. Reads back `result`, `result_qty`, `result_rate` from `localdict`. |
+| `code`         | Resets `result`, `result_qty`, `result_rate` in `localdict`. Executes `safe_eval(rule.amount_python_compute, localdict, mode='exec')`. Reads back updated result values.          |
 | `fixed`        | Returns `(rule.amount_fixed, 1.0, 0.0)`.                                                                                                                                         |
-| `percentage`   | Evaluates `rule.amount_percentage_base` via `safe_eval` to get the base value. Computes `round(base * rule.amount_percentage / 100.0)`. Returns `(amount, 1.0, 0.0)`.            |
-| `formula`      | Collects `known` codes from `localdict['rules']`. Calls `_transpile_formula(rule.amount_formula, known)` to get a Python expression. Executes `result = <expr>` via `safe_eval`. Reads back `result`. Returns `(amount, 1.0, 0.0)`. |
+| `percentage`   | Evaluates `rule.amount_percentage_base` via `_eval_formula_expr()`. Computes `int(round(base * rule.amount_percentage / 100.0))`. Returns `(amount, 1.0, 0.0)`.                   |
+| `formula`      | Evaluates `rule.amount_formula` safely via `_eval_formula_expr(formula, localdict)`. Returns `(amount, 1.0, 0.0)`.                                                               |
+| `lookup`       | Checks `prefetched_lookups` dict cache for `(employee_id, lookup_source, lookup_field)`. If missed, calls `_compute_lookup(rule)` to query database via `LOOKUP_CATALOG`.        |
 
-This is a `@staticmethod`.
+### 2.7 Pure AST Tree-Walking Evaluator -- _eval_formula_expr(expr, localdict)
 
-### 2.7 Formula Transpiler -- _transpile_formula(formula, known_codes)
+Safe AST expression walker replacing string transpiling and code execution:
 
-A `@staticmethod` that converts Excel-like formula syntax into a valid Python expression.
-
-| Input Syntax             | Output Python                           | Notes                                                            |
-|------------------------- |---------------------------------------- |----------------------------------------------------------------- |
-| `IF(cond, true, false)`  | `((true) if (cond) else (false))`       | Handles nested parentheses via manual depth tracking.            |
-| `SUM(a, b)`              | `_range_sum('a', 'b')`                 | Sums all rule amounts from code `a` to code `b` by sequence.    |
-| `ROUND(x, y)`            | `_round_dir(x, y)`                     | `y=1` means ceil, `y=0` means floor.                            |
-| Rule codes (identifiers) | `rules.get('code', 0)`                 | Only identifiers present in `known_codes` are replaced.          |
-| Python/math builtins     | Kept as-is                              | Skipped set includes: `IF`, `SUM`, `MAX`, `MIN`, `ABS`, `ROUND`, `True`, `False`, `if`, `else`, `and`, `or`, `not`, `in`, `is`, `max`, `min`, `abs`, `round`, `sum`, `float`, `int`, `true`, `false`, `_range_sum`, `_round_dir`. |
-
-Processing order: (1) replace `IF(...)`, (2) replace `SUM(...)`, (3) replace `ROUND` keyword, (4) replace rule-code identifiers.
+| Expression / Syntax      | AST Handling                                                                                         |
+|------------------------- |----------------------------------------------------------------------------------------------------- |
+| `IF(cond, true, false)`  | AST call evaluated as Python `if/else` expression: `true_val if cond_val else false_val`.            |
+| `SUM(a, b)`              | Evaluates closure `_range_sum(a, b)` summing all computed rules between sequence range `a` to `b`.    |
+| `MAX(...)`, `MIN(...)`   | Evaluates `max()` or `min()` built-in over list of arguments.                                        |
+| `ROUND(x, y)`            | Evaluates `_round_dir(x, y)` where `y=1` (ceil) or `y=0` (floor) or standard Python `round(x, y)`.   |
+| Rule codes               | Looked up in `localdict['rules'].get(code, 0.0)`.                                                    |
+| Operators                | AST support for `+`, `-`, `*`, `/`, `%`, `>`, `<`, `>=`, `<=`, `==`, `!=`, `and`, `or`, `not`.       |
 
 ### 2.8 PIT Calculation -- _hocba_pit(taxable_income)
 

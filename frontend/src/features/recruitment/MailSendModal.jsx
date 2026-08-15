@@ -7,7 +7,7 @@ import Modal from '../../components/Modal';
 import { previewMailTemplate } from '../../api/recruitment';
 import { renderForGmail, gmailComposeUrl, logSentMail } from './mailSend';
 
-export default function MailSendModal({ applicant, templates, onClose }) {
+export default function MailSendModal({ applicant, templates, onClose, onSent }) {
   const [tmplId, setTmplId] = useState(() => (templates[0] ? String(templates[0].id) : ''));
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -31,28 +31,46 @@ export default function MailSendModal({ applicant, templates, onClose }) {
     } catch (e) { setErr(e.message || 'Không tạo được bản xem trước.'); } finally { setPreviewing(false); }
   };
 
-  // Mở tab Gmail soạn sẵn (to/subject/body). Người dùng bấm Gửi trong Gmail.
+  /* Mở tab Gmail soạn sẵn (to/subject/body). Người dùng bấm Gửi trong Gmail.
+
+     Tab TRỐNG phải mở NGAY trong cú click, trước mọi `await`: render nội dung
+     xong mới window.open là đã ra khỏi "user activation" của sự kiện ⇒ trình
+     duyệt chặn popup (đúng lỗi "Trình duyệt chặn cửa sổ Gmail" gặp trước đây).
+     Render xong thì trỏ tab đó sang Gmail.
+
+     Không truyền 'noopener' vì cờ này làm window.open trả null — mất tay cầm để
+     điều hướng; cắt liên kết bằng w.opener = null ngay sau khi mở.
+
+     Vẫn bị chặn (popup blocker chặn cứng) thì không báo lỗi cụt: render xong rồi
+     đưa sang màn xác nhận kèm link bấm tay — click vào thẻ <a> thì không bị chặn. */
   const openGmail = async () => {
     if (!tmplId) { setErr('Vui lòng chọn mẫu mail.'); return; }
     setBusy(true); setErr(null);
+    const w = window.open('', '_blank');
+    if (w) { try { w.opener = null; } catch (_) { /* trình duyệt chặn ghi, bỏ qua */ } }
     try {
       const override = preview
         ? { subject, bodyHtml: bodyRef.current ? bodyRef.current.innerHTML : preview.bodyHtml }
         : undefined;
       const { subject: subj, bodyText } = await renderForGmail(Number(tmplId), applicant.id, override);
       const url = gmailComposeUrl(applicant.email, subj, bodyText);
-      const w = window.open(url, '_blank', 'noopener');
-      if (!w) { setErr('Trình duyệt chặn cửa sổ Gmail. Hãy cho phép popup rồi thử lại.'); return; }
-      setOpened({ subject: subj, url });
-    } catch (e) { setErr(e.message || 'Không mở được Gmail.'); } finally { setBusy(false); }
+      if (w) w.location.replace(url);
+      // Nhớ luôn mẫu đã dùng: BE cần templateId để biết có đẩy bước hay không
+      // (Thư mời PV → Phỏng vấn · Thư mời nhận việc → Gửi Offer).
+      setOpened({ subject: subj, url, tmplId: Number(tmplId), blocked: !w });
+    } catch (e) {
+      if (w) w.close();
+      setErr(e.message || 'Không mở được Gmail.');
+    } finally { setBusy(false); }
   };
 
   // Sau khi đã gửi trong Gmail → ghi lịch sử.
   const confirmSent = async () => {
     setBusy(true); setErr(null);
     try {
-      await logSentMail([{ applicantId: applicant.id, subject: opened.subject }]);
+      await logSentMail([{ applicantId: applicant.id, subject: opened.subject, templateId: opened.tmplId }]);
       setResult({ sent: 1 });
+      if (onSent) onSent();          // bước có thể vừa đổi ⇒ màn gọi tải lại
     } catch (e) { setErr(e.message || 'Không lưu được lịch sử.'); } finally { setBusy(false); }
   };
 
@@ -85,15 +103,23 @@ export default function MailSendModal({ applicant, templates, onClose }) {
         </div>
       ) : opened ? (
         <div style={{ padding: '24px' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Đã mở Gmail soạn thư</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>
+            {opened.blocked ? 'Thư đã soạn xong — mở Gmail bằng nút bên dưới' : 'Đã mở Gmail soạn thư'}</div>
           <p className="muted" style={{ margin: '0 0 14px', fontSize: 13.5, lineHeight: 1.6 }}>
-            Một tab Gmail đã mở sẵn thư tới <b>{applicant.email}</b> (tiêu đề &amp; nội dung điền sẵn).
-            Bấm <b>Gửi</b> trong Gmail, rồi quay lại đây bấm <b>“Đã gửi — lưu lịch sử”</b>.
+            {opened.blocked ? (
+              <>Trình duyệt chặn tab tự mở, nhưng nội dung thư tới <b>{applicant.email}</b> đã
+                sẵn sàng — bấm <b>Mở Gmail</b> bên dưới (bấm tay thì không bị chặn).
+                Gửi xong quay lại đây bấm <b>“Đã gửi — lưu lịch sử”</b>.</>
+            ) : (
+              <>Một tab Gmail đã mở sẵn thư tới <b>{applicant.email}</b> (tiêu đề &amp; nội dung điền sẵn).
+                Bấm <b>Gửi</b> trong Gmail, rồi quay lại đây bấm <b>“Đã gửi — lưu lịch sử”</b>.</>
+            )}
           </p>
           {err && <div style={{ color: 'var(--red-600)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <a className="btn btn-soft" href={opened.url} target="_blank" rel="noreferrer">
-              <Icon name="mail" size={16} />Mở lại Gmail</a>
+            <a className={opened.blocked ? 'btn btn-primary' : 'btn btn-soft'}
+              href={opened.url} target="_blank" rel="noreferrer">
+              <Icon name="mail" size={16} />{opened.blocked ? 'Mở Gmail' : 'Mở lại Gmail'}</a>
             <button className="btn btn-primary" onClick={confirmSent} disabled={busy} style={{ marginLeft: 'auto' }}>
               <Icon name="check" size={16} />{busy ? 'Đang lưu…' : 'Đã gửi — lưu lịch sử'}</button>
           </div>

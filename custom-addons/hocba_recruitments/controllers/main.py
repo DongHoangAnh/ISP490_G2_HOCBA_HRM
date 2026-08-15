@@ -8,6 +8,9 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
 from ..models.hr_job import HB_TEACHING_LEVELS
+from ..models.hb_interview_slot import (
+    P_SLOT_CLOSE, P_SLOT_OPEN, P_SLOT_STEP, SLOT_STEPS_ALLOWED, _hour_label,
+)
 
 
 def _d(v):
@@ -22,6 +25,9 @@ APP_FORM_FIELDS = {
     'phone': ('partner_phone', 'str'),
     'email': ('email_from', 'str'),
     'jobId': ('job_id', 'int'),
+    # Đợt tuyển: bỏ trống ở payload thì BE tự điền theo phiếu đang tuyển của vị
+    # trí (hr_applicant._hb_fill_request); gửi lên = HR chọn tay, máy không đè.
+    'requestId': ('hb_request_id', 'int'),
     'dateReceived': ('date_received', 'str'),
     'ctv': ('ctv_tuyen_dung', 'str'),
     'cvLink': ('cv_link', 'str'),
@@ -39,6 +45,7 @@ APP_FORM_FIELDS = {
     'startDate': ('start_date', 'str'),
     'offerNote': ('offer_note', 'str'),
     'candidateConfirmed': ('candidate_confirmed', 'str'),
+    'onboardResult': ('onboard_result', 'str'),
 }
 
 # Map key payload (camelCase) -> field hr.job cho form Thêm/Sửa vị trí.
@@ -134,6 +141,35 @@ class HocBaTuyenDung(http.Controller):
             cache = {r['res_id']: r['name'] for r in rows}
             self._stage_ref_cache = cache
         return cache
+
+    # Gửi mẫu mail nào thì đẩy bước nào: {xmlid template: (bước nguồn, bước đích,
+    # lý do ghi chatter)}. Gửi mail LÀ hành động nghiệp vụ của bước đó, nên bước
+    # tự chạy theo — mẫu không có trong bảng này thì gửi đi không đổi bước.
+    # Áp cho cả 2 đường gửi: /send (SMTP) và /log-sent (gửi qua Gmail rồi xác
+    # nhận) — SPA đang dùng đường Gmail, đừng chỉ vá một chỗ.
+    MAIL_STAGE_RULES = {
+        'email_template_interview_invite': (
+            ['hb_stage_invite'], 'hb_stage_interview',
+            'Do đã gửi thư mời tham gia phỏng vấn.'),
+        'email_template_job_offer': (
+            ['hb_stage_interview', 'hb_stage_result'], 'hb_stage_offer',
+            'Do đã gửi thư mời nhận việc.'),
+    }
+
+    def _apply_mail_stage_rule(self, tmpl, applicants):
+        """Đẩy bước cho các ứng viên vừa nhận `tmpl` (nếu mẫu có luật).
+
+        Không nổ lỗi khi template/bước bị xoá: đổi bước là hệ quả phụ của việc
+        gửi mail, hỏng nó không được phép làm hỏng thao tác gửi.
+        """
+        if not tmpl or not applicants:
+            return
+        for xmlid, (src, dst, reason) in self.MAIL_STAGE_RULES.items():
+            ref = request.env.ref('hocba_recruitments.' + xmlid,
+                                  raise_if_not_found=False)
+            if ref and ref.id == tmpl.id:
+                applicants._hb_advance_stage(src, dst, reason)
+                return
 
     def _has_recruit_group(self):
         u = request.env.user
@@ -236,6 +272,8 @@ class HocBaTuyenDung(http.Controller):
             'email': a.email_from or '',
             'jobId': a.job_id.id or False,
             'jobName': a.job_id.name or '',
+            'requestId': a.hb_request_id.id or False,
+            'requestCode': a.hb_request_id.name or '',
             'cvLink': a.cv_link or '',
             'cvFileId': att.id or False,
             'cvFileName': att.name or '',
@@ -256,6 +294,7 @@ class HocBaTuyenDung(http.Controller):
             'startDate': _d(a.start_date),
             'offerNote': a.offer_note or '',
             'candidateConfirmed': a.candidate_confirmed or '',
+            'onboardResult': a.onboard_result or '',
             # Liên kết hồ sơ nhân viên (sau khi nhận việc)
             'employeeId': a.employee_id.id or False,
             'employeeName': a.employee_id.name or '',
@@ -279,20 +318,39 @@ class HocBaTuyenDung(http.Controller):
         job_domain = [] if scope is None else [('department_id', 'in', scope)]
         stages = env['hr.recruitment.stage'].sudo().search([], order='sequence, id')
         jobs = env['hr.job'].sudo().search(job_domain, order='name')
+        # Ô "Đợt tuyển" ở form CV: chỉ liệt kê phiếu ĐANG TUYỂN — gán CV vào đợt
+        # đã đóng là sửa lại số liệu của đợt đã chốt, không phải việc thường ngày.
+        req_domain = [('state', '=', 'recruiting')]
+        if scope is not None:
+            req_domain.append(('department_id', 'in', scope))
+        reqs = env['hb.recruitment.request'].sudo().search(
+            req_domain, order='id desc')
         return {
             'stages': [{'id': s.id, 'name': s.name, 'sequence': s.sequence,
                         'hiredStage': bool(s.hired_stage), 'slaDays': s.sla_days or 0,
                         'ref': self._stage_refs().get(s.id, '')}
                        for s in stages],
             'jobs': [{'id': j.id, 'name': j.name} for j in jobs],
+            'requests': [{'id': q.id, 'code': q.name or '',
+                          'jobId': q.job_id.id or False,
+                          'jobTitle': q.job_title or '',
+                          'qty': q.qty_expected or 0,
+                          'deadline': _d(q.expected_start_date)} for q in reqs],
             'cvResultLabels': self._sel_labels('hr.applicant', 'cv_filter_result'),
             'callStatusLabels': self._sel_labels('hr.applicant', 'call_status'),
             'attendanceLabels': self._sel_labels('hr.applicant', 'attendance_status'),
             'interviewResultLabels': self._sel_labels('hr.applicant', 'interview_result'),
+            'onboardResultLabels': self._sel_labels('hr.applicant', 'onboard_result'),
         }
 
     def _app_vals(self, payload):
-        """Lọc payload -> vals hr.applicant (whitelist + ép kiểu)."""
+        """Lọc payload -> vals hr.applicant (whitelist + ép kiểu).
+
+        Giá trị Selection sai được chặn ngay ở đây thành UserError: hai endpoint
+        gọi hàm này đều bắt UserError trả 400, còn để ORM tự vỡ thì ra ValueError
+        → 500, SPA chỉ thấy "lỗi máy chủ" thay vì biết mình gửi sai.
+        """
+        model_fields = request.env['hr.applicant']._fields
         vals = {}
         for key, (field, typ) in APP_FORM_FIELDS.items():
             if key not in payload:
@@ -302,6 +360,12 @@ class HocBaTuyenDung(http.Controller):
                 vals[field] = int(v) if v else False
             else:
                 vals[field] = v if v not in ('', None) else False
+            f = model_fields.get(field)
+            if f and f.type == 'selection' and vals[field]:
+                allowed = [k for k, _l in (f.selection or [])]
+                if vals[field] not in allowed:
+                    raise UserError('Giá trị không hợp lệ cho "%s": %s (chấp nhận: %s).'
+                                    % (key, vals[field], ', '.join(allowed)))
         return vals
 
     @http.route('/hocba-hrm/api/recruitment/cv', auth='user',
@@ -347,7 +411,11 @@ class HocBaTuyenDung(http.Controller):
         if not self._is_recruiter():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         payload = request.get_json_data()
-        vals = self._app_vals(payload)
+        try:
+            vals = self._app_vals(payload)
+        except UserError as ex:
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': str(ex)}, status=400)
         if not (vals.get('partner_name') or '').strip():
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên ứng viên.'},
@@ -382,7 +450,11 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(self._applicant_dep_id(a)):
             return self._forbidden()
-        vals = self._app_vals(request.get_json_data())
+        try:
+            vals = self._app_vals(request.get_json_data())
+        except UserError as ex:
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': str(ex)}, status=400)
         if not self._is_hr() and vals.get('job_id'):
             new_dep = request.env['hr.job'].sudo().browse(vals['job_id']).department_id.id
             if not self._dep_in_scope(new_dep):
@@ -491,6 +563,15 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(self._applicant_dep_id(a)):
             return self._forbidden()
+        # BR-OB-02: ứng viên đã đánh "Không nhận việc" thì không có hồ sơ nào để
+        # tạo. SPA đã ẩn nút, nhưng ẩn nút chỉ là lớp mềm — gọi thẳng API vẫn vào.
+        if a.onboard_result == 'no_show':
+            return request.make_json_response({
+                'error': 'bad_request',
+                'message': 'Ứng viên này đang ghi "Không nhận việc" nên không '
+                           'tạo hồ sơ nhân viên được. Nếu người này đã đến, đổi '
+                           'ô Kết quả nhận việc thành "Đã đến" rồi tạo lại.',
+            }, status=400)
         # Đã tạo rồi → trả về hồ sơ hiện có (không tạo trùng).
         if a.employee_id:
             return request.make_json_response({
@@ -536,14 +617,53 @@ class HocBaTuyenDung(http.Controller):
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
+        # Đã có hồ sơ nhân viên ⇒ khâu offer khép lại, ứng viên bước vào
+        # Onboarding. Chỉ đẩy tới: ai đã ở Onboarding/Bàn giao thì đứng yên.
+        a._hb_advance_stage(
+            ['hb_stage_result', 'hb_stage_offer'], 'hb_stage_onboarding',
+            'Do đã tạo hồ sơ nhân viên (Onboard).')
+        self._notify_profile_incomplete(emp)
         return request.make_json_response({
             'created': True, 'employeeId': emp.id,
             'employeeName': emp.name or '',
             'employeeCode': emp.x_employee_code or '',
         })
 
+    def _notify_profile_incomplete(self, emp):
+        """Chuông "cần hoàn thiện hồ sơ" cho hồ sơ vừa sinh từ ứng viên.
+
+        Hồ sơ tạo từ tuyển dụng luôn thiếu CCCD / MST / BHXH — tuyển dụng không
+        nắm mấy thông tin đó. Thiếu thì BR-010 chặn lên chính thức, mà người
+        phát hiện lại là HR ở tận cuối kỳ thử việc. Báo ngay lúc tạo.
+
+        Người nhận: HR Manager (người điền) + chính người vừa bấm Onboard (họ
+        biết hồ sơ này vừa sinh ra, và thường là người đi nhắc). dedup theo
+        employee để bấm lại nút không sinh thêm chuông.
+        """
+        missing = emp._hocba_missing_official_fields()
+        if not missing:
+            return
+        env = request.env
+        recipients = env['res.users'].sudo().browse(env.user.id)
+        grp = env.ref('hr.group_hr_manager', raise_if_not_found=False)
+        if grp:
+            recipients |= env['res.users'].sudo().search(
+                [('all_group_ids', 'in', grp.id), ('active', '=', True)])
+        code = emp.x_employee_code or ''
+        env['hb.notification'].sudo()._notify(
+            recipients, category='onboarding', kind='profile_incomplete',
+            level='warning',
+            title='Cần hoàn thiện hồ sơ: %s' % (emp.name or ''),
+            body='Hồ sơ %s%s vừa tạo từ ứng viên, còn thiếu: %s. Thiếu các mục '
+                 'này thì không chuyển sang Chính thức được khi hết thử việc.'
+                 % (emp.name or '', ' (%s)' % code if code else '',
+                    ', '.join(missing)),
+            target_view='employees', target_ref=emp.id,
+            dedup_key='profile_incomplete_%s' % emp.id)
+
     # ------------------------------------------------------------------
-    # Vị trí tuyển dụng / JD (hr.job) — tab "Vị trí / JD" của SPA.
+    # Vị trí tuyển dụng (hr.job) — dùng chung cho 2 tab SPA:
+    # "Theo dõi tuyển dụng" (tên cũ: Vị trí tuyển dụng / JD) và "Kho quản lý JD".
     # ------------------------------------------------------------------
 
     def _job_row(self, j, detail=False):
@@ -723,33 +843,196 @@ class HocBaTuyenDung(http.Controller):
                 'isHr': self._is_hr(),
                 'rows': [self._job_row(j) for j in jobs]}
         data.update(self._job_meta())
-        # Vị trí cần tuyển = phiếu yêu cầu ĐANG TUYỂN. Cần tuyển = SL phiếu;
-        # đã tuyển = số ứng viên đã onboard thực tế (stage hired) của JD gắn với phiếu.
-        req_domain = [('state', '=', 'recruiting')]
+        # Nguồn tab "Theo dõi tuyển dụng". Lấy cả phiếu ĐÃ ĐÓNG chứ không chỉ
+        # phiếu đang tuyển: tuyển đủ chỉ tiêu thì hệ thống tự đóng phiếu, chỉ trả
+        # 'recruiting' thì dòng BIẾN MẤT khỏi bảng đúng lúc người ta muốn thấy nó
+        # chuyển sang "Dừng tuyển". Phiếu nháp/chờ duyệt/từ chối chưa vào guồng
+        # tuyển nên vẫn đứng ngoài (xem tab Phiếu yêu cầu).
+        req_domain = [('state', 'in', ['recruiting', 'closed'])]
         if scope is not None:
             req_domain.append(('department_id', 'in', scope))
         reqs = env['hb.recruitment.request'].sudo().search(
             req_domain, order='department_id, job_title')
         level_labels = self._sel_labels('hb.recruitment.request', 'level')
-        Applicant = env['hr.applicant'].sudo().with_context(active_test=False)
-        data['requests'] = [{
+        state_labels = self._sel_labels('hb.recruitment.request', 'state')
+        stats = self._request_stats(reqs)
+        data['requests'] = [dict({
             'id': r.id,
             'code': r.name or '',
             'jobTitle': r.job_title or '',
             'depId': r.department_id.id or False,
             'depName': r.department_id.name or 'Chưa gán phòng ban',
             'qty': r.qty_expected or 0,
-            'hired': Applicant.search_count([
-                ('job_id', '=', r.job_id.id), ('stage_id.hired_stage', '=', True),
-            ]) if r.job_id else 0,
             'jobId': r.job_id.id or False,
             'jobName': r.job_id.name or '',
             'published': bool(getattr(r.job_id, 'is_published', False)) if r.job_id else False,
             'websiteUrl': (getattr(r.job_id, 'website_url', '') or '') if r.job_id else '',
             'levelLabel': level_labels.get(r.level, '') if r.level else '',
+            'state': r.state or '',
+            'stateLabel': state_labels.get(r.state, ''),
+            # Trạng thái TUYỂN của JD gắn với phiếu — nút Đăng tuyển/Ngừng đăng
+            # lật trường này (xem _job_vals). SPA ghép nó với state của phiếu
+            # thành cột "Trạng thái": đóng phiếu > dừng tuyển > đang tuyển.
+            'jobStatus': (r.job_id.recruitment_status or '') if r.job_id else '',
+            'deadline': _d(r.expected_start_date),
             'jdLink': r.jd_link or '',
-        } for r in reqs]
+        }, **stats[r.id]) for r in reqs]
         return request.make_json_response(data)
+
+    # ------------------------------------------------------------------
+    # Theo dõi tiến độ theo phiếu yêu cầu — tab "Theo dõi tuyển dụng".
+    # ------------------------------------------------------------------
+
+    # Ứng viên gắn thẳng vào đợt tuyển qua hr.applicant.hb_request_id (tự điền
+    # khi nhận CV — xem hr_applicant._hb_fill_request). Nhờ vậy hai phiếu cùng
+    # một vị trí có sổ riêng, không còn dùng chung số như hồi phải bắc cầu job_id.
+    # active_test=False: hồ sơ ứng viên hay bị lưu trữ sau khi nhận việc, bỏ đi
+    # thì "đã tuyển" tụt số.
+
+    def _applicant_env(self):
+        return request.env['hr.applicant'].sudo().with_context(active_test=False)
+
+    # Phễu tuyển dụng của một phiếu — thứ tự đúng bằng thứ tự khách đọc bảng:
+    #   Tổng CV → CV pass → CV fail → PV → PV pass → PV fail → Nhận việc → Đã tuyển
+    #
+    # Hai mốc "PV" và "Nhận việc" KHÔNG có trường riêng nên phải suy ra, và suy
+    # theo kiểu HỢP (OR) để phễu không bao giờ hụt: nhóm sau luôn nằm trong nhóm
+    # trước. Nếu chỉ lấy stage thì ứng viên đã có kết quả PV mà chưa ai kéo thẻ
+    # sang bước sau sẽ rơi ra ngoài "PV", thành ra "PV fail" nhiều hơn "PV" —
+    # người xem sẽ nghĩ số liệu sai.
+    #   PV        = đã sang bước Phỏng vấn (sequence 60) trở đi, HOẶC đã có lịch
+    #               hẹn / tình trạng tham gia / kết quả PV.
+    #   Nhận việc = đã sang bước Onboarding (sequence 90) trở đi, HOẶC đã điền
+    #               ngày nhận việc.
+    #   Đã tuyển  = ở bước có cờ hired_stage (Bàn giao nhân sự) — nhân sự đã
+    #               hoàn thiện thử việc, cùng con số với cột "Đã tuyển" ngoài bảng.
+    _STAGE_INTERVIEW_SEQ = 60   # data/hr_recruitment_stages.xml — bước "Phỏng vấn"
+    _STAGE_ONBOARD_SEQ = 90     # data/hr_recruitment_stages.xml — bước "Onboarding"
+
+    # Nhóm ứng viên khi bấm vào con số ở dòng chi tiết → domain tương ứng.
+    # Dùng chung cho cả đếm (_request_stats) và popup danh sách, để con số bấm
+    # vào và danh sách hiện ra không bao giờ lệch nhau.
+    APPLICANT_GROUPS = {
+        'cv':      [],
+        'cv_pass': [('cv_filter_result', '=', 'pass')],
+        'fail_cv': [('cv_filter_result', '=', 'fail')],
+        'pv':      ['|', '|', '|',
+                    ('stage_id.sequence', '>=', _STAGE_INTERVIEW_SEQ),
+                    ('interview_date', '!=', False),
+                    ('attendance_status', '!=', False),
+                    ('interview_result', '!=', False)],
+        'pv_pass': [('interview_result', '=', 'pass')],
+        'fail_pv': [('interview_result', '=', 'fail')],
+        # Trừ hẳn người đã đánh "Không nhận việc": ngày nhận việc vẫn nằm trên hồ
+        # sơ sau khi ứng viên bùng, để nguyên luật cũ là đếm nhầm họ vào đây.
+        'onboard': ['&', ('onboard_result', '!=', 'no_show'),
+                    '|', '|',
+                    ('stage_id.sequence', '>=', _STAGE_ONBOARD_SEQ),
+                    ('start_date', '!=', False),
+                    ('onboard_result', '=', 'arrived')],
+        'hired':   [('stage_id.hired_stage', '=', True)],
+    }
+
+    # Khoá đếm trả về SPA cho từng nhóm. Tách khỏi APPLICANT_GROUPS vì tên khoá
+    # JSON theo lối camelCase của SPA, còn khoá nhóm là tham số ?group= của API.
+    _STAT_KEYS = {
+        'cv': 'cvCount', 'cv_pass': 'cvPass', 'fail_cv': 'failCv',
+        'pv': 'pvCount', 'pv_pass': 'pvPass', 'fail_pv': 'failPv',
+        'onboard': 'onboard', 'hired': 'hired',
+    }
+
+    def _request_stats(self, reqs):
+        """{req_id: {cvCount, cvPass, failCv, pvCount, pvPass, failPv, onboard, hired}}.
+
+        Đếm rời từng phiếu là 8×N query; danh sách phiếu đang tuyển của khách đã
+        vài chục dòng nên gom một lượt theo phiếu bằng _read_group rồi tra dict.
+        """
+        if not reqs:
+            return {}
+
+        Applicant = self._applicant_env()
+        base = [('hb_request_id', 'in', reqs.ids)]
+
+        def by_req(extra):
+            return {q.id: n for q, n in Applicant._read_group(
+                base + extra, ['hb_request_id'], ['__count'])}
+
+        counts = {g: by_req(dom) for g, dom in self.APPLICANT_GROUPS.items()}
+        return {r.id: {key: counts[g].get(r.id, 0)
+                       for g, key in self._STAT_KEYS.items()} for r in reqs}
+
+    @http.route('/hocba-hrm/api/recruitment/request/<int:req_id>/applicants',
+                auth='user', type='http', methods=['GET'])
+    def api_recruitment_request_applicants(self, req_id, group='cv', **kw):
+        """Danh sách ứng viên của một phiếu theo nhóm + thông tin JD kèm theo.
+
+        Popup "xem chi tiết số ứng viên": khách cần biết ỨNG VIÊN NÀO chứ không
+        chỉ bao nhiêu, và xem luôn JD đang tuyển để đối chiếu.
+        """
+        r = request.env['hb.recruitment.request'].sudo().browse(req_id)
+        if not r.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._dep_in_scope(r.department_id.id):
+            return self._forbidden()
+        if group not in self.APPLICANT_GROUPS:
+            return request.make_json_response(
+                {'error': 'bad_request', 'message': 'Nhóm ứng viên không hợp lệ.'},
+                status=400)
+
+        apps = self._applicant_env().search(
+            [('hb_request_id', '=', r.id)] + self.APPLICANT_GROUPS[group],
+            order='date_received desc, id desc')
+        rows = [self._cv_row(a) for a in apps]
+        return request.make_json_response({
+            'group': group,
+            'jd': self._request_jd(r),
+            'rows': rows,
+            # Nhãn kết quả lọc CV / phỏng vấn: popup này không gọi /cv nên phải
+            # tự mang nhãn theo, đừng bắt SPA hard-code lại chuỗi tiếng Việt.
+            'cvResultLabels': self._sel_labels('hr.applicant', 'cv_filter_result'),
+            'interviewResultLabels': self._sel_labels('hr.applicant', 'interview_result'),
+        })
+
+    def _request_jd(self, r):
+        """Thông tin phiếu + JD hiển thị trên đầu popup ứng viên."""
+        labels = {f: self._sel_labels('hb.recruitment.request', f)
+                  for f in ('level', 'state', 'education', 'work_type', 'reason')}
+
+        def money(v):
+            return '{:,.0f}'.format(v).replace(',', '.') if v else ''
+
+        salary = r.salary_range or ''
+        if not salary and (r.salary_from or r.salary_to):
+            salary = ('%s – %s VNĐ' % (money(r.salary_from), money(r.salary_to))
+                      if r.salary_from and r.salary_to
+                      else 'Từ %s VNĐ' % money(r.salary_from or r.salary_to))
+        return {
+            'id': r.id,
+            'code': r.name or '',
+            'jobTitle': r.job_title or '',
+            'jobId': r.job_id.id or False,
+            'jobName': r.job_id.name or '',
+            'depName': r.department_id.name or '',
+            'state': r.state or '',
+            'stateLabel': labels['state'].get(r.state, ''),
+            'qty': r.qty_expected or 0,
+            'deadline': _d(r.expected_start_date),
+            'dateRequest': _d(r.date_request),
+            'requester': r.requester_id.name or '',
+            'levelLabel': labels['level'].get(r.level, ''),
+            'reasonLabel': labels['reason'].get(r.reason, ''),
+            'educationLabel': (labels['education'].get(r.education, '')
+                               if r.education and r.education != 'none' else ''),
+            'workTypeLabel': labels['work_type'].get(r.work_type, ''),
+            'experienceYears': r.experience_years or 0,
+            'languageRequirement': r.language_requirement or '',
+            'skillDescription': r.skill_description or '',
+            'salary': salary,
+            'jdLink': r.jd_link or '',
+            'jdDescription': (r.job_id.description or '') if r.job_id else '',
+            'published': bool(getattr(r.job_id, 'is_published', False)) if r.job_id else False,
+            'websiteUrl': (getattr(r.job_id, 'website_url', '') or '') if r.job_id else '',
+        }
 
     @http.route('/hocba-hrm/api/recruitment/job/<int:job_id>', auth='user',
                 type='http', methods=['GET'])
@@ -863,7 +1146,11 @@ class HocBaTuyenDung(http.Controller):
         jobs = env['hr.job'].sudo().search(job_domain, order='name')
         return {
             'departments': [{'id': d.id, 'name': d.name} for d in deps],
-            'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id} for j in jobs],
+            # jdLink/status để form phiếu yêu cầu chọn JD thẳng từ kho: chọn xong
+            # tự điền tên vị trí + link JD, khỏi copy tay từ tab Kho quản lý JD.
+            'jobs': [{'id': j.id, 'name': j.name, 'dep': j.department_id.id,
+                      'jdLink': j.jd_google_link or '',
+                      'status': j.recruitment_status or ''} for j in jobs],
             'reasonLabels': self._sel_labels('hb.recruitment.request', 'reason'),
             'levelLabels': self._sel_labels('hb.recruitment.request', 'level'),
             'educationLabels': self._sel_labels('hb.recruitment.request', 'education'),
@@ -1173,15 +1460,7 @@ class HocBaTuyenDung(http.Controller):
                 sent_ids.append(aid)
             except (AccessError, ValidationError, UserError):
                 skipped += 1
-        # Gửi xong THƯ MỜI PHỎNG VẤN ⇒ khâu "hẹn & mời" xong, đẩy sang bước
-        # Phỏng vấn. Chỉ đúng template này; mẫu khác gửi đi không đổi bước.
-        invite = request.env.ref(
-            'hocba_recruitments.email_template_interview_invite',
-            raise_if_not_found=False)
-        if invite and t.id == invite.id and sent_ids:
-            Applicant.browse(sent_ids)._hb_advance_stage(
-                'hb_stage_invite', 'hb_stage_interview',
-                'Do đã gửi thư mời tham gia phỏng vấn.')
+        self._apply_mail_stage_rule(t, Applicant.browse(sent_ids))
         return request.make_json_response({'sent': sent, 'skipped': skipped})
 
     @http.route('/hocba-hrm/api/recruitment/mail-template/<int:tmpl_id>/preview',
@@ -1292,13 +1571,19 @@ class HocBaTuyenDung(http.Controller):
                 type='http', methods=['POST'], csrf=False)
     def api_recruitment_mail_log_sent(self, **kw):
         """Ghi lịch sử mail đã gửi (qua Gmail) — chỉ nhóm tuyển dụng.
-        body: {logs: [{applicantId, subject}]}. Tạo mail.message (message_type='email')
-        để tab Mail logs hiển thị như mail gửi qua server."""
+        body: {logs: [{applicantId, subject, templateId}]}. Tạo mail.message
+        (message_type='email') để tab Mail logs hiển thị như mail gửi qua server.
+
+        templateId (tuỳ chọn) để áp MAIL_STAGE_RULES: gửi Thư mời phỏng vấn /
+        Thư mời nhận việc thì đẩy bước luôn. Thiếu templateId (client cũ) thì chỉ
+        ghi lịch sử như trước, không đổi bước.
+        """
         if not self._is_recruiter():
             return request.make_json_response({'error': 'forbidden'}, status=403)
         logs = (request.get_json_data() or {}).get('logs') or []
         Applicant = request.env['hr.applicant'].sudo()
         logged = 0
+        by_tmpl = {}        # template_id -> ids ứng viên đã ghi nhận gửi
         for item in logs:
             aid = item.get('applicantId')
             if not aid:
@@ -1319,6 +1604,13 @@ class HocBaTuyenDung(http.Controller):
                 subtype_xmlid='mail.mt_note',
             )
             logged += 1
+            tmpl_id = item.get('templateId')
+            if tmpl_id:
+                by_tmpl.setdefault(int(tmpl_id), []).append(a.id)
+        Template = request.env['mail.template'].sudo()
+        for tmpl_id, app_ids in by_tmpl.items():
+            self._apply_mail_stage_rule(
+                Template.browse(tmpl_id).exists(), Applicant.browse(app_ids))
         return request.make_json_response({'logged': logged})
 
     # ------------------------------------------------------------------
@@ -1387,6 +1679,9 @@ class HocBaTuyenDung(http.Controller):
             'meName': env.user.name,
             'interviewers': interviewers,
             'rows': [self._slot_row(s) for s in slots],
+            # Người khai slot là trưởng bộ phận — KHÔNG có quyền vào màn cấu
+            # hình, nên khung giờ phải đi kèm ngay ở payload này.
+            'hourOptions': self._slot_hours_payload()['options'],
         })
 
     @http.route('/hocba-hrm/api/recruitment/interview-slots', auth='user',
@@ -1405,12 +1700,22 @@ class HocBaTuyenDung(http.Controller):
         Slot = request.env['hb.interview.slot'].sudo()
         created = []
         try:
+            open_h, close_h, _step = Slot._hb_slot_hour_config()
             for ln in lines:
                 day = fields.Date.from_string(ln['date'])
                 sh = float(ln['startHour'])
                 eh = float(ln['endHour'])
                 if eh <= sh:
                     raise UserError('Giờ kết thúc phải sau giờ bắt đầu.')
+                # Khung giờ là cấu hình của trung tâm — chặn ở API chứ không chỉ
+                # ở dropdown, vì endpoint này nhận float tự do.
+                if sh < open_h or eh > close_h:
+                    raise UserError(
+                        'Khung giờ phỏng vấn của trung tâm là %s–%s. Slot %s–%s '
+                        'nằm ngoài khung. Cần khai ngoài giờ thì Admin nới khung '
+                        'ở màn Cấu hình tuyển dụng → tab Khung giờ phỏng vấn.'
+                        % (_hour_label(open_h), _hour_label(close_h),
+                           _hour_label(sh), _hour_label(eh)))
                 rec = Slot.create({
                     'start_datetime': self._local_to_utc(day, sh, tz),
                     'stop_datetime': self._local_to_utc(day, eh, tz),
@@ -1584,7 +1889,61 @@ class HocBaTuyenDung(http.Controller):
             'overdueNotifyLabels': self.OVERDUE_NOTIFY_LABELS,
             'stages': [self._stage_config_row(s, counts, active_counts)
                        for s in stages],
+            'slotHours': self._slot_hours_payload(),
         })
+
+    def _slot_hours_payload(self):
+        """Khung giờ khai lịch rảnh PV — dùng chung cho màn cấu hình và form khai."""
+        Slot = request.env['hb.interview.slot'].sudo()
+        open_h, close_h, step = Slot._hb_slot_hour_config()
+        return {
+            'open': open_h,
+            'close': close_h,
+            'stepMinutes': step,
+            'stepChoices': list(SLOT_STEPS_ALLOWED),
+            'options': [[v, lbl] for v, lbl in Slot._hb_hour_slots()],
+        }
+
+    @http.route('/hocba-hrm/api/recruitment/config/slot-hours', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_recruitment_config_slot_hours(self, **kw):
+        """Lưu khung giờ phỏng vấn — Admin / HR Manager."""
+        if not self._can_config():
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data() or {}
+        try:
+            open_h = float(payload.get('open'))
+            close_h = float(payload.get('close'))
+            step = int(payload.get('stepMinutes'))
+        except (TypeError, ValueError):
+            return request.make_json_response(
+                {'error': 'invalid', 'message': 'Giá trị khung giờ không hợp lệ.'},
+                status=400)
+        if step not in SLOT_STEPS_ALLOWED:
+            return request.make_json_response(
+                {'error': 'invalid',
+                 'message': 'Bước nhảy chỉ nhận %s phút.'
+                            % ', '.join(str(s) for s in SLOT_STEPS_ALLOWED)},
+                status=400)
+        if not (0 <= open_h < close_h <= 24):
+            return request.make_json_response(
+                {'error': 'invalid',
+                 'message': 'Giờ mở phải nhỏ hơn giờ đóng và nằm trong 0–24.'},
+                status=400)
+        # Khung hẹp hơn một bước nhảy ⇒ dropdown chỉ có đúng mốc mở, không khai
+        # nổi slot nào (giờ kết thúc luôn phải sau giờ bắt đầu).
+        if (close_h - open_h) < (step / 60.0):
+            return request.make_json_response(
+                {'error': 'invalid',
+                 'message': 'Khung giờ %s–%s hẹp hơn một bước nhảy %s phút nên '
+                            'không khai được slot nào.'
+                            % (_hour_label(open_h), _hour_label(close_h), step)},
+                status=400)
+        ICP = request.env['ir.config_parameter'].sudo()
+        ICP.set_param(P_SLOT_OPEN, str(open_h))
+        ICP.set_param(P_SLOT_CLOSE, str(close_h))
+        ICP.set_param(P_SLOT_STEP, str(step))
+        return request.make_json_response(self._slot_hours_payload())
 
     @http.route('/hocba-hrm/api/recruitment/config/stages', auth='user',
                 type='http', methods=['POST'], csrf=False)

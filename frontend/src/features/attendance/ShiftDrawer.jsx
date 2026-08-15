@@ -66,6 +66,23 @@ export default function ShiftDrawer({ shift, canManage, onClose, onChanged }) {
           <div className="kv"><div className="k">Hệ số</div><div className="v mono" style={{ fontWeight: 600 }}>×{shift.rate}</div></div>
         </div>
         {shift.reason && <div className="muted" style={{ fontSize: 12.5, marginTop: 12 }}>Lý do: "{shift.reason}"</div>}
+
+        {(shift.checkIn || shift.checkOut) && (
+          <div style={{ marginTop: 20, padding: '14px 16px', background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Dữ liệu chấm công thực tế</div>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <div className="kv"><div className="k">Giờ vào</div><div className="v mono">{fmtTime(shift.checkIn)}</div></div>
+              <div className="kv"><div className="k">Giờ ra</div><div className="v mono">{fmtTime(shift.checkOut)}</div></div>
+            </div>
+            {shift.notes && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <div className="k" style={{ color: 'var(--amber-700)', fontSize: 11 }}>Ghi chú giải trình</div>
+                <div className="v" style={{ whiteSpace: 'pre-wrap', marginTop: 4, fontSize: 13 }}>{shift.notes}</div>
+              </div>
+            )}
+          </div>
+        )}
+
         {!canManage && !isPending && shift.reviewNote && (
           <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Ghi chú duyệt: {shift.reviewNote}</div>
         )}

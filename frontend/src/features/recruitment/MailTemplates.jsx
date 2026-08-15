@@ -8,6 +8,7 @@ import { fetchMailTemplates, deleteMailTemplate } from '../../api/recruitment';
 import MailTemplateForm from './MailTemplateForm';
 import MailTemplateImport from './MailTemplateImport';
 import SendMailModal from './SendMailModal';
+import GuideNote from './GuideNote';
 import { toFriendly } from './mailTokens';
 
 /* Cắt bớt phần chữ dài mà vẫn giữ nguyên nghĩa: tiêu đề dài ngắn khác nhau từng
@@ -17,6 +18,34 @@ const clamp = (lines) => ({
   display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical',
   overflow: 'hidden', wordBreak: 'break-word',
 });
+
+/* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
+const TMPL_STEPS = [
+  ['Soạn mẫu',
+   <>Bấm <b>Thêm mẫu</b> để soạn mới, hoặc <b>Import mẫu</b> rồi dán nguyên lá mail
+     đang dùng — hệ thống tự tách tiêu đề và nhận ra chỗ điền dạng
+     <b> [Tên ứng viên]</b>.</>],
+  ['Chèn thông tin tự động',
+   <>Trong ô nội dung, bấm <b>Chèn</b> để đặt các ô vàng (họ tên, vị trí, email,
+     SĐT, ngày &amp; giờ PV). Lúc gửi, mỗi ô vàng thay bằng dữ liệu thật —
+     <b> đừng gõ tay tên người</b> vào mẫu.</>],
+  ['Gửi hàng loạt',
+   <><b>Gửi mail</b> trên thẻ mẫu → tick ứng viên → <b>Tiếp tục</b> →
+     <b> Mở Gmail</b> từng người và gửi → quay lại bấm <b>Lưu lịch sử</b>.</>],
+  ['Gửi cho một người',
+   <>Cần xem trước hoặc sửa riêng cho một ứng viên thì gửi từ nút <b>Gửi mail</b>
+     ở tab <b>Danh sách PV</b> / <b>Offer &amp; Nhận việc</b>.</>],
+  ['Nhớ hệ quả đổi bước',
+   <><b>“Thư mời phỏng vấn”</b> đẩy ứng viên sang bước <b>Phỏng vấn</b>,
+     <b> “Thư mời nhận việc”</b> đẩy sang <b>Gửi Offer</b>; mẫu khác không đổi
+     bước. Chỉ đổi khi bạn bấm <b>Lưu lịch sử</b> — đừng bỏ qua bước này.</>],
+];
+
+const TMPL_GUIDE_NOTE = (
+  <>Mẫu dùng chung <b>toàn hệ thống</b> nên chỉ HR được thêm/sửa/xoá; trưởng phòng
+    gửi được nhưng chỉ tới ứng viên phòng mình. Xem đã gửi cho ai ở tab
+    <b> Lịch sử gửi mail</b>; sửa mẫu về sau không ảnh hưởng mail đã gửi.</>
+);
 
 export default function MailTemplates({ search }) {
   const [data, setData] = useState(null);
@@ -108,6 +137,9 @@ export default function MailTemplates({ search }) {
         {filtered.length === 0 && <div style={{ gridColumn: '1/-1' }}><EmptyState>Chưa có mail mẫu nào.</EmptyState></div>}
         <div style={{ gridColumn: '1/-1' }}><Pagination {...pg} /></div>
       </div>
+
+      <GuideNote title="Các bước cần làm ở màn này"
+        steps={TMPL_STEPS} note={TMPL_GUIDE_NOTE} />
 
       {editing && (
         <MailTemplateForm tmpl={editing === 'new' ? null : editing}

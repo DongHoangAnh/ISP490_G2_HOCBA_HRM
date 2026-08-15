@@ -1,8 +1,8 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, fetchEvaluations, deleteAsset } from '../../api/employees';
-import { fetchEmployeeAllowances, saveEmployeeAllowance, deleteEmployeeAllowance } from '../../api/payroll';
+import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, deleteAsset } from '../../api/employees';
+import { fetchCareer } from '../../api/career';
 import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
@@ -11,16 +11,15 @@ import Modal from '../../components/Modal';
 import EmployeeForm from './EmployeeForm';
 import DependentForm from './DependentForm';
 import AssetForm from './AssetForm';
-import PromotionForm from './PromotionForm';
 import CertForm from './CertForm';
 import AccountForm from './AccountForm';
-import EvaluationForm from './EvaluationForm';
 import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
 import { EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, HB_CERT } from '../../utils/format';
 
 export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
-  canEdit = isHr, canManageAccount = isHr, canSeeSalary = isMgr, initialTab = 'info' }) {
+  canEdit = isHr, canManageAccount = isHr, canSeeSalary = isMgr,
+  initialTab = 'info', onOpenCareer }) {
   const [tab, setTab] = useState(initialTab);
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
@@ -78,7 +77,8 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
         {det && tab === 'info' && <InfoTab det={det} isHr={canEdit} isMgr={canSeeSalary} editable={canEdit} onUpdated={update} />}
         {det && tab === 'probation' && <ProbationTab det={det} isHr={canEdit} isMgr={isMgr} onUpdated={update} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={canEdit} onUpdated={update} />}
-        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr} editable={isMgr} onUpdated={update} />}
+        {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr}
+          onOpenCareer={onOpenCareer && (() => { onOpenCareer(det.id); onClose(); })} />}
         {det && tab === 'account' && canManageAccount && <AccountTab det={det} emp={emp} onUpdated={update} />}
       </div>
 
@@ -219,144 +219,6 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
           )}
         </div>
       )}
-      {isMgr && <AllowanceSection empId={det.id} isMgr={isMgr} />}
-    </div>
-  );
-}
-
-/* ── Phụ cấp riêng (standalone CRUD, free-form name + amount) ── */
-function AllowanceSection({ empId, isMgr }) {
-  const [allowances, setAllowances] = useState([]);
-  const [adding, setAdding] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ name: '', amount: '' });
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    fetchEmployeeAllowances(empId).then(setAllowances).catch(() => {});
-  }, [empId]);
-
-  const reload = () => fetchEmployeeAllowances(empId).then(setAllowances).catch(() => {});
-  const resetForm = () => { setForm({ name: '', amount: '' }); setAdding(false); setEditId(null); };
-
-  const handleSave = async () => {
-    if (!form.name.trim() || busy) return;
-    setBusy(true);
-    try {
-      await saveEmployeeAllowance({
-        id: editId || undefined,
-        employee_id: empId,
-        name: form.name.trim(),
-        amount: Number(form.amount) || 0,
-      });
-      resetForm();
-      reload();
-    } catch (e) { alert(e.message); }
-    finally { setBusy(false); }
-  };
-
-  const handleDelete = async (a) => {
-    if (!window.confirm(`Xoá phụ cấp "${a.name}"?`)) return;
-    try { await deleteEmployeeAllowance(a.id); reload(); }
-    catch (e) { alert(e.message); }
-  };
-
-  const fmtAmt = (v) => v ? Number(v).toLocaleString('vi-VN') + ' ₫' : '0 ₫';
-  const inp = { border: '1px solid #d1d5db', borderRadius: 5, padding: '5px 10px', fontSize: 13 };
-
-  return (
-    <div style={{ marginTop: 22 }}>
-      <div className="between" style={{ marginBottom: 8 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-          💰 Phụ cấp riêng ({allowances.length})
-        </div>
-        {isMgr && !adding && !editId && (
-          <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={13} />Thêm phụ cấp
-          </button>
-        )}
-      </div>
-
-      {allowances.length > 0 && (
-        <div className="card" style={{ padding: 0 }}>
-          <table className="tbl">
-            <thead><tr>
-              <th>Khoản phụ cấp</th><th style={{ textAlign: 'right' }}>Số tiền</th>
-              {isMgr && <th style={{ width: 80 }}></th>}
-            </tr></thead>
-            <tbody>
-              {allowances.map((a) => (
-                editId === a.id ? (
-                  <tr key={a.id} style={{ background: '#fefce8' }}>
-                    <td>
-                      <input type="text" style={{ ...inp, width: '100%' }}
-                        value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-                    </td>
-                    <td>
-                      <input type="number" style={{ ...inp, width: '100%', textAlign: 'right' }}
-                        value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                        autoFocus />
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={busy}>
-                        {busy ? '...' : 'Lưu'}
-                      </button>
-                      <button className="btn btn-ghost btn-sm" style={{ marginLeft: 4 }}
-                        onClick={resetForm}>Huỷ</button>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={a.id}>
-                    <td>{a.name}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmtAmt(a.amount)}</td>
-                    {isMgr && (
-                      <td style={{ whiteSpace: 'nowrap', textAlign: 'right', width: '1%', overflow: 'visible', maxWidth: 'none' }}>
-                        <button className="icon-btn" title="Sửa" onClick={() => {
-                          setEditId(a.id); setAdding(false);
-                          setForm({ name: a.name, amount: a.amount });
-                        }}><Icon name="edit" size={15} className="faint" /></button>
-                        <button className="icon-btn" title="Xoá" onClick={() => handleDelete(a)}>
-                          <Icon name="trash" size={15} className="faint" /></button>
-                      </td>
-                    )}
-                  </tr>
-                )
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {allowances.length === 0 && !adding && (
-        <div className="muted" style={{ fontSize: 12.5 }}>Chưa có phụ cấp riêng.</div>
-      )}
-
-      {adding && (
-        <div style={{
-          marginTop: 10, padding: '12px 16px', borderRadius: 8,
-          background: '#f8fafc', border: '1px solid #e2e8f0',
-        }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 180px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#374151' }}>Tên khoản</div>
-              <input type="text" style={{ ...inp, width: '100%' }}
-                value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="VD: PC Xăng xe, PC Di chuyển..." autoFocus />
-            </div>
-            <div style={{ flex: '0 0 150px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#374151' }}>Số tiền (₫)</div>
-              <input type="number" style={{ ...inp, width: '100%' }}
-                value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                placeholder="0" />
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={busy || !form.name.trim()}>
-                {busy ? 'Đang lưu...' : 'Thêm'}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={resetForm}>Huỷ</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -420,28 +282,40 @@ export function AssetsTab({ det, editable, onUpdated }) {
   );
 }
 
-export function PromoTab({ det, isMgr, editable, onUpdated }) {
-  const [adding, setAdding] = useState(false);
-  const [evaluating, setEvaluating] = useState(false);
-  const [evalData, setEvalData] = useState(null);
-  const canAct = editable && onUpdated;
+/* Tab Lộ trình trong hồ sơ NV — CHỈ ĐỌC từ 2026-08-12.
+   Nhập liệu (chấm đánh giá + tạo thăng tiến) đã gộp về màn Đánh giá của
+   hocba_reviews; ở đây chỉ còn kết quả và biểu đồ.
+   Spec: docs/superpowers/specs/
+   2026-08-12-gop-danh-gia-thang-tien-vao-reviews-design.md §4 */
+export function PromoTab({ det, isMgr, onOpenCareer }) {
+  const [career, setCareer] = useState(null);
 
   useEffect(() => {
-    setEvalData(null); // tránh nháy dữ liệu NV cũ khi đổi hồ sơ
-    if (canAct) fetchEvaluations(det.id).then(setEvalData).catch(() => setEvalData(null));
-  }, [det.id, canAct]);
+    setCareer(null); // tránh nháy dữ liệu NV cũ khi đổi hồ sơ
+    // MỘT nguồn duy nhất cho mọi vai trò: /career đã gác đúng phạm vi
+    // (_emp_in_scope) và tự lọc phiếu chưa công bố với người tự xem.
+    fetchCareer(det.id).then(setCareer).catch(() => setCareer(null));
+  }, [det.id]);
 
-  const latest = evalData?.evaluations?.[evalData.evaluations.length - 1];
-  const am = evalData?.autoMetrics;
+  const evals = career?.evaluations || [];
+  const latest = evals[evals.length - 1];
+  const st = career?.stats;
 
   return (
     <div>
-      {am && (
+      {onOpenCareer && (
+        <div style={{ marginBottom: 14 }}>
+          <button className="btn btn-soft btn-sm" onClick={onOpenCareer}>
+            <Icon name="trend" size={13} />Mở trang lộ trình đầy đủ</button>
+        </div>
+      )}
+      {st && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-          <MetricCard label="Thâm niên (tháng)" value={am.tenureMonths} />
-          <MetricCard label="Từ thăng tiến" value={am.monthsSincePromo ?? '—'} />
-          <MetricCard label="Chấm công 3T" value={am.attendance ? `${am.attendance.days} ngày` : 'Chưa có'} />
-          <MetricCard label="Kết luận gần nhất" value={latest ? `${latest.totalScore}%` : '—'} />
+          <MetricCard label="Thâm niên (tháng)" value={st.tenureMonths ?? '—'} />
+          <MetricCard label="Từ thăng tiến" value={st.monthsSincePromo ?? '—'} />
+          <MetricCard label="Số đợt đánh giá" value={st.evalCount} />
+          <MetricCard label="Điểm gần nhất"
+            value={st.lastScore != null ? st.lastScore : '—'} />
         </div>
       )}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -450,43 +324,23 @@ export function PromoTab({ det, isMgr, editable, onUpdated }) {
           <SalaryJourneyChart promotions={det.promotions} />
         </div>
         <div style={{ flex: '1 1 260px' }}>
-          <SectionTitle>Radar tiêu chí (đợt gần nhất)</SectionTitle>
+          <SectionTitle>Radar tiêu chí (kỳ gần nhất)</SectionTitle>
+          {/* Chỉ phiếu đánh giá định kỳ mới có tiêu chí — đợt cũ đã bỏ chi
+              tiết theo bộ tiêu chí ngừng dùng. */}
           <CriteriaRadar lines={latest?.lines} />
         </div>
       </div>
 
-      {canAct && (
-        <div className="between" style={{ margin: '16px 0' }}>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>
-            Lịch sử ({det.promotions.length} mốc · {evalData?.evaluations?.length || 0} đợt đánh giá)
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-soft btn-sm" disabled={!evalData}
-              onClick={() => setEvaluating(true)}>
-              <Icon name="checkCircle" size={13} />Đánh giá mới</button>
-            {isMgr && (
-              <button className="btn btn-soft btn-sm" onClick={() => setAdding(true)}>
-                <Icon name="arrowUp" size={13} />Tạo thăng tiến</button>
-            )}
-          </div>
+      <div className="between" style={{ margin: '16px 0' }}>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>
+          Lịch sử ({det.promotions.length} mốc · {evals.length} đợt đánh giá)
         </div>
-      )}
+      </div>
 
       {!det.promotions.length ? (
         <EmptyState>Chưa có lịch sử thăng tiến.</EmptyState>
       ) : (
         <PromoTimeline path={det.promotions} isMgr={isMgr} />
-      )}
-
-      {adding && (
-        <PromotionForm det={det} evaluationId={latest?.id}
-          onClose={() => setAdding(false)}
-          onSaved={(d) => { setAdding(false); onUpdated(d); }} />
-      )}
-      {evaluating && evalData && (
-        <EvaluationForm empId={det.id} criteria={evalData.criteria}
-          onClose={() => setEvaluating(false)}
-          onSaved={(d) => { setEvaluating(false); setEvalData(d); }} />
       )}
     </div>
   );
@@ -521,7 +375,7 @@ function PromoTimeline({ path, isMgr }) {
             <div style={{ flex: 1 }}>
               <div className="between">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>{p.fromJob} → {p.toJob}</span>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>{p.title || `${p.fromJob} → ${p.toJob}`}</span>
                   {p.dept && <Badge kind="gray">{p.dept}</Badge>}
                   {delta > 0 && <span className="badge badge-gold"><Icon name="arrowUp" size={11} />+{hbVND(delta)}</span>}
                 </div>

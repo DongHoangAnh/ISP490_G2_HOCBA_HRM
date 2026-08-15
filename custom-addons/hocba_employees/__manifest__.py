@@ -1,6 +1,6 @@
 {
     'name': 'HOCBA Employee Management',
-    'version': '19.0.3.0.0',
+    'version': '19.0.6.0.0',
     'category': 'Human Resources',
     'author': 'HOCBA Team',
     'license': 'LGPL-3',
