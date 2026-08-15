@@ -16,7 +16,7 @@
 | `test_giaovu@hocba.vn` | Giáo vụ | `hocba_employees.group_hocba_giaovu` | Test Giáo Vụ | **Chỉ thấy giáo viên** |
 | `test_truongphong@hocba.vn` | Trưởng phòng | (không nhóm HR) | Test Trưởng Phòng | **Chỉ NV phòng mình**; duyệt cổng dù không có quyền HR |
 | `test_employee@hocba.vn` | Nhân viên | (không) | NV Test (Nhân viên) | Self-service: Hồ sơ của tôi, NPT, ảnh |
-| `test_ctv@hocba.vn` | Nhân viên (CTV) | (không) | — | Ca "user chưa gắn hồ sơ" |
+| `test_ctv@hocba.vn` | Nhân viên (CTV) | (không) | GV Tiếng Trung A | ⚠️ Đã bị gán hồ sơ (kiểm 2026-08-15) → **mất ca "user chưa gắn hồ sơ"**; cần 1 TK mới nếu muốn test lại ca đó |
 | `test_employee2@hocba.vn` | Nhân viên | (không) | NV Test 2 | Self-service phụ (2026-07-01), thuộc Phòng Test (QA) |
 
 > `admin` / `admin` là superuser hệ thống có sẵn (không thuộc bộ test).
