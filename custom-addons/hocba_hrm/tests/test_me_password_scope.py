@@ -72,6 +72,24 @@ class TestMeChangePassword(HttpCase):
         self.assertEqual(st, 400)
         self.assertIn('khác mật khẩu hiện tại', body.get('message', ''))
 
+    def test_only_touches_own_account(self):
+        """Endpoint không nhận uid — mọi mưu toan chỉ định người khác (uid /
+        login / employeeId trong body) phải bị bỏ qua, không đổi nhầm ai."""
+        victim = self.env['res.users'].create({
+            'name': 'Nan nhan', 'login': 'test_pw_victim', 'password': PWD,
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        st, _ = _post(self, '/hocba-hrm/api/me/password', {
+            'uid': victim.id, 'login': victim.login, 'employeeId': victim.id,
+            'currentPassword': PWD, 'password': NEW_PWD,
+            'password_confirm': NEW_PWD})
+        self.assertEqual(st, 200)
+        # Nạn nhân vẫn đăng nhập được bằng mật khẩu cũ → không bị đụng tới.
+        self.authenticate('test_pw_victim', PWD)
+        self.assertEqual(self.session.uid, victim.id)
+        # Còn người gọi thì đã đổi sang mật khẩu mới.
+        self.authenticate('test_pw_self', NEW_PWD)
+        self.assertEqual(self.session.uid, self.user.id)
+
     def test_change_ok_and_new_password_works(self):
         st, body = _post(self, '/hocba-hrm/api/me/password', {
             'currentPassword': PWD, 'password': NEW_PWD,

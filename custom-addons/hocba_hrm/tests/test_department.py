@@ -1,7 +1,9 @@
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 from odoo.exceptions import AccessError, ValidationError, UserError
-from odoo.addons.hocba_hrm.controllers.main import _dept_payload, _dept_list, _dept_create, _dept_update, _dept_archive
+from odoo.addons.hocba_hrm.controllers.main import (
+    _dept_payload, _dept_list, _dept_create, _dept_update, _dept_archive,
+    _cap_edit_dept, _emp_in_scope)
 
 
 @tagged('post_install', '-at_install')
@@ -132,6 +134,36 @@ class TestDepartment(TransactionCase):
             _dept_create(self._env(self.hr), {
                 'name': 'Phòng HR tạo', 'manager': self._mgr_block()})
 
+    # ---- Quyền của TÀI KHOẢN trưởng phòng vừa được tạo kèm phòng ban ----
+    # Đây là chỗ dễ vượt quyền nhất của tính năng "tạo phòng kèm trưởng phòng":
+    # tài khoản sinh ra ở đây chỉ được là nhân viên thường, quyền trưởng phòng
+    # đến từ manager_id chứ không từ nhóm.
+    def test_new_manager_account_gets_no_hr_group(self):
+        _dept_create(self._env(self.hrm), {
+            'name': 'Phòng Quyền', 'manager': self._mgr_block(login='tp_quyen')})
+        u = self.env['res.users'].search([('login', '=', 'tp_quyen')], limit=1)
+        self.assertTrue(u, 'phải tạo được tài khoản đăng nhập')
+        self.assertTrue(u.has_group('base.group_user'))
+        for g in ('hr.group_hr_user', 'hr.group_hr_manager',
+                  'base.group_system', 'hocba_employees.group_hocba_giaovu'):
+            self.assertFalse(u.has_group(g), 'không được cấp nhóm %s' % g)
+
+    def test_new_manager_scope_limited_to_own_department(self):
+        """Trưởng phòng mới chỉ thấy phòng mình, không thấy NV phòng khác."""
+        out = _dept_create(self._env(self.hrm), {
+            'name': 'Phòng Riêng', 'manager': self._mgr_block(login='tp_rieng')})
+        u = self.env['res.users'].search([('login', '=', 'tp_rieng')], limit=1)
+        nguoi_phong_khac = self.emp          # thuộc 'Phòng A'
+        nguoi_phong_minh = self.env['hr.employee'].create({
+            'name': 'NV phòng riêng', 'department_id': out['id']})
+        env_tp = self._env(u)
+        self.assertTrue(_emp_in_scope(env_tp, nguoi_phong_minh))
+        self.assertFalse(_emp_in_scope(env_tp, nguoi_phong_khac))
+        # Và không được đụng vào màn phòng ban.
+        self.assertFalse(_cap_edit_dept(env_tp))
+        with self.assertRaises(AccessError):
+            _dept_list(env_tp)
+
     # ---- _dept_update (Task 4) ----
     def test_update_changes_fields(self):
         out = _dept_update(self._env(self.hrm), self.dept.id, {
@@ -156,6 +188,27 @@ class TestDepartment(TransactionCase):
         with self.assertRaises(ValidationError):
             _dept_update(self._env(self.hrm), self.dept.id, {
                 'name': 'Phòng A', 'managerId': self.emp.id})
+
+    def test_update_manager_giaovu_rejected(self):
+        """Giáo vụ + trưởng phòng là mâu thuẫn quyền: _emp_scope_domain xét
+        nhánh giáo vụ TRƯỚC, nên gán xong người này vẫn không thấy phòng mình."""
+        gv_user = self.env['res.users'].create({
+            'name': 'Giáo vụ', 'login': 'gv_dept',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('hocba_employees.group_hocba_giaovu').id])]})
+        gv_emp = self.env['hr.employee'].create({
+            'name': 'Giáo vụ', 'user_id': gv_user.id})
+        with self.assertRaises(ValidationError):
+            _dept_update(self._env(self.hrm), self.dept.id, {
+                'name': 'Phòng A', 'managerId': gv_emp.id})
+        self.assertNotEqual(self.dept.manager_id, gv_emp)
+
+    def test_update_manager_with_locked_account_rejected(self):
+        self.emp_user.user_id.active = False
+        with self.assertRaises(ValidationError):
+            _dept_update(self._env(self.hrm), self.dept.id, {
+                'name': 'Phòng A', 'managerId': self.emp_user.id})
 
     def test_update_forbidden(self):
         with self.assertRaises(AccessError):
