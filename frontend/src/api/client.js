@@ -24,11 +24,19 @@ async function errBody(res) {
   }
 }
 
+/* Hết phiên đăng nhập: Odoo đá request sang /web/login và trả 200 kèm HTML,
+   nên res.ok vẫn true. Không chặn ở đây thì res.json() ném SyntaxError và người
+   dùng nhận câu "Unexpected token '<'…" giữa lúc đang lưu form. */
+function throwIfLoggedOut(res) {
+  if (res.redirected && res.url.includes('/web/login')) {
+    throw new ApiError(401, 'login_required',
+      'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  }
+}
+
 export async function hbGet(url) {
   const res = await fetch(url, { credentials: 'same-origin' });
-  if (res.redirected && res.url.includes('/web/login')) {
-    throw new ApiError(401, 'login_required');
-  }
+  throwIfLoggedOut(res);
   if (!res.ok) {
     const b = await errBody(res);
     throw new ApiError(res.status, b.error, b.message);
@@ -43,6 +51,7 @@ export async function hbPost(url, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload ?? {}),
   });
+  throwIfLoggedOut(res);
   if (!res.ok) {
     const b = await errBody(res);
     throw new ApiError(res.status, b.error, b.message);
@@ -55,6 +64,7 @@ export async function hbUpload(url, file, field = 'file') {
   const fd = new FormData();
   fd.append(field, file);
   const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: fd });
+  throwIfLoggedOut(res);
   if (!res.ok) throw new ApiError(res.status, await safeCode(res));
   return res.json();
 }
@@ -66,6 +76,7 @@ export async function hbUploadFields(url, file, fields = {}, field = 'file') {
   fd.append(field, file);
   for (const [k, v] of Object.entries(fields)) fd.append(k, v);
   const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: fd });
+  throwIfLoggedOut(res);
   if (!res.ok) {
     const b = await errBody(res);
     throw new ApiError(res.status, b.error, b.message, b.details);
@@ -80,6 +91,7 @@ export async function hbPut(url, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload ?? {}),
   });
+  throwIfLoggedOut(res);
   if (!res.ok) {
     const b = await errBody(res);
     throw new ApiError(res.status, b.error, b.message);
@@ -92,6 +104,7 @@ export async function hbDelete(url) {
     method: 'DELETE',
     credentials: 'same-origin',
   });
+  throwIfLoggedOut(res);
   if (!res.ok) {
     const b = await errBody(res);
     throw new ApiError(res.status, b.error, b.message);
