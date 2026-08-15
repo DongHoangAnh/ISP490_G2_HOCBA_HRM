@@ -29,6 +29,12 @@ export function hbTypeKind(t) {
   return ({ Offline: 'teal', Online: 'blue', CTV: 'violet' })[t] || 'gray';
 }
 
+/* Tag loại nhân sự (hocba.employee.type.code). Không dùng 'red' cho NV văn
+   phòng dù data màu đỏ — trong bảng này đỏ đang mang nghĩa cảnh báo. */
+export function hbEmpTypeKind(code) {
+  return ({ office_staff: 'blue', teacher: 'teal', contractor: 'violet' })[code] || 'gray';
+}
+
 export const HB_RESULT = {
   draft: ['Chưa đánh giá', 'gray'],
   pass: ['Đạt', 'green'],

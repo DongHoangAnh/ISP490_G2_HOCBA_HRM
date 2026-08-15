@@ -112,7 +112,8 @@ export function InfoTab({ det, isHr, isMgr, editable, depEditable = editable, on
   const rows = [
     ['Mã nhân sự', det.code], ['Họ và tên', det.name],
     ['Phòng ban', det.depName], ['Chức danh', det.jobTitle],
-    ['Loại vị trí', det.posType || '—'], ['Hình thức', det.type],
+    ['Loại vị trí', det.posType || '—'], ['Loại nhân sự', det.empType || '—'],
+    ['Hình thức', det.type],
     ['Tình trạng', det.status], ['Ngày vào làm', fmtDate(det.start)],
     ['Email công ty', det.email || '—'], ['Điện thoại', det.phone || '—'],
   ];

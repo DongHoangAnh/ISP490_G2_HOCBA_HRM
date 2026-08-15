@@ -7,7 +7,8 @@ from psycopg2 import IntegrityError
 from pytz import timezone, utc
 
 from odoo import http, fields, SUPERUSER_ID
-from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.exceptions import (
+    AccessDenied, AccessError, UserError, ValidationError)
 from odoo.fields import Domain
 from odoo.http import request, Response
 from odoo.tools import file_open
@@ -38,6 +39,9 @@ EMP_FORM_FIELDS = {
     'workForm': ('x_work_form', 'core'),
     'status': ('x_employment_status', 'core'),
     'posType': ('x_position_type', 'core'),
+    # Loại nhân sự (tag NV văn phòng / Giáo viên / CTV). Cùng tầng 'core' với
+    # depId/status: quyền ghi đã chặn ở _can_edit_emp_record + _emp_in_scope.
+    'empTypeId': ('x_employee_type_id', 'core'),
     'email': ('work_email', 'core'),
     'phone': ('work_phone', 'core'),
     'probStart': ('x_probation_start', 'core'),
@@ -1642,6 +1646,31 @@ def _account_reset(env, emp_id, body):
     return _account_payload(emp)
 
 
+def _me_change_password(env, body):
+    """Người đang đăng nhập TỰ đổi mật khẩu (mọi vai trò, kể cả HR/Admin).
+
+    Bắt nhập mật khẩu hiện tại: không có nó thì bất kỳ ai mượn được phiên đăng
+    nhập đang mở đều đổi được mật khẩu và chiếm luôn tài khoản. Đường HR cấp
+    lại (_account_reset) vẫn giữ riêng — chỉ dùng khi nhân viên QUÊN mật khẩu.
+
+    Lưu ý: đổi mật khẩu làm session_token của Odoo đổi theo → phiên hiện tại
+    hết hiệu lực. FE phải đá người dùng về màn đăng nhập sau khi gọi hàm này.
+    """
+    current = body.get('currentPassword') or ''
+    if not current:
+        raise ValidationError('Vui lòng nhập mật khẩu hiện tại.')
+    password = _validate_password(body)
+    if password == current:
+        raise ValidationError('Mật khẩu mới phải khác mật khẩu hiện tại.')
+    try:
+        # change_password tự kiểm mật khẩu cũ (AccessDenied nếu sai) rồi ghi
+        # mật khẩu mới cho chính env.user — không sudo, không nhận uid từ body.
+        env['res.users'].change_password(current, password)
+    except AccessDenied:
+        raise ValidationError('Mật khẩu hiện tại không đúng.')
+    return {'ok': True, 'relogin': True}
+
+
 def _account_set_active(env, emp_id, active):
     """HR/Admin khóa (active=False) / mở khóa tài khoản đăng nhập.
 
@@ -2227,33 +2256,100 @@ def _dept_list(env, archived=False):
         raise AccessError('Chỉ HR/Admin được xem danh sách phòng ban.')
     Dept = env['hr.department'].sudo().with_context(active_test=not archived)
     depts = Dept.search([], order='name')
-    employees = env['hr.employee'].sudo().search(
-        [], order='x_employee_code, name')
+    # Dropdown trưởng phòng CHỈ liệt kê NV đã có tài khoản đăng nhập (xem
+    # _dept_update). Vẫn kèm trưởng phòng đương nhiệm dù chưa có tài khoản —
+    # dữ liệu cũ có trường hợp đó, thiếu họ trong danh mục thì sửa tên phòng
+    # sẽ vô tình gỡ mất người đang gán.
+    emps = env['hr.employee'].sudo().search(
+        ['|', ('user_id', '!=', False),
+         ('id', 'in', depts.mapped('manager_id').ids)],
+        order='x_employee_code, name')
     return {
         'departments': [_dept_payload(d) for d in depts],
-        'employees': [{'id': e.id, 'name': e.name, 'code': e.x_employee_code or ''}
-                      for e in employees],
+        'employees': [{'id': e.id, 'name': e.name,
+                       'code': e.x_employee_code or '',
+                       'hasAccount': bool(e.user_id)} for e in emps],
+        # Cho khối "tạo trưởng phòng mới" trong form phòng ban.
+        'empTypes': [{'id': t.id, 'name': t.name, 'code': t.code or ''}
+                     for t in env['hocba.employee.type'].sudo().search([])],
+        'minPasswordLen': MIN_PASSWORD_LEN,
     }
 
 
+def _dept_new_manager(env, dept, body):
+    """Tạo hồ sơ NV + tài khoản đăng nhập MỚI rồi gán làm trưởng phòng của dept.
+
+    Quyền trưởng phòng trong hệ này suy ra từ hr.department.manager_id (xem
+    _emp_scope_domain), KHÔNG từ group riêng — nên chỉ cấp base.group_user,
+    y như nhánh role='truongphong' của _account_create.
+    """
+    m = body.get('manager') or {}
+    name = (m.get('name') or '').strip()
+    if not name:
+        raise ValidationError('Vui lòng nhập họ tên trưởng phòng.')
+    login = (m.get('login') or '').strip()
+    if not login:
+        raise ValidationError('Vui lòng nhập tên đăng nhập cho trưởng phòng.')
+    if env['res.users'].sudo().with_context(active_test=False).search_count(
+            [('login', '=', login)]):
+        raise ValidationError('Tên đăng nhập "%s" đã tồn tại.' % login)
+    password = _validate_password(m)
+
+    emp_vals = {
+        'name': name,
+        'department_id': dept.id,
+        'work_email': (m.get('email') or '').strip() or False,
+        'work_phone': (m.get('phone') or '').strip() or False,
+    }
+    code = (m.get('code') or '').strip()
+    if code:
+        emp_vals['x_employee_code'] = code
+    if m.get('empTypeId'):
+        emp_vals['x_employee_type_id'] = int(m['empTypeId'])
+    emp = env['hr.employee'].sudo().create(emp_vals)
+    user = env['res.users'].sudo().create({
+        'name': emp.name, 'login': login, 'password': password,
+        'group_ids': [(6, 0, [env.ref('base.group_user').id])],
+    })
+    emp.sudo().user_id = user.id
+    dept.manager_id = emp.id
+    return emp
+
+
 def _dept_create(env, body):
-    """HR/Admin tạo phòng ban mới."""
+    """HR/Admin tạo phòng ban mới — BẮT BUỘC kèm trưởng phòng MỚI (hồ sơ NV +
+    tài khoản đăng nhập), gửi trong body['manager'].
+
+    Chốt với khách 2026-08-14: cho chọn NV có sẵn ở bước tạo phòng là sai phân
+    quyền — manager_id chính là nguồn quyền "trưởng phòng", nên thao tác tưởng
+    chỉ-là-gán-tên đó âm thầm nâng quyền một tài khoản vốn có vai trò khác
+    (nhân viên thường, giáo vụ), hoặc gán cho người chưa có tài khoản nào.
+    """
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được tạo phòng ban.')
     name = (body.get('name') or '').strip()
     if not name:
         raise ValidationError('Vui lòng nhập tên phòng ban.')
-    vals = {'name': name,
-            'x_function_desc': (body.get('functionDesc') or '').strip()}
-    manager_id = body.get('managerId')
-    if manager_id:
-        vals['manager_id'] = int(manager_id)
-    dept = env['hr.department'].sudo().create(vals)
+    if not (body.get('manager') or {}):
+        raise ValidationError(
+            'Phòng ban mới phải có trưởng phòng — nhập thông tin tài khoản '
+            'trưởng phòng để tạo cùng lúc.')
+    dept = env['hr.department'].sudo().create({
+        'name': name,
+        'x_function_desc': (body.get('functionDesc') or '').strip(),
+    })
+    _dept_new_manager(env, dept, body)
     return _dept_payload(dept)
 
 
 def _dept_update(env, dept_id, body):
-    """HR/Admin sửa tên / chức năng / trưởng phòng. managerId rỗng → gỡ trưởng phòng."""
+    """HR/Admin sửa tên / chức năng / trưởng phòng.
+
+    Đổi trưởng phòng theo 2 đường: chọn NV ĐÃ có tài khoản đăng nhập
+    (managerId), hoặc gửi khối 'manager' để tạo trưởng phòng mới. NV chưa có
+    tài khoản bị từ chối — làm trưởng phòng mà không đăng nhập được thì phòng
+    coi như không có ai quản.
+    """
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được sửa phòng ban.')
     dept = env['hr.department'].sudo().with_context(
@@ -2263,12 +2359,41 @@ def _dept_update(env, dept_id, body):
     name = (body.get('name') or '').strip()
     if not name:
         raise ValidationError('Vui lòng nhập tên phòng ban.')
+    vals = {'name': name,
+            'x_function_desc': (body.get('functionDesc') or '').strip()}
+
+    if body.get('manager'):
+        dept.write(vals)
+        _dept_new_manager(env, dept, body)
+        return _dept_payload(dept)
+
     manager_id = body.get('managerId')
-    dept.write({
-        'name': name,
-        'x_function_desc': (body.get('functionDesc') or '').strip(),
-        'manager_id': int(manager_id) if manager_id else False,
-    })
+    new_mgr = int(manager_id) if manager_id else False
+    # Chỉ soi khi ĐỔI người: phòng cũ đang gán người chưa có tài khoản vẫn
+    # phải sửa được tên/chức năng, không thì dữ liệu cũ kẹt cứng.
+    if new_mgr and new_mgr != dept.manager_id.id:
+        emp = env['hr.employee'].sudo().browse(new_mgr)
+        if not emp.exists():
+            raise ValidationError('Nhân viên không hợp lệ.')
+        if not emp.user_id:
+            raise ValidationError(
+                'Nhân viên "%s" chưa có tài khoản đăng nhập nên không đặt làm '
+                'trưởng phòng được. Cấp tài khoản ở màn Tài khoản, hoặc tạo '
+                'trưởng phòng mới ngay tại đây.' % emp.name)
+        if not emp.user_id.active:
+            raise ValidationError(
+                'Tài khoản đăng nhập của "%s" đang bị khóa.' % emp.name)
+        # Giáo vụ + trưởng phòng là mâu thuẫn có thật, không phải cẩn thận thừa:
+        # _emp_scope_domain xét nhánh giáo vụ TRƯỚC nhánh trưởng phòng, nên gán
+        # xong người này vẫn chỉ thấy giáo viên chứ không thấy phòng mình.
+        if emp.user_id.sudo().has_group('hocba_employees.group_hocba_giaovu'):
+            raise ValidationError(
+                'Tài khoản của "%s" đang là Giáo vụ — phạm vi giáo vụ (chỉ giáo '
+                'viên) sẽ lấn át quyền trưởng phòng, người này vẫn không xem '
+                'được phòng ban. Chọn người khác hoặc tạo trưởng phòng mới.'
+                % emp.name)
+    vals['manager_id'] = new_mgr
+    dept.write(vals)
     return _dept_payload(dept)
 
 
@@ -2802,6 +2927,10 @@ class HocBaHRM(http.Controller):
             'workFormKey': e.x_work_form or '',
             'posType': labels['position'].get(e.x_position_type, ''),
             'posTypeKey': e.x_position_type or '',
+            # Tag loại nhân sự: NV văn phòng / Giáo viên / CTV (hocba.employee.type)
+            'empTypeId': e.x_employee_type_id.id or False,
+            'empType': e.x_employee_type_id.name or '',
+            'empTypeKey': e.x_employee_type_id.code or '',
             'probStart': _d(e.x_probation_start),
             'start': _d(e.x_probation_start) or _d(e.create_date and e.create_date.date()),
             'email': e.work_email or '',
@@ -3955,6 +4084,9 @@ class HocBaHRM(http.Controller):
             'workForm': opts('x_work_form'),
             'status': opts('x_employment_status'),
             'position': opts('x_position_type'),
+            # Tag loại nhân sự cho ô chọn ở form Thêm/Sửa nhân viên.
+            'empTypes': [{'id': t.id, 'name': t.name, 'code': t.code or ''}
+                         for t in env['hocba.employee.type'].sudo().search([])],
             'relationship': list(env['hr.employee.dependent']._fields[
                 'relationship']._description_selection(env)),
             'assetTypes': [{'id': t.id, 'name': t.name}
@@ -3980,7 +4112,7 @@ class HocBaHRM(http.Controller):
             return tier == 'core' or (tier == 'hr' and is_hr) or (tier == 'mgr' and is_mgr)
 
         def conv(field, val):
-            if field in ('department_id', 'job_id'):
+            if field in ('department_id', 'job_id', 'x_employee_type_id'):
                 return int(val) if val else False
             if field == 'wage':
                 return float(val) if val not in ('', None) else 0.0
@@ -4121,6 +4253,21 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(data)
 
+    @http.route('/hocba-hrm/api/me/password', auth='user', type='http',
+                methods=['POST'], csrf=False)
+    def api_me_change_password(self, **kw):
+        """Tự đổi mật khẩu — mọi vai trò, không gắn với hồ sơ NV nào (HR/Admin
+        không có màn "Hồ sơ của tôi" nhưng vẫn phải đổi được mật khẩu)."""
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        try:
+            data = _me_change_password(request.env, request.get_json_data())
+        except ValidationError as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return request.make_json_response(data)
+
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/active',
                 auth='user', type='http', methods=['POST'], csrf=False)
     def api_account_active(self, emp_id, **kw):
@@ -4185,6 +4332,14 @@ class HocBaHRM(http.Controller):
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
+        except IntegrityError:
+            # Tạo phòng ban giờ kèm tạo NV + tài khoản → đụng unique mã NV /
+            # login. Rollback cả cụm: không để lại phòng ban mồ côi.
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự hoặc tên đăng nhập đã tồn tại.'},
+                status=400)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/department/<int:dept_id>', auth='user',
@@ -4201,6 +4356,12 @@ class HocBaHRM(http.Controller):
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
+        except IntegrityError:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Mã nhân sự hoặc tên đăng nhập đã tồn tại.'},
+                status=400)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/department/<int:dept_id>/archive', auth='user',

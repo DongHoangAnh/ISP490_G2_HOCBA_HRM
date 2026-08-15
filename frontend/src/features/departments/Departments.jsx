@@ -7,13 +7,25 @@ import { fetchDepartments, archiveDepartment } from '../../api/departments';
 import DepartmentForm from './DepartmentForm';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
+import SortTh from '../../components/SortTh';
+import useSort from '../../hooks/useSort';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+
+const SORT_ACC = {
+  name: (d) => d.name,
+  functionDesc: (d) => d.functionDesc,
+  managerName: (d) => d.managerName,
+  employeeCount: (d) => d.employeeCount || 0,
+  active: (d) => (d.active ? 0 : 1), // Hoạt động lên trước khi tăng dần
+};
 
 export default function Departments({ search = '' }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [form, setForm] = useState(null); // { dept } | { dept: null } | null
+  // Khai báo trước các return sớm bên dưới — hook không được gọi có điều kiện.
+  const sort = useSort(SORT_ACC, 'name');
 
   const load = () => {
     setErr(null); setData(null);
@@ -36,10 +48,10 @@ export default function Departments({ search = '' }) {
 
   const { departments, employees } = data;
   const q = search.trim().toLowerCase();
-  const rows = departments.filter((d) => !q
+  const rows = sort.apply(departments.filter((d) => !q
     || d.name.toLowerCase().includes(q)
     || (d.functionDesc || '').toLowerCase().includes(q)
-    || (d.managerName || '').toLowerCase().includes(q));
+    || (d.managerName || '').toLowerCase().includes(q)));
 
   return (
     <div className="content fade-in">
@@ -65,12 +77,14 @@ export default function Departments({ search = '' }) {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>Phòng ban</th><th>Chức năng</th><th>Trưởng phòng</th>
+              <SortTh sk="name" sort={sort}>Phòng ban</SortTh>
+              <SortTh sk="functionDesc" sort={sort}>Chức năng</SortTh>
+              <SortTh sk="managerName" sort={sort}>Trưởng phòng</SortTh>
               {/* width:1% + nowrap: các cột phải co sát nội dung, dồn khoảng trống
                   cho 3 cột text bên trái → nút thao tác kéo về gần cột Trạng thái,
                   không bị đẩy khỏi khung. */}
-              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Số NV</th>
-              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+              <SortTh sk="employeeCount" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Số NV</SortTh>
+              <SortTh sk="active" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</SortTh>
               <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
             </tr></thead>
             <tbody>
@@ -98,6 +112,7 @@ export default function Departments({ search = '' }) {
 
       {form && (
         <DepartmentForm dept={form.dept} employees={employees}
+          empTypes={data.empTypes || []} minPasswordLen={data.minPasswordLen || 8}
           onClose={() => setForm(null)}
           onDone={() => { setForm(null); load(); }} />
       )}

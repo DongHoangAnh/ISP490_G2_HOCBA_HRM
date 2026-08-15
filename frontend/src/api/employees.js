@@ -12,6 +12,10 @@ export const fetchRoles = () => hbGet('/hocba-hrm/api/me/roles');
 export const updateMe = (payload) => hbPost('/hocba-hrm/api/me', payload);
 /* Nhân viên tự cập nhật ảnh đại diện của mình (base64). */
 export const updateMyPhoto = (image) => hbPost('/hocba-hrm/api/me/photo', { image });
+/* Tự đổi mật khẩu (mọi vai trò). Đổi xong Odoo huỷ phiên hiện tại → phải
+   đăng nhập lại, xem ChangePasswordForm. */
+export const changeMyPassword = (payload) =>
+  hbPost('/hocba-hrm/api/me/password', payload);
 
 /* (postGate/postTrial cũ đã gỡ — đánh giá thử việc chuyển sang bước động,
    xem api/onboarding.js.) */

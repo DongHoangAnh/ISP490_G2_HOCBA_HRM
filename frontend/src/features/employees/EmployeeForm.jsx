@@ -38,7 +38,8 @@ function initForm(emp) {
     name: emp?.name || '', code: (emp?.code && emp.code !== '—') ? emp.code : '',
     depId: emp?.dep || '', jobId: emp?.jobId || '',
     workForm: emp?.workFormKey || '', status: emp?.statusKey || 'probation',
-    posType: emp?.posTypeKey || '', email: emp?.email || '', phone: emp?.phone || '',
+    posType: emp?.posTypeKey || '', empTypeId: emp?.empTypeId || '',
+    email: emp?.email || '', phone: emp?.phone || '',
     probStart: emp?.probStart || '', bday: emp?.bday || '', cccd: emp?.cccd || '',
     idIssue: emp?.idIssue || '', idPlace: emp?.idPlace || '',
     hi: emp?.hi || '', hiPlace: emp?.hiPlace || '',
@@ -120,6 +121,13 @@ export default function EmployeeForm({ emp, isMgr, onClose, onSaved }) {
                 <select style={inp} value={f.posType} onChange={set('posType')}>
                   <option value="">— Chọn —</option>
                   {meta.position.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select></Field>
+              {/* Tag loại nhân sự: NV văn phòng / Giáo viên / CTV. Quyết định
+                  phạm vi của Giáo vụ (chỉ thấy giáo viên) nên đừng để trống. */}
+              <Field label="Loại nhân sự">
+                <select style={inp} value={f.empTypeId} onChange={set('empTypeId')}>
+                  <option value="">— Chưa phân loại —</option>
+                  {(meta.empTypes || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select></Field>
               <Field label="Ngày bắt đầu thử việc">
                 <input type="date" style={inp} value={f.probStart || ''} onChange={set('probStart')} /></Field>

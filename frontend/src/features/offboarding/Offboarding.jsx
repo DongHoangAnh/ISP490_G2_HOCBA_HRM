@@ -7,6 +7,8 @@ import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
+import SortTh from '../../components/SortTh';
+import useSort from '../../hooks/useSort';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import { fetchOffboarding, offboardingAction } from '../../api/offboarding';
@@ -15,6 +17,18 @@ import OffboardingForm from './OffboardingForm';
 const REASON_LABEL = {
   voluntary: 'Tự nguyện', performance: 'Không đạt',
   contract_end: 'Hết hạn HĐ', other: 'Khác',
+};
+
+/* Sắp xếp theo NHÃN hiển thị (lý do / trạng thái) chứ không theo key kỹ thuật —
+   người dùng đọc nhãn tiếng Việt, xếp theo key sẽ ra thứ tự vô nghĩa. */
+const SORT_ACC = {
+  name: (r) => r.name,
+  employeeName: (r) => r.employeeName,
+  reason: (r) => REASON_LABEL[r.reasonType] || r.reasonType,
+  requestDate: (r) => r.requestDate,
+  expectedLeaveDate: (r) => r.expectedLeaveDate,
+  assetCount: (r) => r.assetCount || 0,
+  state: (r) => r.stateLabel,
 };
 
 /* onQueueChanged: báo App nạp lại badge "Nghỉ việc" sau mỗi thao tác. Không
@@ -80,21 +94,25 @@ export default function Offboarding({ search, onQueueChanged }) {
 
 /* ---- Bảng officer: mọi đơn trong phạm vi, nút thao tác theo cờ can* ---- */
 function ManagedTable({ rows, busy, act }) {
+  // Mặc định đơn mới nộp lên đầu — hàng chờ xử lý đọc từ trên xuống.
+  const sort = useSort(SORT_ACC, 'requestDate', 'desc');
   return (
     <div className="card">
       <div className="card-head"><h3>Đơn nghỉ việc — chờ xử lý</h3></div>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Mã đơn</th><th>Nhân viên</th><th>Loại lý do</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</th>
-            <th className="tbl-num" style={{ width: '1%', whiteSpace: 'nowrap' }}>Tài sản</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+            <SortTh sk="name" sort={sort}>Mã đơn</SortTh>
+            <SortTh sk="employeeName" sort={sort}>Nhân viên</SortTh>
+            <SortTh sk="reason" sort={sort}>Loại lý do</SortTh>
+            <SortTh sk="requestDate" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</SortTh>
+            <SortTh sk="expectedLeaveDate" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</SortTh>
+            <SortTh sk="assetCount" sort={sort} className="tbl-num" style={{ width: '1%', whiteSpace: 'nowrap' }}>Tài sản</SortTh>
+            <SortTh sk="state" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</SortTh>
             <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => <ManagedRow key={r.id} r={r} busy={busy} act={act} />)}
+            {sort.apply(rows).map((r) => <ManagedRow key={r.id} r={r} busy={busy} act={act} />)}
           </tbody>
         </table>
       </div>
@@ -152,20 +170,22 @@ function ManagedRow({ r, busy, act }) {
 
 /* ---- Bảng nhân viên: đơn của tôi ---- */
 function MineTable({ rows, busy, act, onOpen }) {
+  const sort = useSort(SORT_ACC, 'requestDate', 'desc');
   return (
     <div className="card">
       <div className="card-head"><h3>Đơn nghỉ việc của tôi</h3></div>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr>
-            <th>Mã đơn</th><th>Loại lý do</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</th>
-            <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</th>
+            <SortTh sk="name" sort={sort}>Mã đơn</SortTh>
+            <SortTh sk="reason" sort={sort}>Loại lý do</SortTh>
+            <SortTh sk="requestDate" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Ngày nộp</SortTh>
+            <SortTh sk="expectedLeaveDate" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Nghỉ dự kiến</SortTh>
+            <SortTh sk="state" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</SortTh>
             <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {sort.apply(rows).map((r) => (
               <tr key={r.id} onClick={() => onOpen(r)} style={{ cursor: 'pointer' }}>
                 <td className="mono" style={{ fontWeight: 600 }}>{r.name}</td>
                 <td>{REASON_LABEL[r.reasonType] || r.reasonType}</td>

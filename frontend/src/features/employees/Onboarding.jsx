@@ -8,6 +8,8 @@ import { fetchOnboarding } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
+import SortTh from '../../components/SortTh';
+import useSort from '../../hooks/useSort';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate } from '../../utils/format';
 import EmployeeDrawer from './EmployeeDrawer';
@@ -61,6 +63,23 @@ function ProgressCell({ o }) {
   );
 }
 
+/* Sắp xếp: cột "Bước hiện tại" xếp theo HẠN (thông tin hành động được, đã
+   hiện ngay trong ô) chứ không theo tên bước; cột "Trạng thái" xếp theo mức
+   cần chú ý — tăng dần là "không đạt → đang chạy → xong". */
+const OVERALL_RANK = { fail: 0, run: 1, done: 2, none: 3 };
+const SORT_ACC = {
+  name: (o) => o.name,
+  depName: (o) => o.depName,
+  start: (o) => o.start,
+  templateName: (o) => o.templateName,
+  progress: (o) => {
+    const { done, total } = o.progress || { done: 0, total: 0 };
+    return total ? done / total : 0;
+  },
+  current: (o) => (o.current && o.current.dueDate) || '',
+  overall: (o) => OVERALL_RANK[overallOf(o).key],
+};
+
 /* onQueueChanged: báo App nạp lại badge "Nhận việc" sau khi xử lý bước.
    Không tự trừ số ở client — phạm vi đếm là quyền phía server. */
 export default function Onboarding({ search, onQueueChanged }) {
@@ -70,6 +89,8 @@ export default function Onboarding({ search, onQueueChanged }) {
   // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi thao tác bước (đổi
   // dữ liệu) mới refresh ngầm.
   const dirtyRef = useRef(false);
+  // Khai báo trước các return sớm bên dưới — hook không được gọi có điều kiện.
+  const sort = useSort(SORT_ACC, 'name');
 
   const load = () => {
     setErr(null); setData(null);
@@ -85,12 +106,12 @@ export default function Onboarding({ search, onQueueChanged }) {
   if (!data) return <LoadingState label="Đang tải dữ liệu nhận việc…" />;
 
   const items = data.items;
-  const filtered = items.filter((o) => {
+  const filtered = sort.apply(items.filter((o) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (o.name || '').toLowerCase().includes(q) || (o.code || '').toLowerCase().includes(q)
       || (o.depName || '').toLowerCase().includes(q);
-  });
+  }));
 
   const running = items.filter((o) => overallOf(o).key === 'run').length;
   const waitingEval = items.filter((o) =>
@@ -131,8 +152,13 @@ export default function Onboarding({ search, onQueueChanged }) {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>Nhân viên</th><th>Phòng ban</th><th>Ngày bắt đầu</th>
-              <th>Quy trình</th><th>Tiến độ</th><th>Bước hiện tại</th><th>Trạng thái</th>
+              <SortTh sk="name" sort={sort}>Nhân viên</SortTh>
+              <SortTh sk="depName" sort={sort}>Phòng ban</SortTh>
+              <SortTh sk="start" sort={sort}>Ngày bắt đầu</SortTh>
+              <SortTh sk="templateName" sort={sort}>Quy trình</SortTh>
+              <SortTh sk="progress" sort={sort}>Tiến độ</SortTh>
+              <SortTh sk="current" sort={sort} title="Bấm để sắp xếp theo hạn của bước hiện tại">Bước hiện tại</SortTh>
+              <SortTh sk="overall" sort={sort}>Trạng thái</SortTh>
             </tr></thead>
             <tbody>
               {filtered.map((o) => {

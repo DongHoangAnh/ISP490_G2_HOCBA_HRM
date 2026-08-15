@@ -1,6 +1,8 @@
 /* Shell: Sidebar + Topbar — file CHUNG, sửa phải qua review (quy ước §2) */
+import { useState } from 'react';
 import Icon from '../components/Icon';
 import NotificationBell from '../components/NotificationBell';
+import ChangePasswordForm from '../components/ChangePasswordForm';
 
 /* Nav theo vai trò (họp #2 — tách tài khoản quản lý ↔ cá nhân).
    need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; không gắn need = mọi nhân viên.
@@ -117,6 +119,9 @@ export const PAGE_META = {
    (vd Nghỉ phép: số đơn chờ duyệt). 0 / thiếu key = không hiện. */
 export function Sidebar({ view, setView, me, badges }) {
   const groups = visibleNav(me);
+  // Đổi mật khẩu đặt ở đây (không phải trong "Hồ sơ của tôi") vì tài khoản vai
+  // trò quản lý — HR/Admin/Giáo vụ — không thấy màn hồ sơ cá nhân.
+  const [pwOpen, setPwOpen] = useState(false);
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -158,12 +163,17 @@ export function Sidebar({ view, setView, me, badges }) {
             </div>
             <div className="s">{me ? me.roleLabel : '360 Giải Phóng'}</div>
           </div>
+          <button className="icon-btn" title="Đổi mật khẩu"
+            onClick={() => setPwOpen(true)}>
+            <Icon name="lock" size={18} />
+          </button>
           <button className="icon-btn" title="Đăng xuất"
             onClick={() => { window.location.href = '/web/session/logout?redirect=/hocba-hrm'; }}>
             <Icon name="logout" size={18} />
           </button>
         </div>
       </div>
+      {pwOpen && <ChangePasswordForm onClose={() => setPwOpen(false)} />}
     </aside>
   );
 }
