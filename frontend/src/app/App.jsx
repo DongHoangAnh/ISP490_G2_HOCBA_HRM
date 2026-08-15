@@ -127,6 +127,7 @@ export default function App() {
   if (!me) return <LoadingState label="Đang tải tài khoản…" />;
 
   const canManage = me.canManage;
+  const navViews = allowedViews(me);
   return (
     <div className="app">
       <Sidebar view={view} setView={setView} me={me} badges={navBadges} />
@@ -155,8 +156,13 @@ export default function App() {
           <Reviews search={search} canPromote={me.isHrManager} />
         )}
         {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}
-        {view === 'accounts' && canManage && me.isHrUser && <Accounts search={search} />}
-        {view === 'departments' && canManage && me.isHrUser && <Departments search={search} />}
+        {/* Điều kiện render PHẢI trùng điều kiện bày menu (Shell: need 'hr' =
+            HR | HR Mgr | Admin), nên lấy thẳng từ allowedViews thay vì chép tay:
+            trước đây chỉ xét me.isHrUser, mà tài khoản Admin "thuần"
+            (base.group_system, không kèm nhóm HR) lại không có cờ đó → bấm vào
+            menu Phòng ban / Tài khoản chỉ thấy vùng nội dung trắng trơn. */}
+        {view === 'accounts' && navViews.has('accounts') && <Accounts search={search} />}
+        {view === 'departments' && navViews.has('departments') && <Departments search={search} />}
         {view === 'timeoffConfig' && me.isAdmin && <TimeoffConfig />}
         {view === 'attendanceConfig' && me.isAdmin && <AttendanceConfig search={search} />}
         {view === 'onboarding-config' && (me.isHrManager || me.isAdmin) && <OnboardingConfig />}
