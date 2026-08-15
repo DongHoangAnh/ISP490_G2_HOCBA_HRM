@@ -4098,14 +4098,23 @@ class HocBaHRM(http.Controller):
         # Trưởng phòng chỉ chọn được phòng mình quản lý (gồm phòng con); HR/Admin/
         # Giáo vụ thấy mọi phòng (GV tạo giáo viên — phòng nào cũng hợp lệ).
         user = env.user
-        if (user.has_group('base.group_system')
-                or user.has_group('hr.group_hr_user')
-                or user.has_group('hr.group_hr_manager')
-                or user.has_group('hocba_employees.group_hocba_giaovu')):
+        is_hr_any = (user.has_group('base.group_system')
+                     or user.has_group('hr.group_hr_user')
+                     or user.has_group('hr.group_hr_manager'))
+        if is_hr_any or user.has_group('hocba_employees.group_hocba_giaovu'):
             dep_domain = []
         else:
             managed = _managed_department_ids(env, user.employee_id)
             dep_domain = [('id', 'in', managed)] if managed else [('id', '=', 0)]
+
+        # Giáo vụ "thuần" chỉ được chào đúng loại Giáo viên: phạm vi của họ là
+        # x_employee_type_id.code == 'teacher', chọn loại khác thì hồ sơ rơi ra
+        # ngoài phạm vi và bị chặn ở api_employee_create/update. Bày ra rồi từ
+        # chối sau khi điền xong cả form là hành người dùng.
+        type_domain = []
+        if (user.has_group('hocba_employees.group_hocba_giaovu')
+                and not is_hr_any):
+            type_domain = [('code', '=', 'teacher')]
 
         return request.make_json_response({
             'departments': [{'id': d.id, 'name': d.name}
@@ -4117,7 +4126,8 @@ class HocBaHRM(http.Controller):
             'position': opts('x_position_type'),
             # Tag loại nhân sự cho ô chọn ở form Thêm/Sửa nhân viên.
             'empTypes': [{'id': t.id, 'name': t.name, 'code': t.code or ''}
-                         for t in env['hocba.employee.type'].sudo().search([])],
+                         for t in env['hocba.employee.type'].sudo().search(
+                             type_domain)],
             'relationship': list(env['hr.employee.dependent']._fields[
                 'relationship']._description_selection(env)),
             'assetTypes': [{'id': t.id, 'name': t.name}
@@ -4174,8 +4184,10 @@ class HocBaHRM(http.Controller):
         if not (emp_vals.get('name') or '').strip():
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Vui lòng nhập họ tên.'}, status=400)
-        # Giáo vụ (phạm vi = giáo viên): form không có ô "loại nhân sự" → mặc định
-        # NV mới là giáo viên để nằm trong phạm vi (nếu không sẽ bị chặn sau khi tạo).
+        # Giáo vụ (phạm vi = giáo viên): form CÓ ô "loại nhân sự" nhưng
+        # api_form_meta chỉ chào đúng loại Giáo viên, và ô này được phép để
+        # trống → chốt mặc định là giáo viên, không thì hồ sơ vừa tạo đã nằm
+        # ngoài phạm vi và bị chặn ngay ở dưới.
         u = request.env.user
         if (u.has_group('hocba_employees.group_hocba_giaovu')
                 and not u.has_group('base.group_system')
@@ -4242,6 +4254,19 @@ class HocBaHRM(http.Controller):
             request.env.cr.rollback()
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
+        # Kiểm phạm vi LẠI SAU khi ghi, y như đường tạo mới (api_employee_create).
+        # _can_edit_emp_record ở trên chỉ soi hồ sơ TRƯỚC khi sửa, mà đúng hai
+        # field quyết định phạm vi lại nằm trong form: "Loại nhân sự"
+        # (x_employee_type_id — phạm vi Giáo vụ) và "Phòng ban" (department_id —
+        # phạm vi Trưởng phòng). Thiếu bước này thì Giáo vụ đổi giáo viên thành
+        # NV văn phòng là hồ sơ biến mất khỏi danh sách của chính họ, không ai
+        # gọi lại được.
+        if not self._emp_in_scope(e):
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'forbidden',
+                 'message': 'Thay đổi này đẩy hồ sơ ra ngoài phạm vi quản lý '
+                            'của bạn. Nhờ HR đổi giúp.'}, status=403)
         return request.make_json_response(
             self._employee_detail(e.sudo(), self._labels(),
                                   _cap_edit_emp(request.env), is_mgr,

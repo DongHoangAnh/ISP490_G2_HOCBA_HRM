@@ -52,6 +52,7 @@ export default function DepartmentForm({ dept, employees = [], empTypes = [],
 
   const submit = async () => {
     setErr(null);
+    if (!name.trim()) { setErr('Vui lòng nhập tên phòng ban.'); return; }
     if (newMgr) {
       if (!mgr.name.trim()) { setErr('Vui lòng nhập họ tên trưởng phòng.'); return; }
       if (!mgr.login.trim()) { setErr('Vui lòng nhập tên đăng nhập cho trưởng phòng.'); return; }
@@ -93,7 +94,12 @@ export default function DepartmentForm({ dept, employees = [], empTypes = [],
         <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
       </div>
 
-      <div style={{ padding: '20px 24px', maxHeight: '60vh', overflowY: 'auto' }}>
+      {/* Enter = bấm nút lưu, trừ khi con trỏ đang ở <select> (Enter ở đó là
+          thao tác chọn của trình duyệt). */}
+      <div style={{ padding: '20px 24px', maxHeight: '60vh', overflowY: 'auto' }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !busy && e.target.tagName !== 'SELECT') submit();
+        }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
           <Field label="Tên phòng ban *" full>
             <input style={inp} value={name} onChange={(e) => setName(e.target.value)}
@@ -117,7 +123,8 @@ export default function DepartmentForm({ dept, employees = [], empTypes = [],
                 ))}
               </select>
               <span className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
-                Chỉ liệt kê nhân viên đã có tài khoản đăng nhập.
+                Chỉ chọn được nhân viên đã có tài khoản đăng nhập — người đang
+                giữ chức mà chưa có tài khoản vẫn hiện để không bị gỡ nhầm.
               </span>
             </Field>
           )}

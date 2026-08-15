@@ -5,6 +5,7 @@ export default function SortTh({ sk, sort, children, style, className, title }) 
   const arrow = active ? (sort.sortDir === 'asc' ? '▲' : '▼') : '⇅';
   return (
     <th className={className} title={title || 'Bấm để sắp xếp'}
+      aria-sort={active ? (sort.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
       style={{ cursor: 'pointer', userSelect: 'none', ...style }}
       onClick={() => sort.toggle(sk)}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>

@@ -79,7 +79,10 @@ export default function ChangePasswordForm({ onClose }) {
           </div>
         </div>
       ) : (
-        <div style={{ padding: '20px 24px', display: 'grid', gap: 14 }}>
+        /* Enter = bấm "Đổi mật khẩu": form toàn ô mật khẩu, gõ xong ai cũng
+           theo phản xạ nhấn Enter. */
+        <div style={{ padding: '20px 24px', display: 'grid', gap: 14 }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !busy) submit(); }}>
           <Field label="Mật khẩu hiện tại *">
             <input type="password" style={inp} value={f.currentPassword}
               autoComplete="current-password" onChange={set('currentPassword')} />
