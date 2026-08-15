@@ -10,9 +10,9 @@
 
 | Login | Vai trò | Nhóm quyền Odoo | Hồ sơ NV | Test gì |
 |---|---|---|---|---|
-| `test_admin@hocba.vn` | Admin | `base.group_system` (+HR) | — | Toàn quyền, mọi phòng ban |
-| `test_hrmanager@hocba.vn` | HR Manager | `hr.group_hr_manager` | — | Quản lý NV + xem lương + duyệt cổng mọi NV |
-| `test_hr@hocba.vn` | HR officer | `hr.group_hr_user` | — | Xem/sửa hồ sơ, **không** thấy lương |
+| `test_admin@hocba.vn` | Admin | `base.group_system` (KHÔNG kèm nhóm HR — kiểm 2026-08-15) | — | Toàn quyền, mọi phòng ban |
+| `test_hrmanager@hocba.vn` | HR Manager | `hr.group_hr_manager` (Odoo tự kéo theo `hr.group_hr_user`) | — | Quản lý NV + xem lương + duyệt cổng mọi NV + quản lý phòng ban |
+| `test_hr@hocba.vn` | HR officer | `hr.group_hr_user` | — | Xem/sửa hồ sơ, **không** thấy lương, phòng ban **chỉ xem** (không thêm/sửa/lưu trữ) |
 | `test_giaovu@hocba.vn` | Giáo vụ | `hocba_employees.group_hocba_giaovu` | Test Giáo Vụ | **Chỉ thấy giáo viên** |
 | `test_truongphong@hocba.vn` | Trưởng phòng | (không nhóm HR) | Test Trưởng Phòng | **Chỉ NV phòng mình**; duyệt cổng dù không có quyền HR |
 | `test_employee@hocba.vn` | Nhân viên | (không) | NV Test (Nhân viên) | Self-service: Hồ sơ của tôi, NPT, ảnh |
