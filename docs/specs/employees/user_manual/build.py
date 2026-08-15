@@ -175,10 +175,10 @@ def build():
          'approval of a resignation.', '—'],
         ['HR officer / (hr.group_hr_user)',
          'Create and edit any profile, dependents, certificates, assets; '
-         'create and lock login accounts; manage departments.',
-         'See or edit the salary block (Lương cơ bản, MST TNCN, số sổ BHXH, '
-         'bank account); change an onboarding step deadline; complete a '
-         'resignation.'],
+         'create and lock login accounts; view the department list.',
+         'Add, edit or archive a department; see or edit the salary block '
+         '(Lương cơ bản, MST TNCN, số sổ BHXH, bank account); change an '
+         'onboarding step deadline; complete a resignation.'],
         ['Giáo vụ / (group_hocba_giaovu)',
          'Everything an HR officer can do, plus the salary block – but only '
          'on the teachers (Loại nhân viên = Giáo viên).',

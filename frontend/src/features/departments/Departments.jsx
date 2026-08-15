@@ -1,6 +1,10 @@
 /* ============================================================
-   Trang quản lý Phòng ban (HR/Admin) — danh sách + tạo/sửa + lưu trữ.
+   Trang Phòng ban — danh sách + tạo/sửa + lưu trữ.
    Owner: Tân.
+
+   Phân quyền (chốt 2026-08-15): HR officer (hr.group_hr_user) CHỈ XEM;
+   thêm/sửa/lưu trữ dành cho HR Manager + Admin. Cờ canEdit lấy từ API
+   (_cap_edit_dept) — backend vẫn chặn độc lập, đây chỉ là lớp ẩn nút.
    ============================================================ */
 import { useState, useEffect } from 'react';
 import { fetchDepartments, archiveDepartment } from '../../api/departments';
@@ -47,6 +51,7 @@ export default function Departments({ search = '' }) {
   if (!data) return <LoadingState label="Đang tải phòng ban…" />;
 
   const { departments, employees } = data;
+  const canEdit = !!data.canEdit;
   const q = search.trim().toLowerCase();
   const rows = sort.apply(departments.filter((d) => !q
     || d.name.toLowerCase().includes(q)
@@ -58,11 +63,13 @@ export default function Departments({ search = '' }) {
       <div className="page-head">
         <div>
           <h1>Phòng ban</h1>
-          <p>{departments.length} phòng ban</p>
+          <p>{departments.length} phòng ban{canEdit ? '' : ' · Chỉ xem'}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setForm({ dept: null })}>
-          <Icon name="plus" size={16} />Thêm phòng ban
-        </button>
+        {canEdit && (
+          <button className="btn btn-primary" onClick={() => setForm({ dept: null })}>
+            <Icon name="plus" size={16} />Thêm phòng ban
+          </button>
+        )}
       </div>
 
       <div className="card">
@@ -85,7 +92,7 @@ export default function Departments({ search = '' }) {
                   không bị đẩy khỏi khung. */}
               <SortTh sk="employeeCount" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Số NV</SortTh>
               <SortTh sk="active" sort={sort} style={{ width: '1%', whiteSpace: 'nowrap' }}>Trạng thái</SortTh>
-              <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>
+              {canEdit && <th style={{ width: '1%', whiteSpace: 'nowrap' }}></th>}
             </tr></thead>
             <tbody>
               {rows.map((d) => (
@@ -95,13 +102,15 @@ export default function Departments({ search = '' }) {
                   <td>{d.managerName || '—'}</td>
                   <td className="mono" style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>{d.employeeCount}</td>
                   <td style={{ width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}><Badge kind={d.active ? 'green' : 'gray'} dot>{d.active ? 'Hoạt động' : 'Lưu trữ'}</Badge></td>
-                  <td style={{ display: 'flex', gap: 6, width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setForm({ dept: d })}>
-                      <Icon name="edit" size={14} />Sửa</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => onArchive(d)}>
-                      <Icon name={d.active ? 'trash' : 'rotateCcw'} size={14} />
-                      {d.active ? 'Lưu trữ' : 'Khôi phục'}</button>
-                  </td>
+                  {canEdit && (
+                    <td style={{ display: 'flex', gap: 6, width: '1%', whiteSpace: 'nowrap', overflow: 'visible', maxWidth: 'none' }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setForm({ dept: d })}>
+                        <Icon name="edit" size={14} />Sửa</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => onArchive(d)}>
+                        <Icon name={d.active ? 'trash' : 'rotateCcw'} size={14} />
+                        {d.active ? 'Lưu trữ' : 'Khôi phục'}</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

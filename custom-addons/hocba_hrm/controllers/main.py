@@ -1549,11 +1549,39 @@ def _cap_edit_salary(env):
 
 
 def _cap_manage_account(env):
-    """Quản lý tài khoản đăng nhập + phòng ban: Admin | HR | HR-Mgr."""
+    """Quản lý tài khoản đăng nhập: Admin | HR | HR-Mgr."""
     user = env.user
     return (user.has_group('base.group_system')
             or user.has_group('hr.group_hr_user')
             or user.has_group('hr.group_hr_manager'))
+
+
+def _cap_edit_dept(env):
+    """Được THÊM/SỬA/LƯU TRỮ phòng ban: Admin | HR-Mgr. HR officer chỉ XEM.
+
+    Chốt 2026-08-15: sửa phòng ban là đổi cơ cấu tổ chức, kèm theo đó là đổi
+    manager_id — tức nguồn quyền "trưởng phòng" của cả hệ (_emp_scope_domain).
+    Việc đó vượt tầm HR officer.
+
+    Lưu ý khi đọc: KHÔNG chặn bằng cách gỡ hr.group_hr_user, vì HR Manager
+    cũng mang nhóm đó (Odoo chuẩn: group_hr_manager implies group_hr_user) —
+    gỡ là chặn nhầm cả HR Manager. Phải kiểm ở tầng cao hơn như dưới đây.
+    """
+    user = env.user
+    return (user.has_group('base.group_system')
+            or user.has_group('hr.group_hr_manager'))
+
+
+def _cap_view_dept(env):
+    """Được XEM danh sách phòng ban: HR officer trở lên, + Admin.
+
+    Admin phải kể riêng: tài khoản admin "thuần" (base.group_system, không kèm
+    nhóm HR nào — đúng dạng test_admin@hocba.vn trong DB) không có
+    hr.group_hr_user, trong khi nav vẫn bày menu Phòng ban cho Admin
+    (Shell.jsx: need 'hr' = isHrUser | isHrManager | isAdmin) → chặn ở đây là
+    403 giữa mặt.
+    """
+    return _is_hr(env) or _cap_edit_dept(env)
 
 
 # --- Quản lý tài khoản đăng nhập (account management) --------------------
@@ -2251,8 +2279,10 @@ def _dept_payload(dept):
 
 def _dept_list(env, archived=False):
     """Danh sách phòng ban + danh mục NV (cho dropdown trưởng phòng). Chỉ HR.
-    archived=True → gồm cả phòng đã lưu trữ (active=False)."""
-    if not _is_hr(env):
+    archived=True → gồm cả phòng đã lưu trữ (active=False).
+
+    Kèm cờ canEdit để FE ẩn nút Thêm/Sửa/Lưu trữ với HR officer (chỉ xem)."""
+    if not _cap_view_dept(env):
         raise AccessError('Chỉ HR/Admin được xem danh sách phòng ban.')
     Dept = env['hr.department'].sudo().with_context(active_test=not archived)
     depts = Dept.search([], order='name')
@@ -2273,6 +2303,7 @@ def _dept_list(env, archived=False):
         'empTypes': [{'id': t.id, 'name': t.name, 'code': t.code or ''}
                      for t in env['hocba.employee.type'].sudo().search([])],
         'minPasswordLen': MIN_PASSWORD_LEN,
+        'canEdit': _cap_edit_dept(env),
     }
 
 
@@ -2317,16 +2348,16 @@ def _dept_new_manager(env, dept, body):
 
 
 def _dept_create(env, body):
-    """HR/Admin tạo phòng ban mới — BẮT BUỘC kèm trưởng phòng MỚI (hồ sơ NV +
-    tài khoản đăng nhập), gửi trong body['manager'].
+    """HR Manager/Admin tạo phòng ban mới — BẮT BUỘC kèm trưởng phòng MỚI (hồ
+    sơ NV + tài khoản đăng nhập), gửi trong body['manager'].
 
     Chốt với khách 2026-08-14: cho chọn NV có sẵn ở bước tạo phòng là sai phân
     quyền — manager_id chính là nguồn quyền "trưởng phòng", nên thao tác tưởng
     chỉ-là-gán-tên đó âm thầm nâng quyền một tài khoản vốn có vai trò khác
     (nhân viên thường, giáo vụ), hoặc gán cho người chưa có tài khoản nào.
     """
-    if not _is_hr(env):
-        raise AccessError('Chỉ HR/Admin được tạo phòng ban.')
+    if not _cap_edit_dept(env):
+        raise AccessError('Chỉ HR Manager/Admin được tạo phòng ban.')
     name = (body.get('name') or '').strip()
     if not name:
         raise ValidationError('Vui lòng nhập tên phòng ban.')
@@ -2343,15 +2374,15 @@ def _dept_create(env, body):
 
 
 def _dept_update(env, dept_id, body):
-    """HR/Admin sửa tên / chức năng / trưởng phòng.
+    """HR Manager/Admin sửa tên / chức năng / trưởng phòng.
 
     Đổi trưởng phòng theo 2 đường: chọn NV ĐÃ có tài khoản đăng nhập
     (managerId), hoặc gửi khối 'manager' để tạo trưởng phòng mới. NV chưa có
     tài khoản bị từ chối — làm trưởng phòng mà không đăng nhập được thì phòng
     coi như không có ai quản.
     """
-    if not _is_hr(env):
-        raise AccessError('Chỉ HR/Admin được sửa phòng ban.')
+    if not _cap_edit_dept(env):
+        raise AccessError('Chỉ HR Manager/Admin được sửa phòng ban.')
     dept = env['hr.department'].sudo().with_context(
         active_test=False).browse(dept_id)
     if not dept.exists():
@@ -2398,10 +2429,10 @@ def _dept_update(env, dept_id, body):
 
 
 def _dept_archive(env, dept_id, body):
-    """HR/Admin lưu trữ (active=False) / khôi phục (active=True) phòng ban.
-    Đây là đường thay cho xóa cứng — xóa cứng bị chặn bởi ràng buộc model."""
-    if not _is_hr(env):
-        raise AccessError('Chỉ HR/Admin được lưu trữ phòng ban.')
+    """HR Manager/Admin lưu trữ (active=False) / khôi phục (active=True) phòng
+    ban. Đây là đường thay cho xóa cứng — xóa cứng bị chặn bởi ràng buộc model."""
+    if not _cap_edit_dept(env):
+        raise AccessError('Chỉ HR Manager/Admin được lưu trữ phòng ban.')
     dept = env['hr.department'].sudo().with_context(
         active_test=False).browse(dept_id)
     if not dept.exists():
