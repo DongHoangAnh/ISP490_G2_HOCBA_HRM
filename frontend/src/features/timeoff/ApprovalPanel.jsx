@@ -54,9 +54,10 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
   if (err) return <ErrorState message={err} onRetry={reload} />;
   if (loading || !data) return <TableSkeleton />;
 
-  // HR User mở được tab này nhưng chỉ XEM: backend trả canApprove=false →
-  // nút đổi thành "Xem" và modal ẩn toàn bộ nút quyết định.
-  const canApprove = !!data.canApprove;
+  // Quyền xử lý tính theo TỪNG ĐƠN (r.canDecide, backend _can_decide_leave):
+  // tài khoản phải được duyệt (HR User = chỉ xem) VÀ đúng vai trò mà bậc duyệt
+  // của loại nghỉ yêu cầu (HR Manager / Trưởng phòng / cả hai).
+  // Không đủ quyền thì nút đổi thành "Xem" và modal ẩn nút duyệt/từ chối.
 
   // Lọc phòng ban chỉ áp dụng khi role HR đang sắp xếp theo phòng ban + đã chọn 1 phòng.
   const deptFilterOn = data.seeAll && sort.key === 'department' && dept;
@@ -89,7 +90,16 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
               <tr key={r.id}>
                 <td style={{ fontWeight: 600 }}>{r.employee}</td>
                 <td className="muted">{r.department}</td>
-                <td>{r.leaveType}</td>
+                <td>
+                  {r.leaveType}
+                  {/* Bậc duyệt cấu hình ở loại nghỉ — cho người xem biết vì sao
+                      đơn này mình chỉ được "Xem". */}
+                  {r.approverRoleLabel && (
+                    <div className="muted" style={{ fontSize: 11.5 }}>
+                      {r.approverRoleLabel} duyệt
+                    </div>
+                  )}
+                </td>
                 <td className="mono muted">{fmtDate(r.from)}</td>
                 <td className="mono muted">{fmtDate(r.to)}</td>
                 <td className="tbl-num mono" style={{ fontWeight: 600 }}>{r.days}</td>
@@ -125,13 +135,15 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
                     không bị quy tắc .tbl td (max-width:0; overflow:hidden) cắt mất nút. */}
                 <td style={{ overflow: 'visible', maxWidth: 'none', width: '1%', whiteSpace: 'nowrap' }}>
                   {r.withdrawState === 'pending' ? (
-                    <button className={canApprove ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                    <button className={r.canDecide ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                      title={r.canDecide ? '' : r.decideHint || ''}
                       onClick={() => setWithdrawDecision(r)}>
-                      {canApprove ? 'Xử lý rút' : 'Xem'}</button>
+                      {r.canDecide ? 'Xử lý rút' : 'Xem'}</button>
                   ) : (
-                    <button className={canApprove ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                    <button className={r.canDecide ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                      title={r.canDecide ? '' : r.decideHint || ''}
                       onClick={() => setDecision(r)}>
-                      {canApprove ? 'Xử lý' : 'Xem'}</button>
+                      {r.canDecide ? 'Xử lý' : 'Xem'}</button>
                   )}
                 </td>
               </tr>
@@ -142,7 +154,7 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
       {data.requests.length === 0 && <EmptyState>Không có đơn nào chờ duyệt.</EmptyState>}
 
       {decision && (
-        <DecisionModal req={decision} isHrManager={isHrManager} canApprove={canApprove}
+        <DecisionModal req={decision} isHrManager={isHrManager} canApprove={!!decision.canDecide}
           onClose={() => setDecision(null)}
           onDone={(payload) => {
             setDecision(null); setData(payload);
@@ -152,7 +164,7 @@ export default function ApprovalPanel({ isHrManager, focusRequestId, onFocusCons
       )}
 
       {withdrawDecision && (
-        <WithdrawDecisionModal req={withdrawDecision} canApprove={canApprove}
+        <WithdrawDecisionModal req={withdrawDecision} canApprove={!!withdrawDecision.canDecide}
           onClose={() => setWithdrawDecision(null)}
           onDone={(payload) => {
             setWithdrawDecision(null); setData(payload);
@@ -216,7 +228,7 @@ function WithdrawDecisionModal({ req, canApprove, onClose, onDone }) {
             </label>
           </>
         ) : (
-          <ViewOnlyNote />
+          <ViewOnlyNote req={req} />
         )}
 
         {err && (
@@ -243,16 +255,18 @@ function WithdrawDecisionModal({ req, canApprove, onClose, onDone }) {
   );
 }
 
-/* Ghi chú cho vai trò chỉ-xem (HR User): modal mở ra để tra cứu, không có nút
-   quyết định. Backend cũng chặn (canApprove=false → 403), đây chỉ là lớp UI. */
-function ViewOnlyNote() {
+/* Ghi chú khi chỉ được xem: HR User (không duyệt đơn nào) hoặc sai vai trò so
+   với bậc duyệt của loại nghỉ. Backend cũng chặn (403), đây chỉ là lớp UI. */
+function ViewOnlyNote({ req }) {
+  const who = (req && req.approverRoleLabel) || 'HR Manager hoặc trưởng phòng phụ trách';
   return (
     <div className="muted" style={{
       padding: '10px 13px', background: 'var(--surface-2)',
       border: '1px solid var(--border)', borderRadius: 10, fontSize: 12.5,
     }}>
-      Bạn có quyền <b>xem</b> đơn này. Việc duyệt / từ chối do HR Manager hoặc
-      trưởng phòng phụ trách thực hiện.
+      Bạn có quyền <b>xem</b> đơn này. Loại nghỉ <b>{req && req.leaveType}</b> cấu
+      hình <b>{who}</b> duyệt.
+      {req && req.decideHint ? <div style={{ marginTop: 4 }}>{req.decideHint}</div> : null}
     </div>
   );
 }
@@ -359,7 +373,7 @@ function DecisionModal({ req, isHrManager, canApprove, onClose, onDone }) {
           </div>
         )}
 
-        {!canApprove && <ViewOnlyNote />}
+        {!canApprove && <ViewOnlyNote req={req} />}
 
         {err && (
           <div style={{ padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>

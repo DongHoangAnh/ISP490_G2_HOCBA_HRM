@@ -141,7 +141,12 @@ def _scope_for(env):
     # xem, không quyết định đơn (xem canReview vs canApprove bên dưới).
     see_all = is_hr_manager or user.has_group('hr.group_hr_user')
     is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
-    dept_ids = [] if see_all else _managed_department_ids(env, user.employee_id)
+    # managed_ids = phòng ban user thực sự làm trưởng phòng, tính CẢ khi user là
+    # HR/Admin (một người có thể vừa là HR Manager vừa là trưởng phòng). deptIds
+    # dùng để lọc phạm vi nên để rỗng với see_all (đã thấy tất cả), còn
+    # managedDeptIds dùng để xét vai trò "trưởng phòng" ở bậc duyệt loại nghỉ.
+    managed_ids = _managed_department_ids(env, user.employee_id)
+    dept_ids = [] if see_all else managed_ids
     is_role_account = see_all or is_giaovu or bool(dept_ids)
     return {
         'isHrManager': is_hr_manager,
@@ -156,7 +161,64 @@ def _scope_for(env):
         'canApprove': is_hr_manager or bool(dept_ids),
         'seeAll': see_all,
         'deptIds': dept_ids,
+        'managedDeptIds': managed_ids,
     }
+
+
+# ---------------------------------------------------------------------------
+# Bậc duyệt theo LOẠI NGHỈ (hr.leave.type.leave_validation_type). Học Bá dùng
+# lại 3 giá trị sẵn có của Odoo nhưng định nghĩa theo VAI TRÒ người duyệt:
+#   'hr'      → CHỈ HR Manager/Admin được duyệt
+#   'manager' → CHỈ Trưởng phòng của nhân viên được duyệt
+#   'both'    → HR Manager HOẶC Trưởng phòng, một trong hai là đủ (KHÔNG phải
+#               duyệt hai bậc nối tiếp như Odoo core)
+# 'no_validation' (loại không cần duyệt) không giới hạn vai trò.
+# ---------------------------------------------------------------------------
+APPROVER_ROLE_LABEL = {
+    'hr': 'HR Manager',
+    'manager': 'Trưởng phòng',
+    'both': 'HR Manager hoặc Trưởng phòng',
+    'no_validation': 'HR Manager hoặc Trưởng phòng',
+}
+
+
+def _leave_dept(leave):
+    return leave.department_id or leave.employee_id.department_id
+
+
+def _approver_role(leave):
+    return leave.holiday_status_id.leave_validation_type or 'hr'
+
+
+def _can_decide_leave(scope, leave):
+    """Người đang đăng nhập có được RA QUYẾT ĐỊNH trên đơn này không (duyệt /
+    từ chối / duyệt yêu cầu rút). Trả (bool, thông điệp lý do khi False).
+
+    Hai tầng: (1) cổng vai trò chung canApprove + phạm vi phòng ban, rồi
+    (2) bậc duyệt cấu hình ở loại nghỉ (xem APPROVER_ROLE_LABEL)."""
+    if not scope['canApprove']:
+        return False, 'Bạn không có quyền duyệt đơn nghỉ.'
+    dept = _leave_dept(leave)
+    if not scope['seeAll'] and dept.id not in scope['deptIds']:
+        return False, 'Đơn này không thuộc phòng ban bạn quản lý.'
+
+    role = _approver_role(leave)
+    if role not in ('hr', 'manager'):        # 'both' / 'no_validation'
+        return True, ''
+    if role == 'hr':
+        if scope['isHrManager']:
+            return True, ''
+        return False, ('Loại nghỉ này cấu hình "HR Manager duyệt" — trưởng '
+                       'phòng không xử lý được.')
+    # role == 'manager'
+    if dept and dept.id in scope['managedDeptIds']:
+        return True, ''
+    # Phòng ban chưa gán trưởng phòng (hoặc nhân viên không có phòng ban) thì
+    # đơn sẽ kẹt vĩnh viễn → để HR Manager đứng ra duyệt thay.
+    if scope['isHrManager'] and not (dept and dept.sudo().manager_id):
+        return True, ''
+    return False, ('Loại nghỉ này cấu hình "Trưởng phòng duyệt" — chỉ trưởng '
+                   'phòng của nhân viên mới xử lý được.')
 
 
 def _dept_domain(scope):
@@ -687,6 +749,11 @@ def _lapsed_table(env, scope, dept_id=False):
             'workedCount': info['workedCount'],
             'checkedCount': info['checkedCount'],
             'exempt': info['exempt'],
+            # Bậc duyệt loại nghỉ: nút "Xử lý theo đề xuất" chỉ hiện với người
+            # thực sự được quyết định đơn này.
+            'canDecide': _can_decide_leave(scope, leave)[0],
+            'approverRoleLabel': APPROVER_ROLE_LABEL.get(
+                _approver_role(leave), 'HR Manager hoặc Trưởng phòng'),
         })
     items.sort(key=lambda r: r['lapsedDays'], reverse=True)
     return {
@@ -1277,7 +1344,10 @@ class HocBaTimeoff(http.Controller):
             'canWithdraw': can_withdraw,
         }
 
-    def _approval_request(self, leave):
+    def _approval_request(self, leave, scope):
+        # Bậc duyệt của loại nghỉ quyết định AI được xử lý đơn này (xem
+        # _can_decide_leave) → trả kèm từng dòng để SPA bật/tắt nút Xử lý.
+        can_decide, decide_hint = _can_decide_leave(scope, leave)
         return {
             'id': leave.id,
             'employeeId': leave.employee_id.id,
@@ -1311,6 +1381,12 @@ class HocBaTimeoff(http.Controller):
             # "Quá hạn duyệt": qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt, kèm
             # đối chiếu chấm công (None nếu chưa quá hạn / là đơn nghỉ bù).
             'lapsed': _lapsed_info(request.env, leave),
+            # Bậc duyệt loại nghỉ: ai được xử lý đơn này.
+            'approverRole': _approver_role(leave),
+            'approverRoleLabel': APPROVER_ROLE_LABEL.get(
+                _approver_role(leave), 'HR Manager hoặc Trưởng phòng'),
+            'canDecide': can_decide,
+            'decideHint': decide_hint,
         }
 
     def _approver_name(self, leave):
@@ -1391,7 +1467,7 @@ class HocBaTimeoff(http.Controller):
             # chỉ thấy phòng mình nên không cần (FE gate bằng seeAll).
             'allDepartments': [{'id': d.id, 'name': d.name}
                                for d in self._scoped_departments(scope)],
-            'requests': [self._approval_request(l) for l in leaves],
+            'requests': [self._approval_request(l, scope) for l in leaves],
         })
 
     # ------------------------------------------------------------------
@@ -1731,9 +1807,12 @@ class HocBaTimeoff(http.Controller):
         leave = request.env['hr.leave'].sudo().browse(leave_id)
         if not leave.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
-        # Trưởng phòng chỉ xử lý đơn thuộc phòng ban mình quản lý.
-        if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Phạm vi phòng ban + bậc duyệt cấu hình ở loại nghỉ (HR Manager duyệt /
+        # Trưởng phòng duyệt / cả hai) — xem _can_decide_leave.
+        allowed, why = _can_decide_leave(scope, leave)
+        if not allowed:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': why}, status=403)
 
         # Phase 12: chụp trạng thái lỡ hạn TRƯỚC khi duyệt (duyệt xong state
         # đổi → _lapsed_info trả None) để ghi vết "duyệt trễ" chính xác.
@@ -1770,7 +1849,7 @@ class HocBaTimeoff(http.Controller):
             order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
-            'requests': [self._approval_request(l) for l in leaves],
+            'requests': [self._approval_request(l, scope) for l in leaves],
         })
 
     # ------------------------------------------------------------------
@@ -1841,9 +1920,11 @@ class HocBaTimeoff(http.Controller):
                 {'error': 'not_pending',
                  'message': 'Đơn này không có yêu cầu rút đang chờ.'},
                 status=400)
-        # Trưởng phòng chỉ xử lý đơn thuộc phòng ban mình quản lý.
-        if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Cùng luật với duyệt đơn: phạm vi phòng ban + bậc duyệt của loại nghỉ.
+        allowed, why = _can_decide_leave(scope, leave)
+        if not allowed:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': why}, status=403)
 
         try:
             if approve:
@@ -1866,7 +1947,7 @@ class HocBaTimeoff(http.Controller):
             order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
-            'requests': [self._approval_request(l) for l in leaves],
+            'requests': [self._approval_request(l, scope) for l in leaves],
         })
 
     # ------------------------------------------------------------------
