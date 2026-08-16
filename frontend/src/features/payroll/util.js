@@ -42,10 +42,15 @@ export const lastOfMonth = (m, y) => {
   return `${y}-${String(m).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export const monthOptions = () =>
-  Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: `Tháng ${i + 1}` }));
+export const monthOptions = (selectedYear) => {
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  const maxMonth = (Number(selectedYear) === curYear) ? curMonth : 12;
+  return Array.from({ length: maxMonth }, (_, i) => ({ value: String(i + 1), label: `Tháng ${i + 1}` }));
+};
 
 export const yearOptions = () => {
   const y = new Date().getFullYear();
-  return [y - 1, y, y + 1].map((v) => ({ value: String(v), label: String(v) }));
+  return [y - 2, y - 1, y].map((v) => ({ value: String(v), label: String(v) }));
 };

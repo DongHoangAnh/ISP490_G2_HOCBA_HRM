@@ -447,15 +447,21 @@ class PayrollAPI(http.Controller):
                 if c.employee_id.id not in contract_map:
                     contract_map[c.employee_id.id] = c
 
-            # Create payslips for ALL active employees EXCEPT teachers
-            # (teacher salary is handled separately, not through this payroll system)
+            # Create payslips ONLY for employees with valid contracts in the period
+            # AND exclude teachers (teacher salary handled separately)
             teacher_type = env.ref('hocba_employees.employee_type_teacher', raise_if_not_found=False)
-            emp_domain = [('active', '=', True)]
+            contract_domain = [
+                ('state', '=', 'open'),
+                ('employee_id.active', '=', True),
+                ('date_start', '<=', batch.date_end),
+                '|', ('date_end', '=', False), ('date_end', '>=', batch.date_start),
+            ]
             if teacher_type:
-                emp_domain.append(('x_employee_type_id', '!=', teacher_type.id))
-            employees = env['hr.employee'].sudo().search(
-                emp_domain, order='id',
-            )
+                contract_domain.append(('employee_id.x_employee_type_id', '!=', teacher_type.id))
+            valid_contracts = env['hb.contract'].sudo().search(contract_domain)
+            emp_ids_with_contract = list(set(valid_contracts.mapped('employee_id.id')))
+            employees = env['hr.employee'].sudo().browse(emp_ids_with_contract)
+            employees = employees.sorted(key=lambda e: (e.x_employee_code or '', e.id))
 
             # Đồng bộ lương cơ bản trên hợp đồng với phiên bản hồ sơ NV mới nhất
             for emp in employees:
@@ -706,15 +712,20 @@ class PayrollAPI(http.Controller):
                 if s.employee_id.id not in slip_map:
                     slip_map[s.employee_id.id] = s
 
-            # 3) Active employees EXCEPT teachers & prefetch line amounts in 1 DB query
+            # 3) Employees with valid contracts in the period EXCEPT teachers
             teacher_type = env.ref('hocba_employees.employee_type_teacher', raise_if_not_found=False)
-            emp_domain = [('active', '=', True)]
+            contract_domain = [
+                ('state', '=', 'open'),
+                ('employee_id.active', '=', True),
+                ('date_start', '<=', date_end),
+                '|', ('date_end', '=', False), ('date_end', '>=', date_start),
+            ]
             if teacher_type:
-                emp_domain.append(('x_employee_type_id', '!=', teacher_type.id))
-            employees = env['hr.employee'].sudo().search(
-                emp_domain,
-                order='x_employee_code, id',
-            )
+                contract_domain.append(('employee_id.x_employee_type_id', '!=', teacher_type.id))
+            valid_contracts = env['hb.contract'].sudo().search(contract_domain)
+            emp_ids = list(set(valid_contracts.mapped('employee_id.id')))
+            employees = env['hr.employee'].sudo().browse(emp_ids)
+            employees = employees.sorted(key=lambda e: (e.x_employee_code or '', e.id))
 
             slip_line_map = {}
             if slip_map:
@@ -753,6 +764,92 @@ class PayrollAPI(http.Controller):
             })
         except Exception as e:
             _logger.exception('employee_payroll_summary error')
+            return _error_response(str(e), status=500)
+
+    # ═════════════════════════════════════════════════════════
+    # BULK BONUS & PENALTY (thưởng/phạt hàng loạt)
+    # ═════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/bulk-bonus-penalty',
+                type='http', auth='user', methods=['POST'], csrf=False)
+    def bulk_bonus_penalty(self, **kw):
+        """Áp dụng thưởng/phạt hàng loạt cho nhiều nhân viên trong kỳ lương."""
+        try:
+            body = _get_json_body()
+            month = int(body.get('month', 0))
+            year = int(body.get('year', 0))
+            if not month or not year:
+                return _error_response('Thiếu tháng/năm.')
+
+            payslip_ids = body.get('payslipIds', [])
+            bonus = float(body.get('bonusAmount', 0))
+            penalty = float(body.get('penaltyAmount', 0))
+            bonus_reason = body.get('bonusReason', '')
+            penalty_reason = body.get('penaltyReason', '')
+
+            if bonus <= 0 and penalty <= 0:
+                return _error_response('Cần nhập số tiền thưởng hoặc phạt > 0.')
+
+            env = request.env
+
+            # Find payslips for the month
+            nm = month + 1 if month < 12 else 1
+            ny = year if month < 12 else year + 1
+            date_start = f'{year}-{month:02d}-01'
+            date_end = f'{ny}-{nm:02d}-01'
+
+            if payslip_ids:
+                slips = env['hb.payslip'].sudo().browse(payslip_ids).exists()
+            else:
+                slips = env['hb.payslip'].sudo().search([
+                    ('date_from', '>=', date_start),
+                    ('date_from', '<', date_end),
+                    ('state', '!=', 'cancel'),
+                ])
+
+            if not slips:
+                return _error_response('Không tìm thấy phiếu lương nào.')
+
+            updated = 0
+            for slip in slips:
+                lines_to_create = []
+                if bonus > 0:
+                    lines_to_create.append({
+                        'payslip_id': slip.id,
+                        'code': 'thuong_khac',
+                        'name': bonus_reason or 'Thưởng khác',
+                        'amount': bonus,
+                        'sequence': 13,
+                        'category_id': 11,  # thuong category
+                    })
+                if penalty > 0:
+                    lines_to_create.append({
+                        'payslip_id': slip.id,
+                        'code': 'phat',
+                        'name': penalty_reason or 'Phạt vi phạm',
+                        'amount': -penalty,
+                        'sequence': 91,
+                        'category_id': 13,  # giam_tru category
+                    })
+                if lines_to_create:
+                    for vals in lines_to_create:
+                        # Delete existing line with same code first (overwrite)
+                        existing = env['hb.payslip.line'].sudo().search([
+                            ('payslip_id', '=', slip.id),
+                            ('code', '=', vals['code']),
+                        ])
+                        if existing:
+                            existing.unlink()
+                        env['hb.payslip.line'].sudo().create(vals)
+                    updated += 1
+
+            return _success_response(
+                {'updated': updated},
+                message=f'Đã áp dụng thưởng/phạt cho {updated} phiếu lương.'
+            )
+        except (ValidationError, UserError) as e:
+            return _error_response(str(e))
+        except Exception as e:
+            _logger.exception('bulk_bonus_penalty error')
             return _error_response(str(e), status=500)
 
     # ═════════════════════════════════════════════════════════

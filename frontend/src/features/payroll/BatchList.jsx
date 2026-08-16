@@ -815,13 +815,22 @@ export default function BatchList({ search }) {
                   cursor: 'pointer', outline: 'none',
                 }}
               >
-                {monthOptions().map((o) => (
+                {monthOptions(year).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
               <select
                 value={year}
-                onChange={(e) => { setYear(e.target.value); setChecked({}); }}
+                onChange={(e) => {
+                  const newYear = e.target.value;
+                  setYear(newYear);
+                  // Clamp month if switching to current year and month is in the future
+                  const now = new Date();
+                  if (Number(newYear) === now.getFullYear() && Number(month) > now.getMonth() + 1) {
+                    setMonth(String(now.getMonth() + 1));
+                  }
+                  setChecked({});
+                }}
                 style={{
                   padding: '3px 8px', borderRadius: 5, fontSize: 12, fontWeight: 600,
                   background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
@@ -1283,7 +1292,8 @@ export default function BatchList({ search }) {
       {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} onChanged={load} />}
       {showBulkModal && (
         <BulkBonusPenaltyModal
-          batchId={data ? data.batch_id : null}
+          month={month}
+          year={year}
           employees={data ? data.employees : []}
           onClose={() => setShowBulkModal(false)}
           onSuccess={() => load()}
