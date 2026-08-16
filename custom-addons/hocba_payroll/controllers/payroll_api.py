@@ -447,9 +447,14 @@ class PayrollAPI(http.Controller):
                 if c.employee_id.id not in contract_map:
                     contract_map[c.employee_id.id] = c
 
-            # Create payslips for ALL active employees, with or without a contract
+            # Create payslips for ALL active employees EXCEPT teachers
+            # (teacher salary is handled separately, not through this payroll system)
+            teacher_type = env.ref('hocba_employees.employee_type_teacher', raise_if_not_found=False)
+            emp_domain = [('active', '=', True)]
+            if teacher_type:
+                emp_domain.append(('x_employee_type_id', '!=', teacher_type.id))
             employees = env['hr.employee'].sudo().search(
-                [('active', '=', True)], order='id',
+                emp_domain, order='id',
             )
 
             # Đồng bộ lương cơ bản trên hợp đồng với phiên bản hồ sơ NV mới nhất
@@ -701,9 +706,13 @@ class PayrollAPI(http.Controller):
                 if s.employee_id.id not in slip_map:
                     slip_map[s.employee_id.id] = s
 
-            # 3) Active employees & prefetch line amounts in 1 DB query
+            # 3) Active employees EXCEPT teachers & prefetch line amounts in 1 DB query
+            teacher_type = env.ref('hocba_employees.employee_type_teacher', raise_if_not_found=False)
+            emp_domain = [('active', '=', True)]
+            if teacher_type:
+                emp_domain.append(('x_employee_type_id', '!=', teacher_type.id))
             employees = env['hr.employee'].sudo().search(
-                [('active', '=', True)],
+                emp_domain,
                 order='x_employee_code, id',
             )
 
@@ -2384,6 +2393,10 @@ class PayrollAPI(http.Controller):
                 return _error_response(
                     'Batch đã lưu lịch sử, không thể reset xác nhận.')
             old_status = slip.x_employee_confirm
+            # Delete all payslip lines (calculation results) for clean reset
+            old_lines = request.env['hb.payslip.line'].sudo().search([('payslip_id', '=', slip.id)])
+            if old_lines:
+                old_lines.unlink()
             slip.write({
                 'x_employee_confirm': 'pending',
                 'x_auto_confirm': False,
@@ -2391,6 +2404,9 @@ class PayrollAPI(http.Controller):
                 'x_confirm_deadline': False,  # #6: clear deadline on reset
                 'x_email_sent': False,
                 'x_email_sent_date': False,
+                'x_teaching_computed': False,
+                'gross_amount': 0,
+                'net_amount': 0,
             })
             try:
                 slip.message_post(
@@ -2450,6 +2466,10 @@ class PayrollAPI(http.Controller):
             if not valid_slips:
                 return _error_response('Không có phiếu lương hợp lệ để reset.')
 
+            # ⚡ Bulk delete all payslip lines (calculation results) for clean reset
+            old_lines = env['hb.payslip.line'].sudo().search([('payslip_id', 'in', valid_slips.ids)])
+            if old_lines:
+                old_lines.unlink()
             # ⚡ Bulk update 100% records in 1 single SQL trip (Ultra fast performance)
             valid_slips.write({
                 'x_employee_confirm': 'pending',
@@ -2457,6 +2477,9 @@ class PayrollAPI(http.Controller):
                 'x_confirm_deadline': False,
                 'x_email_sent': False,
                 'x_email_sent_date': False,
+                'x_teaching_computed': False,
+                'gross_amount': 0,
+                'net_amount': 0,
             })
             count = len(valid_slips)
 
