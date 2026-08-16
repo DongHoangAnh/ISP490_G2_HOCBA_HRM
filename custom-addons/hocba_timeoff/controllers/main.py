@@ -135,23 +135,90 @@ def _managed_department_ids(env, emp):
 def _scope_for(env):
     """Phân quyền Nghỉ phép (xem docstring chi tiết ở HocBaTimeoff._scope)."""
     user = env.user
-    see_all = (user.has_group('base.group_system')
-               or user.has_group('hr.group_hr_manager')
-               or user.has_group('hr.group_hr_user'))
     is_hr_manager = (user.has_group('base.group_system')
                      or user.has_group('hr.group_hr_manager'))
+    # HR User = nhân viên phòng HR: thấy dữ liệu mọi phòng ban NHƯNG chỉ được
+    # xem, không quyết định đơn (xem canReview vs canApprove bên dưới).
+    see_all = is_hr_manager or user.has_group('hr.group_hr_user')
     is_giaovu = user.has_group('hocba_employees.group_hocba_giaovu')
-    dept_ids = [] if see_all else _managed_department_ids(env, user.employee_id)
+    # managed_ids = phòng ban user thực sự làm trưởng phòng, tính CẢ khi user là
+    # HR/Admin (một người có thể vừa là HR Manager vừa là trưởng phòng). deptIds
+    # dùng để lọc phạm vi nên để rỗng với see_all (đã thấy tất cả), còn
+    # managedDeptIds dùng để xét vai trò "trưởng phòng" ở bậc duyệt loại nghỉ.
+    managed_ids = _managed_department_ids(env, user.employee_id)
+    dept_ids = [] if see_all else managed_ids
     is_role_account = see_all or is_giaovu or bool(dept_ids)
     return {
         'isHrManager': is_hr_manager,
         'isDeptManager': bool(dept_ids),
         'isGiaovu': is_giaovu,
         'isEmployee': not is_role_account,
-        'canApprove': see_all or bool(dept_ids),
+        # canReview = mở được các màn quản lý (Chờ duyệt, Kiểm duyệt phát sinh,
+        # Tổng quan, Quỹ phép…) — HR Manager/Admin, HR User, Trưởng phòng.
+        'canReview': see_all or bool(dept_ids),
+        # canApprove = ra QUYẾT ĐỊNH trên đơn (duyệt/từ chối, duyệt rút đơn).
+        # HR User bị loại trừ có chủ đích: chỉ xem, không duyệt.
+        'canApprove': is_hr_manager or bool(dept_ids),
         'seeAll': see_all,
         'deptIds': dept_ids,
+        'managedDeptIds': managed_ids,
     }
+
+
+# ---------------------------------------------------------------------------
+# Bậc duyệt theo LOẠI NGHỈ (hr.leave.type.leave_validation_type). Học Bá dùng
+# lại 3 giá trị sẵn có của Odoo nhưng định nghĩa theo VAI TRÒ người duyệt:
+#   'hr'      → CHỈ HR Manager/Admin được duyệt
+#   'manager' → CHỈ Trưởng phòng của nhân viên được duyệt
+#   'both'    → HR Manager HOẶC Trưởng phòng, một trong hai là đủ (KHÔNG phải
+#               duyệt hai bậc nối tiếp như Odoo core)
+# 'no_validation' (loại không cần duyệt) không giới hạn vai trò.
+# ---------------------------------------------------------------------------
+APPROVER_ROLE_LABEL = {
+    'hr': 'HR Manager',
+    'manager': 'Trưởng phòng',
+    'both': 'HR Manager hoặc Trưởng phòng',
+    'no_validation': 'HR Manager hoặc Trưởng phòng',
+}
+
+
+def _leave_dept(leave):
+    return leave.department_id or leave.employee_id.department_id
+
+
+def _approver_role(leave):
+    return leave.holiday_status_id.leave_validation_type or 'hr'
+
+
+def _can_decide_leave(scope, leave):
+    """Người đang đăng nhập có được RA QUYẾT ĐỊNH trên đơn này không (duyệt /
+    từ chối / duyệt yêu cầu rút). Trả (bool, thông điệp lý do khi False).
+
+    Hai tầng: (1) cổng vai trò chung canApprove + phạm vi phòng ban, rồi
+    (2) bậc duyệt cấu hình ở loại nghỉ (xem APPROVER_ROLE_LABEL)."""
+    if not scope['canApprove']:
+        return False, 'Bạn không có quyền duyệt đơn nghỉ.'
+    dept = _leave_dept(leave)
+    if not scope['seeAll'] and dept.id not in scope['deptIds']:
+        return False, 'Đơn này không thuộc phòng ban bạn quản lý.'
+
+    role = _approver_role(leave)
+    if role not in ('hr', 'manager'):        # 'both' / 'no_validation'
+        return True, ''
+    if role == 'hr':
+        if scope['isHrManager']:
+            return True, ''
+        return False, ('Loại nghỉ này cấu hình "HR Manager duyệt" — trưởng '
+                       'phòng không xử lý được.')
+    # role == 'manager'
+    if dept and dept.id in scope['managedDeptIds']:
+        return True, ''
+    # Phòng ban chưa gán trưởng phòng (hoặc nhân viên không có phòng ban) thì
+    # đơn sẽ kẹt vĩnh viễn → để HR Manager đứng ra duyệt thay.
+    if scope['isHrManager'] and not (dept and dept.sudo().manager_id):
+        return True, ''
+    return False, ('Loại nghỉ này cấu hình "Trưởng phòng duyệt" — chỉ trưởng '
+                   'phòng của nhân viên mới xử lý được.')
 
 
 def _dept_domain(scope):
@@ -682,6 +749,11 @@ def _lapsed_table(env, scope, dept_id=False):
             'workedCount': info['workedCount'],
             'checkedCount': info['checkedCount'],
             'exempt': info['exempt'],
+            # Bậc duyệt loại nghỉ: nút "Xử lý theo đề xuất" chỉ hiện với người
+            # thực sự được quyết định đơn này.
+            'canDecide': _can_decide_leave(scope, leave)[0],
+            'approverRoleLabel': APPROVER_ROLE_LABEL.get(
+                _approver_role(leave), 'HR Manager hoặc Trưởng phòng'),
         })
     items.sort(key=lambda r: r['lapsedDays'], reverse=True)
     return {
@@ -1082,7 +1154,7 @@ def _request_history(env, scope, leave_id):
         return None
     emp = env.user.employee_id
     is_owner = bool(emp) and leave.employee_id.id == emp.id
-    in_scope = scope['canApprove'] and (
+    in_scope = scope['canReview'] and (
         scope['seeAll'] or leave.department_id.id in scope['deptIds'])
     if not (is_owner or in_scope):
         return False
@@ -1110,12 +1182,20 @@ class HocBaTimeoff(http.Controller):
         """Phân quyền Nghỉ phép — đồng bộ cách phân vai trò của SPA hocba_hrm.
 
         Hệ thống role mới KHÔNG gán group hr_holidays cho ai; quyền lấy từ:
-        - Admin/HR : base.group_system / hr.group_hr_manager / hr.group_hr_user
-                     → mọi phòng ban (HR Manager/Admin còn được override chứng từ).
+        - Admin/HR Manager : base.group_system / hr.group_hr_manager
+                     → mọi phòng ban, XEM và DUYỆT, còn được override chứng từ.
+        - HR User  : hr.group_hr_user → mọi phòng ban nhưng CHỈ XEM. Mở được
+                     mọi màn quản lý (Chờ duyệt, Kiểm duyệt phát sinh, Tổng
+                     quan, Quỹ phép…) mà không ra quyết định trên đơn.
         - Quản lý  : trưởng phòng ban qua hr.department.manager_id (gồm phòng con)
-                     → chỉ phòng ban mình quản lý. Khớp _is_dept_manager của
-                     hocba_hrm nên chắc chắn qua được cổng canManage của SPA.
+                     → chỉ phòng ban mình quản lý, XEM và DUYỆT. Khớp
+                     _is_dept_manager của hocba_hrm nên chắc chắn qua được
+                     cổng canManage của SPA.
         - Nhân viên: còn lại → chỉ dữ liệu cá nhân.
+
+        Hai cổng tách bạch: canReview (mở màn quản lý / đọc dữ liệu phạm vi)
+        và canApprove (duyệt/từ chối đơn, duyệt yêu cầu rút). HR User có
+        canReview=True, canApprove=False.
 
         "Tài khoản nhân viên" (isEmployee) = KHÔNG thuộc bất kỳ vai trò quản lý
         nào (Admin/HR Manager/HR User/Giáo vụ/Trưởng phòng) — khớp đúng
@@ -1136,8 +1216,11 @@ class HocBaTimeoff(http.Controller):
     def _scope_flags(self, scope):
         """Cờ trả cho SPA. isOfficer/isManager giữ tên cũ để tương thích frontend."""
         return {
-            'isOfficer': scope['canApprove'],     # tab Chờ duyệt/Tổng hợp, lịch cả đội
-            'isManager': scope['canApprove'],     # dashboard chế độ quản lý
+            'isOfficer': scope['canReview'],     # tab Chờ duyệt/Tổng hợp, lịch cả đội
+            'isManager': scope['canReview'],     # dashboard chế độ quản lý
+            # canApprove: hiện/ẩn nút Xử lý·Duyệt·Từ chối. HR User mở được các
+            # tab quản lý (isOfficer=True) nhưng cờ này False → chỉ xem.
+            'canApprove': scope['canApprove'],
             'isHrManager': scope['isHrManager'],  # override chứng từ y tế (BR-011)
             'isEmployee': scope['isEmployee'],    # chỉ NV thường mới tạo được đơn
             'seeAll': scope['seeAll'],            # HR/Admin: lọc được mọi phòng ban
@@ -1261,7 +1344,10 @@ class HocBaTimeoff(http.Controller):
             'canWithdraw': can_withdraw,
         }
 
-    def _approval_request(self, leave):
+    def _approval_request(self, leave, scope):
+        # Bậc duyệt của loại nghỉ quyết định AI được xử lý đơn này (xem
+        # _can_decide_leave) → trả kèm từng dòng để SPA bật/tắt nút Xử lý.
+        can_decide, decide_hint = _can_decide_leave(scope, leave)
         return {
             'id': leave.id,
             'employeeId': leave.employee_id.id,
@@ -1295,6 +1381,12 @@ class HocBaTimeoff(http.Controller):
             # "Quá hạn duyệt": qua ngày bắt đầu nghỉ mà đơn vẫn chờ duyệt, kèm
             # đối chiếu chấm công (None nếu chưa quá hạn / là đơn nghỉ bù).
             'lapsed': _lapsed_info(request.env, leave),
+            # Bậc duyệt loại nghỉ: ai được xử lý đơn này.
+            'approverRole': _approver_role(leave),
+            'approverRoleLabel': APPROVER_ROLE_LABEL.get(
+                _approver_role(leave), 'HR Manager hoặc Trưởng phòng'),
+            'canDecide': can_decide,
+            'decideHint': decide_hint,
         }
 
     def _approver_name(self, leave):
@@ -1362,7 +1454,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_approvals(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         # sudo + lọc phòng ban: HR/Admin xem tất cả, Trưởng phòng chỉ phòng mình.
         # FE phân biệt đơn mới / yêu cầu rút bằng withdrawState + Badge riêng.
@@ -1375,23 +1467,25 @@ class HocBaTimeoff(http.Controller):
             # chỉ thấy phòng mình nên không cần (FE gate bằng seeAll).
             'allDepartments': [{'id': d.id, 'name': d.name}
                                for d in self._scoped_departments(scope)],
-            'requests': [self._approval_request(l) for l in leaves],
+            'requests': [self._approval_request(l, scope) for l in leaves],
         })
 
     # ------------------------------------------------------------------
     # 3.2a. GET /pending-count — badge "Nghỉ phép" ở thanh menu (sidebar).
     # Chỉ đếm (search_count), KHÔNG dựng payload đơn như /approvals: gọi ở
-    # mọi màn nên phải rẻ. Không có quyền duyệt → 200 + count 0 (badge ẩn),
-    # để SPA khỏi phải bắt 403 cho một chi tiết trang trí.
+    # mọi màn nên phải rẻ. Không mở được tab Chờ duyệt → 200 + count 0 (badge
+    # ẩn), để SPA khỏi phải bắt 403 cho một chi tiết trang trí. Gate theo
+    # canReview (không phải canApprove): HR User chỉ xem vẫn thấy badge khớp
+    # với danh sách trong tab.
     # ------------------------------------------------------------------
     @http.route('/hocba-hrm/api/timeoff/pending-count', auth='user',
                 type='http', methods=['GET'])
     def api_pending_count(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
-            return request.make_json_response({'canApprove': False, 'count': 0})
+        if not scope['canReview']:
+            return request.make_json_response({'canReview': False, 'count': 0})
         return request.make_json_response({
-            'canApprove': True,
+            'canReview': True,
             # Cùng _approvals_domain với tab "Đơn chờ duyệt" → 2 badge không lệch.
             'count': request.env['hr.leave'].sudo().search_count(
                 self._approvals_domain(scope)),
@@ -1713,9 +1807,12 @@ class HocBaTimeoff(http.Controller):
         leave = request.env['hr.leave'].sudo().browse(leave_id)
         if not leave.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
-        # Trưởng phòng chỉ xử lý đơn thuộc phòng ban mình quản lý.
-        if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Phạm vi phòng ban + bậc duyệt cấu hình ở loại nghỉ (HR Manager duyệt /
+        # Trưởng phòng duyệt / cả hai) — xem _can_decide_leave.
+        allowed, why = _can_decide_leave(scope, leave)
+        if not allowed:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': why}, status=403)
 
         # Phase 12: chụp trạng thái lỡ hạn TRƯỚC khi duyệt (duyệt xong state
         # đổi → _lapsed_info trả None) để ghi vết "duyệt trễ" chính xác.
@@ -1752,7 +1849,7 @@ class HocBaTimeoff(http.Controller):
             order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
-            'requests': [self._approval_request(l) for l in leaves],
+            'requests': [self._approval_request(l, scope) for l in leaves],
         })
 
     # ------------------------------------------------------------------
@@ -1823,9 +1920,11 @@ class HocBaTimeoff(http.Controller):
                 {'error': 'not_pending',
                  'message': 'Đơn này không có yêu cầu rút đang chờ.'},
                 status=400)
-        # Trưởng phòng chỉ xử lý đơn thuộc phòng ban mình quản lý.
-        if not scope['seeAll'] and leave.department_id.id not in scope['deptIds']:
-            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Cùng luật với duyệt đơn: phạm vi phòng ban + bậc duyệt của loại nghỉ.
+        allowed, why = _can_decide_leave(scope, leave)
+        if not allowed:
+            return request.make_json_response(
+                {'error': 'forbidden', 'message': why}, status=403)
 
         try:
             if approve:
@@ -1848,7 +1947,7 @@ class HocBaTimeoff(http.Controller):
             order='x_is_emergency desc, request_date_from, id')
         return request.make_json_response({
             **self._scope_flags(scope),
-            'requests': [self._approval_request(l) for l in leaves],
+            'requests': [self._approval_request(l, scope) for l in leaves],
         })
 
     # ------------------------------------------------------------------
@@ -1887,7 +1986,7 @@ class HocBaTimeoff(http.Controller):
             year = int(kw.get('year') or self._this_year())
         except (TypeError, ValueError):
             year = self._this_year()
-        if scope['canApprove']:
+        if scope['canReview']:
             data = self._dashboard_manager(year, kw.get('dept'), scope)
         else:
             data = self._dashboard_employee(year)
@@ -1902,7 +2001,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_lapsed_dashboard(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             dept_id = int(kw.get('dept')) if kw.get('dept') else False
@@ -1927,7 +2026,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_burnout(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             dept_id = int(kw.get('dept')) if kw.get('dept') else False
@@ -2142,7 +2241,7 @@ class HocBaTimeoff(http.Controller):
         overlap = [('date_from', '<=', end), ('date_to', '>=', start)]
         Leave = request.env['hr.leave'].sudo()
         dept_filter = False
-        if not scope['canApprove']:
+        if not scope['canReview']:
             emp = request.env.user.employee_id
             domain = ([('employee_id', '=', emp.id)] + overlap) if emp else [('id', '=', 0)]
         else:
@@ -2593,7 +2692,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_approved(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             year = int(kw.get('year') or self._this_year())
@@ -2663,7 +2762,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_balances(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             year = int(kw.get('year') or self._this_year())
@@ -2753,7 +2852,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_balance_history(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             employee_id = int(kw.get('employeeId')) if kw.get('employeeId') else False
@@ -2777,7 +2876,7 @@ class HocBaTimeoff(http.Controller):
                 type='http', methods=['GET'])
     def api_coverage(self, **kw):
         scope = self._scope()
-        if not scope['canApprove']:
+        if not scope['canReview']:
             return request.make_json_response({'error': 'forbidden'}, status=403)
         year = self._this_year()
         date_from = (kw.get('from') or '').strip() or '%d-01-01' % year
@@ -2816,7 +2915,7 @@ class HocBaTimeoff(http.Controller):
         emp = request.env.user.employee_id
         is_owner = bool(emp) and leave.employee_id.id == emp.id
         in_scope = scope['seeAll'] or (
-            scope['canApprove'] and leave.department_id.id in scope['deptIds'])
+            scope['canReview'] and leave.department_id.id in scope['deptIds'])
         if not (is_owner or in_scope):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:

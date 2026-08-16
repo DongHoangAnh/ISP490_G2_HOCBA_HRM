@@ -22,6 +22,17 @@ function EmpTypeTag({ e }) {
   return <Badge kind={hbEmpTypeKind(e.empTypeKey)}>{e.empType}</Badge>;
 }
 
+/* "Nhân viên văn phòng" = mọi NV KHÔNG thuộc phòng giảng dạy. Nhận diện phòng
+   giảng dạy theo tên (bỏ dấu) vì hr.department không có cờ riêng cho việc này;
+   dữ liệu thật đang dùng tên "Giảng viên". Đổi tên phòng → sửa danh sách dưới. */
+const noAccent = (s) => (s || '').normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
+const TEACHER_DEP_WORDS = ['giang vien', 'giao vien'];
+const isTeacherDep = (name) => {
+  const n = noAccent(name);
+  return TEACHER_DEP_WORDS.some((w) => n.includes(w));
+};
+
 export default function Employees({ search, focus, onOpenCareer }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -73,8 +84,17 @@ export default function Employees({ search, focus, onOpenCareer }) {
     emps.filter((e) => e.empTypeKey).map((e) => [e.empTypeKey, e.empType])).entries()];
   const hasUntagged = emps.some((e) => !e.empTypeKey);
 
+  /* Thứ tự chip: Tất cả → phòng giảng dạy → khối văn phòng → các phòng còn lại.
+     Hai khối lớn (giảng viên / văn phòng) đứng trước vì HR lọc theo chúng nhiều
+     nhất; phòng ban chi tiết xếp sau. */
+  const teacherDeps = deps.filter((d) => isTeacherDep(d.name));
+  const otherDeps = deps.filter((d) => !isTeacherDep(d.name));
+  const teacherDepIds = new Set(teacherDeps.map((d) => d.id));
+  const officeCount = emps.filter((e) => !teacherDepIds.has(e.dep)).length;
+
   const filtered = emps.filter((e) => {
-    if (dep !== 'all' && e.dep !== dep) return false;
+    if (dep === 'office') { if (teacherDepIds.has(e.dep)) return false; }
+    else if (dep !== 'all' && e.dep !== dep) return false;
     if (status !== 'all' && e.statusKey !== status) return false;
     if (type !== 'all' && e.type !== type) return false;
     if (empType === 'none' && e.empTypeKey) return false;
@@ -111,7 +131,17 @@ export default function Employees({ search, focus, onOpenCareer }) {
       <div className="filterbar">
         <button className={'chip' + (dep === 'all' ? ' active' : '')} onClick={() => setDep('all')}>
           Tất cả <span className="ct">{emps.length}</span></button>
-        {deps.map((d) => (
+        {teacherDeps.map((d) => (
+          <button key={d.id} className={'chip' + (dep === d.id ? ' active' : '')} onClick={() => setDep(d.id)}>
+            {d.name} <span className="ct">{d.total}</span></button>
+        ))}
+        {teacherDeps.length > 0 && (
+          <button className={'chip' + (dep === 'office' ? ' active' : '')}
+            title="Nhân sự ở mọi phòng ban trừ phòng giảng dạy"
+            onClick={() => setDep('office')}>
+            Nhân viên văn phòng <span className="ct">{officeCount}</span></button>
+        )}
+        {otherDeps.map((d) => (
           <button key={d.id} className={'chip' + (dep === d.id ? ' active' : '')} onClick={() => setDep(d.id)}>
             {d.name} <span className="ct">{d.total}</span></button>
         ))}

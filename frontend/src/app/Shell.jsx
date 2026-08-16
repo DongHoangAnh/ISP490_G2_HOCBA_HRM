@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Icon from '../components/Icon';
 import NotificationBell from '../components/NotificationBell';
 import ChangePasswordForm from '../components/ChangePasswordForm';
+import brandLogo from '../assets/logo1.jpg';
 
 /* Nav theo vai trò (họp #2 — tách tài khoản quản lý ↔ cá nhân).
    need 'manage' = chỉ Admin/HR/Quản lý/Giáo vụ; không gắn need = mọi nhân viên.
@@ -115,9 +116,15 @@ export const PAGE_META = {
   attendanceConfig: { t: 'Cấu hình chấm công', c: 'Hệ thống / Attendance' },
 };
 
+/* Đăng xuất phiên Odoo rồi quay lại SPA (SPA sẽ hiện màn đăng nhập).
+   Dùng chung cho nút ở sidebar và ở topbar. */
+function logout() {
+  window.location.href = '/web/session/logout?redirect=/hocba-hrm';
+}
+
 /* badges: { [viewId]: number } — số việc cần xử lý hiện cạnh tên mục menu
    (vd Nghỉ phép: số đơn chờ duyệt). 0 / thiếu key = không hiện. */
-export function Sidebar({ view, setView, me, badges }) {
+export function Sidebar({ view, setView, me, badges, collapsed }) {
   const groups = visibleNav(me);
   // Đổi mật khẩu đặt ở đây (không phải trong "Hồ sơ của tôi") vì tài khoản vai
   // trò quản lý — HR/Admin/Giáo vụ — không thấy màn hồ sơ cá nhân.
@@ -126,8 +133,14 @@ export function Sidebar({ view, setView, me, badges }) {
     <>
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">HB</div>
-        <div>
+        {/* Logo mở website trung tâm ở tab mới (rel noopener: chặn tab đích
+            đụng vào window.opener). */}
+        <a className="brand-mark" href="https://hoc-ba.edu.vn/"
+           target="_blank" rel="noopener noreferrer"
+           title="Website Học Bá Education">
+          <img src={brandLogo} alt="Học Bá" />
+        </a>
+        <div className="brand-text">
           <div className="brand-name">Học Bá <span style={{ color: 'var(--gold-500)' }}>HRM</span></div>
           <div className="brand-sub">Hệ thống Nhân sự</div>
         </div>
@@ -141,6 +154,8 @@ export function Sidebar({ view, setView, me, badges }) {
               return (
                 <button key={it.id}
                   className={'nav-item' + (view === it.id ? ' active' : '')}
+                  /* Thu gọn thì chữ bị ẩn → dựa vào tooltip để biết mục nào. */
+                  title={collapsed ? it.label : undefined}
                   onClick={() => setView(it.id)}>
                   <Icon name={it.icon} size={19} className="ico" />
                   <span>{it.label}</span>
@@ -158,19 +173,18 @@ export function Sidebar({ view, setView, me, badges }) {
       <div className="sidebar-foot">
         <div className="org-card">
           <div className="dot"></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="org-text" style={{ flex: 1, minWidth: 0 }}>
             <div className="t" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {me ? me.name : 'Học Bá Education'}
             </div>
             <div className="s">{me ? me.roleLabel : '360 Giải Phóng'}</div>
           </div>
+          {/* Nút đăng xuất đã dời lên topbar (góc phải) — ở đây chỉ còn thông tin
+              tài khoản, tránh 2 nút cùng chức năng. Riêng Đổi mật khẩu vẫn ở
+              đây: tài khoản vai trò quản lý không có màn "Hồ sơ của tôi". */}
           <button className="icon-btn" title="Đổi mật khẩu"
             onClick={() => setPwOpen(true)}>
             <Icon name="lock" size={18} />
-          </button>
-          <button className="icon-btn" title="Đăng xuất"
-            onClick={() => { window.location.href = '/web/session/logout?redirect=/hocba-hrm'; }}>
-            <Icon name="logout" size={18} />
           </button>
         </div>
       </div>
@@ -184,10 +198,17 @@ export function Sidebar({ view, setView, me, badges }) {
   );
 }
 
-export function Topbar({ view, onSearch, onOpenNotification }) {
+export function Topbar({ view, onSearch, onOpenNotification, navCollapsed, onToggleNav }) {
   const m = PAGE_META[view] || { t: '', c: '' };
   return (
     <header className="topbar">
+      <button className="icon-btn nav-toggle"
+        title={navCollapsed ? 'Mở thanh menu' : 'Thu gọn thanh menu'}
+        aria-label={navCollapsed ? 'Mở thanh menu' : 'Thu gọn thanh menu'}
+        aria-expanded={!navCollapsed}
+        onClick={onToggleNav}>
+        <Icon name="panel-left" size={20} />
+      </button>
       <div>
         <div className="page-title">{m.t}</div>
         <div className="page-crumb">{m.c}</div>
@@ -198,9 +219,11 @@ export function Topbar({ view, onSearch, onOpenNotification }) {
           onChange={(e) => onSearch && onSearch(e.target.value)} />
       </label>
       <NotificationBell onOpenNotification={onOpenNotification} />
-      <button className="icon-btn" title="Mở Odoo backend"
-        onClick={() => window.open('/odoo', '_blank')}>
-        <Icon name="settings" size={20} />
+      {/* Trước đây là nút mở Odoo backend — người dùng nghiệp vụ không dùng
+          giao diện Odoo, đổi thành Đăng xuất cho đúng nhu cầu. */}
+      <button className="icon-btn" title="Đăng xuất"
+        onClick={logout}>
+        <Icon name="logout" size={20} />
       </button>
     </header>
   );

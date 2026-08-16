@@ -32,7 +32,7 @@
 | 6 | 1.6 | Security Enhancement: Mandatory Odoo user authentication (`auth='user'`) and email account ownership verification. Email links force login and redirect directly to the real SPA app (`http://localhost:8069/hocba-hrm`) with self-service `MyPayslipsView` component | All | 06/08/2026 | Group G2 |
 | 7 | 1.7 | Start & End Date Confirmation Window: Added configurable Start Day & End Day parameters. Enforced send-mail window validation (`start_day <= today <= end_day`), auto-confirmation of all pending slips past end date, and mail/recalculate lock past deadline unless extended in Config. | All | 07/08/2026 | Group G2 |
 | 8 | 1.8 | Pre-Send Confirmation Dialog: Implemented confirmation dialog listing employees missing work_email before sending mail, allowing HR to confirm sending to valid-email employees while skipping no-email employees. | Frontend SPA | 07/08/2026 | Group G2 |
-| 8 | 1.6 | UI/UX Redesign: Overhauled `MyPayslipsView` into a Senior-level categorized layout (Thu nhập, Các khoản trừ, Bảo hiểm công ty đóng tài trợ, Căn cứ tính thuế TNCN). Removed raw truncated code column ("Mã"), added feedback presets & enhanced confirmation action footer. | Frontend SPA | 06/08/2026 | Group G2 |
+| 9 | 1.9 | Synchronized auth security model (`auth='user'`), public fallback routes (`payroll_public.py`), email templates (`ir.config_parameter`), and REST API endpoints (`/payslip/<id>/reset-confirm`). | All | 09/08/2026 | Antigravity AI |
 
 ---
 
@@ -43,7 +43,7 @@
 | **Function ID** | FS-PAY-005 |
 | **Function Name** | Employee Payslip Confirmation & Email |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 06/08/2026 |
+| **Last Modified Date** | 09/08/2026 |
 
 | Attribute | Value |
 | --- | --- |

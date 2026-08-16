@@ -8,9 +8,8 @@ import { fetchOnboarding } from '../../api/employees';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
-import SortTh from '../../components/SortTh';
-import useSort from '../../hooks/useSort';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
+import { useSort, SortTh } from '../../components/sortable';
 import { fmtDate } from '../../utils/format';
 import EmployeeDrawer from './EmployeeDrawer';
 
@@ -63,34 +62,21 @@ function ProgressCell({ o }) {
   );
 }
 
-/* Sắp xếp: cột "Bước hiện tại" xếp theo HẠN (thông tin hành động được, đã
-   hiện ngay trong ô) chứ không theo tên bước; cột "Trạng thái" xếp theo mức
-   cần chú ý — tăng dần là "không đạt → đang chạy → xong". */
-const OVERALL_RANK = { fail: 0, run: 1, done: 2, none: 3 };
-const SORT_ACC = {
-  name: (o) => o.name,
-  depName: (o) => o.depName,
-  start: (o) => o.start,
-  templateName: (o) => o.templateName,
-  progress: (o) => {
-    const { done, total } = o.progress || { done: 0, total: 0 };
-    return total ? done / total : 0;
-  },
-  current: (o) => (o.current && o.current.dueDate) || '',
-  overall: (o) => OVERALL_RANK[overallOf(o).key],
-};
-
 /* onQueueChanged: báo App nạp lại badge "Nhận việc" sau khi xử lý bước.
    Không tự trừ số ở client — phạm vi đếm là quyền phía server. */
 export default function Onboarding({ search, onQueueChanged }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [sel, setSel] = useState(null);
+  const sort = useSort();
+  const [fState, setFState] = useState('all');   // trạng thái tổng
+  const [fDep, setFDep] = useState('all');
+  const [fTpl, setFTpl] = useState('all');       // quy trình áp dụng
+  const [fOverdue, setFOverdue] = useState(false);
+  const [fEval, setFEval] = useState(false);     // đang chờ bước đánh giá
   // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi thao tác bước (đổi
   // dữ liệu) mới refresh ngầm.
   const dirtyRef = useRef(false);
-  // Khai báo trước các return sớm bên dưới — hook không được gọi có điều kiện.
-  const sort = useSort(SORT_ACC, 'name');
 
   const load = () => {
     setErr(null); setData(null);
@@ -106,12 +92,63 @@ export default function Onboarding({ search, onQueueChanged }) {
   if (!data) return <LoadingState label="Đang tải dữ liệu nhận việc…" />;
 
   const items = data.items;
-  const filtered = sort.apply(items.filter((o) => {
+  const searched = items.filter((o) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (o.name || '').toLowerCase().includes(q) || (o.code || '').toLowerCase().includes(q)
       || (o.depName || '').toLowerCase().includes(q);
-  }));
+  });
+
+  /* Bộ lọc: chip trạng thái tổng + 2 nút bật/tắt (quá hạn, chờ đánh giá) khớp
+     đúng 2 thẻ số ở trên, và select phòng ban / quy trình. Số trên chip đếm
+     trên tập ĐÃ tìm kiếm nhưng CHƯA lọc → bấm chip nào cũng ra đúng số đó. */
+  const stateChips = [
+    { k: 'all', lbl: 'Tất cả' },
+    { k: 'run', lbl: 'Đang thử việc' },
+    { k: 'done', lbl: 'Hoàn tất quy trình' },
+    { k: 'fail', lbl: 'Không đạt thử việc' },
+    { k: 'none', lbl: 'Chưa có quy trình' },
+  ].map((c) => ({
+    ...c,
+    n: c.k === 'all' ? searched.length
+      : searched.filter((o) => overallOf(o).key === c.k).length,
+  })).filter((c) => c.k === 'all' || c.n > 0);
+
+  /* Đếm riêng cho chip: theo tập ĐÃ tìm kiếm, khác với thẻ số ở đầu trang
+     (luôn theo toàn bộ danh sách) — nếu dùng chung, gõ ô tìm kiếm xong số trên
+     chip sẽ không khớp với số dòng lọc ra. */
+  const evalChipN = searched.filter((o) => o.current && o.current.stepType === 'evaluation').length;
+  const overdueChipN = searched.filter(isOverdue).length;
+
+  const depOptions = [...new Set(searched.map((o) => o.depName).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, 'vi'));
+  const tplOptions = [...new Set(searched.map((o) => o.templateName).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, 'vi'));
+
+  const filtered = searched.filter((o) => {
+    if (fState !== 'all' && overallOf(o).key !== fState) return false;
+    if (fDep !== 'all' && o.depName !== fDep) return false;
+    if (fTpl !== 'all' && o.templateName !== fTpl) return false;
+    if (fOverdue && !isOverdue(o)) return false;
+    if (fEval && !(o.current && o.current.stepType === 'evaluation')) return false;
+    return true;
+  });
+  const hasFilter = fState !== 'all' || fDep !== 'all' || fTpl !== 'all' || fOverdue || fEval;
+
+  /* Tiến độ so theo % (3/4 phải đứng trên 5/10); bước hiện tại so theo HẠN
+     để người dùng kéo được các ca sắp/đã quá hạn lên đầu. */
+  const rows = sort.apply(filtered, {
+    name: (o) => o.name,
+    dep: (o) => o.depName,
+    start: (o) => o.start,
+    tpl: (o) => o.templateName,
+    progress: (o) => {
+      const p = o.progress || { done: 0, total: 0 };
+      return p.total ? p.done / p.total : -1;
+    },
+    step: (o) => (o.current ? o.current.dueDate : null),
+    state: (o) => overallOf(o).label,
+  });
 
   const running = items.filter((o) => overallOf(o).key === 'run').length;
   const waitingEval = items.filter((o) =>
@@ -144,6 +181,37 @@ export default function Onboarding({ search, onQueueChanged }) {
         ))}
       </div>
 
+      <div className="filterbar">
+        {stateChips.map((c) => (
+          <button key={c.k} className={'chip' + (fState === c.k ? ' active' : '')}
+            onClick={() => setFState(c.k)}>
+            {c.lbl} <span className="ct">{c.n}</span></button>
+        ))}
+        <button className={'chip' + (fEval ? ' active' : '')}
+          title="Chỉ hiện người đang dừng ở một bước đánh giá"
+          onClick={() => setFEval((v) => !v)}>
+          Chờ đánh giá <span className="ct">{evalChipN}</span></button>
+        <button className={'chip' + (fOverdue ? ' active' : '')}
+          title="Chỉ hiện người có bước hiện tại đã quá hạn"
+          onClick={() => setFOverdue((v) => !v)}>
+          Quá hạn <span className="ct">{overdueChipN}</span></button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
+          <select className="sel" value={fDep} onChange={(e) => setFDep(e.target.value)}>
+            <option value="all">Mọi phòng ban</option>
+            {depOptions.map((d) => <option key={d}>{d}</option>)}
+          </select>
+          <select className="sel" value={fTpl} onChange={(e) => setFTpl(e.target.value)}>
+            <option value="all">Mọi quy trình</option>
+            {tplOptions.map((t) => <option key={t}>{t}</option>)}
+          </select>
+          {hasFilter && (
+            <button className="btn btn-ghost btn-sm"
+              onClick={() => { setFState('all'); setFDep('all'); setFTpl('all'); setFOverdue(false); setFEval(false); }}>
+              Xoá lọc</button>
+          )}
+        </div>
+      </div>
+
       <div className="card">
         <div className="card-head">
           <h3>Nhân viên đang thử việc</h3>
@@ -152,16 +220,16 @@ export default function Onboarding({ search, onQueueChanged }) {
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr>
-              <SortTh sk="name" sort={sort}>Nhân viên</SortTh>
-              <SortTh sk="depName" sort={sort}>Phòng ban</SortTh>
-              <SortTh sk="start" sort={sort}>Ngày bắt đầu</SortTh>
-              <SortTh sk="templateName" sort={sort}>Quy trình</SortTh>
-              <SortTh sk="progress" sort={sort}>Tiến độ</SortTh>
-              <SortTh sk="current" sort={sort} title="Bấm để sắp xếp theo hạn của bước hiện tại">Bước hiện tại</SortTh>
-              <SortTh sk="overall" sort={sort}>Trạng thái</SortTh>
+              <SortTh sort={sort} k="name">Nhân viên</SortTh>
+              <SortTh sort={sort} k="dep">Phòng ban</SortTh>
+              <SortTh sort={sort} k="start">Ngày bắt đầu</SortTh>
+              <SortTh sort={sort} k="tpl">Quy trình</SortTh>
+              <SortTh sort={sort} k="progress">Tiến độ</SortTh>
+              <SortTh sort={sort} k="step">Bước hiện tại</SortTh>
+              <SortTh sort={sort} k="state">Trạng thái</SortTh>
             </tr></thead>
             <tbody>
-              {filtered.map((o) => {
+              {rows.map((o) => {
                 const ov = overallOf(o);
                 return (
                   <tr key={o.id} onClick={() => setSel(o)}>
@@ -191,7 +259,13 @@ export default function Onboarding({ search, onQueueChanged }) {
             </tbody>
           </table>
         </div>
-        {filtered.length === 0 && <EmptyState>Không có nhân viên thử việc nào.</EmptyState>}
+        {filtered.length === 0 && (
+          <EmptyState>
+            {hasFilter || search
+              ? 'Không có ai khớp bộ lọc hiện tại.'
+              : 'Không có nhân viên thử việc nào.'}
+          </EmptyState>
+        )}
       </div>
 
       {sel && (

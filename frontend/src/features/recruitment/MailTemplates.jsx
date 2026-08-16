@@ -21,35 +21,30 @@ const clamp = (lines) => ({
 
 /* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
 const TMPL_STEPS = [
-  ['Soạn hoặc mang mẫu cũ vào',
+  ['Soạn mẫu',
    <>Bấm <b>Thêm mẫu</b> để soạn mới, hoặc <b>Import mẫu</b> rồi dán nguyên lá mail
-     đang dùng (Word / Gmail / sheet 7.7) — hệ thống tự tách tiêu đề, dựng nội dung
-     và nhận ra các chỗ điền dạng <b>[Tên ứng viên]</b>.</>],
+     đang dùng — hệ thống tự tách tiêu đề và nhận ra chỗ điền dạng
+     <b> [Tên ứng viên]</b>.</>],
   ['Chèn thông tin tự động',
-   <>Trong ô nội dung, bấm nút <b>Chèn</b> để đặt các ô vàng: <b>Họ tên ứng viên</b>,
-     <b> Vị trí ứng tuyển</b>, <b>Email</b>, <b>Số điện thoại</b>, <b>Ngày</b> và
-     <b> Giờ phỏng vấn</b>. Lúc gửi, mỗi ô vàng được thay bằng dữ liệu thật của
-     từng ứng viên — đừng gõ tay tên người vào mẫu.</>],
-  ['Gửi cho ứng viên',
-   <>Bấm <b>Gửi mail</b> trên thẻ mẫu → tick những ứng viên cần gửi → <b>Tiếp tục</b>
-     → bấm <b>Mở Gmail</b> ở từng người và gửi bằng Gmail của bạn → quay lại bấm
-     <b> Lưu lịch sử</b>. Cần soát kỹ hoặc sửa nội dung cho riêng một người thì gửi
-     từ nút <b>Gửi mail</b> ở tab Danh sách PV / Offer, chỗ đó có <b>Xem trước</b>
-     và sửa được trước khi gửi.</>],
+   <>Trong ô nội dung, bấm <b>Chèn</b> để đặt các ô vàng (họ tên, vị trí, email,
+     SĐT, ngày &amp; giờ PV). Lúc gửi, mỗi ô vàng thay bằng dữ liệu thật —
+     <b> đừng gõ tay tên người</b> vào mẫu.</>],
+  ['Gửi hàng loạt',
+   <><b>Gửi mail</b> trên thẻ mẫu → tick ứng viên → <b>Tiếp tục</b> →
+     <b> Mở Gmail</b> từng người và gửi → quay lại bấm <b>Lưu lịch sử</b>.</>],
+  ['Gửi cho một người',
+   <>Cần xem trước hoặc sửa riêng cho một ứng viên thì gửi từ nút <b>Gửi mail</b>
+     ở tab <b>Danh sách PV</b> / <b>Offer &amp; Nhận việc</b>.</>],
   ['Nhớ hệ quả đổi bước',
-   <>Gửi <b>“Thư mời phỏng vấn”</b> đẩy ứng viên từ bước Hẹn &amp; mời phỏng vấn sang
-     <b> Phỏng vấn</b>; gửi <b>“Thư mời nhận việc”</b> đẩy sang <b>Gửi Offer</b>. Các
-     mẫu còn lại gửi đi không đổi bước. Bước chỉ đổi khi bạn bấm <b>Lưu lịch sử</b>,
-     nên đừng bỏ qua thao tác đó.</>],
-  ['Kiểm tra lại sau khi gửi',
-   <>Xem tab <b>Lịch sử gửi mail</b> để biết đã gửi cho ai, lúc nào. Sửa mẫu về sau
-     <b> không</b> ảnh hưởng các mail đã gửi.</>],
+   <><b>“Thư mời phỏng vấn”</b> đẩy ứng viên sang bước <b>Phỏng vấn</b>,
+     <b> “Thư mời nhận việc”</b> đẩy sang <b>Gửi Offer</b>; mẫu khác không đổi
+     bước. Chỉ đổi khi bạn bấm <b>Lưu lịch sử</b> — đừng bỏ qua bước này.</>],
 ];
 
 const TMPL_GUIDE_NOTE = (
-  <>Mail mẫu là cấu hình dùng chung <b>toàn hệ thống</b>, không theo phòng ban —
-    nên chỉ HR mới thêm/sửa/xoá/import được. Trưởng phòng <b>gửi</b> được nhưng
-    chỉ tới ứng viên phòng mình (danh sách người nhận đã lọc sẵn).</>
+  <>Mẫu dùng chung <b>toàn hệ thống</b> nên chỉ HR được thêm/sửa/xoá; trưởng phòng
+    gửi được nhưng chỉ tới ứng viên phòng mình. Xem đã gửi cho ai ở tab
+    <b> Lịch sử gửi mail</b>; sửa mẫu về sau không ảnh hưởng mail đã gửi.</>
 );
 
 export default function MailTemplates({ search }) {
@@ -143,7 +138,7 @@ export default function MailTemplates({ search }) {
         <div style={{ gridColumn: '1/-1' }}><Pagination {...pg} /></div>
       </div>
 
-      <GuideNote title="Các bước bộ phận tuyển dụng cần làm ở màn này"
+      <GuideNote title="Các bước cần làm ở màn này"
         steps={TMPL_STEPS} note={TMPL_GUIDE_NOTE} />
 
       {editing && (

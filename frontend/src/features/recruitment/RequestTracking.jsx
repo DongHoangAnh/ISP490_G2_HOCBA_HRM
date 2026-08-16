@@ -24,27 +24,29 @@ import GuideNote from './GuideNote';
 
 const TRACK_STEPS = [
   ['Đọc bảng',
-   <>Mỗi dòng là <b>một đợt tuyển</b> (phiếu yêu cầu đã được duyệt). <b>Đã tuyển</b>
-     đếm ứng viên đã sang bước <b>Bàn giao nhân sự</b> — tức đã hoàn thiện thử việc
-     và lên Chính thức, không phải số người mới nhận việc.</>],
+   <>Mỗi dòng là <b>một đợt tuyển</b> (phiếu yêu cầu đã duyệt). Cột
+     <b> Đã tuyển</b> đếm người đã sang bước <b>Bàn giao nhân sự</b> — tức đã lên
+     Chính thức, không phải số người vừa nhận việc.</>],
   ['Ba trạng thái',
-   <><b>Đang tuyển</b> = phiếu còn mở và JD đang bật tin. <b>Dừng tuyển</b> = bấm
-     <b> Ngừng đăng</b> nên tắt tin, nhưng phiếu vẫn mở (bật lại được bất cứ lúc nào).
-     <b> Đã đóng</b> = phiếu đã chốt — tuyển đủ chỉ tiêu thì hệ thống <b>tự đóng</b> và
-     tự ngừng đăng.</>],
-  ['Xem chi tiết',
-   <>Bấm vào dòng (hoặc mũi tên) để xổ <b>phễu tuyển dụng</b> của đợt, đọc từ
-     trái sang phải: <b>Tổng CV → CV pass → CV fail → PV → PV pass → PV fail →
-     Nhận việc → Đã tuyển</b>. Hai mốc <b>PV</b> và <b>Nhận việc</b> không có ô
-     nhập riêng nên suy từ bước hiện tại cộng dữ liệu đã điền — di chuột vào ô
-     để xem cách đếm.</>],
+   <><b>Đang tuyển</b> = phiếu mở, tin đang đăng. <b>Dừng tuyển</b> = đã tắt tin
+     nhưng phiếu vẫn mở, bật lại được. <b>Đã đóng</b> = phiếu đã chốt; tuyển đủ
+     chỉ tiêu thì hệ thống tự đóng.</>],
+  ['Xem phễu tuyển dụng',
+   <>Bấm vào dòng để xổ phễu: <b>Tổng CV → CV pass → CV fail → PV → PV pass →
+     PV fail → Nhận việc → Đã tuyển</b>. Di chuột vào ô để xem cách đếm.</>],
   ['Xem ứng viên nào',
-   <>Bấm thẳng vào con số để mở danh sách ứng viên của nhóm đó kèm thông tin JD;
-     trong popup đổi qua lại giữa 4 nhóm được ngay.</>],
+   <>Bấm thẳng vào con số để mở danh sách ứng viên của nhóm đó; trong popup đổi
+     qua lại giữa các nhóm được ngay.</>],
   ['Deadline',
-   <>Lấy từ ô <b>Ngày cần onboard</b> trên phiếu yêu cầu. Quá hạn mà chưa tuyển đủ
-     thì hiện đỏ kèm số ngày trễ — sửa hạn ở tab <b>Phiếu yêu cầu</b>.</>],
+   <>Lấy từ ô <b>Ngày cần onboard</b> của phiếu. Quá hạn mà chưa tuyển đủ thì hiện
+     đỏ kèm số ngày trễ — sửa hạn ở tab <b>Phiếu yêu cầu</b>.</>],
 ];
+
+const TRACK_GUIDE_NOTE = (
+  <>Hai mốc <b>PV</b> và <b>Nhận việc</b> không có ô nhập riêng: hệ thống suy ra
+    từ bước hiện tại cộng dữ liệu đã điền, nên số có thể nhích lên khi bạn cập
+    nhật hồ sơ ứng viên.</>
+);
 
 /* Cột "Trạng thái" ghép HAI nguồn, ưu tiên từ nặng đến nhẹ:
      1. Phiếu không còn 'recruiting'  → Đã đóng   (tuyển đủ chỉ tiêu thì hệ thống
@@ -315,11 +317,10 @@ export default function RequestTracking({ search }) {
         <Pagination {...pg} />
       </div>
 
-      <GuideNote title="Hướng dẫn theo dõi tuyển dụng" steps={TRACK_STEPS}
-        note={<>Mỗi CV thuộc <b>đúng một đợt tuyển</b>: nhận CV vào vị trí nào thì hệ
-          thống gắn vào phiếu đang tuyển của vị trí đó, nên hai đợt cùng một vị trí có
-          sổ riêng. Gắn sai thì sửa ô <b>Đợt tuyển</b> trong form CV. CV nộp lúc vị trí
-          không mở đợt nào sẽ không thuộc phiếu nào và không lên bảng này.</>} />
+      <GuideNote title="Cách đọc màn này" steps={TRACK_STEPS}
+        note={<>Mỗi CV thuộc <b>đúng một đợt tuyển</b> — gắn sai thì sửa ô
+          <b> Đợt tuyển</b> trong form CV; CV nộp lúc vị trí không mở đợt nào sẽ
+          không lên bảng này. {TRACK_GUIDE_NOTE}</>} />
 
       {popup && (
         <ApplicantsModal req={popup.req} group={popup.group} onClose={() => setPopup(null)} />

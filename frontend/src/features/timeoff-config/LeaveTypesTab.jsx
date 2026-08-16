@@ -7,11 +7,25 @@ import Modal from '../../components/Modal';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 
+/* Bậc duyệt = AI được duyệt đơn của loại nghỉ này (backend: _can_decide_leave
+   trong hocba_timeoff/controllers/main.py). Dùng lại 3 giá trị của Odoo nhưng
+   'both' ở Học Bá nghĩa là "một trong hai duyệt là đủ", KHÔNG phải duyệt hai
+   bậc nối tiếp. */
 const VALIDATION_LABEL = {
   no_validation: 'Không cần duyệt',
-  hr: 'HR Officer duyệt',
-  manager: 'Quản lý duyệt',
-  both: 'Quản lý + HR',
+  hr: 'HR Manager duyệt',
+  manager: 'Trưởng phòng duyệt',
+  both: 'HR Manager / Trưởng phòng duyệt',
+};
+// Chỉ 3 bậc duyệt được chọn khi tạo/sửa. 'no_validation' là dữ liệu cũ: chỉ
+// thêm vào danh sách khi loại nghỉ đang mở thực sự đang dùng giá trị đó.
+const VALIDATION_CHOICES = ['hr', 'manager', 'both'];
+const VALIDATION_HINT = {
+  no_validation: 'Đơn được duyệt tự động, không cần ai xử lý.',
+  hr: 'Chỉ HR Manager / Admin duyệt được. Trưởng phòng chỉ xem.',
+  manager: 'Chỉ trưởng phòng của nhân viên duyệt được. HR Manager chỉ xem '
+    + '(trừ khi phòng ban chưa gán trưởng phòng).',
+  both: 'HR Manager hoặc trưởng phòng đều duyệt được — một trong hai xử lý là xong.',
 };
 const EMPTY = {
   id: null, name: '', requiresAllocation: false, unpaid: false,
@@ -161,10 +175,15 @@ export default function LeaveTypesTab() {
               <Field label="Bậc duyệt">
                 <select style={inp} value={editing.validationType}
                   onChange={(e) => setEditing({ ...editing, validationType: e.target.value })}>
-                  {Object.entries(VALIDATION_LABEL).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
+                  {(VALIDATION_CHOICES.includes(editing.validationType)
+                    ? VALIDATION_CHOICES
+                    : [editing.validationType, ...VALIDATION_CHOICES]).map((v) => (
+                      <option key={v} value={v}>{VALIDATION_LABEL[v] || v}</option>
+                    ))}
                 </select>
+                <span className="muted" style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+                  {VALIDATION_HINT[editing.validationType] || ''}
+                </span>
               </Field>
               <Field label="Đơn vị nghỉ">
                 <select style={inp} value={editing.requestUnit}

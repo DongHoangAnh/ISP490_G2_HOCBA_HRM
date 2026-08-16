@@ -19,3 +19,4 @@ from . import test_work_day_lock
 from . import test_work_day_unique
 from . import test_work_day_import
 from . import test_admin_config
+from . import test_approval_levels

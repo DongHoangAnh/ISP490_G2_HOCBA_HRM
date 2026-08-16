@@ -23,6 +23,8 @@ export default function ShiftAttendance({ me, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [enrolled, setEnrolled] = useState(me.enrolled);
+  const [pendingCheck, setPendingCheck] = useState(null); // {shiftId, kind, cap, flags}
+  const [note, setNote] = useState('');
   useEffect(() => { setEnrolled(me.enrolled); }, [me.enrolled]);
   const shifts = me.shiftsToday || [];
 
@@ -39,19 +41,31 @@ export default function ShiftAttendance({ me, onChanged }) {
     finally { setBusy(false); }
   }
 
-  async function doCheck(shiftId, kind) {
+  async function doCheck(shiftId, kind, finalNote = null) {
     setBusy(true); setMsg(null);
     try {
-      const cap = await capture();
+      const cap = pendingCheck?.cap || await capture();
       if (!cap) { setMsg({ kind: 'err', text: 'Camera chưa sẵn sàng.' }); return; }
       if (cap.error === 'no_face') { setMsg({ kind: 'warn', text: 'Không thấy khuôn mặt. Thử lại.' }); return; }
-      const res = await (kind === 'in' ? shiftCheckIn(shiftId, cap) : shiftCheckOut(shiftId, cap));
+      const res = await (kind === 'in'
+        ? shiftCheckIn(shiftId, { ...cap, note: finalNote })
+        : shiftCheckOut(shiftId, { ...cap, note: finalNote }));
       const flags = [];
       if (res.faceSuspect) flags.push('khuôn mặt nghi ngờ');
       if (res.outOfZone) flags.push('ngoài vùng văn phòng');
       if (res.outOfWindow) flags.push('ngoài cửa sổ giờ');
+
+      if (flags.length > 0 && !finalNote) {
+        setPendingCheck({ shiftId, kind, cap, flags });
+        setMsg({ kind: 'warn', text: 'Phát hiện vấn đề: ' + flags.join(', ') + '. Vui lòng nhập lý do giải thích bên dưới.' });
+        setBusy(false);
+        return;
+      }
+
       setMsg({ kind: flags.length ? 'warn' : 'ok',
         text: (kind === 'in' ? 'Đã check-in' : 'Đã check-out') + (flags.length ? ' ⚠ ' + flags.join(', ') : ' thành công') });
+      setPendingCheck(null);
+      setNote('');
       onChanged && onChanged();
     } catch (e) { setMsg({ kind: 'err', text: ERR[e.code] || ('Chấm công thất bại (' + e.message + ').') }); }
     finally { setBusy(false); }
@@ -69,7 +83,20 @@ export default function ShiftAttendance({ me, onChanged }) {
         <div style={{ fontWeight: 800, fontSize: 18 }}>{me.name}</div>
         <div className="divider" style={{ margin: '14px 0' }}></div>
 
-        {!enrolled ? (
+        {pendingCheck ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ padding: 10, background: 'var(--amber-bg)', borderRadius: 8, fontSize: 13, border: '1px solid var(--amber)' }}>
+              Ca {pendingCheck.kind === 'in' ? 'vào' : 'ra'}: {pendingCheck.flags.join(', ')}
+            </div>
+            <textarea className="sel" placeholder="Nhập lý do giải thích..."
+              value={note} onChange={e => setNote(e.target.value)} rows={3} autoFocus />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-primary btn-sm" disabled={busy || !note.trim()}
+                onClick={() => doCheck(pendingCheck.shiftId, pendingCheck.kind, note)}>Gửi &amp; Xác nhận</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setPendingCheck(null); setNote(''); setMsg(null); }}>Hủy</button>
+            </div>
+          </div>
+        ) : !enrolled ? (
           <button className="btn btn-primary" disabled={busy || !ready} onClick={doEnroll}>
             <Icon name="user" size={16} />Đăng ký khuôn mặt
           </button>

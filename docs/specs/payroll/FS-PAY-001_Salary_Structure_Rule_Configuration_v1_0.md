@@ -27,6 +27,7 @@
 | 1 | 1.0 | Initial creation | All | 21/06/2026 | Group G2 |
 | 2 | 1.1 | Added React SPA component documentation (ConfigView, SalaryRuleForm, FormulaSection). Clarified SPA supports only 2 of 4 amount types (fixed, formula). Documented unused SalaryRuleCategoryForm. | 1, 2, 3, 5 | 21/06/2026 | Group G2 |
 | 3 | 1.2 | Standardized UI terminology according to enterprise C&B best practices: "Quy tắc tính lương" -> "Thành phần lương", "Bảng lương" -> "Kỳ tính lương", "Chuyển khoản" -> "File chi lương Bank", "Xác nhận lương" -> "Quy trình chốt & Phản hồi phiếu lương" (Keeping "Lịch sử lương" as requested). | All | 06/08/2026 | Group G2 |
+| 4 | 2.0 | Synchronized with codebase: documented 5 Odoo backend amount_types (`fixed`, `percentage`, `formula`, `code`, `lookup`), 3 React SPA amount_types (`fixed`, `formula`, `lookup`), AST tree-walking formula engine (`_eval_formula_expr`), lookup catalog API (`/lookup-catalog`), and lookup constraint validation. | All | 09/08/2026 | Antigravity AI |
 
 ---
 
@@ -37,7 +38,7 @@
 | **Function ID** | FS-PAY-001 |
 | **Function Name** | Salary Structure & Rule Configuration |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 21/06/2026 |
+| **Last Modified Date** | 09/08/2026 |
 
 | Attribute | Value |
 | --- | --- |
@@ -49,21 +50,29 @@
 ### Business Requirement & Function Overview
 
 **Overview:**
-This function manages salary structures (logical groupings of ordered rules) and salary rules (individual computation steps) that define how employee payslips are calculated. It replaces the previous manual Excel-based salary formula configuration with a fully database-driven, auditable system inside Odoo 19.
+This function manages salary structures (logical groupings of ordered rules) and salary rules (individual computation steps) that define how employee payslips are calculated. It replaces manual Excel-based salary formula configuration with a fully database-driven, auditable system inside Odoo 19 and the React SPA.
 
 **Business Context:**
 Hoc Ba Education operates two salary models:
 - **STRUCT_OFFLINE** (`struct_offline`): For full-time offline staff, comprising 19 active rules. Covers base salary pro-rated by actual working days, allowances (meals, fuel, phone), bonuses, social/health/unemployment insurance (employee and employer portions), personal income tax (PIT) with progressive brackets, and net pay calculation.
 - **STRUCT_ONLINE** (`struct_online`): For simplified online staff/teachers, comprising 5 rules. Covers wage, bonus, gross income, advances/deductions, and net pay.
 
-Rules support 4 computation types in the Odoo backend: fixed amount, percentage of a base expression, Excel-like formula (transpiled to Python at runtime), and raw Python code. The React SPA exposes only 2 types: `fixed` and `formula`.
+Rules support 5 computation types in the Odoo backend:
+1. `fixed`: Fixed monetary amount (`amount_fixed`).
+2. `percentage`: Percentage (`amount_percentage`) of a base expression (`amount_percentage_base`).
+3. `formula`: Excel-like formula (`amount_formula`) evaluated safely via a Pure AST Tree-Walking Evaluator (`_eval_formula_expr`).
+4. `code`: Raw Python code (`amount_python_compute`) executed via `safe_eval` with `mode='exec'`.
+5. `lookup`: Data-driven lookup (`lookup_source`, `lookup_field`) querying dynamic catalog data from employee contracts, attendance, overtime, teaching, or leaves.
+
+The React SPA exposes 3 computation types: `fixed` (Số tiền cố định), `formula` (Công thức tính toán), and `lookup` (Tra bảng biểu / Định mức).
 
 **Functional Scope:**
 - CRUD operations on salary structures (`hb.salary.structure`).
-- CRUD operations on salary rules (`hb.salary.rule`) with 4 amount types in Odoo backend (`fixed`, `percentage`, `formula`, `code`) and 2 types in the React SPA (`fixed`, `formula`).
+- CRUD operations on salary rules (`hb.salary.rule`) with 5 amount types in Odoo backend (`fixed`, `percentage`, `formula`, `code`, `lookup`) and 3 types in the React SPA (`fixed`, `formula`, `lookup`).
 - CRUD operations on salary rule categories (`hb.salary.rule.category`) for logical grouping and accumulation.
-- Formula engine supporting `IF`, `SUM`, `ROUND`, `MAX`, `MIN`, `ABS` functions, with a transpiler that converts Excel-like syntax to executable Python.
-- Drag-and-drop reorder of rules via sequence handle widget and REST API reorder endpoint.
+- Data lookup system (`lookup_source`, `lookup_field`) backed by `LOOKUP_CATALOG` (`employee`, `attendance`, `overtime`, `teaching`, `leave`) with constraint validation `@api.constrains('amount_type', 'lookup_source', 'lookup_field')`.
+- Formula engine supporting `IF`, `SUM`, `ROUND`, `MAX`, `MIN`, `ABS` functions, evaluated via an AST tree-walking parser without `eval()` or `exec()`.
+- Drag-and-drop reorder of rules via sequence handle widget and REST API reorder endpoint (`POST /hocba-hrm/api/payroll/salary-rule/reorder`).
 - Formula help wizard (`hb.formula.help.wizard`) in Odoo backend displaying available functions and syntax.
 - Quick-insert formula buttons on the rule form — both in Odoo backend (server action buttons) and React SPA (inline snippet insert buttons): IF, SUM, MAX, MIN, ABS, ROUND.
 - Inline formula help table in the React SPA (`FormulaSection` component) with collapsible function reference and supported operators.
@@ -100,14 +109,15 @@ Rules support 4 computation types in the Odoo backend: fixed amount, percentage 
 | --- | --- | --- | --- |
 | 1 | HR Manager | Opens a salary structure form and clicks "Add a line" in the rules list, or opens the standalone salary rule form (`view_salary_rule_form`) | System displays the rule form with two main groups: "Thong tin" and "Tinh toan". |
 | 2 | HR Manager | Fills in required fields: name, code, sequence, structure_id, category_id | Validation enforced: `name`, `code`, `sequence`, `structure_id`, `category_id` are all required. |
-| 3 | HR Manager | Selects `amount_type` | System conditionally shows/hides fields: `amount_fixed` visible only when `amount_type='fixed'`; `amount_percentage` and `amount_percentage_base` visible only when `amount_type='percentage'`; formula section visible only when `amount_type='formula'`; Python code section visible only when `amount_type='code'`. |
+| 3 | HR Manager | Selects `amount_type` | System conditionally shows/hides fields: `amount_fixed` visible when `amount_type='fixed'`; `amount_percentage` and `amount_percentage_base` visible when `amount_type='percentage'`; formula section visible when `amount_type='formula'`; Python code section visible when `amount_type='code'`; lookup selection visible when `amount_type='lookup'`. |
 | 4a | HR Manager | For `amount_type='fixed'`: enters `amount_fixed` | Value stored as Float(16,0). |
-| 4b | HR Manager | For `amount_type='percentage'`: enters `amount_percentage` and `amount_percentage_base` | Percentage stored as Float(8,4). Base expression is a Char field evaluated at payslip computation time via `safe_eval`. |
-| 4c | HR Manager | For `amount_type='formula'`: enters formula using Excel-like syntax | System provides quick-insert buttons (IF, SUM, MAX, MIN, ABS, ROUND) and a "Huong dan ham" help button. The formula is transpiled at payslip computation time by `_transpile_formula()`. |
+| 4b | HR Manager | For `amount_type='percentage'`: enters `amount_percentage` and `amount_percentage_base` | Percentage stored as Float(8,4). Base expression evaluated via `_eval_formula_expr`. |
+| 4c | HR Manager | For `amount_type='formula'`: enters formula using Excel-like syntax | System provides quick-insert buttons (IF, SUM, MAX, MIN, ABS, ROUND) and a "Huong dan ham" help button. Formula is evaluated safely via AST tree-walking evaluator (`_eval_formula_expr`). |
 | 4d | HR Manager | For `amount_type='code'`: enters Python code in the code widget | Python code is executed via `safe_eval` with `mode='exec'`. The code must assign the result to the `result` variable. |
-| 5 | HR Manager | Optionally sets `condition_type` to `'python'` and enters `condition_python` | The condition is evaluated before the amount computation. If the condition returns falsy, the rule is skipped (amount = 0). |
+| 4e | HR Manager | For `amount_type='lookup'`: selects `lookup_source` and `lookup_field` | Selects category from catalog (`employee`, `attendance`, `overtime`, `teaching`, `leave`) and specific field (e.g. `work_credit`, `wage`, `late_minutes`). Validated by `@api.constrains('amount_type', 'lookup_source', 'lookup_field')`. |
+| 5 | HR Manager | Optionally sets `condition_type` to `'python'` and enters `condition_python` | The condition is evaluated before amount computation. If falsy, rule amount is set to 0. |
 | 6 | HR Manager | Toggles `appears_on_payslip` | Controls whether this rule line appears on the rendered payslip output. |
-| 7 | HR Manager | Saves the record | System creates/updates the `hb.salary.rule` record. The parent structure's `rule_count` is recomputed via `_compute_rule_count`. |
+| 7 | HR Manager | Saves the record | System creates/updates `hb.salary.rule` record. Parent structure's `rule_count` recomputed. |
 
 **REST API (SPA):**
 - `GET /hocba-hrm/api/payroll/salary-rule` lists active rules, optionally filtered by `structure_id`. Returns all field values.
@@ -115,11 +125,12 @@ Rules support 4 computation types in the Odoo backend: fixed amount, percentage 
 - `POST /hocba-hrm/api/payroll/salary-rule/<id>` updates an existing rule.
 - `POST /hocba-hrm/api/payroll/salary-rule/<id>/delete` archives the rule (`active=False`).
 - `POST /hocba-hrm/api/payroll/salary-rule/reorder` batch-updates sequence values. Body: `{ "order": [id1, id2, ...] }`. Sets `sequence = (index + 1) * 10` for each rule.
+- `GET /hocba-hrm/api/payroll/lookup-catalog` returns available lookup sources and fields for SPA rule creation.
 
 **React SPA — SalaryRuleForm Component:**
-The SPA rule form (`SalaryRuleForm.jsx`) only exposes 2 amount types: `fixed` (Số cố định) and `formula` (Công thức). The `percentage` and `code` types are only available in the Odoo backend form view.
+The SPA rule form (`SalaryRuleForm.jsx`) exposes 3 amount types: `fixed` (Số tiền cố định), `formula` (Công thức tính toán), and `lookup` (Tra bảng biểu / Định mức).
 
-SPA form fields: `name` (auto-generates `code` slug via `toSlug()` on create), `code` (read-only), `sequence`, `amount_type` (select: fixed/formula), `amount_fixed` (visible when fixed), `amount_formula` (visible when formula, with `FormulaSection`), `note`.
+SPA form fields: `name` (auto-generates `code` slug via `toSlug()` on create), `code` (read-only), `sequence`, `amount_type` (select: fixed/formula/lookup), `amount_fixed` (visible when fixed), `amount_formula` (visible when formula, with `FormulaSection`), `lookup_source` & `lookup_field` (visible when lookup, populated from `fetchLookupSources()`), `note`.
 
 The `FormulaSection` component provides:
 - A monospace `<textarea>` for formula input with placeholder example.

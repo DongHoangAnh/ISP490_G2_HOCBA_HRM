@@ -23,32 +23,31 @@ const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 /* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
 const PV_STEPS = [
-  ['Tạo lịch rảnh phỏng vấn',
-   <>Bấm <b>Thêm lịch rảnh PV</b> để tạo từng khung giờ, hoặc <b>Import lịch tuần</b> 
-     khi cần nhập cả tuần một lượt. Mỗi slot là một khung giờ trống của người
-     phỏng vấn; slot chưa có ai là <b>Rảnh</b>, đã xếp người là <b>Đã đặt</b>.</>],
+  ['Tạo lịch rảnh',
+   <>Bấm <b>Thêm lịch rảnh PV</b> cho từng khung giờ, hoặc <b>Import lịch tuần</b>
+     để nhập cả tuần một lượt. Slot chưa có ai là <b>Rảnh</b>, đã xếp người là
+     <b> Đã đặt</b>.</>],
   ['Xếp ứng viên vào slot',
-   <>Bấm <b>Đặt UV</b> trên slot rồi chọn ứng viên (một slot xếp được nhiều người,
-     bấm <b>Thêm UV</b>). Đặt xong <b>ngày · giờ · người PV tự điền</b> lên hồ sơ
-     ứng viên, và ứng viên đang ở bước <b>Hẹn &amp; mời phỏng vấn</b> tự chuyển sang
-     bước <b>Phỏng vấn</b>. Đổi lịch thì gỡ khỏi slot (nút ✕) rồi xếp lại — gỡ ra
-     không kéo lùi bước đã đi.</>],
+   <>Bấm <b>Đặt UV</b> trên slot rồi chọn ứng viên (một slot xếp được nhiều
+     người). Ngày · giờ · người PV tự điền lên hồ sơ và ứng viên tự sang bước
+     <b> Phỏng vấn</b>. Đổi lịch: gỡ khỏi slot (✕) rồi xếp lại.</>],
   ['Gửi thư mời phỏng vấn',
-   <>Ở bảng dưới, bấm <b>Gửi mail</b> → chọn mẫu <b>“Thư mời phỏng vấn – Học Bá”</b>
-     → <b>Xem trước</b> để kiểm tra → <b>Mở Gmail</b> → gửi → quay lại bấm
-     <b> “Đã gửi — lưu lịch sử”</b>. Ứng viên còn ở bước Hẹn &amp; mời phỏng vấn sẽ
-     được đẩy sang <b>Phỏng vấn</b>.</>],
-  ['Ghi nhận tham gia PV',
-   <>Sau buổi phỏng vấn, chọn <b>Đã đến</b> / <b>Không đến</b> ở cột
-     <b> Tham gia PV</b>. Ô này chỉ để ghi nhận, không tự đổi bước — vắng mặt vẫn
-     phải chấm kết quả để hồ sơ không kẹt lại.</>],
+   <>Ở bảng dưới: <b>Gửi mail</b> → mẫu <b>“Thư mời phỏng vấn”</b> →
+     <b> Xem trước</b> → <b>Mở Gmail</b> → gửi → quay lại bấm
+     <b> “Đã gửi — lưu lịch sử”</b>.</>],
+  ['Ghi nhận tham gia',
+   <>Sau buổi PV, chọn <b>Đã đến</b> / <b>Không đến</b> ở cột <b>Tham gia PV</b>.
+     Ô này chỉ ghi nhận, không đổi bước.</>],
   ['Chấm Kết quả PV',
-   <>Chọn <b>Pass</b> / <b>Fail</b> / <b>Tiềm năng</b> ở cột <b>Kết quả PV</b>.
-     Chấm xong ứng viên tự chuyển từ bước Phỏng vấn sang <b>Kết quả phỏng vấn</b> 
-     (cả ba kết quả như nhau). Ứng viên <b>Pass</b> sẽ xuất hiện ở tab
-     <b> Offer &amp; Nhận việc</b> để làm tiếp khâu offer; Fail / Tiềm năng thì
-     bộ phận tuyển dụng tự quyết xử lý.</>],
+   <>Chọn <b>Pass</b> / <b>Fail</b> / <b>Tiềm năng</b> — chấm xong ứng viên tự
+     sang bước <b>Kết quả phỏng vấn</b>. Người <b>Pass</b> sẽ hiện ở tab
+     <b> Offer &amp; Nhận việc</b>.</>],
 ];
+
+const PV_GUIDE_NOTE = (
+  <>Vắng mặt vẫn nên chấm kết quả, không thì hồ sơ kẹt lại ở bước Phỏng vấn. Gỡ
+    ứng viên khỏi slot không kéo lùi bước đã đi.</>
+);
 
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -190,8 +189,8 @@ export default function InterviewSlots() {
       <InterviewApplicants cv={cv} setCv={setCv} templates={(tmpls && tmpls.rows) || []}
         canSend={!!(tmpls && tmpls.canSend)} />
 
-      <GuideNote title="Các bước bộ phận tuyển dụng cần làm ở màn này"
-        steps={PV_STEPS} />
+      <GuideNote title="Các bước cần làm ở màn này"
+        steps={PV_STEPS} note={PV_GUIDE_NOTE} />
 
       {creating && (
         <SlotForm interviewers={interviewers} meId={meId} weekDates={weekDates} defaultDate={creating}

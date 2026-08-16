@@ -23,7 +23,10 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
   min-height: 100vh;
+  transition: grid-template-columns .18s ease;
 }
+/* Thu gọn: sidebar chỉ còn cột icon, chữ ẩn hết (xem khối NAV THU GỌN dưới). */
+.app.nav-collapsed { grid-template-columns: var(--sidebar-w-min) 1fr; }
 
 /* ============ SIDEBAR ============ */
 .sidebar {
@@ -50,17 +53,28 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   padding: 18px 18px 16px;
   position: relative;
 }
+/* Ô logo: nền trắng để linh vật/wordmark (ảnh nền trắng) ăn nhập, viền vàng giữ
+   lại chất thương hiệu cũ trên nền đỏ của sidebar. */
 .brand-mark {
   width: 40px; height: 40px;
   border-radius: 11px;
-  background: linear-gradient(150deg, #F2C200, #D9A400);
-  color: #5C0A17;
+  background: #fff;
   display: grid; place-items: center;
-  font-weight: 800;
-  font-size: 19px;
-  letter-spacing: -.5px;
-  box-shadow: 0 4px 12px -2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.4);
+  overflow: hidden;
+  box-shadow: 0 4px 12px -2px rgba(0,0,0,.3), inset 0 0 0 1.5px rgba(242,194,0,.85);
   flex-shrink: 0;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.brand-mark:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px -2px rgba(0,0,0,.35), inset 0 0 0 2px #F2C200;
+}
+.brand-mark img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  padding: 2px;
+  display: block;
 }
 .brand-name { font-weight: 700; font-size: 15.5px; letter-spacing: -.2px; line-height: 1.1; }
 .brand-sub { font-size: 11px; color: rgba(255,255,255,.62); font-weight: 500; margin-top: 1px; }
@@ -130,6 +144,30 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .org-card .t { font-size: 12px; font-weight: 600; }
 .org-card .s { font-size: 10.5px; color: rgba(255,255,255,.55); }
 
+/* ============ NAV THU GỌN ============
+   Chỉ giữ lại cột icon: ẩn chữ, canh giữa, badge co lại thành chấm nhỏ ở góc
+   icon (số cụ thể vẫn đọc được ở tooltip của nút). */
+.nav-collapsed .brand { justify-content: center; padding: 18px 8px 16px; }
+.nav-collapsed .brand-text,
+.nav-collapsed .nav-label,
+.nav-collapsed .org-text,
+.nav-collapsed .nav-item > span { display: none; }
+
+.nav-collapsed .nav { padding: 6px 10px 12px; }
+.nav-collapsed .nav-item { justify-content: center; padding: 10px 0; }
+.nav-collapsed .nav-item.active::before { left: -10px; }
+.nav-collapsed .nav-item .nav-badge {
+  position: absolute;
+  top: 3px; right: 6px;
+  margin-left: 0;
+  min-width: 8px; height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0;          /* giấu số, chỉ còn chấm báo có việc */
+  border: 1.5px solid #6B0B1B;
+}
+.nav-collapsed .org-card { justify-content: center; padding: 9px 0; }
+
 /* ============ TOPBAR ============ */
 .main { display: flex; flex-direction: column; min-width: 0; }
 .topbar {
@@ -168,6 +206,8 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   transition: background .14s;
 }
 .icon-btn:hover { background: var(--surface-2); }
+/* Nút thu/mở menu đứng sát mép trái topbar, thẳng hàng với icon của sidebar. */
+.nav-toggle { flex-shrink: 0; margin-left: -8px; }
 .icon-btn .dot {
   position: absolute; top: 8px; right: 9px;
   width: 7px; height: 7px; border-radius: 50%;
@@ -306,6 +346,16 @@ th:hover > [data-rh]::after { background: #6b7280; }
 [data-rh]:hover::after { background: #3b82f6; height: 9999px; }
 /* dragging → keep blue full-height */
 [data-rh].rh-active::after { background: #3b82f6; height: 9999px; }
+/* Cột bảng bấm được để sắp xếp: mũi tên mờ khi chưa chọn, rõ khi đang sắp. */
+table.tbl th.th-sort { cursor: pointer; user-select: none; }
+table.tbl th.th-sort:hover { background: #f1f4f9; color: var(--ink); }
+table.tbl th.th-sort.active { color: var(--red-600); }
+.th-sort-in { display: inline-flex; align-items: center; gap: 5px; }
+table.tbl th.th-sort.tbl-num .th-sort-in { flex-direction: row-reverse; }
+.th-arrow { font-size: 9px; line-height: 1; opacity: .35; }
+table.tbl th.th-sort:hover .th-arrow { opacity: .7; }
+table.tbl th.th-sort.active .th-arrow { opacity: 1; }
+
 .tbl-num { font-variant-numeric: tabular-nums; text-align: right; }
 table.tbl th.tbl-num { text-align: right; }
 .cell-emp { display: flex; align-items: center; gap: 11px; }

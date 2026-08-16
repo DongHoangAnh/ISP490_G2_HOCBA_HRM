@@ -175,6 +175,7 @@ def _att_row(rec, policy):
         'needsReview': rec.needs_review,
         'checkInMapUrl': rec.check_in_map_url or None,
         'checkOutMapUrl': rec.check_out_map_url or None,
+        'notes': rec.notes or '',
     }
 
 
@@ -305,6 +306,26 @@ def _teaching_days_payload(env, from_str, to_str):
     return {'isTeacher': True, 'days': days}, 200
 
 
+def _att_pending_count(env):
+    """Tổng số đơn và ca chờ duyệt trong phạm vi quản lý."""
+    if not _user_can_manage(env):
+        return 0
+    # Đơn sửa chấm công
+    req_dom = [('state', '=', 'pending')]
+    for field, op, val in _emp_scope_domain(env):
+        if field == 'id':
+            req_dom.append(('employee_id', op, val))
+        else:
+            req_dom.append(('employee_id.%s' % field, op, val))
+    req_count = env['hocba.attendance.request'].sudo().search_count(req_dom)
+
+    # Ca làm việc
+    shift_dom = [('state', '=', 'pending')] + _shift_scope_domain(env)
+    shift_count = env['hocba.work_shift'].sudo().search_count(shift_dom)
+
+    return req_count + shift_count
+
+
 def _att_me_info(env):
     """Thông tin cá nhân để dựng panel check-in. None nếu user chưa có hồ sơ NV."""
     emp = env.user.employee_id
@@ -332,7 +353,7 @@ def _att_me_info(env):
         row = _att_row(rec, policy)
         info['today'] = {k: row[k] for k in (
             'checkIn', 'checkOut', 'workingHours', 'statusKey',
-            'lateMinutes', 'faceSuspect', 'outOfZone', 'outOfWindow')}
+            'lateMinutes', 'faceSuspect', 'outOfZone', 'outOfWindow', 'notes')}
     info['shiftToday'] = None
     if not info['isOfficial']:
         window = policy.shift_window_minutes or 15
@@ -556,11 +577,19 @@ def _shift_history_row(env, s, att, row_type):
         'faceSuspect': att.face_suspect if att else False,
         'outOfZone': att.out_of_zone if att else False,
         'outOfWindow': att.out_of_window if att else False,
-        'needsReview': False,
-        'checkInMapUrl': None,
-        'checkOutMapUrl': None,
+        'needsReview': bool(att and (att.face_suspect or att.out_of_zone or att.out_of_window)),
+        'checkInMapUrl': (
+            'https://www.google.com/maps/search/?api=1&query=%s,%s'
+            % (att.check_in_lat, att.check_in_lng)
+            if att and att.check_in_lat and att.check_in_lng else None),
+        'checkOutMapUrl': (
+            'https://www.google.com/maps/search/?api=1&query=%s,%s'
+            % (att.check_out_lat, att.check_out_lng)
+            if att and att.check_out_lat and att.check_out_lng else None),
         'rowType': row_type,
         'shiftLabel': shift_label,
+        'notes': att.notes if att else '',
+        'attId': att.id if att else None,
     }
 
 
@@ -1253,6 +1282,9 @@ def _shift_row(s):
         'reviewer': s.reviewer_id.name or None,
         'reviewNote': s.review_note or None,
         'decisionDate': _dt_local(s, s.decision_date),
+        'checkIn': _dt_local(s, s.attendance_id[0].check_in) if s.attendance_id else None,
+        'checkOut': _dt_local(s, s.attendance_id[0].check_out) if s.attendance_id else None,
+        'notes': s.attendance_id[0].notes if s.attendance_id else None,
     }
 
 
@@ -1430,11 +1462,12 @@ def _shift_today_rows(env, emp):
             'shiftType': s.shift_type, 'otLevel': s.ot_level, 'rate': s.rate,
             'checkIn': _dt_local(att, att.check_in) if has_in else None,
             'checkOut': _dt_local(att, att.check_out) if has_out else None,
-            'checkInOpen': (not has_in) and abs((now_local - ci_anchor).total_seconds()) <= window * 60,
-            'checkOutOpen': has_in and (not has_out) and abs((now_local - co_anchor).total_seconds()) <= window * 60,
+            'checkInOpen': not has_in,
+            'checkOutOpen': has_in and not has_out,
             'faceSuspect': att.face_suspect if att else False,
             'outOfZone': att.out_of_zone if att else False,
             'outOfWindow': att.out_of_window if att else False,
+            'notes': att.notes if att else None,
         })
     return rows
 
@@ -1448,7 +1481,7 @@ def _shift_check(env, shift_id, kind, payload):
     if not emp or shift.employee_id.id != emp.id:
         raise AccessError('forbidden')
     SA = env['hocba.shift.attendance'].sudo()
-    SA._assert_allowed(shift, kind)
+    SA._assert_allowed(shift, kind, has_note=bool(payload.get('note')))
     rec = SA._do_check(shift, payload, kind)
     return {
         'recordId': rec.id, 'kind': kind,
@@ -4245,6 +4278,10 @@ class HocBaHRM(http.Controller):
                 e.sudo().write(emp_vals)
             if ver_vals:
                 e.version_id.sudo().write(ver_vals)
+                if 'wage' in ver_vals and ver_vals['wage'] is not None:
+                    contracts = request.env['hb.contract'].sudo().search([('employee_id', '=', e.id)])
+                    if contracts:
+                        contracts.write({'wage': ver_vals['wage']})
         except IntegrityError:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -4746,6 +4783,11 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'no_employee'}, status=400)
         return request.make_json_response(data)
 
+    @http.route('/hocba-hrm/api/attendance/pending-count', auth='user',
+                type='http', methods=['GET'])
+    def api_attendance_pending_count(self, **kw):
+        return request.make_json_response({'count': _att_pending_count(request.env)})
+
     @http.route('/hocba-hrm/api/attendance/manager-summary', auth='user',
                 type='http', methods=['GET'])
     def api_attendance_manager_summary(self, month=None, dateFrom=None, dateTo=None, role=None, **kw):
@@ -4795,17 +4837,19 @@ class HocBaHRM(http.Controller):
         payload = request.get_json_data()
         kind = 'out' if request.httprequest.path.endswith('check-out') else 'in'
         Att = request.env['hocba.attendance'].sudo()
+        has_note = payload.get('note') is not None
         try:
             if emp.x_employment_status == 'official':
-                Att._assert_check_allowed(emp, kind)
+                Att._assert_check_allowed(emp, kind, has_note=has_note)
             else:
-                Att._assert_shift_check_allowed(emp, kind)
+                Att._assert_shift_check_allowed(emp, kind, has_note=has_note)
             res = Att._do_check({
                 'employee_id': emp.id,
                 'photo': payload.get('photo'),
                 'descriptor': payload.get('descriptor') or [],
                 'latitude': payload.get('latitude') or 0.0,
                 'longitude': payload.get('longitude') or 0.0,
+                'note': payload.get('note'),
             }, kind)
         except UserError as ex:
             code = str(ex)
@@ -4834,6 +4878,7 @@ class HocBaHRM(http.Controller):
                 'descriptor': payload.get('descriptor') or [],
                 'latitude': payload.get('latitude') or 0.0,
                 'longitude': payload.get('longitude') or 0.0,
+                'note': payload.get('note'),
             })
         except AccessError:
             return request.make_json_response({'error': 'forbidden'}, status=403)

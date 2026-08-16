@@ -19,30 +19,27 @@ import GuideNote from './GuideNote';
 /* Hướng dẫn thao tác của tab này — khung dùng chung ở GuideNote.jsx. */
 const JD_STEPS = [
   ['Tra cứu JD',
-   <>Lọc bằng hàng chip <b>trạng thái tuyển</b> (Đang tuyển / Dừng tuyển), ô chọn
-     <b> phòng ban</b> và ô tìm kiếm ở đầu màn. Cột <b>JD</b> cho biết vị trí nào đã
-     có file mô tả công việc — bấm <b>Mở file JD</b> để xem bản gốc trên Drive.</>],
+   <>Lọc bằng chip <b>trạng thái tuyển</b>, ô chọn <b>phòng ban</b> và ô tìm kiếm.
+     Cột <b>JD</b> cho biết vị trí nào đã có file — bấm <b>Mở file JD</b> để xem
+     bản gốc trên Drive.</>],
   ['Thêm vị trí mới',
-   <>Bấm <b>Thêm vị trí</b> để tạo vị trí kèm JD. Tên vị trí <b>không được trùng</b>
-     trong cùng một phòng ban, nên tra ở kho trước khi tạo để khỏi dựng bản thứ hai
-     của cùng một JD.</>],
-  ['Xem & cập nhật nội dung JD',
-   <>Bấm vào dòng để mở chi tiết: mô tả công việc, yêu cầu, số lượng cần tuyển,
-     link JD. Sửa ở đây là mọi nơi dùng JD đó cập nhật theo — kể cả trang tuyển
-     dụng công khai nếu vị trí đang được đăng.</>],
-  ['Dùng JD khi mở phiếu yêu cầu',
-   <>Sang tab <b>Phiếu yêu cầu</b>, chọn <b>phòng ban</b> rồi chọn <b>JD từ kho</b>
-     — hệ thống tự điền tên vị trí và link JD, khỏi copy tay.</>],
-  ['Đăng tuyển',
-   <>Kho này chỉ để tra cứu và soạn JD. Việc <b>bật đăng tuyển</b> (badge PUBLISHED)
-     và <b>chép link</b> trang tuyển dụng công khai nằm ở tab
-     <b> Theo dõi tuyển dụng</b>.</>],
+   <>Bấm <b>Thêm vị trí</b> để tạo vị trí kèm JD. Tên vị trí <b>không trùng</b>
+     trong cùng phòng ban, nên tra kho trước khi tạo.</>],
+  ['Sửa nội dung JD',
+   <>Bấm vào dòng để mở chi tiết (mô tả, yêu cầu, số lượng, link JD). Sửa ở đây
+     thì mọi nơi dùng JD đó đổi theo, kể cả trang tuyển dụng công khai.</>],
+  ['Dùng lại khi mở phiếu',
+   <>Ở tab <b>Phiếu yêu cầu</b>, chọn phòng ban rồi chọn <b>JD từ kho</b> — tên vị
+     trí và link JD tự điền.</>],
+  ['Đăng tuyển ở tab khác',
+   <>Kho này chỉ để tra cứu và soạn JD. <b>Bật đăng tuyển</b> và chép link trang
+     công khai nằm ở tab <b>Theo dõi tuyển dụng</b>.</>],
 ];
 
 const JD_GUIDE_NOTE = (
-  <><b>Trạng thái</b> ở đây là trạng thái tuyển của vị trí, không phải trạng thái
-    của file JD: vị trí tự chuyển <b>Dừng tuyển</b> khi đã tuyển đủ chỉ tiêu, còn
-    JD thì vẫn nằm trong kho để dùng lại cho đợt sau.</>
+  <><b>Trạng thái</b> ở đây là trạng thái tuyển của vị trí, không phải của file
+    JD: tuyển đủ chỉ tiêu thì vị trí tự <b>Dừng tuyển</b>, JD vẫn nằm trong kho để
+    dùng lại đợt sau.</>
 );
 
 export default function JdLibrary({ search }) {
@@ -151,7 +148,7 @@ export default function JdLibrary({ search }) {
         <Pagination {...pg} />
       </div>
 
-      <GuideNote title="Các bước bộ phận tuyển dụng cần làm ở màn này"
+      <GuideNote title="Các bước cần làm ở màn này"
         steps={JD_STEPS} note={JD_GUIDE_NOTE} />
 
       {sel && (

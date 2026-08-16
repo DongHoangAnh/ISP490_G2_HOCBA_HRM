@@ -34,6 +34,8 @@ export const fetchMyRequests = () =>
   hbGet('/hocba-hrm/api/attendance/requests/mine');
 export const fetchPendingRequests = () =>
   hbGet('/hocba-hrm/api/attendance/requests/pending');
+export const fetchAttendancePendingCount = () =>
+  hbGet('/hocba-hrm/api/attendance/pending-count');
 export const approveRequest = (id, body) =>
   hbPost(`/hocba-hrm/api/attendance/requests/${id}/approve`, body);
 export const rejectRequest = (id, body) =>

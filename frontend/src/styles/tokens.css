@@ -49,6 +49,8 @@
   --shadow-lg: 0 24px 60px -16px rgba(28,25,23,.30);
 
   --sidebar-w: 248px;
+  /* Bề rộng sidebar khi thu gọn: vừa đủ 1 cột icon 19px + padding hai bên. */
+  --sidebar-w-min: 72px;
   --topbar-h: 64px;
 }
 
