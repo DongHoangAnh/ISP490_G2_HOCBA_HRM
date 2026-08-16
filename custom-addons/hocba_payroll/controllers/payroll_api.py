@@ -774,6 +774,7 @@ class PayrollAPI(http.Controller):
     def bulk_bonus_penalty(self, **kw):
         """Áp dụng thưởng/phạt hàng loạt cho nhiều nhân viên trong kỳ lương."""
         try:
+            import calendar
             body = _get_json_body()
             month = int(body.get('month', 0))
             year = int(body.get('year', 0))
@@ -786,7 +787,7 @@ class PayrollAPI(http.Controller):
             bonus_reason = body.get('bonusReason', '')
             penalty_reason = body.get('penaltyReason', '')
 
-            if bonus <= 0 and penalty <= 0:
+            if bonus < 0 or penalty < 0 or (bonus == 0 and penalty == 0):
                 return _error_response('Cần nhập số tiền thưởng hoặc phạt > 0.')
 
             env = request.env
@@ -797,8 +798,32 @@ class PayrollAPI(http.Controller):
             date_start = f'{year}-{month:02d}-01'
             date_end = f'{ny}-{nm:02d}-01'
 
+            slips = env['hb.payslip'].sudo()
             if payslip_ids:
-                slips = env['hb.payslip'].sudo().browse(payslip_ids).exists()
+                found_slips = env['hb.payslip'].sudo().browse(payslip_ids).exists()
+                if found_slips:
+                    slips |= found_slips
+                found_slip_emp_ids = found_slips.mapped('employee_id.id')
+                potential_emp_ids = [pid for pid in payslip_ids if pid not in found_slips.ids and pid not in found_slip_emp_ids]
+                if potential_emp_ids:
+                    emps = env['hr.employee'].sudo().browse(potential_emp_ids).exists()
+                    for emp in emps:
+                        existing_slip = env['hb.payslip'].sudo().search([
+                            ('employee_id', '=', emp.id),
+                            ('date_from', '>=', date_start),
+                            ('date_from', '<', date_end),
+                            ('state', '!=', 'cancel'),
+                        ], limit=1)
+                        if existing_slip:
+                            slips |= existing_slip
+                        else:
+                            last_day = calendar.monthrange(year, month)[1]
+                            new_slip = env['hb.payslip'].sudo().create({
+                                'employee_id': emp.id,
+                                'date_from': date_start,
+                                'date_to': f'{year}-{month:02d}-{last_day:02d}',
+                            })
+                            slips |= new_slip
             else:
                 slips = env['hb.payslip'].sudo().search([
                     ('date_from', '>=', date_start),
@@ -809,42 +834,25 @@ class PayrollAPI(http.Controller):
             if not slips:
                 return _error_response('Không tìm thấy phiếu lương nào.')
 
-            updated = 0
-            for slip in slips:
-                lines_to_create = []
-                if bonus > 0:
-                    lines_to_create.append({
-                        'payslip_id': slip.id,
-                        'code': 'thuong_khac',
-                        'name': bonus_reason or 'Thưởng khác',
-                        'amount': bonus,
-                        'sequence': 13,
-                        'category_id': 11,  # thuong category
-                    })
-                if penalty > 0:
-                    lines_to_create.append({
-                        'payslip_id': slip.id,
-                        'code': 'phat',
-                        'name': penalty_reason or 'Phạt vi phạm',
-                        'amount': -penalty,
-                        'sequence': 91,
-                        'category_id': 13,  # giam_tru category
-                    })
-                if lines_to_create:
-                    for vals in lines_to_create:
-                        # Delete existing line with same code first (overwrite)
-                        existing = env['hb.payslip.line'].sudo().search([
-                            ('payslip_id', '=', slip.id),
-                            ('code', '=', vals['code']),
-                        ])
-                        if existing:
-                            existing.unlink()
-                        env['hb.payslip.line'].sudo().create(vals)
-                    updated += 1
+            vals = {}
+            if bonus > 0:
+                vals['x_bonus_extra'] = bonus
+                if bonus_reason:
+                    vals['x_bonus_reason'] = bonus_reason
+            if penalty > 0:
+                vals['x_penalty_amount'] = penalty
+                if penalty_reason:
+                    vals['x_penalty_reason'] = penalty_reason
+
+            if vals:
+                slips.write(vals)
+
+            # Auto recompute payslips to update rules, lines & NET salary immediately
+            slips.action_compute_batch()
 
             return _success_response(
-                {'updated': updated},
-                message=f'Đã áp dụng thưởng/phạt cho {updated} phiếu lương.'
+                {'updated': len(slips)},
+                message=f'🎉 Đã áp dụng thưởng/phạt thành công cho {len(slips)} phiếu lương.'
             )
         except (ValidationError, UserError) as e:
             return _error_response(str(e))
