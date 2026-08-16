@@ -110,18 +110,27 @@ export default function RequestTracking({ search }) {
   const load = () => { setErr(null); setData(null); fetchJobs().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
 
-  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
-  const all = (data && data.requests) || [];
-  const filtered = all.filter((r) => {
-    if (st !== 'all' && trackStatus(r) !== st) return false;
-    if (dep !== 'all' && r.depId !== dep) return false;
+  /* Một hàm lọc duy nhất cho cả bảng lẫn số trên chip, cho phép ghi đè từng
+     tiêu chí. Số trên chip đếm theo các bộ lọc CÒN LẠI đang bật ("bấm chip này
+     thì thấy bao nhiêu dòng") — đếm trên tập chưa lọc thì chọn phòng ban hoặc
+     gõ ô tìm kiếm là chip đứng yên trong khi bảng đã đổi. Cùng khuôn với
+     Phòng ban / Nhận việc / Nghỉ việc (xem Offboarding.jsx). */
+  const keep = (r, o = {}) => {
+    const s = 'st' in o ? o.st : st;
+    const d = 'dep' in o ? o.dep : dep;
+    if (s !== 'all' && trackStatus(r) !== s) return false;
+    if (d !== 'all' && r.depId !== d) return false;
     if (search) {
       const q = search.toLowerCase();
       const hay = `${r.jobTitle || ''} ${r.depName || ''} ${r.code || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
-  })
+  };
+
+  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
+  const all = (data && data.requests) || [];
+  const filtered = all.filter((r) => keep(r))
     /* Xếp theo TRACK_ORDER: Đang tuyển → Dừng tuyển → Đã đóng. Sort ổn định nên
        trong cùng nhóm vẫn giữ nguyên thứ tự BE trả về. */
     .sort((a, b) => TRACK_ORDER[trackStatus(a)] - TRACK_ORDER[trackStatus(b)]);
@@ -158,10 +167,10 @@ export default function RequestTracking({ search }) {
     <div>
       <div className="filterbar">
         <button className={'chip' + (st === 'all' ? ' active' : '')} onClick={() => setSt('all')}>
-          Tất cả <span className="ct">{all.length}</span></button>
+          Tất cả <span className="ct">{all.filter((r) => keep(r, { st: 'all' })).length}</span></button>
         {Object.entries(TRACK_STATUS).reverse().map(([key, [label]]) => (
           <button key={key} className={'chip' + (st === key ? ' active' : '')} onClick={() => setSt(key)}>
-            {label} <span className="ct">{all.filter((r) => trackStatus(r) === key).length}</span></button>
+            {label} <span className="ct">{all.filter((r) => keep(r, { st: key })).length}</span></button>
         ))}
         {isHr && (
           <div style={{ marginLeft: 'auto' }}>

@@ -131,14 +131,18 @@ export default function CvList({ search, focus }) {
     const f = filters.find(([k]) => k === cvFilter);
     return !f || !f[2] || f[2](r);   // chip lạ (Selection đổi) → coi như Tất cả
   };
-  const filtered = rows.filter((r) => matchSearch(r) && matchCv(r));
+  /* Ô tìm kiếm cũng là một bộ lọc ⇒ số trên chip đếm trên tập ĐÃ tìm kiếm
+     ("bấm chip này thì thấy bao nhiêu dòng"). Đếm trên `rows` thì gõ vào ô tìm
+     kiếm là chip đứng yên trong khi bảng đã đổi. */
+  const searched = rows.filter(matchSearch);
+  const filtered = searched.filter(matchCv);
 
   return (
     <div>
       <div className="filterbar">
         {filters.map(([k, l, pred]) => (
           <button key={k} className={'chip' + (cvFilter === k ? ' active' : '')} onClick={() => setCvFilter(k)}>
-            {l} <span className="ct">{pred ? rows.filter(pred).length : rows.length}</span></button>
+            {l} <span className="ct">{pred ? searched.filter(pred).length : searched.length}</span></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
           {isRecruiter && (

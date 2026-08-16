@@ -104,29 +104,49 @@ export default function Offers({ search }) {
     // Mặc định: hẹn nhận việc gần nhất lên đầu. Bấm tiêu đề cột thì sort đè lên.
     .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
 
+  /* Một hàm lọc duy nhất cho cả bảng lẫn số trên chip, cho phép ghi đè từng
+     tiêu chí. Số trên chip đếm theo các bộ lọc CÒN LẠI đang bật ("bấm chip này
+     thì thấy bao nhiêu dòng") — đếm trên `searched` thì bật thêm bộ lọc khác là
+     chip ghi một đằng, bảng ra một nẻo. Cùng khuôn với Phòng ban / Nhận việc /
+     Nghỉ việc (xem Offboarding.jsx). */
+  const keep = (r, o = {}) => {
+    const stage = 'fStage' in o ? o.fStage : fStage;
+    const job = 'fJob' in o ? o.fJob : fJob;
+    const result = 'fResult' in o ? o.fResult : fResult;
+    const noOffer = 'fNoOffer' in o ? o.fNoOffer : fNoOffer;
+    const noDate = 'fNoDate' in o ? o.fNoDate : fNoDate;
+    if (stage !== 'all' && (r.stageRef || '') !== stage) return false;
+    if (job !== 'all' && r.jobName !== job) return false;
+    // result === '' → lọc đúng nhóm CHƯA xác định kết quả.
+    if (result !== 'all' && (r.onboardResult || '') !== result) return false;
+    if (noOffer && r.offerContent) return false;
+    if (noDate && r.startDate) return false;
+    return true;
+  };
+
   /* Chip bước dựng từ chính dữ liệu, giữ đúng thứ tự chặng đường. */
   const stageChips = [];
   for (const r of searched) {
     const k = r.stageRef || '';
-    const c = stageChips.find((x) => x.k === k);
-    if (c) c.n += 1;
-    else stageChips.push({ k, lbl: r.stage || 'Chưa có bước', n: 1 });
+    if (!stageChips.find((x) => x.k === k)) {
+      stageChips.push({ k, lbl: r.stage || 'Chưa có bước' });
+    }
+  }
+  for (const c of stageChips) {
+    c.n = searched.filter((r) => keep(r, { fStage: c.k })).length;
   }
   stageChips.sort((a, b) => (STAGE_ORDER[a.k] || 99) - (STAGE_ORDER[b.k] || 99));
-  const jobOptions = [...new Set(searched.map((r) => r.jobName).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, 'vi'));
-  const noOfferCount = searched.filter((r) => !r.offerContent).length;
-  const noDateCount = searched.filter((r) => !r.startDate).length;
+  // Chỉ bày vị trí còn dữ liệu sau các bộ lọc khác; vị trí đang chọn luôn giữ
+  // trong danh sách, không thì select rơi về rỗng mà bộ lọc vẫn chạy ngầm.
+  const jobOptions = [...new Set(searched.filter((r) => keep(r, { fJob: 'all' }))
+    .map((r) => r.jobName).filter(Boolean))];
+  if (fJob !== 'all' && !jobOptions.includes(fJob)) jobOptions.push(fJob);
+  jobOptions.sort((a, b) => a.localeCompare(b, 'vi'));
+  const allCount = searched.filter((r) => keep(r, { fStage: 'all' })).length;
+  const noOfferCount = searched.filter((r) => keep(r, { fNoOffer: true })).length;
+  const noDateCount = searched.filter((r) => keep(r, { fNoDate: true })).length;
 
-  const filtered = searched.filter((r) => {
-    if (fStage !== 'all' && (r.stageRef || '') !== fStage) return false;
-    if (fJob !== 'all' && r.jobName !== fJob) return false;
-    // fResult === '' → lọc đúng nhóm CHƯA xác định kết quả.
-    if (fResult !== 'all' && (r.onboardResult || '') !== fResult) return false;
-    if (fNoOffer && r.offerContent) return false;
-    if (fNoDate && r.startDate) return false;
-    return true;
-  });
+  const filtered = searched.filter((r) => keep(r));
   const hasFilter = fStage !== 'all' || fJob !== 'all' || fResult !== 'all' || fNoOffer || fNoDate;
   const clearFilter = () => {
     setFStage('all'); setFJob('all'); setFResult('all');
@@ -158,8 +178,9 @@ export default function Offers({ search }) {
       <div className="filterbar">
         <button className={'chip' + (fStage === 'all' ? ' active' : '')}
           onClick={() => setFStage('all')}>
-          Tất cả <span className="ct">{searched.length}</span></button>
-        {stageChips.map((c) => (
+          Tất cả <span className="ct">{allCount}</span></button>
+        {/* Chip 0 được ẩn (bấm vào chỉ ra bảng rỗng), trừ chip đang chọn. */}
+        {stageChips.filter((c) => c.n > 0 || fStage === c.k).map((c) => (
           <button key={c.k} className={'chip' + (fStage === c.k ? ' active' : '')}
             onClick={() => setFStage(c.k)}>
             {c.lbl} <span className="ct">{c.n}</span></button>

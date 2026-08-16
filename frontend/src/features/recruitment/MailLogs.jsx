@@ -27,27 +27,27 @@ export default function MailLogs({ search }) {
   useEffect(load, []);
 
   /* Lọc + phân trang đặt TRƯỚC early-return: usePaged là hook, gọi sau
-     `if (!data) return` sẽ đổi số hook giữa lúc loading và lúc có dữ liệu. */
-  const filtered = (data ? data.rows : [])
-    .filter((r) => filter === 'all' || r.status === filter)
-    .filter((r) => {
-      if (!search) return true;
-      const q = search.toLowerCase();
-      return [r.applicant, r.email, r.subject].some((v) => (v || '').toLowerCase().includes(q));
-    });
+     `if (!data) return` sẽ đổi số hook giữa lúc loading và lúc có dữ liệu.
+     Ô tìm kiếm cũng là một bộ lọc ⇒ số trên chip đếm trên tập ĐÃ tìm kiếm,
+     không thì gõ vào ô tìm kiếm là chip đứng yên trong khi bảng đã đổi. */
+  const searched = (data ? data.rows : []).filter((r) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [r.applicant, r.email, r.subject].some((v) => (v || '').toLowerCase().includes(q));
+  });
+  const filtered = searched.filter((r) => filter === 'all' || r.status === filter);
   const pg = usePaged(filtered, [filter, search]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải lịch sử gửi mail…" />;
 
-  const { rows } = data;
-  const counts = rows.reduce((m, r) => ({ ...m, [r.status]: (m[r.status] || 0) + 1 }), {});
+  const counts = searched.reduce((m, r) => ({ ...m, [r.status]: (m[r.status] || 0) + 1 }), {});
 
   return (
     <div>
       <div className="filterbar">
         <button className={'chip' + (filter === 'all' ? ' active' : '')} onClick={() => setFilter('all')}>
-          Tất cả <span className="ct">{rows.length}</span></button>
+          Tất cả <span className="ct">{searched.length}</span></button>
         {Object.entries(STATUS).map(([k, [, label]]) => (
           <button key={k} className={'chip' + (filter === k ? ' active' : '')} onClick={() => setFilter(k)}>
             {label} <span className="ct">{counts[k] || 0}</span></button>

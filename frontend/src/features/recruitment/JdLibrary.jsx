@@ -53,16 +53,25 @@ export default function JdLibrary({ search }) {
   const load = () => { setErr(null); setData(null); fetchJobs().then(setData).catch((e) => setErr(e.message)); };
   useEffect(load, []);
 
-  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
-  const filtered = (data ? data.rows : []).filter((r) => {
-    if (status !== 'all' && r.status !== status) return false;
-    if (dep !== 'all' && r.depId !== dep) return false;
+  /* Một hàm lọc duy nhất cho cả bảng lẫn số trên chip, cho phép ghi đè từng
+     tiêu chí. Số trên chip đếm theo các bộ lọc CÒN LẠI đang bật ("bấm chip này
+     thì thấy bao nhiêu dòng") — đếm trên tập chưa lọc thì chọn phòng ban hoặc
+     gõ ô tìm kiếm là chip đứng yên trong khi bảng đã đổi. Cùng khuôn với
+     Phòng ban / Nhận việc / Nghỉ việc (xem Offboarding.jsx). */
+  const keep = (r, o = {}) => {
+    const st = 'status' in o ? o.status : status;
+    const d = 'dep' in o ? o.dep : dep;
+    if (st !== 'all' && r.status !== st) return false;
+    if (d !== 'all' && r.depId !== d) return false;
     if (search) {
       const q = search.toLowerCase();
       if (!((r.name || '').toLowerCase().includes(q) || (r.depName || '').toLowerCase().includes(q))) return false;
     }
     return true;
-  })
+  };
+
+  /* Lọc + phân trang đặt TRƯỚC early-return (quy tắc hook — xem Requests.jsx). */
+  const filtered = (data ? data.rows : []).filter((r) => keep(r))
     /* Vị trí ĐANG TUYỂN lên đầu — đó là việc đang chạy, phải thấy ngay ở trang 1
        thay vì lẫn giữa các JD cũ. Sort ổn định nên trong cùng nhóm vẫn giữ
        nguyên thứ tự BE trả về. */
@@ -91,10 +100,10 @@ export default function JdLibrary({ search }) {
     <div>
       <div className="filterbar">
         <button className={'chip' + (status === 'all' ? ' active' : '')} onClick={() => setStatus('all')}>
-          Tất cả <span className="ct">{rows.length}</span></button>
+          Tất cả <span className="ct">{rows.filter((r) => keep(r, { status: 'all' })).length}</span></button>
         {Object.entries(statusLabels).map(([k, l]) => (
           <button key={k} className={'chip' + (status === k ? ' active' : '')} onClick={() => setStatus(k)}>
-            {l} <span className="ct">{rows.filter((r) => r.status === k).length}</span></button>
+            {l} <span className="ct">{rows.filter((r) => keep(r, { status: k })).length}</span></button>
         ))}
         {/* Trưởng phòng đã bị BE giới hạn trong phòng mình ⇒ ẩn bộ lọc phòng ban
             (giống tab Theo dõi tuyển dụng), bày ra chỉ tổ gây hiểu nhầm là thiếu dữ liệu. */}

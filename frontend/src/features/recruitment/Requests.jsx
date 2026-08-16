@@ -65,23 +65,25 @@ export default function Requests({ search, focus }) {
     setSel(row);
   }, [focus, data]);
 
+  /* Ô tìm kiếm cũng là một bộ lọc: số trên chip phải đếm trên tập ĐÃ tìm kiếm,
+     không thì gõ vào ô tìm kiếm là chip đứng yên trong khi bảng đã đổi. */
+  const matchSearch = (r) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (r.name || '').toLowerCase().includes(q) || (r.jobTitle || '').toLowerCase().includes(q)
+      || (r.depName || '').toLowerCase().includes(q);
+  };
+
   /* Lọc + phân trang đặt TRƯỚC early-return: usePaged là hook, gọi sau
      `if (!data) return` sẽ đổi số hook giữa lúc loading và lúc có dữ liệu. */
-  const filtered = (data ? data.rows : []).filter((r) => {
-    if (state !== 'all' && r.state !== state) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!((r.name || '').toLowerCase().includes(q) || (r.jobTitle || '').toLowerCase().includes(q)
-        || (r.depName || '').toLowerCase().includes(q))) return false;
-    }
-    return true;
-  });
+  const searched = (data ? data.rows : []).filter(matchSearch);
+  const filtered = searched.filter((r) => state === 'all' || r.state === state);
   const pg = usePaged(filtered, [state, search]);
 
   if (err) return <ErrorState message={err} onRetry={load} />;
   if (!data) return <LoadingState label="Đang tải phiếu yêu cầu…" />;
 
-  const { rows, stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs, isRecruiter, canApprove } = data;
+  const { stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs, isRecruiter, canApprove } = data;
   const meta = { stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs };
 
   const applyRow = (det) => setData((p) => {
@@ -93,10 +95,10 @@ export default function Requests({ search, focus }) {
     <div>
       <div className="filterbar">
         <button className={'chip' + (state === 'all' ? ' active' : '')} onClick={() => setState('all')}>
-          Tất cả <span className="ct">{rows.length}</span></button>
+          Tất cả <span className="ct">{searched.length}</span></button>
         {Object.entries(stateLabels).map(([k, l]) => (
           <button key={k} className={'chip' + (state === k ? ' active' : '')} onClick={() => setState(k)}>
-            {l} <span className="ct">{rows.filter((r) => r.state === k).length}</span></button>
+            {l} <span className="ct">{searched.filter((r) => r.state === k).length}</span></button>
         ))}
         {isRecruiter && (
           <div style={{ marginLeft: 'auto' }}>
