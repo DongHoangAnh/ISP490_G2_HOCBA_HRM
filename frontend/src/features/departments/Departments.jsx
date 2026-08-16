@@ -26,6 +26,9 @@ export default function Departments({ search = '' }) {
     fetchDepartments(showArchived).then(setData).catch((e) => setErr(e.message));
   };
   useEffect(load, [showArchived]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Tắt "Hiện phòng đã lưu trữ" → cặp chip trạng thái biến mất; giữ nguyên
+     fState cũ là bộ lọc vẫn chạy ngầm mà không còn chip nào sáng để tắt nó. */
+  useEffect(() => { if (!showArchived) setFState('all'); }, [showArchived]);
 
   const onArchive = async (d) => {
     const next = !d.active;
@@ -53,21 +56,40 @@ export default function Departments({ search = '' }) {
 
   /* Chip "Lưu trữ" chỉ có nghĩa khi ô "Hiện phòng đã lưu trữ" đang bật — nếu
      tắt thì API không trả phòng lưu trữ, chip sẽ luôn 0 nên ẩn luôn. */
-  const cntActive = searched.filter((d) => d.active).length;
-  const cntArchived = searched.length - cntActive;
-  const noMgrCount = searched.filter((d) => !d.managerName).length;
-  const emptyCount = searched.filter((d) => !d.employeeCount).length;
-  const mgrOptions = [...new Set(searched.map((d) => d.managerName).filter(Boolean))]
+  /* Một hàm lọc duy nhất, cho phép ghi đè từng tiêu chí — dùng cho CẢ bảng lẫn
+     số trên chip. Số trên chip phải đếm theo các bộ lọc CÒN LẠI đang bật (kiểu
+     faceted), tức "số dòng sẽ thấy nếu bấm chip này". Đếm trên mỗi `searched`
+     thì bật "Chưa có trưởng phòng" xong chip vẫn ghi 12 trong khi bảng ra 9. */
+  const match = (d, o = {}) => {
+    const st = 'fState' in o ? o.fState : fState;
+    const mgr = 'fMgr' in o ? o.fMgr : fMgr;
+    const noMgr = 'fNoMgr' in o ? o.fNoMgr : fNoMgr;
+    const empty = 'fEmpty' in o ? o.fEmpty : fEmpty;
+    if (st === 'active' && !d.active) return false;
+    if (st === 'archived' && d.active) return false;
+    if (mgr !== 'all' && d.managerName !== mgr) return false;
+    if (noMgr && d.managerName) return false;
+    if (empty && d.employeeCount) return false;
+    return true;
+  };
+  const countIf = (o) => searched.filter((d) => match(d, o)).length;
+
+  const cntAll = countIf({ fState: 'all' });
+  const cntActive = countIf({ fState: 'active' });
+  const cntArchived = countIf({ fState: 'archived' });
+  const noMgrCount = countIf({ fNoMgr: true });
+  const emptyCount = countIf({ fEmpty: true });
+  // Chỉ liệt kê trưởng phòng còn xuất hiện sau các bộ lọc khác — bày tên mà
+  // chọn vào ra bảng rỗng thì thà đừng bày.
+  const mgrOptions = [...new Set(searched.filter((d) => match(d, { fMgr: 'all' }))
+    .map((d) => d.managerName).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'vi'));
 
-  const filtered = searched.filter((d) => {
-    if (fState === 'active' && !d.active) return false;
-    if (fState === 'archived' && d.active) return false;
-    if (fMgr !== 'all' && d.managerName !== fMgr) return false;
-    if (fNoMgr && d.managerName) return false;
-    if (fEmpty && d.employeeCount) return false;
-    return true;
-  });
+  const filtered = searched.filter((d) => match(d));
+  /* Khi danh sách không có phòng lưu trữ nào thì "Hoạt động" trùng khít "Tất
+     cả" — hai chip cùng một con số chỉ làm người dùng phân vân. Ẩn cả cặp
+     trạng thái, chỉ hiện khi thực sự có phòng lưu trữ để phân biệt. */
+  const showStateChips = searched.some((d) => !d.active);
   const hasFilter = fState !== 'all' || fMgr !== 'all' || fNoMgr || fEmpty;
   const clearFilter = () => { setFState('all'); setFMgr('all'); setFNoMgr(false); setFEmpty(false); };
 
@@ -94,16 +116,18 @@ export default function Departments({ search = '' }) {
       </div>
 
       <div className="filterbar">
-        <button className={'chip' + (fState === 'all' ? ' active' : '')}
-          onClick={() => setFState('all')}>
-          Tất cả <span className="ct">{searched.length}</span></button>
-        <button className={'chip' + (fState === 'active' ? ' active' : '')}
-          onClick={() => setFState('active')}>
-          Hoạt động <span className="ct">{cntActive}</span></button>
-        {cntArchived > 0 && (
-          <button className={'chip' + (fState === 'archived' ? ' active' : '')}
-            onClick={() => setFState('archived')}>
-            Lưu trữ <span className="ct">{cntArchived}</span></button>
+        {showStateChips && (
+          <>
+            <button className={'chip' + (fState === 'all' ? ' active' : '')}
+              onClick={() => setFState('all')}>
+              Tất cả <span className="ct">{cntAll}</span></button>
+            <button className={'chip' + (fState === 'active' ? ' active' : '')}
+              onClick={() => setFState('active')}>
+              Hoạt động <span className="ct">{cntActive}</span></button>
+            <button className={'chip' + (fState === 'archived' ? ' active' : '')}
+              onClick={() => setFState('archived')}>
+              Lưu trữ <span className="ct">{cntArchived}</span></button>
+          </>
         )}
         <button className={'chip' + (fNoMgr ? ' active' : '')}
           title="Phòng chưa gán trưởng phòng"

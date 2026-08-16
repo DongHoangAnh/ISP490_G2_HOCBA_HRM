@@ -58,22 +58,37 @@ export default function Offboarding({ search, onQueueChanged }) {
   const base = (data.isOfficer ? data.managed : data.mine).filter(match);
   // Chip trạng thái dựng từ chính dữ liệu (khỏi phải đồng bộ tay với backend
   // mỗi lần thêm state mới); nhãn lấy từ stateLabel server trả về.
-  const stateChips = [{ k: 'all', lbl: 'Tất cả', n: base.length }];
-  for (const r of base) {
-    const c = stateChips.find((x) => x.k === r.state);
-    if (c) c.n += 1;
-    else stateChips.push({ k: r.state, lbl: r.stateLabel, n: 1 });
-  }
-  const reasonOptions = [...new Set(base.map((r) => r.reasonType).filter(Boolean))];
   const isTodo = (r) => r.canMgrApprove || r.canHrApprove || r.canDone;
-  const todoCount = base.filter(isTodo).length;
 
-  const rows = base.filter((r) => {
-    if (fState !== 'all' && r.state !== fState) return false;
-    if (fReason !== 'all' && r.reasonType !== fReason) return false;
-    if (fTodo && !isTodo(r)) return false;
+  /* Một hàm lọc duy nhất cho cả bảng lẫn số trên chip, cho phép ghi đè từng
+     tiêu chí. Số trên chip đếm theo các bộ lọc CÒN LẠI đang bật ("bấm chip này
+     thì thấy bao nhiêu dòng") — đếm trên `base` thì bật thêm bộ lọc khác là
+     chip ghi một đằng, bảng ra một nẻo. */
+  const keep = (r, o = {}) => {
+    const st = 'fState' in o ? o.fState : fState;
+    const reason = 'fReason' in o ? o.fReason : fReason;
+    const todo = 'fTodo' in o ? o.fTodo : fTodo;
+    if (st !== 'all' && r.state !== st) return false;
+    if (reason !== 'all' && r.reasonType !== reason) return false;
+    if (todo && !isTodo(r)) return false;
     return true;
-  });
+  };
+
+  const stateChips = [{ k: 'all', lbl: 'Tất cả' }];
+  for (const r of base) {
+    if (!stateChips.find((x) => x.k === r.state)) {
+      stateChips.push({ k: r.state, lbl: r.stateLabel });
+    }
+  }
+  for (const c of stateChips) {
+    c.n = base.filter((r) => keep(r, { fState: c.k })).length;
+  }
+  // Chỉ bày lý do còn xuất hiện sau các bộ lọc khác.
+  const reasonOptions = [...new Set(base.filter((r) => keep(r, { fReason: 'all' }))
+    .map((r) => r.reasonType).filter(Boolean))];
+  const todoCount = base.filter((r) => keep(r, { fTodo: true })).length;
+
+  const rows = base.filter((r) => keep(r));
   const hasFilter = fState !== 'all' || fReason !== 'all' || fTodo;
   const clearFilter = () => { setFState('all'); setFReason('all'); setFTodo(false); };
 

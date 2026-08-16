@@ -90,22 +90,40 @@ export default function Employees({ search, focus, onOpenCareer }) {
   const teacherDeps = deps.filter((d) => isTeacherDep(d.name));
   const otherDeps = deps.filter((d) => !isTeacherDep(d.name));
   const teacherDepIds = new Set(teacherDeps.map((d) => d.id));
-  const officeCount = emps.filter((e) => !teacherDepIds.has(e.dep)).length;
 
-  const filtered = emps.filter((e) => {
-    if (dep === 'office') { if (teacherDepIds.has(e.dep)) return false; }
-    else if (dep !== 'all' && e.dep !== dep) return false;
-    if (status !== 'all' && e.statusKey !== status) return false;
-    if (type !== 'all' && e.type !== type) return false;
-    if (empType === 'none' && e.empTypeKey) return false;
-    if (empType !== 'all' && empType !== 'none' && e.empTypeKey !== empType) return false;
+  /* Một hàm lọc duy nhất cho cả bảng lẫn số trên chip, cho phép ghi đè từng
+     tiêu chí: số trên chip phải là "bấm chip này thì thấy bao nhiêu dòng", tức
+     đếm theo các bộ lọc CÒN LẠI đang bật. Trước đây chip phòng ban lấy thẳng
+     d.total của server nên không nhúc nhích theo ô tìm kiếm lẫn 3 select bên
+     phải — gõ tìm kiếm xong chip vẫn ghi số cũ. */
+  const keep = (e, o = {}) => {
+    const d = 'dep' in o ? o.dep : dep;
+    const st = 'status' in o ? o.status : status;
+    const tp = 'type' in o ? o.type : type;
+    const et = 'empType' in o ? o.empType : empType;
+    if (d === 'office') { if (teacherDepIds.has(e.dep)) return false; }
+    else if (d !== 'all' && e.dep !== d) return false;
+    if (st !== 'all' && e.statusKey !== st) return false;
+    if (tp !== 'all' && e.type !== tp) return false;
+    if (et === 'none' && e.empTypeKey) return false;
+    if (et !== 'all' && et !== 'none' && e.empTypeKey !== et) return false;
     if (search) {
       const q = search.toLowerCase();
       if (!((e.name || '').toLowerCase().includes(q) || (e.code || '').toLowerCase().includes(q)
         || (e.jobTitle || '').toLowerCase().includes(q) || (e.depName || '').toLowerCase().includes(q))) return false;
     }
     return true;
-  });
+  };
+  const countIf = (o) => emps.filter((e) => keep(e, o)).length;
+
+  const cntAll = countIf({ dep: 'all' });
+  const officeCount = countIf({ dep: 'office' });
+  const depCount = (id) => countIf({ dep: id });
+  /* Ẩn chip phòng ban không còn ai sau bộ lọc/tìm kiếm — chip ghi 0 bấm vào chỉ
+     ra bảng rỗng. Vẫn giữ chip đang được chọn để người dùng thấy đường tắt nó. */
+  const showDep = (d) => depCount(d.id) > 0 || dep === d.id;
+
+  const filtered = emps.filter((e) => keep(e));
 
   const total = filtered.length;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -130,20 +148,20 @@ export default function Employees({ search, focus, onOpenCareer }) {
       {/* Filter chips theo phòng ban (số liệu thật) */}
       <div className="filterbar">
         <button className={'chip' + (dep === 'all' ? ' active' : '')} onClick={() => setDep('all')}>
-          Tất cả <span className="ct">{emps.length}</span></button>
-        {teacherDeps.map((d) => (
+          Tất cả <span className="ct">{cntAll}</span></button>
+        {teacherDeps.filter(showDep).map((d) => (
           <button key={d.id} className={'chip' + (dep === d.id ? ' active' : '')} onClick={() => setDep(d.id)}>
-            {d.name} <span className="ct">{d.total}</span></button>
+            {d.name} <span className="ct">{depCount(d.id)}</span></button>
         ))}
-        {teacherDeps.length > 0 && (
+        {teacherDeps.length > 0 && (officeCount > 0 || dep === 'office') && (
           <button className={'chip' + (dep === 'office' ? ' active' : '')}
             title="Nhân sự ở mọi phòng ban trừ phòng giảng dạy"
             onClick={() => setDep('office')}>
             Nhân viên văn phòng <span className="ct">{officeCount}</span></button>
         )}
-        {otherDeps.map((d) => (
+        {otherDeps.filter(showDep).map((d) => (
           <button key={d.id} className={'chip' + (dep === d.id ? ' active' : '')} onClick={() => setDep(d.id)}>
-            {d.name} <span className="ct">{d.total}</span></button>
+            {d.name} <span className="ct">{depCount(d.id)}</span></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'center' }}>
           <select className="sel" value={status} onChange={(e) => setStatus(e.target.value)}>

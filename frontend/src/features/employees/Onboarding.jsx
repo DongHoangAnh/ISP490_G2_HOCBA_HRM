@@ -100,39 +100,48 @@ export default function Onboarding({ search, onQueueChanged }) {
   });
 
   /* Bộ lọc: chip trạng thái tổng + 2 nút bật/tắt (quá hạn, chờ đánh giá) khớp
-     đúng 2 thẻ số ở trên, và select phòng ban / quy trình. Số trên chip đếm
-     trên tập ĐÃ tìm kiếm nhưng CHƯA lọc → bấm chip nào cũng ra đúng số đó. */
+     đúng 2 thẻ số ở trên, và select phòng ban / quy trình.
+
+     Một hàm lọc duy nhất cho cả bảng lẫn số trên chip, cho phép ghi đè từng
+     tiêu chí: số trên chip đếm theo các bộ lọc CÒN LẠI đang bật, tức "bấm chip
+     này thì thấy bao nhiêu dòng". Đếm trên `searched` chỉ đúng khi mỗi lần
+     dùng một bộ lọc — bật thêm cái thứ hai là chip ghi một đằng, bảng ra một
+     nẻo. Thẻ số ở đầu trang vẫn theo toàn bộ danh sách, không dính bộ lọc. */
+  const isEval = (o) => !!(o.current && o.current.stepType === 'evaluation');
+  const keep = (o, ov = {}) => {
+    const st = 'fState' in ov ? ov.fState : fState;
+    const dep = 'fDep' in ov ? ov.fDep : fDep;
+    const tpl = 'fTpl' in ov ? ov.fTpl : fTpl;
+    const overdue = 'fOverdue' in ov ? ov.fOverdue : fOverdue;
+    const evalOnly = 'fEval' in ov ? ov.fEval : fEval;
+    if (st !== 'all' && overallOf(o).key !== st) return false;
+    if (dep !== 'all' && o.depName !== dep) return false;
+    if (tpl !== 'all' && o.templateName !== tpl) return false;
+    if (overdue && !isOverdue(o)) return false;
+    if (evalOnly && !isEval(o)) return false;
+    return true;
+  };
+  const countIf = (ov) => searched.filter((o) => keep(o, ov)).length;
+
   const stateChips = [
     { k: 'all', lbl: 'Tất cả' },
     { k: 'run', lbl: 'Đang thử việc' },
     { k: 'done', lbl: 'Hoàn tất quy trình' },
     { k: 'fail', lbl: 'Không đạt thử việc' },
     { k: 'none', lbl: 'Chưa có quy trình' },
-  ].map((c) => ({
-    ...c,
-    n: c.k === 'all' ? searched.length
-      : searched.filter((o) => overallOf(o).key === c.k).length,
-  })).filter((c) => c.k === 'all' || c.n > 0);
+  ].map((c) => ({ ...c, n: countIf({ fState: c.k }) }))
+    .filter((c) => c.k === 'all' || c.n > 0 || fState === c.k);
 
-  /* Đếm riêng cho chip: theo tập ĐÃ tìm kiếm, khác với thẻ số ở đầu trang
-     (luôn theo toàn bộ danh sách) — nếu dùng chung, gõ ô tìm kiếm xong số trên
-     chip sẽ không khớp với số dòng lọc ra. */
-  const evalChipN = searched.filter((o) => o.current && o.current.stepType === 'evaluation').length;
-  const overdueChipN = searched.filter(isOverdue).length;
+  const evalChipN = countIf({ fEval: true });
+  const overdueChipN = countIf({ fOverdue: true });
 
-  const depOptions = [...new Set(searched.map((o) => o.depName).filter(Boolean))].sort(
-    (a, b) => a.localeCompare(b, 'vi'));
-  const tplOptions = [...new Set(searched.map((o) => o.templateName).filter(Boolean))].sort(
-    (a, b) => a.localeCompare(b, 'vi'));
+  // Chỉ bày phòng ban / quy trình còn xuất hiện sau các bộ lọc khác.
+  const depOptions = [...new Set(searched.filter((o) => keep(o, { fDep: 'all' }))
+    .map((o) => o.depName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+  const tplOptions = [...new Set(searched.filter((o) => keep(o, { fTpl: 'all' }))
+    .map((o) => o.templateName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
 
-  const filtered = searched.filter((o) => {
-    if (fState !== 'all' && overallOf(o).key !== fState) return false;
-    if (fDep !== 'all' && o.depName !== fDep) return false;
-    if (fTpl !== 'all' && o.templateName !== fTpl) return false;
-    if (fOverdue && !isOverdue(o)) return false;
-    if (fEval && !(o.current && o.current.stepType === 'evaluation')) return false;
-    return true;
-  });
+  const filtered = searched.filter((o) => keep(o));
   const hasFilter = fState !== 'all' || fDep !== 'all' || fTpl !== 'all' || fOverdue || fEval;
 
   /* Tiến độ so theo % (3/4 phải đứng trên 5/10); bước hiện tại so theo HẠN
