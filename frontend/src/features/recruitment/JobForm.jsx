@@ -1,5 +1,5 @@
 /* Form Thêm / Sửa vị trí tuyển dụng / JD — Owner: Việt.
-   Meta (departments/teachingLevels/statusLabels) truyền từ Jobs. */
+   Meta (departments/teachingLevels/statusLabels) truyền từ JdLibrary. */
 import { useState } from 'react';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
