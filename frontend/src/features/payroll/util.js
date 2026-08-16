@@ -31,7 +31,7 @@ export const CATEGORY_LABEL = {
 export const HIGHLIGHT_CODES = new Set(['tong_thu_nhap', 'thuc_lanh']);
 export const MUTED_CATEGORIES = new Set(['bh_phan_cong_ty']);
 
-export const currentMonth = () => String(new Date().getMonth() + 1).padStart(2, '0');
+export const currentMonth = () => String(new Date().getMonth() + 1);
 export const currentYear = () => String(new Date().getFullYear());
 
 export const defaultBatchName = (m, y) => `Lương T${m}/${y}`;
