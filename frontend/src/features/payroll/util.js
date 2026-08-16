@@ -52,5 +52,7 @@ export const monthOptions = (selectedYear) => {
 
 export const yearOptions = () => {
   const y = new Date().getFullYear();
-  return [y - 2, y - 1, y].map((v) => ({ value: String(v), label: String(v) }));
+  const years = [];
+  for (let i = y; i >= y - 5; i--) years.push({ value: String(i), label: String(i) });
+  return years;
 };
