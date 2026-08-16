@@ -1,3 +1,11 @@
+
+## Change History (v1.1 Update)
+- **Version 1.1 (2026-08-13)**:
+  - Added support for dynamic `lookup_source` (`sale_level`, `role_allowance`) and `lookup_field`.
+  - Documented `hb.formula.help.wizard` for formula assistance.
+  - Added REST API endpoints for `/hocba/payroll/api/salary-rules/reorder` and `/hocba/payroll/api/lookup-sources`.
+  - Synchronized model definitions with Odoo 19 `custom-addons/hocba_payroll`.
+
 # FUNCTIONAL SPECIFICATION
 
 ## HRM ODOO - HOC BA EDUCATION

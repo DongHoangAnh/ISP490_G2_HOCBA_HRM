@@ -630,6 +630,10 @@ class HbPayslip(models.Model):
         string='Hạn xác nhận', copy=False,
         help='Thời hạn nhân viên phản hồi. Quá hạn → hệ thống tự động xác nhận.',
     )
+    x_auto_confirm = fields.Boolean(
+        string='Tự động xác nhận', default=False, tracking=True,
+        help='True nếu phiếu lương được hệ thống tự động xác nhận do quá hạn phản hồi.',
+    )
 
     # ── KPI Sale Levels & Dynamic Bonus/Penalty ──────────────────────────────
     x_kpi_score = fields.Float(

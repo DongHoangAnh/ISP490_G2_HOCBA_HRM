@@ -1,7 +1,7 @@
 /* Cấu hình lương — CRUD quy tắc lương + kéo thứ tự + danh sách ngân hàng + mẫu email. Owner: Hùng. */
 import { useState, useEffect, useRef } from 'react';
 import {
-  fetchSalaryRules, deleteSalaryRule, reorderSalaryRules,
+  fetchPayrollConfigAll, fetchSalaryRules, deleteSalaryRule, reorderSalaryRules,
   fetchBankFormats, createBankFormat, updateBankFormat, deleteBankFormat,
   fetchEmailjsConfig, saveEmailjsConfig,
   fetchConfirmConfig, saveConfirmConfig,
@@ -70,6 +70,24 @@ export default function ConfigView() {
   const dragIdx = useRef(null);
   const [dragOver, setDragOver] = useState(null);
 
+  const loadAllConfig = () => {
+    fetchPayrollConfigAll().then((d) => {
+      if (d.rules) setRules(d.rules);
+      if (d.banks) setBanks(d.banks);
+      if (d.emailjs_config) {
+        setEjsServiceId(d.emailjs_config.service_id || '');
+        setEjsTemplateId(d.emailjs_config.template_id || '');
+        setEjsPublicKey(d.emailjs_config.public_key || '');
+      }
+      if (d.confirm_config) {
+        setCfmStartDay(d.confirm_config.confirm_start_day || 5);
+        setCfmEndDay(d.confirm_config.confirm_end_day || 10);
+        setCfmDays(d.confirm_config.confirm_period_days || 5);
+        setCfmAutoMail(!!d.confirm_config.auto_send_mail);
+      }
+    }).catch((e) => setErr(e.message));
+  };
+
   const loadRules = () => {
     fetchSalaryRules({}).then(setRules).catch((e) => setErr(e.message));
   };
@@ -91,7 +109,7 @@ export default function ConfigView() {
       setCfmAutoMail(!!d.auto_send_mail);
     }).catch(() => {});
   };
-  useEffect(() => { loadRules(); loadBanks(); loadEjsCfg(); loadCfmCfg(); }, []);
+  useEffect(() => { loadAllConfig(); }, []);
 
   const delRule = async (r) => {
     if (!confirm(`Xoá rule "${r.name}" (${r.code})?`)) return;

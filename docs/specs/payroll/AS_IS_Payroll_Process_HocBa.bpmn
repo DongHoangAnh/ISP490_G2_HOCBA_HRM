@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_ASIS"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.20.0">
+  <bpmn:collaboration id="Collaboration_ASIS">
+    <bpmn:participant id="Participant_HocBa_ASIS" name="Học Bá Education — AS-IS Hybrid Payroll Process (Lark / Excel / Zalo)" processRef="Process_ASIS_Payroll" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_ASIS_Payroll" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_ASIS">
+      <bpmn:lane id="Lane_Staff" name="Khối Nhân viên / Giảng viên / CTV">
+        <bpmn:flowNodeRef>Start_Day28</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Office_OneDrive</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Teacher_GoogleForm</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CTV_Zalo</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Receive_Payslip</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_ASIS</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Academic" name="Phòng Đào tạo (Academic Department)">
+        <bpmn:flowNodeRef>Task_Download_Forms</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Download_ZoomLogs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Reconcile_3Way</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Discrepancy</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Contact_Teacher_Zalo</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Resolve_Discrepancy</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Sign_Academic_Excel</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_HR" name="Phòng Nhân sự (C&#38;B Specialist)">
+        <bpmn:flowNodeRef>Task_Collect_Inputs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Join_Inputs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Build_Master_Excel</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Compute_Gross_Net</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Generate_Word_PDF_Payslips</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Email_Payslips</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Finance" name="Phòng Tài chính / Kế toán">
+        <bpmn:flowNodeRef>Task_Verify_Budget</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Finance_Match</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReKey_MISA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Create_Bank_File</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Manual_iBHXH</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Manual_eTax</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_BOD" name="Ban Giám đốc (BoD)">
+        <bpmn:flowNodeRef>Task_Review_Email_Payroll</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_BOD_Approve</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- Start Event -->
+    <bpmn:startEvent id="Start_Day28" name="Kỳ tính lương mở (Ngày 28)">
+      <bpmn:outgoing>Flow_Start_To_Office</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_To_Teacher</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_To_CTV</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- Phase A Tasks -->
+    <bpmn:manualTask id="Task_Office_OneDrive" name="NV Văn phòng tự ghi giờ vào OneDrive Excel / Lark Sheet">
+      <bpmn:incoming>Flow_Start_To_Office</bpmn:incoming>
+      <bpmn:outgoing>Flow_Office_To_HRCollect</bpmn:outgoing>
+    </bpmn:manualTask>
+
+    <bpmn:manualTask id="Task_Teacher_GoogleForm" name="Giảng viên điền Google Form báo ca dạy">
+      <bpmn:incoming>Flow_Start_To_Teacher</bpmn:incoming>
+      <bpmn:outgoing>Flow_Teacher_To_Acad1</bpmn:outgoing>
+    </bpmn:manualTask>
+
+    <bpmn:manualTask id="Task_CTV_Zalo" name="CTV báo công qua nhóm Zalo">
+      <bpmn:incoming>Flow_Start_To_CTV</bpmn:incoming>
+      <bpmn:outgoing>Flow_CTV_To_HRCollect</bpmn:outgoing>
+    </bpmn:manualTask>
+
+    <!-- Phase B Academic Tasks -->
+    <bpmn:userTask id="Task_Download_Forms" name="Tải Google Form / Lark Form Responses">
+      <bpmn:incoming>Flow_Teacher_To_Acad1</bpmn:incoming>
+      <bpmn:outgoing>Flow_Acad1_To_Acad2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Download_ZoomLogs" name="Tải Zoom Attendance Report từ Admin Portal">
+      <bpmn:incoming>Flow_Acad1_To_Acad2</bpmn:incoming>
+      <bpmn:outgoing>Flow_Acad2_To_Reconcile</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Reconcile_3Way" name="Đối soát 3 bên thủ công (Form vs Zoom Log vs Lịch lớp)">
+      <bpmn:incoming>Flow_Acad2_To_Reconcile</bpmn:incoming>
+      <bpmn:incoming>Flow_Loop_Reconcile</bpmn:incoming>
+      <bpmn:outgoing>Flow_Reconcile_To_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_Discrepancy" name="Có sai lệch giờ dạy?">
+      <bpmn:incoming>Flow_Reconcile_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Gateway_NoMismatch</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Gateway_Mismatch</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_Contact_Teacher_Zalo" name="Nhắn Zalo yêu cầu Giảng viên giải trình">
+      <bpmn:incoming>Flow_Gateway_Mismatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Contact_To_Resolve</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Resolve_Discrepancy" name="Xử lý: Chấp nhận / Yêu cầu bằng chứng / Từ chối (Lặp 3-5 ngày)">
+      <bpmn:incoming>Flow_Contact_To_Resolve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Loop_Reconcile</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Sign_Academic_Excel" name="Trưởng Academic ký duyệt file giờ dạy Excel gửi HR">
+      <bpmn:incoming>Flow_Gateway_NoMismatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_AcademicExcel_To_HR</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Phase C HR Tasks -->
+    <bpmn:userTask id="Task_Collect_Inputs" name="HR tổng hợp Nghỉ phép, OT, Thưởng, Phạt, Hoa hồng">
+      <bpmn:incoming>Flow_Office_To_HRCollect</bpmn:incoming>
+      <bpmn:incoming>Flow_CTV_To_HRCollect</bpmn:incoming>
+      <bpmn:outgoing>Flow_HRCollect_To_Join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:parallelGateway id="Gateway_Join_Inputs" name="Đủ 6 nguồn dữ liệu đầu vào?">
+      <bpmn:incoming>Flow_AcademicExcel_To_HR</bpmn:incoming>
+      <bpmn:incoming>Flow_HRCollect_To_Join</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_To_MasterExcel</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- Phase D HR Tasks -->
+    <bpmn:userTask id="Task_Build_Master_Excel" name="Tạo Excel Master gộp dữ liệu theo Phòng ban">
+      <bpmn:incoming>Flow_Join_To_MasterExcel</bpmn:incoming>
+      <bpmn:outgoing>Flow_Master_To_Compute</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Compute_Gross_Net" name="Tính Gross, BHXH áp trần tay, 7 bậc Thuế TNCN, Net">
+      <bpmn:incoming>Flow_Master_To_Compute</bpmn:incoming>
+      <bpmn:incoming>Flow_Finance_Reject</bpmn:incoming>
+      <bpmn:incoming>Flow_BOD_Reject</bpmn:incoming>
+      <bpmn:outgoing>Flow_Compute_To_Finance</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Phase E Verification -->
+    <bpmn:userTask id="Task_Verify_Budget" name="Finance kiểm tra ngân sách &#38; biến động so với tháng trước">
+      <bpmn:incoming>Flow_Compute_To_Finance</bpmn:incoming>
+      <bpmn:outgoing>Flow_Finance_To_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_Finance_Match" name="Số liệu Kế toán khớp?">
+      <bpmn:incoming>Flow_Finance_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Finance_OK</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Finance_Reject</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_Review_Email_Payroll" name="Ban Giám đốc review &#38; duyệt file Excel qua email">
+      <bpmn:incoming>Flow_Finance_OK</bpmn:incoming>
+      <bpmn:outgoing>Flow_BOD_To_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_BOD_Approve" name="BGĐ đồng ý duyệt?">
+      <bpmn:incoming>Flow_BOD_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_BOD_OK</bpmn:outgoing>
+      <bpmn:outgoing>Flow_BOD_Reject</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- Phase F Disbursement -->
+    <bpmn:userTask id="Task_ReKey_MISA" name="Gõ tay từng dòng số liệu từ Excel vào MISA / Fast">
+      <bpmn:incoming>Flow_BOD_OK</bpmn:incoming>
+      <bpmn:outgoing>Flow_MISA_To_Bank</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Create_Bank_File" name="Tạo file chi lương ngân hàng VCB / TCB thủ công &#38; upload">
+      <bpmn:incoming>Flow_MISA_To_Bank</bpmn:incoming>
+      <bpmn:outgoing>Flow_Bank_To_Statutory</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Manual_iBHXH" name="Gõ tay kê khai BHXH lên portal iBHXH">
+      <bpmn:incoming>Flow_Bank_To_Statutory</bpmn:incoming>
+      <bpmn:outgoing>Flow_Statutory_To_Payslip</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Manual_eTax" name="Gõ tay tờ khai Thuế TNCN lên portal eTax">
+      <bpmn:incoming>Flow_Bank_To_Statutory</bpmn:incoming>
+      <bpmn:outgoing>Flow_Statutory_To_Payslip</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Generate_Word_PDF_Payslips" name="Copy data từng người sang Word template &#38; Export PDF">
+      <bpmn:incoming>Flow_Statutory_To_Payslip</bpmn:incoming>
+      <bpmn:outgoing>Flow_PDF_To_Email</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Email_Payslips" name="Gửi file PDF phiếu lương qua Email cá nhân từng nhân sự">
+      <bpmn:incoming>Flow_PDF_To_Email</bpmn:incoming>
+      <bpmn:outgoing>Flow_Email_To_Receive</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:manualTask id="Task_Receive_Payslip" name="Nhân viên nhận phiếu lương qua email">
+      <bpmn:incoming>Flow_Email_To_Receive</bpmn:incoming>
+      <bpmn:outgoing>Flow_Receive_To_End</bpmn:outgoing>
+    </bpmn:manualTask>
+
+    <bpmn:endEvent id="End_ASIS" name="Hoàn tất chi lương thủ công">
+      <bpmn:incoming>Flow_Receive_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_Start_To_Office" sourceRef="Start_Day28" targetRef="Task_Office_OneDrive" />
+    <bpmn:sequenceFlow id="Flow_Start_To_Teacher" sourceRef="Start_Day28" targetRef="Task_Teacher_GoogleForm" />
+    <bpmn:sequenceFlow id="Flow_Start_To_CTV" sourceRef="Start_Day28" targetRef="Task_CTV_Zalo" />
+    <bpmn:sequenceFlow id="Flow_Office_To_HRCollect" sourceRef="Task_Office_OneDrive" targetRef="Task_Collect_Inputs" />
+    <bpmn:sequenceFlow id="Flow_CTV_To_HRCollect" sourceRef="Task_CTV_Zalo" targetRef="Task_Collect_Inputs" />
+    <bpmn:sequenceFlow id="Flow_Teacher_To_Acad1" sourceRef="Task_Teacher_GoogleForm" targetRef="Task_Download_Forms" />
+    <bpmn:sequenceFlow id="Flow_Acad1_To_Acad2" sourceRef="Task_Download_Forms" targetRef="Task_Download_ZoomLogs" />
+    <bpmn:sequenceFlow id="Flow_Acad2_To_Reconcile" sourceRef="Task_Download_ZoomLogs" targetRef="Task_Reconcile_3Way" />
+    <bpmn:sequenceFlow id="Flow_Reconcile_To_Gateway" sourceRef="Task_Reconcile_3Way" targetRef="Gateway_Discrepancy" />
+    <bpmn:sequenceFlow id="Flow_Gateway_NoMismatch" name="Khớp dữ liệu" sourceRef="Gateway_Discrepancy" targetRef="Task_Sign_Academic_Excel" />
+    <bpmn:sequenceFlow id="Flow_Gateway_Mismatch" name="Có sai lệch" sourceRef="Gateway_Discrepancy" targetRef="Task_Contact_Teacher_Zalo" />
+    <bpmn:sequenceFlow id="Flow_Contact_To_Resolve" sourceRef="Task_Contact_Teacher_Zalo" targetRef="Task_Resolve_Discrepancy" />
+    <bpmn:sequenceFlow id="Flow_Loop_Reconcile" sourceRef="Task_Resolve_Discrepancy" targetRef="Task_Reconcile_3Way" />
+    <bpmn:sequenceFlow id="Flow_AcademicExcel_To_HR" sourceRef="Task_Sign_Academic_Excel" targetRef="Gateway_Join_Inputs" />
+    <bpmn:sequenceFlow id="Flow_HRCollect_To_Join" sourceRef="Task_Collect_Inputs" targetRef="Gateway_Join_Inputs" />
+    <bpmn:sequenceFlow id="Flow_Join_To_MasterExcel" sourceRef="Gateway_Join_Inputs" targetRef="Task_Build_Master_Excel" />
+    <bpmn:sequenceFlow id="Flow_Master_To_Compute" sourceRef="Task_Build_Master_Excel" targetRef="Task_Compute_Gross_Net" />
+    <bpmn:sequenceFlow id="Flow_Compute_To_Finance" sourceRef="Task_Compute_Gross_Net" targetRef="Task_Verify_Budget" />
+    <bpmn:sequenceFlow id="Flow_Finance_To_Gateway" sourceRef="Task_Verify_Budget" targetRef="Gateway_Finance_Match" />
+    <bpmn:sequenceFlow id="Flow_Finance_OK" name="Đúng số liệu" sourceRef="Gateway_Finance_Match" targetRef="Task_Review_Email_Payroll" />
+    <bpmn:sequenceFlow id="Flow_Finance_Reject" name="Lệch ➔ HR sửa" sourceRef="Gateway_Finance_Match" targetRef="Task_Compute_Gross_Net" />
+    <bpmn:sequenceFlow id="Flow_BOD_To_Gateway" sourceRef="Task_Review_Email_Payroll" targetRef="Gateway_BOD_Approve" />
+    <bpmn:sequenceFlow id="Flow_BOD_OK" name="Duyệt chi" sourceRef="Gateway_BOD_Approve" targetRef="Task_ReKey_MISA" />
+    <bpmn:sequenceFlow id="Flow_BOD_Reject" name="Rà soát lại" sourceRef="Gateway_BOD_Approve" targetRef="Task_Compute_Gross_Net" />
+    <bpmn:sequenceFlow id="Flow_MISA_To_Bank" sourceRef="Task_ReKey_MISA" targetRef="Task_Create_Bank_File" />
+    <bpmn:sequenceFlow id="Flow_Bank_To_Statutory" sourceRef="Task_Create_Bank_File" targetRef="Task_Manual_iBHXH" />
+    <bpmn:sequenceFlow id="Flow_Statutory_To_Payslip" sourceRef="Task_Manual_iBHXH" targetRef="Task_Generate_Word_PDF_Payslips" />
+    <bpmn:sequenceFlow id="Flow_PDF_To_Email" sourceRef="Task_Generate_Word_PDF_Payslips" targetRef="Task_Email_Payslips" />
+    <bpmn:sequenceFlow id="Flow_Email_To_Receive" sourceRef="Task_Email_Payslips" targetRef="Task_Receive_Payslip" />
+    <bpmn:sequenceFlow id="Flow_Receive_To_End" sourceRef="Task_Receive_Payslip" targetRef="End_ASIS" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ASIS">
+    <bpmndi:BPMNPlane id="BPMNPlane_ASIS" bpmnElement="Collaboration_ASIS">
+      <bpmndi:BPMNShape id="Participant_HocBa_ASIS_di" bpmnElement="Participant_HocBa_ASIS" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1600" height="1000" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Staff_di" bpmnElement="Lane_Staff" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="1570" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Academic_di" bpmnElement="Lane_Academic" isHorizontal="true">
+        <dc:Bounds x="190" y="260" width="1570" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_HR_di" bpmnElement="Lane_HR" isHorizontal="true">
+        <dc:Bounds x="190" y="460" width="1570" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Finance_di" bpmnElement="Lane_Finance" isHorizontal="true">
+        <dc:Bounds x="190" y="660" width="1570" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BOD_di" bpmnElement="Lane_BOD" isHorizontal="true">
+        <dc:Bounds x="190" y="860" width="1570" height="220" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

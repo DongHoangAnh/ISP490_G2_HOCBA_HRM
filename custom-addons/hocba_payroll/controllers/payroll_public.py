@@ -59,6 +59,7 @@ class PayrollPublicController(http.Controller):
 
         slip.sudo().write({
             'x_employee_confirm': 'confirmed',
+            'x_auto_confirm': False,
             'x_confirmed_date': now,
         })
         slip.sudo().message_post(
@@ -85,6 +86,7 @@ class PayrollPublicController(http.Controller):
 
         slip.sudo().write({
             'x_employee_confirm': 'rejected',
+            'x_auto_confirm': False,
             'x_employee_feedback': feedback,
             'x_confirmed_date': now,
         })

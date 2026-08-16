@@ -1,3 +1,11 @@
+
+## Change History (v1.1 Update)
+- **Version 1.1 (2026-08-13)**:
+  - Added `/hocba/payroll/api/batches/close-by-period` for period-based batch closing and history saving.
+  - Added `/hocba/payroll/api/batches/<id>/compute-status` for async batch progress tracking.
+  - Added bulk payslip batch computation `compute_all_payslips`.
+  - Updated lifecycle state transitions for `hb.payslip.run` (`draft` -> `verify` -> `close`) and `hb.payslip` (`draft` -> `verify` -> `done` -> `cancel`).
+
 # FUNCTIONAL SPECIFICATION
 
 ## HRM ODOO - HOC BA EDUCATION
@@ -28,6 +36,7 @@
 | 2 | 1.1 | Full rewrite with detailed field specs, screen layouts, API endpoints, SPA component documentation, and business rules derived from actual source code | All | 21/06/2026 | Group G2 |
 | 3 | 1.2 | Added Async Batch Compute architecture, chunking strategy (50/chunk), polling status fields (`compute_status`, `computed_count`, `total_count`), and SPA progress bar integration | All | 07/08/2026 | Group G2 |
 | 4 | 1.3 | Documented financial accounting voucher creation on batch close (`action_create_voucher` -> `hocba.fin.voucher`), `voucher_id` relational link, and period lock confirmation guard | 1, 2, 4 | 09/08/2026 | Antigravity AI |
+| 5 | 1.4 | Redesigned SPA toolbar architecture in `BatchList.jsx` into a 2-tier responsive layout without button icons to prevent button truncation across all screen sizes | 1, 6 | 16/08/2026 | Antigravity AI |
 
 ---
 

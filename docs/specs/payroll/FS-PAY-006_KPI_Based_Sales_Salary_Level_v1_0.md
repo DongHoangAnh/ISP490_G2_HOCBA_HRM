@@ -1,33 +1,60 @@
-# FUNCTIONAL SPECIFICATION
+# FS-PAY-006: KPI-Based Sales Salary Level Configuration v1.0
 
-## HRM ODOO - HOC BA EDUCATION
+## 1. FUNCTION OVERVIEW
+### Business Requirement & Scope
+Hoc Ba Education applies KPI-based sales salary level tiers (`hb.sale.salary.level`) to evaluate Sales and Tele-sales performance. Depending on achieved monthly KPI revenue (min_kpi to max_kpi), sales employees receive a dedicated role allowance amount (`allowance_amount`) and commission bonus percentage rate (`bonus_rate`).
 
-| **Module** | PAY |
-| --- | --- |
-| **Module Name** | Payroll |
-| **Function ID** | FS-PAY-006 |
-| **Function Name** | KPI-Based Sales Salary Level Configuration & Computation |
-| **Created Date** | 11/08/2026 |
-| **Last Update Date** | 11/08/2026 |
-| **Project** | HRM Odoo - Hoc Ba Education |
-| **System** | Odoo 19 ERP & React SPA |
-| **Reference** | `hb.sale.salary.level`, `hb.payslip` - module `hocba_payroll` |
+This module defines the CRUD operations, data validation, REST API endpoints, and salary rule lookup integration (`lookup_source = 'sale_level'`) for sales salary levels inside Odoo 19 `hocba_payroll`.
 
 ---
 
-## EARS REQUIREMENTS SPECIFICATION
+## 2. FUNCTION FLOW
+### Main Flow 1: Sales Level Tier Management
+- Operator accesses Sales Salary Level Configuration UI in SPA/Odoo.
+- System presents existing level tiers sorted by `min_kpi` ascending.
+- Operator creates or updates tier parameters: `Name`, `Code`, `Min KPI`, `Max KPI`, `Allowance Amount`, `Bonus Rate (%)`, `Note`.
+- System validates non-overlapping KPI boundaries and positive allowance/bonus values.
 
-### 1. Ubiquitous Requirements
-- **FS-PAY-006-REQ-001:** THE system SHALL maintain a master data table `hb.sale.salary.level` storing sales salary tiers with `level_code`, `name`, `sequence`, `kpi_target`, and `base_wage`.
-- **FS-PAY-006-REQ-002:** THE system SHALL pre-seed 6 default sales salary levels (Level 1 to Level 6) upon module installation.
+### Main Flow 2: Salary Computation Integration
+- During payslip computation (`_evaluate_rule_amount`), if a rule specifies `amount_select = 'lookup'` and `lookup_source = 'sale_level'`:
+- Engine looks up the employee contract `sales_kpi_tier` or computes achieved KPI against `hb.sale.salary.level`.
+- Returns `allowance_amount` or calculates `commission = base * bonus_rate / 100.0`.
 
-### 2. Event-Driven Requirements
-- **FS-PAY-006-REQ-003:** WHEN HR calculates a payslip for an employee, THE system SHALL evaluate whether the employee is an official sales staff member (`x_employment_status == 'official'` AND position/job IS sales).
-- **FS-PAY-006-REQ-004:** WHEN an employee is identified as official sales staff, THE system SHALL look up the highest sales salary level where `kpi_target <= x_kpi_score` and apply its configured `base_wage` as the employee's monthly basic salary.
+---
 
-### 3. State-Driven Requirements
-- **FS-PAY-006-REQ-005:** WHILE an employee is a probationary sales staff (`x_employment_status == 'probation'`) or a non-sales employee, THE system SHALL use the contract's standard `wage_base` instead of the sales level grid.
+## 3. REST API ENDPOINTS
+| Method | Endpoint | Description | Access Role |
+|---|---|---|---|
+| `GET` | `/hocba/payroll/api/sale-salary-levels` | List all sales salary levels | HR Manager, Payroll Admin |
+| `POST` | `/hocba/payroll/api/sale-salary-levels` | Create new sales salary level | HR Manager, Payroll Admin |
+| `PUT` | `/hocba/payroll/api/sale-salary-levels/<id>` | Update sales salary level tier | HR Manager, Payroll Admin |
+| `DELETE` | `/hocba/payroll/api/sale-salary-levels/<id>` | Delete sales salary level tier | HR Manager, Payroll Admin |
 
-### 4. Unwanted Behaviors (Error Handling & Edge Cases)
-- **FS-PAY-006-REQ-006:** WHERE an official sales staff member's KPI score is below Level 1 threshold (`x_kpi_score < 1.0`), THE system SHALL default to Level 1 base wage to prevent zero-wage calculation errors.
-- **FS-PAY-006-REQ-007:** WHERE no active sales salary levels exist in configuration, THE system SHALL fallback gracefully to contract `wage_base`.
+---
+
+## 4. FIELD SPECIFICATION (`hb.sale.salary.level`)
+| Field Name | Technical Name | Type | Constraint / Default | Description |
+|---|---|---|---|---|
+| Level Name | `name` | Char | Required | Tier label (e.g. Bậc 1 - Tập sự, Bậc 2 - Chuyên nghiệp) |
+| Code | `code` | Char | Required, Unique | Unique tier code (e.g. SALE_L1, SALE_L2) |
+| Min KPI | `min_kpi` | Float | Required, >= 0 | Minimum revenue threshold (VND) |
+| Max KPI | `max_kpi` | Float | Required, > min_kpi | Maximum revenue threshold (VND) |
+| Allowance Amount | `allowance_amount` | Float | Default: 0.0 | Fixed monthly allowance amount (VND) |
+| Bonus Rate | `bonus_rate` | Float | Default: 0.0 | Commission percentage rate (%) |
+| Note | `note` | Text | Optional | Additional notes or description |
+
+---
+
+## 5. BUSINESS RULES & EARS SPECIFICATION
+- **BR-PAY-061 (Unique Code Constraint)**: THE system SHALL enforce unique `code` for each sales salary level tier.
+- **BR-PAY-062 (Non-overlapping KPI Range)**: WHEN creating or updating a sales salary level, THE system SHALL ensure `min_kpi < max_kpi` and warn if ranges overlap across tiers.
+- **BR-PAY-063 (Lookup Integration)**: WHERE salary rule `lookup_source = 'sale_level'`, THE computation engine SHALL fetch matching tier allowance and bonus rate dynamically during payslip computation.
+
+---
+
+## 6. SEED DATA & INITIALIZATION
+Module initialization executes `init_default_sale_levels()` to create 4 standard tiers:
+1. `SALE_L1`: Bậc 1 (KPI: 0 - 50,000,000 VND, Allowance: 1,000,000 VND, Bonus Rate: 2.0%)
+2. `SALE_L2`: Bậc 2 (KPI: 50,000,001 - 100,000,000 VND, Allowance: 2,000,000 VND, Bonus Rate: 3.5%)
+3. `SALE_L3`: Bậc 3 (KPI: 100,000,001 - 200,000,000 VND, Allowance: 3,500,000 VND, Bonus Rate: 5.0%)
+4. `SALE_L4`: Bậc 4 (KPI: > 200,000,000 VND, Allowance: 5,000,000 VND, Bonus Rate: 7.0%)

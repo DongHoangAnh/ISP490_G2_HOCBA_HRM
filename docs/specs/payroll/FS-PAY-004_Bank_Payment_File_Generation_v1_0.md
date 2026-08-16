@@ -1,3 +1,11 @@
+
+## Change History (v1.1 Update)
+- **Version 1.1 (2026-08-13)**:
+  - Added MB Bank Formatter (`MBBankFormatter`) supporting MB Bank XLSX payment export specifications.
+  - Formalized `BankFormatterRegistry` strategy pattern for dynamic bank format resolution (`VCBFormatter`, `TCBFormatter`, `MBBankFormatter`).
+  - Documented transient wizard `hb.bank.file.wizard` for backend file generation.
+  - Added REST APIs for `/hocba/payroll/api/bank-files/<id>/mark-uploaded` and `/hocba/payroll/api/bank-files/<id>/mark-confirmed`.
+
 # FUNCTIONAL SPECIFICATION
 
 ## HRM ODOO - HOC BA EDUCATION

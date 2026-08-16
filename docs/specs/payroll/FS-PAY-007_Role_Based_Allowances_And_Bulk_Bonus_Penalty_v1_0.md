@@ -1,38 +1,51 @@
-# FUNCTIONAL SPECIFICATION
+# FS-PAY-007: Role-Based Allowances and Bulk Bonus/Penalty v1.0
 
-## HRM ODOO - HOC BA EDUCATION
+## 1. FUNCTION OVERVIEW
+### Business Requirement & Scope
+Hoc Ba Education requires a flexible mechanism to manage role-based job position allowances (`hb.role.allowance.config`) and to process bulk monthly adjustments (bonus/penalty amounts) across employee payslips (`apply_bulk_bonus_penalty`).
 
-| **Module** | PAY |
-| --- | --- |
-| **Module Name** | Payroll |
-| **Function ID** | FS-PAY-007 |
-| **Function Name** | Role-Based Allowances & Monthly Bulk Bonus/Penalty Management |
-| **Created Date** | 11/08/2026 |
-| **Last Update Date** | 11/08/2026 |
-| **Project** | HRM Odoo - Hoc Ba Education |
-| **System** | Odoo 19 ERP & React SPA |
-| **Reference** | `hb.role.allowance.config`, `hb.payslip` - module `hocba_payroll` |
+This module provides:
+1. Management of standard position allowances linked to `hr.job`.
+2. Dynamic lookup integration (`lookup_source = 'role_allowance'`) in salary computation.
+3. Bulk bonus and penalty input mechanism for active payslip batches.
 
 ---
 
-## EARS REQUIREMENTS SPECIFICATION
+## 2. FUNCTION FLOW
+### Main Flow 1: Role Allowance Configuration
+- Operator configures role allowances by selecting Job Position (`job_id`) and setting monthly allowance amount (`allowance_amount`).
+- Salary rule engine queries `hb.role.allowance.config` during payslip computation when `lookup_source = 'role_allowance'`.
 
-### 1. Ubiquitous Requirements
-- **FS-PAY-007-REQ-001:** THE system SHALL maintain a role allowance configuration table `hb.role.allowance.config` mapping multiple Job Positions (`job_ids` Many2many `hr.job`) and/or Departments (`department_ids` Many2many `hr.department`) to fixed recurring allowances or holiday bonuses.
-- **FS-PAY-007-REQ-002:** THE system SHALL provide a bulk bonus and penalty wizard API `POST /hocba-hrm/api/payroll/batch/<id>/bulk-bonus-penalty` allowing HR to apply bonus or penalty amounts with reasons to filtered subsets of employees.
+### Main Flow 2: Bulk Bonus / Penalty Application
+- Operator posts JSON payload to `/hocba/payroll/api/bulk-bonus-penalty` containing batch ID or employee IDs and amounts.
+- System creates or updates `hb.payslip.input` lines:
+  - Positive amounts create/update `BONUS` input code lines.
+  - Negative amounts create/update `PENALTY` input code lines.
+- System automatically triggers `action_compute_sheet()` for affected draft payslips.
 
-### 2. Event-Driven Requirements
-- **FS-PAY-007-REQ-003:** WHEN a payslip is computed, THE system SHALL automatically match the employee's Job Position and Department against active `hb.role.allowance.config` rules (matching if employee's job/dept is contained in rule's target selection or if target selection is empty/all) and aggregate the corresponding allowance amount.
-- **FS-PAY-007-REQ-004:** WHEN HR applies a bulk bonus or penalty, THE system SHALL update `x_bonus_extra`, `x_bonus_reason`, `x_penalty_amount`, and `x_penalty_reason` on all target payslips and recalculate their net amounts.
+---
 
-### 3. State-Driven Requirements
-- **FS-PAY-007-REQ-005:** WHILE a new payslip batch is created for a new month, THE system SHALL reset individual monthly bonus/penalty amounts to zero (`0.0`), requiring HR to re-enter monthly dynamic adjustments.
+## 3. REST API ENDPOINTS
+| Method | Endpoint | Description | Access Role |
+|---|---|---|---|
+| `GET` | `/hocba/payroll/api/role-allowance-configs` | List role allowance configs | HR Manager, Payroll Admin |
+| `POST` | `/hocba/payroll/api/role-allowance-configs` | Create role allowance config | HR Manager, Payroll Admin |
+| `DELETE` | `/hocba/payroll/api/role-allowance-configs/<id>` | Delete role allowance config | HR Manager, Payroll Admin |
+| `POST` | `/hocba/payroll/api/bulk-bonus-penalty` | Apply bulk bonus/penalty adjustments | HR Manager, Payroll Admin |
 
-### 4. Unwanted Behaviors (Error Handling & Edge Cases)
-- **FS-PAY-007-REQ-006:** WHERE an input bonus or penalty amount is negative or invalid, THE system SHALL raise a validation error or clamp negative values appropriately.
+---
 
-### 5. Frontend UI/UX Standards
-- **FS-PAY-007-REQ-007:** THE frontend action buttons containing descriptive text (e.g. "Tính lương", "Gửi mail", "Reset XN", "Thưởng & Phạt", "Lưu lịch sử", "Áp dụng") SHALL render text-only without decorative leading icons or emojis to ensure a clean, uncluttered visual hierarchy.
-- **FS-PAY-007-REQ-008:** THE frontend configuration modal for Role Allowances SHALL provide Multi-Selection capabilities (badge chips / multi-checkbox dropdowns) for Job Positions and Departments, allowing one rule to apply to multiple roles seamlessly.
+## 4. FIELD SPECIFICATION (`hb.role.allowance.config`)
+| Field Name | Technical Name | Type | Constraint / Default | Description |
+|---|---|---|---|---|
+| Job Position | `job_id` | Many2one (`hr.job`) | Required | Target job position |
+| Job Title | `job_name` | Char | Related | Read-only job title string |
+| Allowance Amount | `allowance_amount` | Float | Required, >= 0 | Monthly role allowance amount (VND) |
+| Description | `description` | Text | Optional | Additional details |
 
+---
 
+## 5. BUSINESS RULES & EARS SPECIFICATION
+- **BR-PAY-071 (Single Allowance per Job)**: THE system SHALL prevent duplicate active allowance configs for the same `job_id`.
+- **BR-PAY-072 (Bulk Input Creation)**: WHEN `bulk-bonus-penalty` API is invoked, THE system SHALL create `hb.payslip.input` entries linked to target payslips and recalculate net pay immediately.
+- **BR-PAY-073 (Draft State Constraint)**: WHERE payslip state is `done` or `close`, THE system SHALL reject bulk bonus/penalty mutations unless payslip is reset to `draft`.

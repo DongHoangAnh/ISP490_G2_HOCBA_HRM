@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_TOBE"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.20.0">
+  <bpmn:collaboration id="Collaboration_TOBE">
+    <bpmn:participant id="Participant_HocBa_TOBE" name="Học Bá Education — Automated Odoo 19 Payroll Engine (TO-BE)" processRef="Process_TOBE_Payroll" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_TOBE_Payroll" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_TOBE">
+      <bpmn:lane id="Lane_Employee" name="Nhân viên / Giảng viên">
+        <bpmn:flowNodeRef>Start_CheckIn</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Employee_CheckIn_TimeOff</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_View_Portal_Payslip</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_TOBE</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_HR_Manager" name="Chuyên viên / Trưởng phòng Nhân sự (C&#38;B)">
+        <bpmn:flowNodeRef>Task_Create_Batch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Review_Variation</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Approve_Payslip_Run</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Odoo_Engine" name="Hệ thống Odoo 19 Engine (hocba_payroll Automated Boundary)">
+        <bpmn:flowNodeRef>Task_Service_Consume_WorkEntries</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Service_Execute_Rules</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Service_Lock_WorkEntries</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Service_Generate_AccountingMoves</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Service_Export_BankFile</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Service_Dispatch_Email_Portal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Service_Export_iBHXH_eTax</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Finance_Manager" name="Phòng Tài chính / Kế toán">
+        <bpmn:flowNodeRef>Task_Upload_Bank_Batch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Post_Accounting_Journal</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- Start Event -->
+    <bpmn:startEvent id="Start_CheckIn" name="Ghi nhận Chấm công / Dạy học / Phép trong tháng">
+      <bpmn:outgoing>Flow_Start_To_CheckIn</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_Employee_CheckIn_TimeOff" name="Chấm công app / Điểm danh lớp WORK200 / Đăng ký phép">
+      <bpmn:incoming>Flow_Start_To_CheckIn</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckIn_To_Batch</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Create_Batch" name="Tạo Đợt lương Batch (hb.payslip.run) &#38; Nhấn Generate Payslips">
+      <bpmn:incoming>Flow_CheckIn_To_Batch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Batch_To_ServiceConsume</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Odoo Service Tasks -->
+    <bpmn:serviceTask id="Task_Service_Consume_WorkEntries" name="Odoo Engine: Tự động gom Work Entries đã duyệt &#38; Kiểm tra xung đột" camunda:delegateExpression="${workEntryConsumer}">
+      <bpmn:incoming>Flow_Batch_To_ServiceConsume</bpmn:incoming>
+      <bpmn:outgoing>Flow_Consume_To_Rules</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Service_Execute_Rules" name="Odoo Engine: Thực thi Rules Engine (Gross, BHXH áp trần 20x, Thuế 7 bậc, Net)" camunda:delegateExpression="${payrollRuleEngine}">
+      <bpmn:incoming>Flow_Consume_To_Rules</bpmn:incoming>
+      <bpmn:outgoing>Flow_Rules_To_Review</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="Task_Review_Variation" name="HR Kiểm tra Báo cáo Biến động Variation Report (Cảnh báo &#62;20%)">
+      <bpmn:incoming>Flow_Rules_To_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_To_Approve</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Approve_Payslip_Run" name="HR Manager Phê duyệt Đợt lương (Chuyển Done)">
+      <bpmn:incoming>Flow_Review_To_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approve_To_Lock</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_Service_Lock_WorkEntries" name="Odoo Engine: Khóa dữ liệu công tiêu thụ (payslip_included)" camunda:delegateExpression="${workEntryLocker}">
+      <bpmn:incoming>Flow_Approve_To_Lock</bpmn:incoming>
+      <bpmn:outgoing>Flow_Lock_To_Accounting</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Service_Generate_AccountingMoves" name="Odoo Engine: Tự động sinh Bút toán Kế toán Draft (Draft Accounting Move)" camunda:delegateExpression="${accountingMoveGenerator}">
+      <bpmn:incoming>Flow_Lock_To_Accounting</bpmn:incoming>
+      <bpmn:outgoing>Flow_Accounting_To_BankFile</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Service_Export_BankFile" name="Odoo Engine: 1-Click Xuất File Ngân hàng lô VCB / Techcombank (XLSX)" camunda:delegateExpression="${bankFileExporter}">
+      <bpmn:incoming>Flow_Accounting_To_BankFile</bpmn:incoming>
+      <bpmn:outgoing>Flow_BankFile_To_Upload</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="Task_Upload_Bank_Batch" name="Kế toán Upload File VCB / TCB lên Corporate Internet Banking">
+      <bpmn:incoming>Flow_BankFile_To_Upload</bpmn:incoming>
+      <bpmn:outgoing>Flow_Upload_To_Dispatch</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_Service_Dispatch_Email_Portal" name="Odoo Engine: Tự động Gửi Email PDF Phiếu lương &#38; Đẩy lên Employee Portal" camunda:delegateExpression="${payslipDispatcher}">
+      <bpmn:incoming>Flow_Upload_To_Dispatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Dispatch_To_Portal</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Dispatch_To_Statutory</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Service_Export_iBHXH_eTax" name="Odoo Engine: Xuất báo cáo iBHXH XML, eTax XML &#38; Quyết toán Thuế Mẫu 05" camunda:delegateExpression="${statutoryReportExporter}">
+      <bpmn:incoming>Flow_Dispatch_To_Statutory</bpmn:incoming>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="Task_Post_Accounting_Journal" name="Kế toán Phê duyệt Bút toán Lương chính thức trong Phân hệ Kế toán">
+      <bpmn:incoming>Flow_Upload_To_Dispatch</bpmn:incoming>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_View_Portal_Payslip" name="Nhân viên Đăng nhập Portal / Email tự xem &#38; tải PDF Phiếu lương">
+      <bpmn:incoming>Flow_Dispatch_To_Portal</bpmn:incoming>
+      <bpmn:outgoing>Flow_Portal_To_End</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="End_TOBE" name="Hoàn tất Chu kỳ Tính lương Tự động trên Odoo">
+      <bpmn:incoming>Flow_Portal_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_Start_To_CheckIn" sourceRef="Start_CheckIn" targetRef="Task_Employee_CheckIn_TimeOff" />
+    <bpmn:sequenceFlow id="Flow_CheckIn_To_Batch" sourceRef="Task_Employee_CheckIn_TimeOff" targetRef="Task_Create_Batch" />
+    <bpmn:sequenceFlow id="Flow_Batch_To_ServiceConsume" sourceRef="Task_Create_Batch" targetRef="Task_Service_Consume_WorkEntries" />
+    <bpmn:sequenceFlow id="Flow_Consume_To_Rules" sourceRef="Task_Service_Consume_WorkEntries" targetRef="Task_Service_Execute_Rules" />
+    <bpmn:sequenceFlow id="Flow_Rules_To_Review" sourceRef="Task_Service_Execute_Rules" targetRef="Task_Review_Variation" />
+    <bpmn:sequenceFlow id="Flow_Review_To_Approve" sourceRef="Task_Review_Variation" targetRef="Task_Approve_Payslip_Run" />
+    <bpmn:sequenceFlow id="Flow_Approve_To_Lock" sourceRef="Task_Approve_Payslip_Run" targetRef="Task_Service_Lock_WorkEntries" />
+    <bpmn:sequenceFlow id="Flow_Lock_To_Accounting" sourceRef="Task_Service_Lock_WorkEntries" targetRef="Task_Service_Generate_AccountingMoves" />
+    <bpmn:sequenceFlow id="Flow_Accounting_To_BankFile" sourceRef="Task_Service_Generate_AccountingMoves" targetRef="Task_Service_Export_BankFile" />
+    <bpmn:sequenceFlow id="Flow_BankFile_To_Upload" sourceRef="Task_Service_Export_BankFile" targetRef="Task_Upload_Bank_Batch" />
+    <bpmn:sequenceFlow id="Flow_Upload_To_Dispatch" sourceRef="Task_Upload_Bank_Batch" targetRef="Task_Service_Dispatch_Email_Portal" />
+    <bpmn:sequenceFlow id="Flow_Dispatch_To_Portal" sourceRef="Task_Service_Dispatch_Email_Portal" targetRef="Task_View_Portal_Payslip" />
+    <bpmn:sequenceFlow id="Flow_Dispatch_To_Statutory" sourceRef="Task_Service_Dispatch_Email_Portal" targetRef="Task_Service_Export_iBHXH_eTax" />
+    <bpmn:sequenceFlow id="Flow_Portal_To_End" sourceRef="Task_View_Portal_Payslip" targetRef="End_TOBE" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_TOBE">
+    <bpmndi:BPMNPlane id="BPMNPlane_TOBE" bpmnElement="Collaboration_TOBE">
+      <bpmndi:BPMNShape id="Participant_HocBa_TOBE_di" bpmnElement="Participant_HocBa_TOBE" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1600" height="900" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Employee_di" bpmnElement="Lane_Employee" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="1570" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_HR_Manager_di" bpmnElement="Lane_HR_Manager" isHorizontal="true">
+        <dc:Bounds x="190" y="280" width="1570" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Odoo_Engine_di" bpmnElement="Lane_Odoo_Engine" isHorizontal="true">
+        <dc:Bounds x="190" y="480" width="1570" height="280" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Finance_Manager_di" bpmnElement="Lane_Finance_Manager" isHorizontal="true">
+        <dc:Bounds x="190" y="760" width="1570" height="220" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

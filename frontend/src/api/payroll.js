@@ -53,6 +53,10 @@ export const markBankFileConfirmed = (id) =>
 export const fetchTransferList = (params) =>
   g('/hocba-hrm/api/payroll/transfer-list?' + new URLSearchParams(params));
 
+// ── Unified Config Aggregation ─────────────────────────────
+export const fetchPayrollConfigAll = () =>
+  g('/hocba-hrm/api/payroll/config-all');
+
 // ── Salary Rule ──────────────────────────────────────────
 export const fetchRuleCategories = () =>
   g('/hocba-hrm/api/payroll/salary-rule-category');

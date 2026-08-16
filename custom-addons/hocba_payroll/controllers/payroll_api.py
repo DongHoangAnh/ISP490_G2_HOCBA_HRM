@@ -662,7 +662,7 @@ class PayrollAPI(http.Controller):
             slips = env['hb.payslip'].sudo().search(
                 slip_domain, order='date_from desc, id desc',
             )
-            # Auto-confirm unconfirmed slips when past end_day deadline
+            # Auto-confirm unconfirmed slips when past end_day deadline, or reset auto-confirmed if deadline extended
             ICP = env['ir.config_parameter'].sudo()
             end_day = int(ICP.get_param('hocba_payroll.confirm_end_day', '10'))
             today = fields.Date.today()
@@ -671,9 +671,28 @@ class PayrollAPI(http.Controller):
                     lambda s: s.x_employee_confirm in ('pending', 'rejected') or (s.x_confirm_deadline and fields.Datetime.now() > s.x_confirm_deadline)
                 )
                 if slips_to_autoconfirm:
-                    slips_to_autoconfirm.write({
+                    write_vals = {
                         'x_employee_confirm': 'confirmed',
                         'x_confirmed_date': fields.Datetime.now(),
+                    }
+                    # Safely set x_auto_confirm if the column exists
+                    try:
+                        slips_to_autoconfirm.write({**write_vals, 'x_auto_confirm': True})
+                    except Exception:
+                        slips_to_autoconfirm.write(write_vals)
+                    env.cr.commit()
+            else:
+                # Within deadline & deadline was extended:
+                # ONLY reset slips that were auto-confirmed (x_auto_confirm=True).
+                # Slips where x_auto_confirm=False (employee manually confirmed) are NEVER touched.
+                auto_confirmed_slips = slips.filtered(
+                    lambda s: s.x_employee_confirm == 'confirmed' and s.x_auto_confirm
+                )
+                if auto_confirmed_slips:
+                    auto_confirmed_slips.write({
+                        'x_employee_confirm': 'pending',
+                        'x_auto_confirm': False,
+                        'x_confirmed_date': False,
                     })
                     env.cr.commit()
 
@@ -709,6 +728,7 @@ class PayrollAPI(http.Controller):
                     'payslip_id': slip.id if slip else None,
                     'payslip_state': slip.state if slip else None,
                     'employee_confirm': slip.x_employee_confirm if slip else None,
+                    'auto_confirm': getattr(slip, 'x_auto_confirm', False) if slip else False,
                     'employee_feedback': slip.x_employee_feedback or '' if slip else '',
                     'email_sent': slip.x_email_sent if slip else False,
                     'gross_amount': slip.gross_amount if slip else 0,
@@ -1974,10 +1994,96 @@ class PayrollAPI(http.Controller):
                     'hocba_payroll.auto_send_mail',
                     'true' if body['auto_send_mail'] else 'false',
                 )
+
+            # Re-evaluate slips when deadline is extended (today <= new end_day)
+            # ONLY reset slips that were auto-confirmed by the system (x_auto_confirm=True).
+            # Slips where x_auto_confirm=False (employee manually confirmed) are NEVER reset.
+            today = fields.Date.today()
+            if today.day <= end_day:
+                closed_batches = request.env['hb.payslip.run'].sudo().search([('state', '=', 'close')]).ids
+                domain = [
+                    ('state', '!=', 'cancel'),
+                    ('x_employee_confirm', '=', 'confirmed'),
+                    ('x_auto_confirm', '=', True),
+                ]
+                if closed_batches:
+                    domain.append(('payslip_run_id', 'not in', closed_batches))
+                auto_slips = request.env['hb.payslip'].sudo().search(domain)
+                if auto_slips:
+                    auto_slips.write({
+                        'x_employee_confirm': 'pending',
+                        'x_auto_confirm': False,
+                        'x_confirmed_date': False,
+                    })
+                    request.env.cr.commit()
             return _success_response({'saved': True},
                                      message='Đã lưu cấu hình khoảng thời gian gửi mail & phản hồi lương.')
         except Exception as e:
             return _error_response(str(e), status=500)
+
+    # ══════════════════════════════════════════════════════════
+    #  Unified Payroll Config Endpoint (High Performance Aggregation)
+    # ══════════════════════════════════════════════════════════
+    @http.route('/hocba-hrm/api/payroll/config-all', type='http',
+                auth='user', methods=['GET'], csrf=False)
+    def get_payroll_config_all(self, **kw):
+        """Unified endpoint returning rules, banks, emailjs config, and confirm config in 1 request."""
+        try:
+            # 1. Salary Rules
+            rules = request.env['hb.salary.rule'].sudo().search([('active', '=', True)], order='sequence, id')
+            rules_data = [{
+                'id': r.id, 'name': r.name, 'code': r.code,
+                'sequence': r.sequence,
+                'structure_id': r.structure_id.id,
+                'category_id': r.category_id.id,
+                'category_code': r.category_id.code,
+                'category_name': r.category_id.name,
+                'amount_type': r.amount_type,
+                'amount_fixed': r.amount_fixed,
+                'amount_percentage': r.amount_percentage,
+                'amount_percentage_base': r.amount_percentage_base or '',
+                'amount_python_compute': r.amount_python_compute or '',
+                'amount_formula': r.amount_formula or '',
+                'lookup_source': r.lookup_source or '',
+                'lookup_field': r.lookup_field or '',
+                'condition_type': r.condition_type,
+                'condition_python': r.condition_python or '',
+                'appears_on_payslip': r.appears_on_payslip,
+                'note': r.note or '',
+            } for r in rules]
+
+            # 2. Bank Formats
+            formats = request.env['hb.bank.format'].sudo().search([('active', '=', True)], order='sequence, name')
+            banks_data = [{
+                'id': f.id, 'name': f.name, 'code': f.code or '',
+                'sequence': f.sequence,
+                'transfer_type': f.transfer_type or 'normal',
+                'formatter_class': f.formatter_class or '',
+            } for f in formats]
+
+            # 3. EmailJS Config
+            ICP = request.env['ir.config_parameter'].sudo()
+            emailjs_data = {
+                k: ICP.get_param(v, default='') for k, v in self._EMAILJS_KEYS.items()
+            }
+
+            # 4. Confirm Config
+            confirm_data = {
+                'confirm_start_day': int(ICP.get_param('hocba_payroll.confirm_start_day', '5')),
+                'confirm_end_day': int(ICP.get_param('hocba_payroll.confirm_end_day', '10')),
+                'confirm_period_days': int(ICP.get_param('hocba_payroll.confirm_period_days', '5')),
+                'auto_send_mail': ICP.get_param('hocba_payroll.auto_send_mail', 'false') == 'true',
+            }
+
+            return _success_response({
+                'rules': rules_data,
+                'banks': banks_data,
+                'emailjs_config': emailjs_data,
+                'confirm_config': confirm_data,
+            })
+        except Exception as e:
+            return _error_response(str(e), status=500)
+
 
     # ══════════════════════════════════════════════════════════
     #  Send payslips mail (Backend Odoo engine + Confirmation window)
@@ -2217,6 +2323,7 @@ class PayrollAPI(http.Controller):
             if action == 'confirm':
                 slip.write({
                     'x_employee_confirm': 'confirmed',
+                    'x_auto_confirm': False,
                     'x_confirmed_date': now,
                 })
                 try:
@@ -2236,6 +2343,7 @@ class PayrollAPI(http.Controller):
                     return _error_response('Vui lòng nhập lý do từ chối.')
                 slip.write({
                     'x_employee_confirm': 'rejected',
+                    'x_auto_confirm': False,
                     'x_employee_feedback': feedback,
                     'x_confirmed_date': fields.Datetime.now(),
                 })
@@ -2278,6 +2386,7 @@ class PayrollAPI(http.Controller):
             old_status = slip.x_employee_confirm
             slip.write({
                 'x_employee_confirm': 'pending',
+                'x_auto_confirm': False,
                 'x_employee_feedback': False,
                 'x_confirm_deadline': False,  # #6: clear deadline on reset
                 'x_email_sent': False,

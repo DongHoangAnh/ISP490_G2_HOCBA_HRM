@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_HocBa_Payroll_v2"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.20.0">
+  <bpmn:collaboration id="Collaboration_HocBa_Payroll">
+    <bpmn:participant id="Participant_HocBa_Payroll" name="Học Bá Education — Quy trình Tính &#38; Chi trả Lương Tự động trên Odoo 19 (App Học Bá HRM)" processRef="Process_HocBa_Payroll_v2" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_HocBa_Payroll_v2" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_HocBa_Payroll">
+      <bpmn:lane id="Lane_Employee" name="Nhân viên / Giảng viên">
+        <bpmn:flowNodeRef>Start_Payroll_Cycle</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Submit_Work_Timeoff</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Receive_Payslip</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Payroll_Cycle</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_HR" name="Chuyên viên / Trưởng phòng Nhân sự (HR / C&#38;B)">
+        <bpmn:flowNodeRef>Task_Create_Payslip_Batch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Review_Variation_Report</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_HR_Approval</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Approve_Payslip_Batch</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Odoo_Engine" name="Hệ thống Odoo 19 Engine (hocba_payroll)">
+        <bpmn:flowNodeRef>Task_Engine_Fetch_WorkEntries</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Engine_Calculate_Pipeline</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Engine_Lock_WorkEntries</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Engine_Generate_Draft_Moves</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Engine_Export_Bank_File</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Engine_Dispatch_Email_Portal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Engine_Export_Statutory_Reports</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Finance" name="Kế toán / Phòng Tài chính (Finance)">
+        <bpmn:flowNodeRef>Task_Finance_Disburse_Bank</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Parallel_Post_Disbursement</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Finance_Post_Journal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Parallel_Join</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- 1. Start & Employee Input -->
+    <bpmn:startEvent id="Start_Payroll_Cycle" name="Đến kỳ tính lương hàng tháng (Ngày 28 - Ngày 05)">
+      <bpmn:outgoing>Flow_Start_To_Work</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_Submit_Work_Timeoff" name="Ghi nhận Chấm công / Điểm danh Giờ dạy WORK200 / Đăng ký Nghỉ phép">
+      <bpmn:incoming>Flow_Start_To_Work</bpmn:incoming>
+      <bpmn:incoming>Flow_Reject_Back_To_Work</bpmn:incoming>
+      <bpmn:outgoing>Flow_Work_To_Batch</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 2. HR Batch Creation -->
+    <bpmn:userTask id="Task_Create_Payslip_Batch" name="Tạo Đợt lương Batch (hb.payslip.run) &#38; Nhấn Tính lương (Compute Payslips)">
+      <bpmn:incoming>Flow_Work_To_Batch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Batch_To_Fetch</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 3. Odoo Engine Processing -->
+    <bpmn:serviceTask id="Task_Engine_Fetch_WorkEntries" name="Odoo Engine: Tự động gom Work Entries đã duyệt &#38; Kiểm tra điều kiện (VR-004)" camunda:delegateExpression="${workEntryFetcher}">
+      <bpmn:incoming>Flow_Batch_To_Fetch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fetch_To_Compute</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Engine_Calculate_Pipeline" name="Odoo Engine: Chạy Payroll Pipeline (Gross, BHXH trần 20x, Thuế 7 bậc lũy tiến, Net)" camunda:delegateExpression="${payrollPipelineEngine}">
+      <bpmn:incoming>Flow_Fetch_To_Compute</bpmn:incoming>
+      <bpmn:outgoing>Flow_Compute_To_Review</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 4. HR Review & Approval Loop -->
+    <bpmn:userTask id="Task_Review_Variation_Report" name="HR Kiểm tra Báo cáo Biến động Lương (Variation Report - Cảnh báo chênh lệch &#62;20%)">
+      <bpmn:incoming>Flow_Compute_To_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_To_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_HR_Approval" name="Số liệu lương đạt yêu cầu?">
+      <bpmn:incoming>Flow_Review_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approval_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Approval_No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_Approve_Payslip_Batch" name="Trưởng phòng HR Phê duyệt Chốt Đợt lương (Chuyển trạng thái Done)">
+      <bpmn:incoming>Flow_Approval_Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approve_To_Lock</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 5. Odoo Post-Approval Tasks -->
+    <bpmn:serviceTask id="Task_Engine_Lock_WorkEntries" name="Odoo Engine: Khóa dữ liệu công tiêu thụ (Set payslip_included = True)" camunda:delegateExpression="${workEntryLocker}">
+      <bpmn:incoming>Flow_Approve_To_Lock</bpmn:incoming>
+      <bpmn:outgoing>Flow_Lock_To_DraftMoves</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Engine_Generate_Draft_Moves" name="Odoo Engine: Tự động sinh Bút toán Kế toán Draft (Draft Journal Entry)" camunda:delegateExpression="${draftMoveGenerator}">
+      <bpmn:incoming>Flow_Lock_To_DraftMoves</bpmn:incoming>
+      <bpmn:outgoing>Flow_DraftMoves_To_BankFile</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Engine_Export_Bank_File" name="Odoo Engine: 1-Click Xuất File Ngân hàng Chuyển khoản lô (VCB / TCB XLSX)" camunda:delegateExpression="${bankFileExporter}">
+      <bpmn:incoming>Flow_DraftMoves_To_BankFile</bpmn:incoming>
+      <bpmn:outgoing>Flow_BankFile_To_Disburse</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 6. Finance Disbursement & Parallel Post-Actions -->
+    <bpmn:userTask id="Task_Finance_Disburse_Bank" name="Kế toán Upload File VCB/TCB lên Internet Banking &#38; Thực hiện Chi trả Lương">
+      <bpmn:incoming>Flow_BankFile_To_Disburse</bpmn:incoming>
+      <bpmn:outgoing>Flow_Disburse_To_ParallelSplit</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:parallelGateway id="Gateway_Parallel_Post_Disbursement" name="Phân nhánh xử lý sau chi trả">
+      <bpmn:incoming>Flow_Disburse_To_ParallelSplit</bpmn:incoming>
+      <bpmn:outgoing>Flow_Parallel_To_Dispatch</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Parallel_To_PostJournal</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Parallel_To_Statutory</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <bpmn:serviceTask id="Task_Engine_Dispatch_Email_Portal" name="Odoo Engine: Tự động Gửi Email PDF Phiếu lương &#38; Đẩy lên Employee Portal" camunda:delegateExpression="${payslipDispatcher}">
+      <bpmn:incoming>Flow_Parallel_To_Dispatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Dispatch_To_Receive</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="Task_Receive_Payslip" name="Nhân viên Đăng nhập Portal / Check Email để Xem &#38; Tải PDF Phiếu lương">
+      <bpmn:incoming>Flow_Dispatch_To_Receive</bpmn:incoming>
+      <bpmn:outgoing>Flow_Receive_To_Join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Finance_Post_Journal" name="Kế toán Phê duyệt Bút toán Lương chính thức (Post Journal Entry trong Odoo Accounting)">
+      <bpmn:incoming>Flow_Parallel_To_PostJournal</bpmn:incoming>
+      <bpmn:outgoing>Flow_PostJournal_To_Join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_Engine_Export_Statutory_Reports" name="Odoo Engine: Xuất báo cáo iBHXH XML &#38; Quyết toán Thuế TNCN (Mẫu 05/KK-TNCN)" camunda:delegateExpression="${statutoryReportExporter}">
+      <bpmn:incoming>Flow_Parallel_To_Statutory</bpmn:incoming>
+      <bpmn:outgoing>Flow_Statutory_To_Join</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:parallelGateway id="Gateway_Parallel_Join" name="Gộp các nhánh hoàn tất">
+      <bpmn:incoming>Flow_Receive_To_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_PostJournal_To_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_Statutory_To_Join</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_To_End</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <bpmn:endEvent id="End_Payroll_Cycle" name="Hoàn tất Chu kỳ Tính &#38; Chi trả Lương hàng tháng">
+      <bpmn:incoming>Flow_Join_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_Start_To_Work" sourceRef="Start_Payroll_Cycle" targetRef="Task_Submit_Work_Timeoff" />
+    <bpmn:sequenceFlow id="Flow_Work_To_Batch" sourceRef="Task_Submit_Work_Timeoff" targetRef="Task_Create_Payslip_Batch" />
+    <bpmn:sequenceFlow id="Flow_Batch_To_Fetch" sourceRef="Task_Create_Payslip_Batch" targetRef="Task_Engine_Fetch_WorkEntries" />
+    <bpmn:sequenceFlow id="Flow_Fetch_To_Compute" sourceRef="Task_Engine_Fetch_WorkEntries" targetRef="Task_Engine_Calculate_Pipeline" />
+    <bpmn:sequenceFlow id="Flow_Compute_To_Review" sourceRef="Task_Engine_Calculate_Pipeline" targetRef="Task_Review_Variation_Report" />
+    <bpmn:sequenceFlow id="Flow_Review_To_Gateway" sourceRef="Task_Review_Variation_Report" targetRef="Gateway_HR_Approval" />
+    <bpmn:sequenceFlow id="Flow_Approval_Yes" name="Đạt (Đúng)" sourceRef="Gateway_HR_Approval" targetRef="Task_Approve_Payslip_Batch" />
+    <bpmn:sequenceFlow id="Flow_Approval_No" name="Không đạt (Sai/Cần chỉnh)" sourceRef="Gateway_HR_Approval" targetRef="Task_Submit_Work_Timeoff" />
+    <bpmn:sequenceFlow id="Flow_Approve_To_Lock" sourceRef="Task_Approve_Payslip_Batch" targetRef="Task_Engine_Lock_WorkEntries" />
+    <bpmn:sequenceFlow id="Flow_Lock_To_DraftMoves" sourceRef="Task_Engine_Lock_WorkEntries" targetRef="Task_Engine_Generate_Draft_Moves" />
+    <bpmn:sequenceFlow id="Flow_DraftMoves_To_BankFile" sourceRef="Task_Engine_Generate_Draft_Moves" targetRef="Task_Engine_Export_Bank_File" />
+    <bpmn:sequenceFlow id="Flow_BankFile_To_Disburse" sourceRef="Task_Engine_Export_Bank_File" targetRef="Task_Finance_Disburse_Bank" />
+    <bpmn:sequenceFlow id="Flow_Disburse_To_ParallelSplit" sourceRef="Task_Finance_Disburse_Bank" targetRef="Gateway_Parallel_Post_Disbursement" />
+    <bpmn:sequenceFlow id="Flow_Parallel_To_Dispatch" sourceRef="Gateway_Parallel_Post_Disbursement" targetRef="Task_Engine_Dispatch_Email_Portal" />
+    <bpmn:sequenceFlow id="Flow_Parallel_To_PostJournal" sourceRef="Gateway_Parallel_Post_Disbursement" targetRef="Task_Finance_Post_Journal" />
+    <bpmn:sequenceFlow id="Flow_Parallel_To_Statutory" sourceRef="Gateway_Parallel_Post_Disbursement" targetRef="Task_Engine_Export_Statutory_Reports" />
+    <bpmn:sequenceFlow id="Flow_Dispatch_To_Receive" sourceRef="Task_Engine_Dispatch_Email_Portal" targetRef="Task_Receive_Payslip" />
+    <bpmn:sequenceFlow id="Flow_Receive_To_Join" sourceRef="Task_Receive_Payslip" targetRef="Gateway_Parallel_Join" />
+    <bpmn:sequenceFlow id="Flow_PostJournal_To_Join" sourceRef="Task_Finance_Post_Journal" targetRef="Gateway_Parallel_Join" />
+    <bpmn:sequenceFlow id="Flow_Statutory_To_Join" sourceRef="Task_Engine_Export_Statutory_Reports" targetRef="Gateway_Parallel_Join" />
+    <bpmn:sequenceFlow id="Flow_Join_To_End" sourceRef="Gateway_Parallel_Join" targetRef="End_Payroll_Cycle" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_HocBa_Payroll">
+    <bpmndi:BPMNPlane id="BPMNPlane_HocBa_Payroll" bpmnElement="Collaboration_HocBa_Payroll">
+      <bpmndi:BPMNShape id="Participant_HocBa_Payroll_di" bpmnElement="Participant_HocBa_Payroll" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1750" height="980" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes -->
+      <bpmndi:BPMNShape id="Lane_Employee_di" bpmnElement="Lane_Employee" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="1720" height="210" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Lane_HR_di" bpmnElement="Lane_HR" isHorizontal="true">
+        <dc:Bounds x="190" y="290" width="1720" height="230" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Lane_Odoo_Engine_di" bpmnElement="Lane_Odoo_Engine" isHorizontal="true">
+        <dc:Bounds x="190" y="520" width="1720" height="300" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Lane_Finance_di" bpmnElement="Lane_Finance" isHorizontal="true">
+        <dc:Bounds x="190" y="820" width="1720" height="240" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- Shapes -->
+      <bpmndi:BPMNShape id="Start_Payroll_Cycle_di" bpmnElement="Start_Payroll_Cycle">
+        <dc:Bounds x="242" y="152" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="221" y="195" width="79" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Submit_Work_Timeoff_di" bpmnElement="Task_Submit_Work_Timeoff">
+        <dc:Bounds x="330" y="130" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Create_Payslip_Batch_di" bpmnElement="Task_Create_Payslip_Batch">
+        <dc:Bounds x="330" y="350" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Fetch_WorkEntries_di" bpmnElement="Task_Engine_Fetch_WorkEntries">
+        <dc:Bounds x="330" y="600" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Calculate_Pipeline_di" bpmnElement="Task_Engine_Calculate_Pipeline">
+        <dc:Bounds x="500" y="600" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Review_Variation_Report_di" bpmnElement="Task_Review_Variation_Report">
+        <dc:Bounds x="500" y="350" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Gateway_HR_Approval_di" bpmnElement="Gateway_HR_Approval" isMarkerVisible="true">
+        <dc:Bounds x="675" y="365" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="663" y="422" width="75" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Approve_Payslip_Batch_di" bpmnElement="Task_Approve_Payslip_Batch">
+        <dc:Bounds x="780" y="350" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Lock_WorkEntries_di" bpmnElement="Task_Engine_Lock_WorkEntries">
+        <dc:Bounds x="780" y="600" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Generate_Draft_Moves_di" bpmnElement="Task_Engine_Generate_Draft_Moves">
+        <dc:Bounds x="950" y="600" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Export_Bank_File_di" bpmnElement="Task_Engine_Export_Bank_File">
+        <dc:Bounds x="1120" y="600" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Finance_Disburse_Bank_di" bpmnElement="Task_Finance_Disburse_Bank">
+        <dc:Bounds x="1120" y="890" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Gateway_Parallel_Post_Disbursement_di" bpmnElement="Gateway_Parallel_Post_Disbursement">
+        <dc:Bounds x="1295" y="905" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1277" y="962" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Dispatch_Email_Portal_di" bpmnElement="Task_Engine_Dispatch_Email_Portal">
+        <dc:Bounds x="1390" y="600" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Receive_Payslip_di" bpmnElement="Task_Receive_Payslip">
+        <dc:Bounds x="1390" y="130" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Finance_Post_Journal_di" bpmnElement="Task_Finance_Post_Journal">
+        <dc:Bounds x="1390" y="890" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Engine_Export_Statutory_Reports_di" bpmnElement="Task_Engine_Export_Statutory_Reports">
+        <dc:Bounds x="1390" y="700" width="120" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Gateway_Parallel_Join_di" bpmnElement="Gateway_Parallel_Join">
+        <dc:Bounds x="1625" y="905" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1612" y="962" width="76" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_Payroll_Cycle_di" bpmnElement="End_Payroll_Cycle">
+        <dc:Bounds x="1732" y="912" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1712" y="955" width="76" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Edges -->
+      <bpmndi:BPMNEdge id="Flow_Start_To_Work_di" bpmnElement="Flow_Start_To_Work">
+        <di:waypoint x="278" y="170" />
+        <di:waypoint x="330" y="170" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Work_To_Batch_di" bpmnElement="Flow_Work_To_Batch">
+        <di:waypoint x="390" y="210" />
+        <di:waypoint x="390" y="350" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Batch_To_Fetch_di" bpmnElement="Flow_Batch_To_Fetch">
+        <di:waypoint x="390" y="430" />
+        <di:waypoint x="390" y="600" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Fetch_To_Compute_di" bpmnElement="Flow_Fetch_To_Compute">
+        <di:waypoint x="450" y="640" />
+        <di:waypoint x="500" y="640" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Compute_To_Review_di" bpmnElement="Flow_Compute_To_Review">
+        <di:waypoint x="560" y="600" />
+        <di:waypoint x="560" y="430" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Review_To_Gateway_di" bpmnElement="Flow_Review_To_Gateway">
+        <di:waypoint x="620" y="390" />
+        <di:waypoint x="675" y="390" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Approval_Yes_di" bpmnElement="Flow_Approval_Yes">
+        <di:waypoint x="725" y="390" />
+        <di:waypoint x="780" y="390" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="728" y="372" width="53" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Approval_No_di" bpmnElement="Flow_Approval_No">
+        <di:waypoint x="700" y="365" />
+        <di:waypoint x="700" y="170" />
+        <di:waypoint x="450" y="170" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="705" y="260" width="81" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Approve_To_Lock_di" bpmnElement="Flow_Approve_To_Lock">
+        <di:waypoint x="840" y="430" />
+        <di:waypoint x="840" y="600" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Lock_To_DraftMoves_di" bpmnElement="Flow_Lock_To_DraftMoves">
+        <di:waypoint x="900" y="640" />
+        <di:waypoint x="950" y="640" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_DraftMoves_To_BankFile_di" bpmnElement="Flow_DraftMoves_To_BankFile">
+        <di:waypoint x="1070" y="640" />
+        <di:waypoint x="1120" y="640" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_BankFile_To_Disburse_di" bpmnElement="Flow_BankFile_To_Disburse">
+        <di:waypoint x="1180" y="680" />
+        <di:waypoint x="1180" y="890" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Disburse_To_ParallelSplit_di" bpmnElement="Flow_Disburse_To_ParallelSplit">
+        <di:waypoint x="1240" y="930" />
+        <di:waypoint x="1295" y="930" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Parallel_To_Dispatch_di" bpmnElement="Flow_Parallel_To_Dispatch">
+        <di:waypoint x="1320" y="905" />
+        <di:waypoint x="1320" y="640" />
+        <di:waypoint x="1390" y="640" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Parallel_To_PostJournal_di" bpmnElement="Flow_Parallel_To_PostJournal">
+        <di:waypoint x="1345" y="930" />
+        <di:waypoint x="1390" y="930" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Parallel_To_Statutory_di" bpmnElement="Flow_Parallel_To_Statutory">
+        <di:waypoint x="1320" y="905" />
+        <di:waypoint x="1320" y="740" />
+        <di:waypoint x="1390" y="740" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Dispatch_To_Receive_di" bpmnElement="Flow_Dispatch_To_Receive">
+        <di:waypoint x="1450" y="600" />
+        <di:waypoint x="1450" y="210" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Receive_To_Join_di" bpmnElement="Flow_Receive_To_Join">
+        <di:waypoint x="1510" y="170" />
+        <di:waypoint x="1650" y="170" />
+        <di:waypoint x="1650" y="905" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_PostJournal_To_Join_di" bpmnElement="Flow_PostJournal_To_Join">
+        <di:waypoint x="1510" y="930" />
+        <di:waypoint x="1625" y="930" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Statutory_To_Join_di" bpmnElement="Flow_Statutory_To_Join">
+        <di:waypoint x="1510" y="740" />
+        <di:waypoint x="1650" y="740" />
+        <di:waypoint x="1650" y="905" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Join_To_End_di" bpmnElement="Flow_Join_To_End">
+        <di:waypoint x="1675" y="930" />
+        <di:waypoint x="1732" y="930" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

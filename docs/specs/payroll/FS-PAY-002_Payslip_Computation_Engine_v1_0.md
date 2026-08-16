@@ -1,3 +1,11 @@
+
+## Change History (v1.1 Update)
+- **Version 1.1 (2026-08-13)**:
+  - Added `_prefetch_lookups_bulk` for high-performance bulk contract rates, sale levels, and role allowance prefetching.
+  - Documented AST-safe Python calculation engine (`_evaluate_rule_condition`, `_evaluate_rule_amount`).
+  - Formalized Vietnam Personal Income Tax progressive brackets calculation helper `_hocba_pit(taxable_income, dependent_count)` (11M self deduction, 4.4M per dependent, 7 tax brackets: 5% to 35%).
+  - Added Teaching Salary Computation (`action_compute_teaching_salary`) with contract fields (`hourly_rate`, `hsk_extra_rate`, `hsk_teaching_hours`, `sales_kpi_tier`, `sales_kpi_amount`, `custom_role_allowance`, `teaching_hours_threshold`).
+
 | Field        | Value                                                            |
 |------------- |----------------------------------------------------------------- |
 | **Code**     | FS-PAY-002                                                       |

@@ -1,3 +1,11 @@
+
+## Change History (v1.1 Update)
+- **Version 1.1 (2026-08-13)**:
+  - Documented `PayrollPublicController` routes for public token-based payslip review and confirmation (`/hocba/payroll/public/payslip/<token>`, `/confirm`, `/reject`).
+  - Added EmailJS configuration and fallback to Odoo Mail engine.
+  - Formalized CRON job `_cron_auto_confirm_expired` for automatic confirmation of expired payslips past `confirm_deadline`.
+  - Added confirmation status tracking (`pending`, `confirmed`, `rejected`, `auto_confirmed`).
+
 # FUNCTIONAL SPECIFICATION
 
 ## HRM ODOO - HOC BA EDUCATION
@@ -33,6 +41,8 @@
 | 7 | 1.7 | Start & End Date Confirmation Window: Added configurable Start Day & End Day parameters. Enforced send-mail window validation (`start_day <= today <= end_day`), auto-confirmation of all pending slips past end date, and mail/recalculate lock past deadline unless extended in Config. | All | 07/08/2026 | Group G2 |
 | 8 | 1.8 | Pre-Send Confirmation Dialog: Implemented confirmation dialog listing employees missing work_email before sending mail, allowing HR to confirm sending to valid-email employees while skipping no-email employees. | Frontend SPA | 07/08/2026 | Group G2 |
 | 9 | 1.9 | Synchronized auth security model (`auth='user'`), public fallback routes (`payroll_public.py`), email templates (`ir.config_parameter`), and REST API endpoints (`/payslip/<id>/reset-confirm`). | All | 09/08/2026 | Antigravity AI |
+| 10 | 1.10 | Added `x_auto_confirm` (Boolean) field to `hb.payslip`. Implemented distinction between manual employee confirmation and auto-confirmation on deadline expiry. Added deadline extension re-evaluation logic to automatically reset `x_auto_confirm=True` slips back to `pending` when `confirm_end_day` is extended. | Backend DB, Controllers, Frontend SPA | 15/08/2026 | Antigravity AI |
+| 11 | 1.11 | Added 2-level cascading filter (Month/Year -> Slip ID) and Executive Compact Split Dashboard UI in SPA `MyPayslipsView.jsx` to prevent long scroll pages and streamline employee confirmation experience. | Frontend SPA | 15/08/2026 | Antigravity AI |
 
 ---
 
@@ -43,7 +53,7 @@
 | **Function ID** | FS-PAY-005 |
 | **Function Name** | Employee Payslip Confirmation & Email |
 | **Created Date** | 21/06/2026 |
-| **Last Modified Date** | 09/08/2026 |
+| **Last Modified Date** | 15/08/2026 |
 
 | Attribute | Value |
 | --- | --- |

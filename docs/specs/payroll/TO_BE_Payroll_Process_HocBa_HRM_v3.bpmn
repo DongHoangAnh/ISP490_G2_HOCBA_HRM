@@ -1,0 +1,715 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_TOBE_Payroll_v3"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="HocBa HRM - Antigravity AI"
+                  exporterVersion="3.1">
+
+  <bpmn:collaboration id="Collaboration_TOBE_Payroll">
+    <bpmn:participant id="Participant_HocBa_TOBE"
+                      name="Học Bá Education — Quy trình Tính &amp; Chi trả Lương TO-BE trên Odoo 19 (hocba_payroll)"
+                      processRef="Process_TOBE_Payroll_v3" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_TOBE_Payroll_v3" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_TOBE">
+
+      <!-- HR ở trên cùng — actor chính, khởi xướng quy trình -->
+      <bpmn:lane id="Lane_HR" name="HR / Chuyên viên C&amp;B (HR Manager)">
+        <bpmn:flowNodeRef>Start_Payroll</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Create_Batch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Monitor_Progress</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Review_Payroll</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_HR_Approval</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Fix_Recompute</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Verify_Batch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Send_Mail</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_All_Confirmed</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Handle_Pending</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Close_Batch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Create_BankFile</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Print_SignOff</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Payroll_System</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <!-- Hệ thống ở giữa — xử lý tự động -->
+      <bpmn:lane id="Lane_System" name="Hệ thống Odoo 19 Engine (hocba_payroll)">
+        <bpmn:flowNodeRef>Task_Generate_Payslips</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Async_Compute</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Send_Email</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Cron_AutoConfirm</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Export_BankXLSX</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <!-- Nhân viên ở dưới — chỉ tham gia pha xác nhận phiếu lương -->
+      <bpmn:lane id="Lane_Employee" name="Nhân viên / Giảng viên / CTV">
+        <bpmn:flowNodeRef>Task_View_Confirm</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+    </bpmn:laneSet>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA A: HR KHỞI TẠO QUY TRÌNH TÍNH LƯƠNG                      -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:startEvent id="Start_Payroll" name="HR bắt đầu quy trình tính lương">
+      <bpmn:outgoing>Flow_01</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_Create_Batch"
+                   name="Tạo Đợt lương Batch (hb.payslip.run) &amp; Nhấn &quot;Tạo &amp; Tính lương&quot;">
+      <bpmn:documentation>
+        HR tạo batch trên SPA (BatchForm.jsx) hoặc Odoo backend.
+        Nhập: Tên kỳ lương, Từ ngày, Đến ngày.
+        State: draft, compute_status: idle.
+        Dữ liệu chấm công, nghỉ phép, giờ dạy đã được NV ghi nhận
+        trước đó trên các module Attendance / Time Off / WORK200.
+        UC-03: HR chọn sai kỳ → xóa/sửa batch.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_01</bpmn:incoming>
+      <bpmn:outgoing>Flow_02</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA B: HỆ THỐNG TỰ ĐỘNG TÍNH LƯƠNG — ASYNC COMPUTATION       -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:serviceTask id="Task_Generate_Payslips"
+                      name="Tìm NV có HĐ hiệu lực → Bulk-insert phiếu lương (hb.payslip)">
+      <bpmn:documentation>
+        Search hr.employee có hb.contract state='open' overlap kỳ lương.
+        Bulk-insert hb.payslip records.
+        UC-04: NV chưa có HĐ → skip, HR tạo HĐ trước.
+        UC-05: NV có 2 HĐ trùng → chọn HĐ đầu tiên (limit=1).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_02</bpmn:incoming>
+      <bpmn:outgoing>Flow_03</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Async_Compute"
+                      name="Background Worker: Tính lương Async (Topo Sort → AST → Bulk INSERT) — Chunk 50/lần">
+      <bpmn:documentation>
+        Pipeline cho MỖI phiếu:
+        1. _resolve_contract() → tìm HĐ hiệu lực
+        2. _resolve_structure() → auto-detect STRUCT_ONLINE/OFFLINE
+        3. _topo_sort_rules() → Kahn's algorithm
+        4. Evaluate từng rule bằng AST tree-walking (không eval/exec)
+        5. Tính KPI Sale Level (hb.sale.salary.level)
+        6. Tính Role Allowance (hb.role.allowance.config)
+        7. Tính BHXH/BHYT/BHTN (trần 20x lương cơ sở)
+        8. Tính Thuế TNCN 7 bậc lũy tiến (_hocba_pit)
+        9. Bulk INSERT hb.payslip.line
+        Commit DB mỗi 50 phiếu → update computed_count.
+        UC-06: Circular dependency → raise UserError.
+        UC-07: Formula sai → warning, default=0, tiếp tục.
+        UC-09: Worker fail → compute_status='failed'.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_03</bpmn:incoming>
+      <bpmn:outgoing>Flow_04</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA C: THEO DÕI TIẾN ĐỘ TRÊN SPA                            -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="Task_Monitor_Progress"
+                   name="Theo dõi tiến độ tính lương trên SPA (Poll Progress Bar mỗi 1.5s)">
+      <bpmn:documentation>
+        SPA poll GET /batch/{id} mỗi 1.5 giây.
+        Hiển thị: "Đang tính toán ngầm: X/Y (Z%)"
+        Dừng poll khi completed hoặc failed.
+        UC-10: Batch 200 NV mất 2-3 phút.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_04</bpmn:incoming>
+      <bpmn:outgoing>Flow_05</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA D: REVIEW &amp; PHÊ DUYỆT LƯƠNG                          -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="Task_Review_Payroll"
+                   name="Kiểm tra Bảng lương tổng hợp &amp; Báo cáo Biến động (chênh lệch >20%)">
+      <bpmn:documentation>
+        Xem bảng Employee Payroll Summary trên SPA (BatchList.jsx).
+        Các cột dynamic theo salary rule (appears_on_payslip=True).
+        Kiểm tra chênh lệch bất thường >20% so kỳ trước.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_05</bpmn:incoming>
+      <bpmn:incoming>Flow_08</bpmn:incoming>
+      <bpmn:outgoing>Flow_06</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_HR_Approval" name="Số liệu lương đạt yêu cầu?">
+      <bpmn:incoming>Flow_06</bpmn:incoming>
+      <bpmn:outgoing>Flow_07</bpmn:outgoing>
+      <bpmn:outgoing>Flow_09</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_Fix_Recompute"
+                   name="Sửa dữ liệu đầu vào / Tính lại phiếu lương (từng NV hoặc cả batch)">
+      <bpmn:documentation>
+        UC-11: 1 NV sai → tính lại riêng NV (POST /payslip/{id}/compute).
+        UC-12: Thêm phụ cấp mới → thêm field contract + tạo salary rule.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_07</bpmn:incoming>
+      <bpmn:outgoing>Flow_08</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Verify_Batch"
+                   name="Xác nhận Batch (draft → verify)">
+      <bpmn:documentation>
+        action_verify() chuyển batch state.
+        UC-13: Lỗi sau verify → HR Reset về draft.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_09</bpmn:incoming>
+      <bpmn:outgoing>Flow_10</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA E: GỬI EMAIL &amp; XÁC NHẬN NHÂN VIÊN                    -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="Task_Send_Mail"
+                   name="Chọn phiếu lương → Nhấn &quot;Gửi mail&quot; cho NV">
+      <bpmn:documentation>
+        HR chọn payslips trên SPA → click "Gửi mail (N)".
+        Dialog xác nhận hiển thị NV thiếu email.
+        UC-14: NV không có work_email → skip.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_10</bpmn:incoming>
+      <bpmn:outgoing>Flow_11</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_Send_Email"
+                      name="Tạo Token UUID → Render Email Template → Gửi Email kèm link xem phiếu">
+      <bpmn:documentation>
+        Tạo x_access_token = UUID v4.
+        Render template email: employee_name, month, year, gross, net, view_url.
+        Gửi mail.mail → auto_delete=True.
+        Ghi nhận: x_email_sent=True, x_email_sent_date, x_confirm_deadline.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_11</bpmn:incoming>
+      <bpmn:outgoing>Flow_12</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="Task_View_Confirm"
+                   name="NV Đăng nhập SPA → Xem phiếu lương (MyPayslipsView) → Xác nhận / Từ chối">
+      <bpmn:documentation>
+        Click link email → redirect /hocba-hrm → MyPayslipsView.
+        Phải đăng nhập Odoo account (bảo mật ownership).
+        Xem chi tiết: Gross, NET, BHXH, Thuế TNCN...
+        Confirm → x_employee_confirm='confirmed'.
+        Reject + feedback → x_employee_confirm='rejected'.
+        UC-15: NV đổi ý → cho phép trong cửa sổ deadline.
+        UC-16: NV reject → HR tính lại, gửi lại mail, gia hạn.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_12</bpmn:incoming>
+      <bpmn:outgoing>Flow_13</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Timer Boundary Event: NV không phản hồi trước deadline -->
+    <bpmn:boundaryEvent id="Timer_Confirm_Deadline"
+                        name="Hết hạn xác nhận (Deadline)"
+                        attachedToRef="Task_View_Confirm"
+                        cancelActivity="false">
+      <bpmn:timerEventDefinition id="TimerDef_ConfirmDeadline" />
+      <bpmn:outgoing>Flow_14</bpmn:outgoing>
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="Task_Cron_AutoConfirm"
+                      name="CRON Job Daily: Tự động Confirm NV không phản hồi quá Deadline (auto_confirmed)">
+      <bpmn:documentation>
+        _cron_auto_confirm_expired() chạy daily.
+        Tìm payslip pending có x_confirm_deadline &lt;= now.
+        Set x_employee_confirm='auto_confirmed', x_auto_confirm=True.
+        UC-17: HR gia hạn deadline → auto_confirm bị reset → pending.
+        UC-18: NV nghỉ phép không check → auto-confirm sau deadline.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_14</bpmn:incoming>
+      <bpmn:outgoing>Flow_15</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA F: CHỐT LƯƠNG &amp; XUẤT FILE                             -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:exclusiveGateway id="GW_All_Confirmed" name="Tất cả NV đã xác nhận phiếu lương?">
+      <bpmn:incoming>Flow_13</bpmn:incoming>
+      <bpmn:incoming>Flow_15</bpmn:incoming>
+      <bpmn:incoming>Flow_17</bpmn:incoming>
+      <bpmn:outgoing>Flow_16</bpmn:outgoing>
+      <bpmn:outgoing>Flow_18</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_Handle_Pending"
+                   name="Xử lý NV chưa confirm: Gửi lại mail / Gia hạn deadline / Liên hệ NV">
+      <bpmn:documentation>
+        UC-19: Còn NV chưa confirm → báo lỗi + danh sách (max 5 tên).
+        HR options: gửi lại mail riêng NV, gia hạn deadline, chờ CRON auto-confirm.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_16</bpmn:incoming>
+      <bpmn:outgoing>Flow_17</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Close_Batch"
+                   name="Đóng Batch &amp; Lưu lịch sử kỳ lương (verify → close)">
+      <bpmn:documentation>
+        action_close() → finalize tất cả payslip: draft/verify → done.
+        Tạo Voucher kế toán (action_create_voucher → hocba.fin.voucher).
+        Close-by-Period: chốt toàn bộ kỳ lương tháng → khóa.
+        UC-20: Phiếu chưa tính (x_teaching_computed=False) → raise UserError.
+        UC-21: Lỗi sau close → HR Manager reset (cần lý do).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_18</bpmn:incoming>
+      <bpmn:outgoing>Flow_19</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_Create_BankFile"
+                   name="Nhấn &quot;Tạo File Ngân hàng&quot; — Chọn NH (VCB / TCB / MB / BIDV / ACB...)">
+      <bpmn:documentation>
+        HR chọn ngân hàng và batch → nhấn Tạo file.
+        Validation: batch phải close, NV phải có STK.
+        UC-23: NV thiếu STK → validation fail, báo lỗi.
+        UC-24: NH chưa hỗ trợ → thêm formatter class (Strategy Pattern).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_19</bpmn:incoming>
+      <bpmn:outgoing>Flow_20</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_Export_BankXLSX"
+                      name="BankFormatterRegistry (Strategy Pattern) → Export XLSX theo định dạng từng NH">
+      <bpmn:documentation>
+        Resolve formatter class theo bank code.
+        Build rows: đọc NET (thuc_lanh), resolve STK nhân viên.
+        Export XLSX: bold headers, number format, auto-width.
+        Tạo hb.bank.file record (state: generated).
+        UC-22: NV có NET ≤ 0 → skip, warning.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_20</bpmn:incoming>
+      <bpmn:outgoing>Flow_21</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PHA G: IN &amp; KÝ DUYỆT (NGOÀI HỆ THỐNG)                   -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="Task_Print_SignOff"
+                   name="In bảng lương / Xuất Excel tổng hợp → Đưa Kế toán &amp; Ban GĐ ký (ngoài HT)">
+      <bpmn:documentation>
+        HR in bảng lương PDF hoặc xuất Excel (có header công ty, block chữ ký).
+        Đưa bản in cho Kế toán kiểm tra → ký xác nhận.
+        Đưa Ban Giám đốc phê duyệt → ký.
+        Kế toán nhận file Excel NH → upload Internet Banking → chuyển khoản.
+        ⚠ TẤT CẢ CÁC BƯỚC NÀY DIỄN RA NGOÀI HỆ THỐNG HRM.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_21</bpmn:incoming>
+      <bpmn:outgoing>Flow_22</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="End_Payroll_System" name="Hoàn tất quy trình tính lương trên HRM">
+      <bpmn:incoming>Flow_22</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SEQUENCE FLOWS (22 flows)                                      -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Pha A: HR khởi tạo -->
+    <bpmn:sequenceFlow id="Flow_01" sourceRef="Start_Payroll" targetRef="Task_Create_Batch" />
+    <bpmn:sequenceFlow id="Flow_02" sourceRef="Task_Create_Batch" targetRef="Task_Generate_Payslips" />
+
+    <!-- Pha B: Tính lương tự động -->
+    <bpmn:sequenceFlow id="Flow_03" sourceRef="Task_Generate_Payslips" targetRef="Task_Async_Compute" />
+    <bpmn:sequenceFlow id="Flow_04" sourceRef="Task_Async_Compute" targetRef="Task_Monitor_Progress" />
+
+    <!-- Pha C-D: Theo dõi & Review -->
+    <bpmn:sequenceFlow id="Flow_05" sourceRef="Task_Monitor_Progress" targetRef="Task_Review_Payroll" />
+    <bpmn:sequenceFlow id="Flow_06" sourceRef="Task_Review_Payroll" targetRef="GW_HR_Approval" />
+    <bpmn:sequenceFlow id="Flow_07" name="Không đạt (Sai / Cần chỉnh sửa)"
+                       sourceRef="GW_HR_Approval" targetRef="Task_Fix_Recompute" />
+    <bpmn:sequenceFlow id="Flow_08" sourceRef="Task_Fix_Recompute" targetRef="Task_Review_Payroll" />
+    <bpmn:sequenceFlow id="Flow_09" name="Đạt ✓"
+                       sourceRef="GW_HR_Approval" targetRef="Task_Verify_Batch" />
+
+    <!-- Pha E: Gửi mail & Xác nhận -->
+    <bpmn:sequenceFlow id="Flow_10" sourceRef="Task_Verify_Batch" targetRef="Task_Send_Mail" />
+    <bpmn:sequenceFlow id="Flow_11" sourceRef="Task_Send_Mail" targetRef="Task_Send_Email" />
+    <bpmn:sequenceFlow id="Flow_12" sourceRef="Task_Send_Email" targetRef="Task_View_Confirm" />
+    <bpmn:sequenceFlow id="Flow_13" name="NV đã phản hồi (Confirm / Reject)"
+                       sourceRef="Task_View_Confirm" targetRef="GW_All_Confirmed" />
+    <bpmn:sequenceFlow id="Flow_14" sourceRef="Timer_Confirm_Deadline" targetRef="Task_Cron_AutoConfirm" />
+    <bpmn:sequenceFlow id="Flow_15" sourceRef="Task_Cron_AutoConfirm" targetRef="GW_All_Confirmed" />
+
+    <!-- Pha F: Chốt & Xuất file -->
+    <bpmn:sequenceFlow id="Flow_16" name="Chưa đủ — Còn NV chưa xác nhận"
+                       sourceRef="GW_All_Confirmed" targetRef="Task_Handle_Pending" />
+    <bpmn:sequenceFlow id="Flow_17" sourceRef="Task_Handle_Pending" targetRef="GW_All_Confirmed" />
+    <bpmn:sequenceFlow id="Flow_18" name="Đủ ✓ — Tất cả đã confirm"
+                       sourceRef="GW_All_Confirmed" targetRef="Task_Close_Batch" />
+    <bpmn:sequenceFlow id="Flow_19" sourceRef="Task_Close_Batch" targetRef="Task_Create_BankFile" />
+    <bpmn:sequenceFlow id="Flow_20" sourceRef="Task_Create_BankFile" targetRef="Task_Export_BankXLSX" />
+    <bpmn:sequenceFlow id="Flow_21" sourceRef="Task_Export_BankXLSX" targetRef="Task_Print_SignOff" />
+    <bpmn:sequenceFlow id="Flow_22" sourceRef="Task_Print_SignOff" targetRef="End_Payroll_System" />
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- TEXT ANNOTATIONS                                               -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Ghi chú dữ liệu tiên quyết — KHÔNG phải bước trong quy trình -->
+    <bpmn:textAnnotation id="Annotation_Prerequisite">
+      <bpmn:text>📋 DỮ LIỆU TIÊN QUYẾT (đã có trên hệ thống trước khi HR tính lương):
+• Chấm công NV (module Attendance)
+• Đăng ký nghỉ phép đã duyệt (module Time Off)
+• Giờ dạy Giảng viên — WORK200
+• Hợp đồng lao động (hb.contract) có state = open</bpmn:text>
+    </bpmn:textAnnotation>
+
+    <bpmn:association id="Assoc_Prerequisite"
+                      sourceRef="Task_Create_Batch"
+                      targetRef="Annotation_Prerequisite" />
+
+    <!-- Ghi chú hoạt động ngoài hệ thống -->
+    <bpmn:textAnnotation id="Annotation_OutOfSystem">
+      <bpmn:text>⚠ NGOÀI HỆ THỐNG HRM:
+1. Kế toán nhận bản in → Kiểm tra → Ký xác nhận
+2. Ban Giám đốc nhận bản in → Phê duyệt → Ký
+3. Kế toán nhận file Excel NH → Upload Internet Banking → Chuyển khoản lô
+4. Kế toán ghi sổ trên phần mềm riêng (MISA / SAP)</bpmn:text>
+    </bpmn:textAnnotation>
+
+    <bpmn:association id="Assoc_OutOfSystem"
+                      sourceRef="Task_Print_SignOff"
+                      targetRef="Annotation_OutOfSystem" />
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- BPMN DIAGRAM — Layout v3.1                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_TOBE_v3">
+    <bpmndi:BPMNPlane id="BPMNPlane_TOBE_v3" bpmnElement="Collaboration_TOBE_Payroll">
+
+      <!-- ===== POOL ===== -->
+      <bpmndi:BPMNShape id="Participant_di" bpmnElement="Participant_HocBa_TOBE" isHorizontal="true">
+        <dc:Bounds x="160" y="60" width="3100" height="870" />
+      </bpmndi:BPMNShape>
+
+      <!-- ===== LANES (HR top → System middle → Employee bottom) ===== -->
+      <bpmndi:BPMNShape id="Lane_HR_di" bpmnElement="Lane_HR" isHorizontal="true">
+        <dc:Bounds x="190" y="60" width="3070" height="350" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Lane_System_di" bpmnElement="Lane_System" isHorizontal="true">
+        <dc:Bounds x="190" y="410" width="3070" height="290" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Lane_Employee_di" bpmnElement="Lane_Employee" isHorizontal="true">
+        <dc:Bounds x="190" y="700" width="3070" height="230" />
+      </bpmndi:BPMNShape>
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SHAPES — HR Lane (y=60..410)               -->
+      <!-- Tasks y_top ≈ 195, center ≈ 235            -->
+      <!-- ═══════════════════════════════════════════ -->
+
+      <!-- Start Event (None — HR chủ động) -->
+      <bpmndi:BPMNShape id="Start_Payroll_di" bpmnElement="Start_Payroll">
+        <dc:Bounds x="272" y="217" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="248" y="260" width="85" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Create_Batch_di" bpmnElement="Task_Create_Batch">
+        <dc:Bounds x="370" y="195" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Monitor_Progress_di" bpmnElement="Task_Monitor_Progress">
+        <dc:Bounds x="650" y="195" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Review_Payroll_di" bpmnElement="Task_Review_Payroll">
+        <dc:Bounds x="880" y="195" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_HR_Approval_di" bpmnElement="GW_HR_Approval" isMarkerVisible="true">
+        <dc:Bounds x="1115" y="210" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1095" y="267" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Fix_Recompute_di" bpmnElement="Task_Fix_Recompute">
+        <dc:Bounds x="1040" y="90" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Verify_Batch_di" bpmnElement="Task_Verify_Batch">
+        <dc:Bounds x="1220" y="195" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Send_Mail_di" bpmnElement="Task_Send_Mail">
+        <dc:Bounds x="1440" y="195" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_All_Confirmed_di" bpmnElement="GW_All_Confirmed" isMarkerVisible="true">
+        <dc:Bounds x="2205" y="210" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2178" y="267" width="105" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Handle_Pending_di" bpmnElement="Task_Handle_Pending">
+        <dc:Bounds x="2150" y="90" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Close_Batch_di" bpmnElement="Task_Close_Batch">
+        <dc:Bounds x="2330" y="195" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Create_BankFile_di" bpmnElement="Task_Create_BankFile">
+        <dc:Bounds x="2570" y="195" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Print_SignOff_di" bpmnElement="Task_Print_SignOff">
+        <dc:Bounds x="2810" y="195" width="200" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_Payroll_System_di" bpmnElement="End_Payroll_System">
+        <dc:Bounds x="3072" y="217" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3048" y="260" width="85" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SHAPES — System Lane (y=410..700)          -->
+      <!-- Tasks y_top ≈ 515, center ≈ 555            -->
+      <!-- ═══════════════════════════════════════════ -->
+
+      <bpmndi:BPMNShape id="Task_Generate_Payslips_di" bpmnElement="Task_Generate_Payslips">
+        <dc:Bounds x="370" y="515" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Async_Compute_di" bpmnElement="Task_Async_Compute">
+        <dc:Bounds x="610" y="515" width="200" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Send_Email_di" bpmnElement="Task_Send_Email">
+        <dc:Bounds x="1650" y="515" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Cron_AutoConfirm_di" bpmnElement="Task_Cron_AutoConfirm">
+        <dc:Bounds x="2030" y="515" width="200" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Export_BankXLSX_di" bpmnElement="Task_Export_BankXLSX">
+        <dc:Bounds x="2570" y="515" width="180" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SHAPES — Employee Lane (y=700..930)        -->
+      <!-- Tasks y_top ≈ 775, center ≈ 815            -->
+      <!-- ═══════════════════════════════════════════ -->
+
+      <bpmndi:BPMNShape id="Task_View_Confirm_di" bpmnElement="Task_View_Confirm">
+        <dc:Bounds x="1870" y="775" width="200" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Timer Boundary (non-interrupting, on bottom of View_Confirm) -->
+      <bpmndi:BPMNShape id="Timer_Confirm_Deadline_di" bpmnElement="Timer_Confirm_Deadline">
+        <dc:Bounds x="1952" y="837" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1990" y="866" width="72" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== TEXT ANNOTATIONS ===== -->
+      <bpmndi:BPMNShape id="Annotation_Prerequisite_di" bpmnElement="Annotation_Prerequisite">
+        <dc:Bounds x="260" y="320" width="310" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Annotation_OutOfSystem_di" bpmnElement="Annotation_OutOfSystem">
+        <dc:Bounds x="2830" y="310" width="350" height="85" />
+      </bpmndi:BPMNShape>
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- EDGES — Sequence Flows                     -->
+      <!-- ═══════════════════════════════════════════ -->
+
+      <!-- Flow_01: Start → Create_Batch (horizontal, HR lane) -->
+      <bpmndi:BPMNEdge id="Flow_01_di" bpmnElement="Flow_01">
+        <di:waypoint x="308" y="235" />
+        <di:waypoint x="370" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_02: Create_Batch → Generate_Payslips (HR → System, vertical down) -->
+      <bpmndi:BPMNEdge id="Flow_02_di" bpmnElement="Flow_02">
+        <di:waypoint x="460" y="275" />
+        <di:waypoint x="460" y="515" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_03: Generate → Async_Compute (horizontal, System lane) -->
+      <bpmndi:BPMNEdge id="Flow_03_di" bpmnElement="Flow_03">
+        <di:waypoint x="550" y="555" />
+        <di:waypoint x="610" y="555" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_04: Async_Compute → Monitor_Progress (System → HR, vertical up) -->
+      <bpmndi:BPMNEdge id="Flow_04_di" bpmnElement="Flow_04">
+        <di:waypoint x="720" y="515" />
+        <di:waypoint x="720" y="275" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_05: Monitor → Review (horizontal, HR lane) -->
+      <bpmndi:BPMNEdge id="Flow_05_di" bpmnElement="Flow_05">
+        <di:waypoint x="820" y="235" />
+        <di:waypoint x="880" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_06: Review → GW_HR_Approval (horizontal, HR lane) -->
+      <bpmndi:BPMNEdge id="Flow_06_di" bpmnElement="Flow_06">
+        <di:waypoint x="1060" y="235" />
+        <di:waypoint x="1115" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_07: GW_HR → Fix_Recompute (up — Không đạt) -->
+      <bpmndi:BPMNEdge id="Flow_07_di" bpmnElement="Flow_07">
+        <di:waypoint x="1140" y="210" />
+        <di:waypoint x="1140" y="170" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1150" y="175" width="85" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_08: Fix → Review (loop back — left then down) -->
+      <bpmndi:BPMNEdge id="Flow_08_di" bpmnElement="Flow_08">
+        <di:waypoint x="1040" y="130" />
+        <di:waypoint x="970" y="130" />
+        <di:waypoint x="970" y="195" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_09: GW_HR → Verify_Batch (right — Đạt) -->
+      <bpmndi:BPMNEdge id="Flow_09_di" bpmnElement="Flow_09">
+        <di:waypoint x="1165" y="235" />
+        <di:waypoint x="1220" y="235" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1170" y="217" width="48" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_10: Verify → Send_Mail (horizontal, HR lane) -->
+      <bpmndi:BPMNEdge id="Flow_10_di" bpmnElement="Flow_10">
+        <di:waypoint x="1380" y="235" />
+        <di:waypoint x="1440" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_11: Send_Mail → Send_Email (HR → System, down) -->
+      <bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11">
+        <di:waypoint x="1530" y="275" />
+        <di:waypoint x="1530" y="555" />
+        <di:waypoint x="1650" y="555" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_12: Send_Email → View_Confirm (System → Employee, down) -->
+      <bpmndi:BPMNEdge id="Flow_12_di" bpmnElement="Flow_12">
+        <di:waypoint x="1830" y="555" />
+        <di:waypoint x="1850" y="555" />
+        <di:waypoint x="1850" y="815" />
+        <di:waypoint x="1870" y="815" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_13: View_Confirm → GW_All_Confirmed (Employee → HR, up) -->
+      <bpmndi:BPMNEdge id="Flow_13_di" bpmnElement="Flow_13">
+        <di:waypoint x="2070" y="815" />
+        <di:waypoint x="2185" y="815" />
+        <di:waypoint x="2185" y="235" />
+        <di:waypoint x="2205" y="235" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2090" y="793" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_14: Timer_Boundary → CRON (Employee boundary → System, up) -->
+      <bpmndi:BPMNEdge id="Flow_14_di" bpmnElement="Flow_14">
+        <di:waypoint x="1970" y="837" />
+        <di:waypoint x="1970" y="555" />
+        <di:waypoint x="2030" y="555" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_15: CRON → GW_All_Confirmed (System → HR, up) -->
+      <bpmndi:BPMNEdge id="Flow_15_di" bpmnElement="Flow_15">
+        <di:waypoint x="2230" y="555" />
+        <di:waypoint x="2230" y="260" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_16: GW_All → Handle_Pending (up — Chưa đủ) -->
+      <bpmndi:BPMNEdge id="Flow_16_di" bpmnElement="Flow_16">
+        <di:waypoint x="2230" y="210" />
+        <di:waypoint x="2230" y="170" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2240" y="175" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_17: Handle_Pending → GW_All (loop: right → down → left) -->
+      <bpmndi:BPMNEdge id="Flow_17_di" bpmnElement="Flow_17">
+        <di:waypoint x="2310" y="130" />
+        <di:waypoint x="2340" y="130" />
+        <di:waypoint x="2340" y="235" />
+        <di:waypoint x="2255" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_18: GW_All → Close_Batch (right — Đủ) -->
+      <bpmndi:BPMNEdge id="Flow_18_di" bpmnElement="Flow_18">
+        <di:waypoint x="2255" y="235" />
+        <di:waypoint x="2330" y="235" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2258" y="217" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_19: Close → BankFile (horizontal, HR lane) -->
+      <bpmndi:BPMNEdge id="Flow_19_di" bpmnElement="Flow_19">
+        <di:waypoint x="2510" y="235" />
+        <di:waypoint x="2570" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_20: BankFile → Export (HR → System, down) -->
+      <bpmndi:BPMNEdge id="Flow_20_di" bpmnElement="Flow_20">
+        <di:waypoint x="2660" y="275" />
+        <di:waypoint x="2660" y="515" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_21: Export → Print_SignOff (System → HR, up) -->
+      <bpmndi:BPMNEdge id="Flow_21_di" bpmnElement="Flow_21">
+        <di:waypoint x="2750" y="555" />
+        <di:waypoint x="2910" y="555" />
+        <di:waypoint x="2910" y="275" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Flow_22: Print → End (horizontal, HR lane) -->
+      <bpmndi:BPMNEdge id="Flow_22_di" bpmnElement="Flow_22">
+        <di:waypoint x="3010" y="235" />
+        <di:waypoint x="3072" y="235" />
+      </bpmndi:BPMNEdge>
+
+      <!-- ===== ASSOCIATION EDGES ===== -->
+      <bpmndi:BPMNEdge id="Assoc_Prerequisite_di" bpmnElement="Assoc_Prerequisite">
+        <di:waypoint x="420" y="275" />
+        <di:waypoint x="400" y="320" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Assoc_OutOfSystem_di" bpmnElement="Assoc_OutOfSystem">
+        <di:waypoint x="2930" y="275" />
+        <di:waypoint x="2960" y="310" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

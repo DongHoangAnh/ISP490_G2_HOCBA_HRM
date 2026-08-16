@@ -359,10 +359,11 @@ const CHK_W = 40;
 
 /* NV xac nhan badge styles */
 const CONFIRM_MAP = {
-  pending_sent:  { label: 'Đã gửi (Chờ XN)', bg: '#fef3c7', color: '#92400e', icon: 'mail' },
-  pending_unsent:{ label: 'Chưa gửi mail',   bg: '#f3f4f6', color: '#4b5563', icon: 'clock' },
-  confirmed:     { label: 'NV Đã đồng ý ✓', bg: '#dcfce7', color: '#15803d', icon: 'checkCircle' },
-  rejected:      { label: 'NV Khiếu nại 💬', bg: '#fee2e2', color: '#991b1b', icon: 'alertCircle' },
+  pending_sent:   { label: 'Đã gửi (Chờ XN)', bg: '#fef3c7', color: '#92400e', icon: 'mail' },
+  pending_unsent: { label: 'Chưa gửi mail',   bg: '#f3f4f6', color: '#4b5563', icon: 'clock' },
+  confirmed:      { label: 'NV Đã đồng ý ✓', bg: '#dcfce7', color: '#15803d', icon: 'checkCircle' },
+  auto_confirmed: { label: 'Tự động chốt ⏰', bg: '#e0f2fe', color: '#0369a1', icon: 'checkCircle' },
+  rejected:       { label: 'NV Khiếu nại 💬', bg: '#fee2e2', color: '#991b1b', icon: 'alertCircle' },
 };
 
 /* ── Main ── */
@@ -730,11 +731,12 @@ export default function BatchList({ search }) {
   const q = (search || localSearch || '').toLowerCase();
   const emps = data ? data.employees.filter((e) => {
     if (confirmFilter) {
-      const statusKey = e.employee_confirm === 'confirmed' ? 'confirmed'
+      const statusKey = e.employee_confirm === 'confirmed'
+        ? (e.auto_confirm || e.is_auto_confirm ? 'auto_confirmed' : 'confirmed')
         : e.employee_confirm === 'rejected' ? 'rejected'
         : e.email_sent ? 'pending_sent' : 'pending_unsent';
 
-      if (statusKey !== confirmFilter) return false;
+      if (statusKey !== confirmFilter && (confirmFilter !== 'confirmed' || e.employee_confirm !== 'confirmed')) return false;
     }
     if (!q) return true;
     return (e.name || '').toLowerCase().includes(q)
@@ -787,191 +789,208 @@ export default function BatchList({ search }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0 }}>
-
-        {/* Odoo-style search bar */}
+      {/* 2-Tier Responsive Toolbar */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10, flexShrink: 0 }}>
+        {/* Tier 1: Search, Filter & Metrics Bar */}
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
-          padding: '4px 10px', minWidth: 280, flex: '0 1 380px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 10,
         }}>
-          <Icon name="search" size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
-
-          {/* Period label (fixed to current month) */}
-          <span style={{
-            display: 'inline-flex', alignItems: 'center',
-            padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 600,
-            background: '#eff6ff', color: '#1d4ed8', whiteSpace: 'nowrap',
-          }}>
-            T{month}/{year}
-          </span>
-
-          {/* Search input */}
-          <input
-            type="text"
-            value={localSearch}
-            onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder="Tìm tên, mã NV, phòng ban..."
-            style={{
-              flex: 1, border: 'none', outline: 'none', fontSize: 13,
-              background: 'transparent', minWidth: 100,
-            }}
-          />
-          {localSearch && (
-            <button onClick={() => setLocalSearch('')} style={{
-              border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af',
-              display: 'flex', alignItems: 'center',
+          {/* Search and Filter Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: '1 1 auto' }}>
+            {/* Odoo-style search bar */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+              padding: '4px 10px', minWidth: 260, maxWidth: 380, flex: '1 1 280px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
             }}>
-              <Icon name="x" size={14} />
-            </button>
+              <Icon name="search" size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
+              <span style={{
+                display: 'inline-flex', alignItems: 'center',
+                padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+                background: '#eff6ff', color: '#1d4ed8', whiteSpace: 'nowrap',
+              }}>
+                T{month}/{year}
+              </span>
+              <input
+                type="text"
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                placeholder="Tìm tên, mã NV, phòng ban..."
+                style={{
+                  flex: 1, border: 'none', outline: 'none', fontSize: 13,
+                  background: 'transparent', minWidth: 100,
+                }}
+              />
+              {localSearch && (
+                <button onClick={() => setLocalSearch('')} style={{
+                  border: 'none', background: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af',
+                  display: 'flex', alignItems: 'center',
+                }}>
+                  <Icon name="x" size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Status filter select */}
+            <select
+              value={confirmFilter}
+              onChange={(e) => { setConfirmFilter(e.target.value); setChecked({}); }}
+              style={{
+                padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+                border: '1px solid #d1d5db', background: '#fff', color: '#374151',
+                cursor: 'pointer', outline: 'none', boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              }}
+            >
+              <option value="">Tất cả trạng thái</option>
+              <option value="pending_unsent">Chưa gửi mail</option>
+              <option value="pending_sent">Đã gửi (Chờ XN)</option>
+              <option value="confirmed">Đã xác nhận</option>
+              <option value="rejected">Từ chối / Khiếu nại</option>
+            </select>
+          </div>
+
+          {/* Metrics summary chips (Right aligned) */}
+          {data && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+              background: '#f8fafc', padding: '4px 10px', borderRadius: 8, border: '1px solid #f1f5f9',
+            }}>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                NV: <b style={{ color: '#111827' }}>{total}</b>
+              </span>
+              <div style={{ width: 1, height: 14, background: '#cbd5e1' }} />
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                Phiếu: <b style={{ color: '#111827' }}>{withSlip}</b>
+              </span>
+              {(() => {
+                const now = new Date();
+                const pending = allEmpsWithSlip.filter((e) => e.employee_confirm === 'pending');
+                const expired = pending.filter((e) => e.confirm_deadline && new Date(e.confirm_deadline) <= now);
+                const confirmed = allEmpsWithSlip.filter((e) => e.employee_confirm === 'confirmed');
+                const rejected = allEmpsWithSlip.filter((e) => e.employee_confirm === 'rejected');
+                if (allEmpsWithSlip.length === 0) return null;
+                return (
+                  <>
+                    <div style={{ width: 1, height: 14, background: '#cbd5e1' }} />
+                    <span style={{ fontSize: 11.5, color: '#16a34a', fontWeight: 600 }}>
+                      Đã XN: <b>{confirmed.length}</b>
+                    </span>
+                    {pending.length > 0 && (
+                      <span style={{ fontSize: 11.5, color: '#d97706', fontWeight: 600 }}>
+                        Chờ: <b>{pending.length}</b>
+                      </span>
+                    )}
+                    {rejected.length > 0 && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, color: '#b91c1c',
+                        padding: '2px 8px', borderRadius: 6,
+                        background: '#fee2e2', border: '1px solid #fca5a5',
+                        cursor: 'pointer',
+                      }} onClick={() => setConfirmFilter('rejected')} title="Bấm để lọc danh sách khiếu nại">
+                        Khiếu nại: <b>{rejected.length}</b>
+                      </span>
+                    )}
+                    {expired.length > 0 && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, color: '#dc2626',
+                        padding: '2px 8px', borderRadius: 6,
+                        background: '#fee2e2',
+                      }}>
+                        Quá hạn: <b>{expired.length}</b>
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           )}
         </div>
 
-        {/* Status filter */}
-        <select
-          value={confirmFilter}
-          onChange={(e) => { setConfirmFilter(e.target.value); setChecked({}); }}
-          style={{
-            padding: '5px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: 600,
-            border: '1px solid #d1d5db', background: '#fff', color: '#374151',
-            cursor: 'pointer',
-          }}
-        >
-          <option value="">Tất cả trạng thái</option>
-          <option value="pending_unsent">Chưa gửi mail</option>
-          <option value="pending_sent">Đã gửi (Chờ XN)</option>
-          <option value="confirmed">Đã xác nhận</option>
-          <option value="rejected">Từ chối / Khiếu nại</option>
-        </select>
+        {/* Tier 2: Action Buttons Bar (No icons per user directive) */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 8, background: '#f8fafc', border: '1px solid #e2e8f0',
+          borderRadius: 8, padding: '6px 12px',
+        }}>
+          {/* Operational actions (Left group) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={handleComputeAll} disabled={computing}
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                border: 'none', background: '#d97706', color: '#fff',
+                fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                cursor: computing ? 'not-allowed' : 'pointer',
+                opacity: computing ? .5 : 1, transition: 'all 0.15s ease',
+                boxShadow: '0 1px 2px rgba(217, 119, 6, 0.2)',
+              }}>
+              {computing ? (computeProgress ? `Đang tính (${computeProgress.percent}%)...` : 'Đang khởi chạy...') : 'Tính lương'}
+            </button>
 
-        {/* metrics inline */}
-        {data && <>
-          <div style={{ width: 1, height: 24, background: '#e5e7eb', margin: '0 2px' }} />
-          {[
-            ['NV:', total], ['Phiếu:', withSlip],
-          ].map(([l, v]) => (
-            <span key={l} style={{ fontSize: 11.5, color: '#6b7280' }}>
-              {l} <b style={{ color: '#111827' }}>{v}</b>
-            </span>
-          ))}
-          {/* #3: Deadline stats */}
-          {(() => {
-            const now = new Date();
-            const pending = allEmpsWithSlip.filter((e) => e.employee_confirm === 'pending');
-            const expired = pending.filter((e) => e.confirm_deadline && new Date(e.confirm_deadline) <= now);
-            const confirmed = allEmpsWithSlip.filter((e) => e.employee_confirm === 'confirmed');
-            const rejected = allEmpsWithSlip.filter((e) => e.employee_confirm === 'rejected');
-            if (allEmpsWithSlip.length === 0) return null;
-            return (
-              <>
-                <div style={{ width: 1, height: 18, background: '#e5e7eb', margin: '0 2px' }} />
-                <span style={{ fontSize: 11, color: '#16a34a' }}>
-                  ✅ <b>{confirmed.length}</b>
-                </span>
-                {pending.length > 0 && (
-                  <span style={{ fontSize: 11, color: '#d97706' }}>
-                    ⏳ <b>{pending.length}</b> chờ
-                  </span>
-                )}
-                {rejected.length > 0 && (
-                  <span style={{
-                    fontSize: 10.5, fontWeight: 700, color: '#b91c1c',
-                    padding: '1px 7px', borderRadius: 4,
-                    background: '#fee2e2', border: '1px solid #fca5a5',
-                    cursor: 'pointer',
-                  }} onClick={() => setConfirmFilter('rejected')} title="Bấm để lọc danh sách khiếu nại">
-                    💬 {rejected.length} khiếu nại
-                  </span>
-                )}
-                {expired.length > 0 && (
-                  <span style={{
-                    fontSize: 10.5, fontWeight: 600, color: '#dc2626',
-                    padding: '1px 6px', borderRadius: 4,
-                    background: '#fee2e2',
-                  }}>
-                    ⚠ {expired.length} quá hạn
-                  </span>
-                )}
-              </>
-            );
-          })()}
-        </>}
+            <button onClick={handleSendMail} disabled={sending || checkedCount === 0}
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                border: 'none', background: '#2563eb', color: '#fff',
+                fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                cursor: (sending || checkedCount === 0) ? 'not-allowed' : 'pointer',
+                opacity: (sending || checkedCount === 0) ? .5 : 1, transition: 'all 0.15s ease',
+                boxShadow: '0 1px 2px rgba(37, 99, 235, 0.2)',
+              }}>
+              {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
+            </button>
 
-        <div style={{ flex: 1 }} />
+            <button onClick={handleBulkResetConfirm} disabled={resetting}
+              title={checkedCount > 0 ? `Reset trạng thái xác nhận của ${checkedCount} NV được chọn về Chờ xác nhận` : 'Reset trạng thái xác nhận của TẤT CẢ nhân viên về Chờ xác nhận'}
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                border: '1px solid #d1d5db', background: resetting ? '#f3f4f6' : '#fff', color: '#374151',
+                fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                cursor: resetting ? 'not-allowed' : 'pointer',
+                opacity: resetting ? .6 : 1, transition: 'all 0.15s ease',
+              }}>
+              {resetting ? 'Đang reset...' : checkedCount > 0 ? `Reset XN (${checkedCount})` : 'Reset XN'}
+            </button>
 
-        <button onClick={handleComputeAll} disabled={computing}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6,
-            border: 'none', background: '#f59e0b', color: '#fff',
-            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            cursor: computing ? 'not-allowed' : 'pointer',
-            opacity: computing ? .5 : 1,
-          }}>
-          {computing ? (computeProgress ? `Đang tính (${computeProgress.percent}%)...` : 'Đang khởi chạy...') : 'Tính lương'}
-        </button>
+            <button onClick={() => setShowBulkModal(true)}
+              title="Mở công cụ Thưởng & Phạt Hàng Loạt với bộ lọc đa năng"
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                border: 'none', background: '#059669', color: '#fff',
+                fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: '0 1px 2px rgba(5, 150, 105, 0.2)',
+              }}>
+              Thưởng & Phạt
+            </button>
+          </div>
 
-        <button onClick={handleSendMail} disabled={sending || checkedCount === 0}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6,
-            border: 'none', background: '#2563eb', color: '#fff',
-            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            cursor: (sending || checkedCount === 0) ? 'not-allowed' : 'pointer',
-            opacity: (sending || checkedCount === 0) ? .5 : 1,
-          }}>
-          {sending ? 'Đang gửi...' : checkedCount > 0 ? `Gửi mail (${checkedCount})` : 'Gửi mail'}
-        </button>
+          {/* Table & Storage Actions (Right group) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
+              title={canSaveHistory ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận hoặc hết hạn trước khi lưu'}
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                border: 'none', background: canSaveHistory ? '#16a34a' : '#9ca3af', color: '#fff',
+                fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                cursor: (saving || !canSaveHistory) ? 'not-allowed' : 'pointer',
+                opacity: (saving || !canSaveHistory) ? .6 : 1, transition: 'all 0.15s ease',
+                boxShadow: canSaveHistory ? '0 1px 2px rgba(22, 163, 74, 0.2)' : 'none',
+              }}>
+              {saving ? 'Đang lưu...' : 'Lưu lịch sử'}
+            </button>
 
-        <button onClick={handleBulkResetConfirm} disabled={resetting}
-          title={checkedCount > 0 ? `Reset trạng thái xác nhận của ${checkedCount} NV được chọn về Chờ xác nhận` : 'Reset trạng thái xác nhận của TẤT CẢ nhân viên về Chờ xác nhận'}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6,
-            border: '1px solid #d1d5db', background: resetting ? '#f3f4f6' : '#fff', color: '#374151',
-            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            cursor: resetting ? 'not-allowed' : 'pointer',
-            opacity: resetting ? .6 : 1,
-          }}>
-          {resetting ? 'Đang reset...' : checkedCount > 0 ? `Reset XN (${checkedCount})` : 'Reset XN'}
-        </button>
-
-        <button onClick={() => setShowBulkModal(true)}
-          title="Mở công cụ Thưởng & Phạt Hàng Loạt với bộ lọc đa năng"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6,
-            border: 'none', background: '#10b981', color: '#fff',
-            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            cursor: 'pointer',
-          }}>
-          Thưởng & Phạt
-        </button>
-
-        <button onClick={handleSaveHistory} disabled={saving || !canSaveHistory}
-          title={canSaveHistory ? 'Lưu vào lịch sử lương' : 'Tất cả nhân viên phải xác nhận hoặc hết hạn trước khi lưu'}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6,
-            border: 'none', background: canSaveHistory ? '#16a34a' : '#9ca3af', color: '#fff',
-            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            cursor: (saving || !canSaveHistory) ? 'not-allowed' : 'pointer',
-            opacity: (saving || !canSaveHistory) ? .6 : 1,
-          }}>
-          {saving ? 'Đang lưu...' : 'Lưu lịch sử'}
-        </button>
-
-        <button onClick={() => setCfgOpen(true)}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6,
-            border: '1px solid var(--border,#d1d5db)', background: '#fff',
-            fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-            color: '#374151', cursor: 'pointer',
-          }}>
-          Cột&nbsp;<b>{visCols.length}/{allCols.length}</b>
-        </button>
+            <button onClick={() => setCfgOpen(true)}
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                border: '1px solid var(--border,#d1d5db)', background: '#fff',
+                fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                color: '#374151', cursor: 'pointer', transition: 'all 0.15s ease',
+              }}>
+              Cột&nbsp;<b>{visCols.length}/{allCols.length}</b>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Progress banner for async payroll computation */}
@@ -1088,13 +1107,17 @@ export default function BatchList({ search }) {
               </thead>
               <tbody>
                 {emps.map((emp, idx) => {
-                  const statusKey = emp.employee_confirm === 'confirmed' ? 'confirmed'
+                  const statusKey = emp.employee_confirm === 'confirmed'
+                    ? (emp.auto_confirm || emp.is_auto_confirm ? 'auto_confirmed' : 'confirmed')
                     : emp.employee_confirm === 'rejected' ? 'rejected'
                     : emp.email_sent ? 'pending_sent' : 'pending_unsent';
                   const cs = CONFIRM_MAP[statusKey] || CONFIRM_MAP.pending_unsent;
-                  const rowBg = emp.employee_confirm === 'confirmed' ? '#f0fdf4'
+                  const isAuto = emp.auto_confirm || emp.is_auto_confirm;
+                  const rowBg = emp.employee_confirm === 'confirmed'
+                    ? (isAuto ? '#f0f9ff' : '#f0fdf4')
                     : emp.employee_confirm === 'rejected' ? '#fef2f2' : '#fff';
-                  const rowHover = emp.employee_confirm === 'confirmed' ? '#dcfce7'
+                  const rowHover = emp.employee_confirm === 'confirmed'
+                    ? (isAuto ? '#e0f2fe' : '#dcfce7')
                     : emp.employee_confirm === 'rejected' ? '#fee2e2' : '#f8fafc';
                   return (
                   <tr key={emp.id}
