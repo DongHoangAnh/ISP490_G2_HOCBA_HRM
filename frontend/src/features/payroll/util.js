@@ -31,7 +31,7 @@ export const CATEGORY_LABEL = {
 export const HIGHLIGHT_CODES = new Set(['tong_thu_nhap', 'thuc_lanh']);
 export const MUTED_CATEGORIES = new Set(['bh_phan_cong_ty']);
 
-export const currentMonth = () => String(new Date().getMonth() + 1).padStart(2, '0');
+export const currentMonth = () => String(new Date().getMonth() + 1);
 export const currentYear = () => String(new Date().getFullYear());
 
 export const defaultBatchName = (m, y) => `Lương T${m}/${y}`;
@@ -42,10 +42,17 @@ export const lastOfMonth = (m, y) => {
   return `${y}-${String(m).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export const monthOptions = () =>
-  Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: `Tháng ${i + 1}` }));
+export const monthOptions = (selectedYear) => {
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  const maxMonth = (Number(selectedYear) === curYear) ? curMonth : 12;
+  return Array.from({ length: maxMonth }, (_, i) => ({ value: String(i + 1), label: `Tháng ${i + 1}` }));
+};
 
 export const yearOptions = () => {
   const y = new Date().getFullYear();
-  return [y - 1, y, y + 1].map((v) => ({ value: String(v), label: String(v) }));
+  const years = [];
+  for (let i = y; i >= y - 5; i--) years.push({ value: String(i), label: String(i) });
+  return years;
 };

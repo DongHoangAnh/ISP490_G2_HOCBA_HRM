@@ -133,6 +133,28 @@
             <field name="amount_fixed">0</field>
         </record>
 
+        <!-- Thưởng & PC theo Role (Chức vụ/Phòng ban) -->
+        <record id="rule_off_role_allowance" model="hb.salary.rule">
+            <field name="name">Thưởng &amp; PC theo Role</field>
+            <field name="code">role_allowance</field>
+            <field name="sequence">15</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_alw"/>
+            <field name="amount_type">formula</field>
+            <field name="amount_formula">role_allowance</field>
+        </record>
+
+        <!-- Thưởng cá nhân -->
+        <record id="rule_off_bonus_extra" model="hb.salary.rule">
+            <field name="name">Thưởng cá nhân</field>
+            <field name="code">bonus_extra</field>
+            <field name="sequence">16</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_bonus"/>
+            <field name="amount_type">formula</field>
+            <field name="amount_formula">bonus_extra</field>
+        </record>
+
         <!-- ── NHÓM THU NHẬP & THUẾ ─────────────────────────── -->
 
         <!-- Tổng thu nhập = (Ăn ca + Xăng xe + Điện thoại + Lương cơ bản) / 25 × NCTT -->
@@ -247,6 +269,17 @@
             <field name="amount_formula">ROUND(IF(tn_tinh_thue &lt;= 10000000, tn_tinh_thue * 0.05, IF(tn_tinh_thue &lt;= 30000000, 500000 + (tn_tinh_thue - 10000000) * 0.10, IF(tn_tinh_thue &lt;= 60000000, 2500000 + (tn_tinh_thue - 30000000) * 0.20, IF(tn_tinh_thue &lt;= 100000000, 8500000 + (tn_tinh_thue - 60000000) * 0.30, 20500000 + (tn_tinh_thue - 100000000) * 0.35)))), 0)</field>
         </record>
 
+        <!-- Phạt cá nhân -->
+        <record id="rule_off_penalty_amount" model="hb.salary.rule">
+            <field name="name">Phạt cá nhân</field>
+            <field name="code">penalty_amount</field>
+            <field name="sequence">65</field>
+            <field name="structure_id" ref="struct_offline"/>
+            <field name="category_id" ref="rule_categ_deduct"/>
+            <field name="amount_type">formula</field>
+            <field name="amount_formula">penalty_amount</field>
+        </record>
+
         <!-- ── NHÓM THỰC LĨNH & BẢO HIỂM CÔNG TY ─────────────── -->
 
         <!-- Tổng lương thực lĩnh = ROUND(Tổng thu nhập − (BHXH+BHYT+BHTN) − Thuế TNCN - Phạt vi phạm) -->
@@ -257,7 +290,7 @@
             <field name="structure_id" ref="struct_offline"/>
             <field name="category_id" ref="rule_categ_net"/>
             <field name="amount_type">formula</field>
-            <field name="amount_formula">ROUND(tong_thu_nhap - (bhxh_8_nv + bhyt_1_5_nv + bhtn_1_nv) - thue_tncn, 0)</field>
+            <field name="amount_formula">ROUND(tong_thu_nhap - (bhxh_8_nv + bhyt_1_5_nv + bhtn_1_nv) - thue_tncn - penalty_amount, 0)</field>
         </record>
 
         <!-- BHXH (17.5%) — Công ty đóng -->

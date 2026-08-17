@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { applyBulkBonusPenalty } from '../../api/payroll';
 import Icon from '../../components/Icon';
 
-export default function BulkBonusPenaltyModal({ batchId, employees, onClose, onSuccess }) {
+export default function BulkBonusPenaltyModal({ month, year, employees, onClose, onSuccess }) {
   const [bonusAmount, setBonusAmount] = useState(0);
   const [bonusReason, setBonusReason] = useState('');
   const [penaltyAmount, setPenaltyAmount] = useState(0);
@@ -83,7 +83,7 @@ export default function BulkBonusPenaltyModal({ batchId, employees, onClose, onS
 
     setSaving(true);
     try {
-      const res = await applyBulkBonusPenalty(batchId, {
+      const res = await applyBulkBonusPenalty(month, year, {
         payslipIds: targetIds,
         bonusAmount: Number(bonusAmount),
         bonusReason,

@@ -151,6 +151,6 @@ export const deleteRoleAllowanceConfig = (id) =>
   p(`/hocba-hrm/api/payroll/role-allowance-config/${id}/delete`, {});
 
 // ── Bulk Bonus & Penalty Assignment Wizard ──────────────
-export const applyBulkBonusPenalty = (batchId, payload) =>
-  p(`/hocba-hrm/api/payroll/batch/${batchId}/bulk-bonus-penalty`, payload);
+export const applyBulkBonusPenalty = (month, year, payload) =>
+  p(`/hocba-hrm/api/payroll/bulk-bonus-penalty`, { month, year, ...payload });
 

@@ -6,7 +6,7 @@ import Modal from '../../components/Modal';
 import BulkBonusPenaltyModal from './BulkBonusPenaltyModal';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { hbVND } from '../../utils/format';
-import { currentMonth, currentYear } from './util';
+import { currentMonth, currentYear, monthOptions, yearOptions } from './util';
 
 /* ── localStorage v2 ── */
 const LS_KEY = 'hb_payroll_col_v2';
@@ -368,8 +368,8 @@ const CONFIRM_MAP = {
 
 /* ── Main ── */
 export default function BatchList({ search }) {
-  const month = currentMonth();
-  const year  = currentYear();
+  const [month, setMonth] = useState(() => currentMonth());
+  const [year, setYear]   = useState(() => currentYear());
   const [data, setData]   = useState(null);
   const [err, setErr]     = useState(null);
   const [detailEmp, setDetailEmp] = useState(null);
@@ -806,13 +806,41 @@ export default function BatchList({ search }) {
               boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
             }}>
               <Icon name="search" size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
-              <span style={{
-                display: 'inline-flex', alignItems: 'center',
-                padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 600,
-                background: '#eff6ff', color: '#1d4ed8', whiteSpace: 'nowrap',
-              }}>
-                T{month}/{year}
-              </span>
+              <select
+                value={month}
+                onChange={(e) => { setMonth(e.target.value); setChecked({}); }}
+                style={{
+                  padding: '3px 8px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+                  background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+                  cursor: 'pointer', outline: 'none',
+                }}
+              >
+                {monthOptions(year).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <select
+                value={year}
+                onChange={(e) => {
+                  const newYear = e.target.value;
+                  setYear(newYear);
+                  // Clamp month if switching to current year and month is in the future
+                  const now = new Date();
+                  if (Number(newYear) === now.getFullYear() && Number(month) > now.getMonth() + 1) {
+                    setMonth(String(now.getMonth() + 1));
+                  }
+                  setChecked({});
+                }}
+                style={{
+                  padding: '3px 8px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+                  background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+                  cursor: 'pointer', outline: 'none',
+                }}
+              >
+                {yearOptions().map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
               <input
                 type="text"
                 value={localSearch}
@@ -1264,7 +1292,8 @@ export default function BatchList({ search }) {
       {detailEmp && <SalaryDetail emp={detailEmp} columns={allCols} onClose={() => setDetailEmp(null)} onChanged={load} />}
       {showBulkModal && (
         <BulkBonusPenaltyModal
-          batchId={data ? data.batch_id : null}
+          month={month}
+          year={year}
           employees={data ? data.employees : []}
           onClose={() => setShowBulkModal(false)}
           onSuccess={() => load()}
