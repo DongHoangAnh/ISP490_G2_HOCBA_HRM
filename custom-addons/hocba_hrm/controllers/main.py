@@ -3504,7 +3504,13 @@ class HocBaHRM(http.Controller):
     def _onb_pending_count(self, env):
         user = env.user
         Step = env['hb.onboarding.step'].sudo()
-        waiting = Domain([('state', '=', 'open')])
+        # Chỉ đếm bước của NV CÒN thử việc: màn "Nhận việc" chỉ liệt kê
+        # x_employment_status='probation', nên bước treo lại trên NV đã lên
+        # chính thức/nghỉ là việc không màn nào bấm được — badge trỏ vào đó
+        # là mời người ta click rồi không thấy gì (23 vs 4 người).
+        waiting = Domain([('state', '=', 'open'),
+                          ('employee_id.x_employment_status', '=',
+                           'probation')])
         if (user.has_group('base.group_system')
                 or user.has_group('hr.group_hr_manager')):
             return {'canAct': True, 'count': Step.search_count(waiting)}
