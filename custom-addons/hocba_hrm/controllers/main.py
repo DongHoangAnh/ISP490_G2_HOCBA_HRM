@@ -1,5 +1,6 @@
 import calendar
 import hashlib
+import json
 import re
 from datetime import date, datetime, time, timedelta
 
@@ -2885,6 +2886,7 @@ class HocBaHRM(http.Controller):
             with file_open('hocba_hrm/static/spa/index.html', 'r') as f:
                 html = f.read()
             html = self._bust_asset_cache(html)
+            html = self._inject_db_name(html)
         except (FileNotFoundError, OSError):
             html = ('<h3 style="font-family:sans-serif">SPA chưa được build.</h3>'
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
@@ -2893,6 +2895,22 @@ class HocBaHRM(http.Controller):
         resp = Response(html, content_type='text/html; charset=utf-8')
         resp.headers['Cache-Control'] = 'no-store'
         return resp
+
+    @staticmethod
+    def _inject_db_name(html):
+        """Nhúng tên database đang phục vụ vào trang SPA.
+
+        Form đăng nhập gọi /web/session/authenticate — route này BẮT BUỘC có
+        tham số `db`. Trước đây SPA ghi cứng 'neondb' nên chạy trên bất kỳ DB
+        nào khác (local, demo, DB của thành viên khác) là đăng nhập luôn sai
+        mật khẩu dù mật khẩu đúng. Lấy tên DB từ chính cursor đang chạy để
+        không phải sửa code mỗi lần đổi DB.
+        """
+        db = request.env.cr.dbname
+        tag = '<script>window.__HB_DB__=%s;</script>' % json.dumps(db)
+        if '</head>' in html:
+            return html.replace('</head>', tag + '</head>', 1)
+        return tag + html
 
     @staticmethod
     def _bust_asset_cache(html):
