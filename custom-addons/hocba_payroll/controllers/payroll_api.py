@@ -417,11 +417,14 @@ class PayrollAPI(http.Controller):
             Slip = env['hb.payslip'].sudo()
 
             # 1) Find or create batch for this period
+            # order='id desc': kỳ có nhiều batch draft thì luôn lấy batch MỚI
+            # NHẤT — cùng quy tắc với /compute-status để hai endpoint không trỏ
+            # vào hai batch khác nhau (xem ghi chú ở compute_status).
             batch = Batch.search([
                 ('date_start', '=', date_start),
                 ('date_end', '=', date_end),
                 ('state', '=', 'draft'),
-            ], limit=1)
+            ], limit=1, order='id desc')
             if not batch:
                 batch = Batch.create({
                     'name': f'Lương Tháng {month:02d}/{year}',
@@ -577,10 +580,25 @@ class PayrollAPI(http.Controller):
             elif month and year:
                 import calendar
                 last_day = calendar.monthrange(year, month)[1]
-                batch = Batch.search([
+                # Một kỳ có thể có NHIỀU batch (batch cũ đã chốt state='verify'
+                # + batch mới do compute-all tự tạo vì nó chỉ tìm batch 'draft').
+                # _order của model là 'date_start desc' → hai batch cùng kỳ hoà
+                # nhau, search(limit=1) trả batch nào là ngẫu nhiên. Trước đây
+                # nó hay trả batch CŨ (compute_status='idle') ⇒ SPA poll mãi ở
+                # 0%, nút "Tính lương" kẹt "Đang tính (0%)..." dù batch mới đã
+                # tính xong. Chọn tường minh: batch đang chạy → batch draft mới
+                # nhất (đúng batch compute-all dùng) → batch mới nhất của kỳ.
+                period = [
                     ('date_start', '=', f'{year}-{month:02d}-01'),
                     ('date_end', '=', f'{year}-{month:02d}-{last_day:02d}'),
-                ], limit=1)
+                ]
+                batch = (
+                    Batch.search(period + [('compute_status', '=', 'processing')],
+                                 limit=1, order='id desc')
+                    or Batch.search(period + [('state', '=', 'draft')],
+                                    limit=1, order='id desc')
+                    or Batch.search(period, limit=1, order='id desc')
+                )
             else:
                 return _error_response('batch_id or month/year is required.')
 
