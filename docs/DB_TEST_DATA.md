@@ -62,7 +62,7 @@ nhiêu lần cũng ra cùng một kết quả). Mật khẩu chung: **`Hocba@202
 **Dữ liệu kèm theo**: 8 phiếu yêu cầu tuyển dụng (đã duyệt) · 42 CV rải đủ 7 bước
 phễu (21 bàn giao, 9 onboarding, còn lại trượt/bùng/đang xử lý) · 80 slot phỏng vấn ·
 122 bước nhận việc · 874 dòng chấm công T7/2026 (T2–T6, có trễ/về sớm/nửa ngày) ·
-6 đơn nghỉ phép đã duyệt + 33 phiếu cấp phép năm · 38 hợp đồng · batch lương
+**87 đơn nghỉ phép** (xem mục 2c) + 33 phiếu cấp phép năm · 38 hợp đồng · batch lương
 **07/2026** với 38 phiếu đã tính (net TB ~11,5 triệu) · 38 phiếu đánh giá **Quý 3/2026**
 (26 đã công bố) · 99 tài sản · 12 NPT · 5 chứng chỉ HSK · 6 yêu cầu gửi HR.
 
@@ -97,6 +97,43 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm --no-d
 - `hr.leave` phải tạo trên **cursor mới** sau khi đã commit nhân viên: cùng transaction
   với lúc tạo NV thì `number_of_days` luôn ra 0.
 - ACL `hocba.hr.request` **không** cho user thường `create` → phải gọi `create_request()`.
+
+### 2c. DB `hocba_demo` — bộ dữ liệu NGHỈ PHÉP (2026-08-17)
+
+Script riêng, **idempotent** (tự xoá đơn + quỹ phép cũ rồi dựng lại từ đầu):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm --no-deps \
+  -v "$PWD/tools:/tools" odoo python3 /tools/seed_demo_timeoff.py
+# SEED_DB=<db> đổi database · SEED_WIPE=0 để KHÔNG xoá dữ liệu nghỉ phép cũ
+```
+
+Toàn bộ chạy trên **8 loại nghỉ Học Bá** (`Nghỉ Phép Năm`/`Ốm`/`Không Lương`/
+`Việc Riêng`/`Khẩn Cấp`/`Bù`…), không dùng loại nghỉ tiếng Anh mặc định của Odoo.
+
+| Tab màn Nghỉ phép | Dữ liệu sinh ra |
+|---|---|
+| **Đơn chờ duyệt** | **25 đơn** — 13 đơn ngày nghỉ tương lai (có 1 **khẩn cấp**, 2 **nửa ngày**), 10 đơn **quá hạn**, 2 đơn **nghỉ bù**; kèm **3 yêu cầu rút đơn** đang chờ (đơn đã duyệt, badge riêng) |
+| **Kiểm duyệt phát sinh** | **10 đơn quá hạn** — quá hạn 1→20 ngày làm việc; đủ 3 nhóm đề xuất: **5 "nên duyệt"** (không có chấm công ngày xin nghỉ), **3 "nên từ chối"** (đối chiếu chấm công T7 thấy **vẫn đi làm** đủ ngày), **2 "cần xem xét"** (đơn vắt qua 31/7 → đi làm 2–3/4 ngày) |
+| **Theo dõi nghỉ phép** (burnout) | **10 NV bị cảnh báo**, đủ 3 nhóm: **4 nghỉ ốm ≥3 lần/3 tháng**, **3 vắng >10 ngày/3 tháng**, **3 quỹ phép còn <2 ngày** |
+| **Đơn đã duyệt** / **Tổng quan** | **58 đơn đã duyệt** (103 ngày) rải tháng 6 & 8, đủ 6 phòng ban và 4 loại nghỉ · **3 đơn đang nghỉ hôm nay** (KPI "Đang nghỉ hôm nay") · **4 đơn bị từ chối** |
+| **Quỹ phép** | **33 phiếu cấp phép năm 2026** trên loại `Nghỉ Phép Năm` — chính thức **12 ngày**, thử việc **6 ngày**, CTV không cấp (đúng BR-021) |
+
+⚠️ **Quy ước ngày tháng — đừng phá khi seed thêm**:
+- **Tháng 7/2026 đã có chấm công từng ngày**. Vì vậy đơn **đã duyệt** chỉ đặt ở
+  **tháng 6 và 1–14/8** (không có chấm công) để hai màn không mâu thuẫn; đơn
+  **quá hạn** thì cố ý đặt ở **tháng 7** để có nhóm "vẫn đi làm → đề xuất từ chối".
+- Đơn nghỉ bù (`x_is_makeup`) tuy ngày nghỉ đã qua nhưng **không** vào tab
+  Kiểm duyệt phát sinh — đúng nghiệp vụ (NV chủ động nộp muộn, không phải người
+  duyệt để trễ).
+- **CTV không được rải đơn đã duyệt**: họ không có quỹ phép nên chỉ cần 1 đơn duyệt
+  là số dư âm → lọt vào cảnh báo "sắp hết phép" (nhiễu). CTV vẫn có đơn chờ duyệt/
+  quá hạn/bị từ chối.
+- Script ghi `x_hb_leave_emp_type` kèm **`x_policy_override=True`**: bật cờ này thì
+  engine chính sách **không** tự tạo allocation tích luỹ (accrual) — nếu để cron
+  accrual chen vào, số dư phép trôi và cảnh báo "sắp hết phép" sai hết.
+- Mọi bản ghi đều gắn nhãn `ir.model.data` module **`seed_demo_timeoff`** → lần chạy
+  sau nhận ra và dọn đúng dữ liệu của script.
 
 ---
 
@@ -184,3 +221,4 @@ docker compose -f docker-compose.yml run --rm --no-deps -T odoo \
 | 2026-08-17 | Demo `hocba_demo` | ✅ Seed **Dashboard sự nghiệp** bằng `tools/seed_demo_honor.py` (chạy lại được): **10 mục vinh danh** (`hb.honor.entry`) — kỳ **08/2026** 7 mục (hạng 1–3 + 4 mục không xếp hạng) và kỳ **07/2026** 3 mục để bấm xem kỳ trước; đủ 4 nhóm *Thành tích / Bổ nhiệm / Gắn bó / Khác*. **2 mốc bổ nhiệm** (`hr.promotion.history`, Đỗ Thị Hải Ngọc → *Trưởng nhóm Tư vấn tuyển sinh* 12tr, Nguyễn Thị Mai → *Trưởng nhóm Content Marketing* 11,5tr) đi qua đúng luồng nghiệp vụ nên **tự sinh 2 mục vinh danh `source='auto'`** — hook chỉ chạy khi `to_job_id ≠ from_job_id` nên phải tạo 2 vị trí quản lý mới (đánh dấu *ngừng tuyển*, không lẫn vào màn Tuyển dụng). **10 đợt đánh giá thăng tiến** (`hr.promotion.evaluation`, đã xác nhận): 7 đợt tháng 8 (5 *Đủ điều kiện* → bảng xếp hạng 89–96 điểm, 1 *Cân nhắc*, 1 *Chưa đủ*) + 3 đợt tháng 6 để radar có cột "đợt trước". Verify bằng payload thật: `_honor_board` trả kỳ 08/2026 (isCurrent), 7 mục đúng thứ tự hạng, 5 dòng xếp hạng; `_career_payload` của người vừa bổ nhiệm có 9 mốc, 6 trục radar, 3 insight. ⚠️ 2 lần bổ nhiệm có **đổi lương** (ghi vào `hr.version`) — phiếu lương 07/2026 đã chốt số trước đó nên vẫn đúng mức lương cũ; nếu tính lại batch tháng 7 thì 2 người này sẽ nhảy theo lương mới. | Việt/Claude |
 | 2026-08-17 | Demo `hocba_demo` | 🐛 **Cài thêm `website_hr_recruitment`** (kéo theo `website`, `website_mail`, `website_sms` — 62 → 69 module đã cài). Lý do: nút **Đăng tuyển** ở tab *Theo dõi tuyển dụng* ghi `hr.job.is_published`, mà field này do `website_hr_recruitment` thêm vào; DB demo dựng bằng `--without-demo=all` với 11 module nghiệp vụ nên thiếu → `ValueError: Invalid field 'is_published' in 'hr.job'` thoát ra thành **HTTP 500 trần** (controller chỉ bắt `AccessError/ValidationError/UserError`). Trên `neondb` module này **đã cài sẵn** nên lỗi không lộ; đây cũng là nguyên nhân 2 test `publish_toggle` đỏ trên DB local ghi ngày 10/08. Verify sau khi cài: `ir_model_fields` có `hr.job.is_published` (boolean), ORM `write` trên vị trí *Trợ giảng* (id 6) chạy sạch. **Không đụng dữ liệu nghiệp vụ**. ⚠️ Kèm theo: DB demo nay có trang `/jobs` mặc định của Odoo — **chưa rebrand** như Neon. | Việt/Claude |
 | 2026-08-17 | Demo `hocba_demo` | 🎨 **Chép branding website công khai từ `neondb` sang** bằng `tools/sync_website_branding.py` (chạy lại được): bản ghi `website` (tên site *Học Bá Education*, Facebook, `custom_code_head` chứa CSS màu brand `#8E0F12`), thông tin công ty hiển thị ở footer (0888861786 / info@hoc-ba.edu.vn) và **96 view riêng của site** (95 cập nhật + 1 tạo mới) — gồm `website.layout`, header/footer, trang chủ, và 3 view trang tuyển dụng công khai `website_hr_recruitment.detail/.apply/.job_right_side_bar`. Verify trên `/jobs/tro-giang-6`: sạch dấu vết mặc định Odoo (*Your Logo* / *My Website* / *+1 555-555-5556* đều = 0 lần), tiêu đề trang thành *Trợ giảng \| Học Bá Education*, nút *Apply Now!* → *Ứng tuyển*. ⚠️ **Bẫy**: bản Neon có **4 view `type='form'` của `res.company`** mang key `website.key_xxxxxx` (Odoo tự COW khi sửa thông tin công ty trong Cài đặt Website) — chép sang sẽ ném `ValidationError: Model not found: False`; script **chỉ lấy view `type='qweb'`**. ⚠️ Script ép lại cờ `arch_updated` đúng như nguồn: container chạy `--dev=xml` sẽ nạp đè view từ file XML nếu cờ này sai. ⚠️ **Branding vẫn chỉ nằm trong DB, không có bản sao trong git** — muốn an toàn thì phải xuất 28 view đã sửa thành module data. | Việt/Claude |
+| 2026-08-17 | Demo `hocba_demo` | ✅ **Seed bộ dữ liệu NGHỈ PHÉP** bằng `tools/seed_demo_timeoff.py` (idempotent — xoá đơn + quỹ phép cũ rồi dựng lại, chi tiết mục 2c). **87 đơn** (58 đã duyệt · 25 chờ duyệt · 4 từ chối) + **33 phiếu cấp phép năm** trên loại nghỉ Học Bá `Nghỉ Phép Năm` (trước đó quỹ phép nằm ở loại Odoo mặc định *Paid Time Off* nên tab **Quỹ phép** của SPA — vốn lọc `x_hb_managed` — không có dòng nào). Đủ dữ liệu cho: tab **Đơn chờ duyệt** (13 đơn tương lai gồm 1 khẩn cấp + 2 nửa ngày, 2 đơn nghỉ bù, 3 yêu cầu rút đơn), tab **Kiểm duyệt phát sinh** (10 đơn quá hạn 1→20 ngày, đủ 3 nhóm đề xuất 5 duyệt / 3 từ chối / 2 cần xem xét), màn **Theo dõi nghỉ phép** (10 NV cảnh báo: 4 nghỉ ốm thường xuyên · 3 vắng >10 ngày · 3 quỹ phép <2 ngày), **Tổng quan** (103 ngày nghỉ đã duyệt, 3 người đang nghỉ hôm nay, 4 đơn từ chối, biểu đồ phủ 6 phòng ban). Verify bằng payload thật của các tab (`_approvals_domain` / `_lapsed_table` / `_burnout_table` gọi với scope của `test_hrmanager@hocba.vn`). ⚠️ Đơn đã duyệt cố ý **né tháng 7** (tháng đã có chấm công từng ngày) còn đơn quá hạn thì **đặt vào tháng 7** để có nhóm "vẫn đi làm trong ngày xin nghỉ". ⚠️ 6 đơn nghỉ T7 của seed gốc được **dựng lại y nguyên ngày/người** trên loại nghỉ mới; phiếu lương T7 đã chốt số nên không đổi. | Việt/Claude |
