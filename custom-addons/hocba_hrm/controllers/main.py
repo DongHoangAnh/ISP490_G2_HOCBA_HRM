@@ -3256,11 +3256,17 @@ class HocBaHRM(http.Controller):
                     and current is None):
                 current = item
             steps.append(item)
+        # Trạng thái THẬT: drawer mở từ màn Nhận việc từng hard-code "Thử việc",
+        # nên NV vừa được chốt lên Chính thức vẫn bị gắn nhãn thử việc cho tới
+        # khi tải xong hồ sơ chi tiết.
+        status_key = e.x_employment_status or ''
         return {
             'id': e.id, 'code': e.x_employee_code or '—', 'name': e.name,
             'depName': e.department_id.name or 'Chưa gán',
             'jobTitle': e.job_id.name or '—',
             'hasImg': bool(e.image_1920),
+            'status': self._labels()['status'].get(status_key, '—'),
+            'statusKey': status_key,
             'start': _d(e.x_probation_start),
             'officialDate': _d(e.x_official_date),
             'templateId': e.x_onboarding_template_id.id or 0,

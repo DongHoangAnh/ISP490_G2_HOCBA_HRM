@@ -328,7 +328,8 @@ export default function Onboarding({ search, onQueueChanged }) {
       {sel && (
         <EmployeeDrawer
           emp={{ id: sel.id, code: sel.code, name: sel.name, depName: sel.depName,
-                 jobTitle: sel.jobTitle, hasImg: sel.hasImg, statusKey: 'probation', status: 'Thử việc' }}
+                 jobTitle: sel.jobTitle, hasImg: sel.hasImg,
+                 statusKey: sel.statusKey, status: sel.status }}
           initialTab="probation"
           isHr={data.isHr} isMgr={data.isHrManager}
           onChanged={() => { dirtyRef.current = true; }}
