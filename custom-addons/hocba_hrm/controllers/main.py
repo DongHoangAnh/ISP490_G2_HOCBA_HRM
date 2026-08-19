@@ -3253,6 +3253,12 @@ class HocBaHRM(http.Controller):
             'progress': {'done': done, 'total': total},
             'current': current,
             'canEval': can_eval,
+            # Chuỗi hết bước mà không bước nào "Đạt → lên chính thức" thì
+            # đây là đường DUY NHẤT để NV lên Chính thức. Chỉ HR Manager,
+            # khớp guard hr_employee.write().
+            'canFinalize': (
+                user.has_group('hr.group_hr_manager')
+                and e._hocba_onboarding_can_finalize()[0]),
         }
 
     def _onb_get_step(self, step_id):
@@ -3353,6 +3359,26 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'bad_request'},
                                               status=400)
         e._hocba_assign_onboarding(template=tpl)
+        return request.make_json_response(self._onb_emp_item(e))
+
+    @http.route('/hocba-hrm/api/employees/<int:emp_id>/onboarding/finalize',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_finalize(self, emp_id, **kw):
+        """Chốt hoàn tất nhận việc → Chính thức. Chỉ HR Manager; model tự
+        kiểm lại điều kiện chuỗi nên ẩn nút ở FE không phải là chốt chặn."""
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'},
+                                              status=404)
+        try:
+            e.with_user(request.env.user).action_hocba_finalize_onboarding()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=422)
         return request.make_json_response(self._onb_emp_item(e))
 
     # ---- Cấu hình template (chỉ HR Manager) ---------------------------

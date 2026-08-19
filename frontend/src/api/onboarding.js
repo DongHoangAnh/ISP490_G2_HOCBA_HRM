@@ -28,3 +28,10 @@ export const setOnbStepDue = (stepId, dueDate) =>
   hbPost(`/hocba-hrm/api/onboarding/steps/${stepId}/due`, { dueDate });
 export const assignOnbTemplate = (empId, templateId) =>
   hbPost(`/hocba-hrm/api/employees/${empId}/onboarding/assign`, { templateId });
+
+/* Chốt hoàn tất nhận việc → NV lên Chính thức từ hôm nay. Chỉ HR Manager,
+   chỉ khi chuỗi đã xong (payload NV trả cờ canFinalize). Cần thiết vì quy
+   trình không có bước "Đạt → lên chính thức" thì chạy hết chuỗi cũng không
+   ai chuyển trạng thái. */
+export const finalizeOnboarding = (empId) =>
+  hbPost(`/hocba-hrm/api/employees/${empId}/onboarding/finalize`, {});

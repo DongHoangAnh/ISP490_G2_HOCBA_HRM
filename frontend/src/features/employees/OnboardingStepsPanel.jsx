@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import {
   completeOnbStep, evaluateOnbStep, setOnbStepDue, assignOnbTemplate,
-  fetchOnbTemplates,
+  fetchOnbTemplates, finalizeOnboarding,
 } from '../../api/onboarding';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
@@ -206,6 +206,50 @@ function TemplatePicker({ empId, currentId, onDone }) {
   );
 }
 
+/* Chốt hoàn tất nhận việc → Chính thức. Chỉ hiện khi backend trả canFinalize
+   (HR Manager + chuỗi đã xong, không bước nào Không đạt). Cần thiết vì quy
+   trình không có bước "Đạt → lên chính thức" — như Thử việc Giáo viên — thì
+   chạy hết chuỗi cũng không có gì chuyển trạng thái nhân sự. */
+function FinalizeButton({ empId, onDone }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const run = async () => {
+    setErr(null); setBusy(true);
+    try { onDone(await finalizeOnboarding(empId)); } catch (e) {
+      setErr(e.code === 'forbidden'
+        ? 'Chỉ HR Manager được chuyển nhân viên lên Chính thức.'
+        : (e.message || 'Thao tác bị từ chối.'));
+      throw e; // giữ modal mở để người dùng đọc lỗi
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, padding: '12px 16px', background: 'var(--green-bg)', border: '1px solid var(--border)', borderRadius: 11 }}>
+      <div className="between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontSize: 13 }}>
+          <b>Đã xong toàn bộ bước nhận việc.</b>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            Quy trình này không có bước tự chuyển trạng thái — HR chốt để nhân
+            viên lên Chính thức.
+          </div>
+        </div>
+        <button className="btn btn-primary btn-sm" disabled={busy}
+          style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
+          onClick={() => setConfirming(true)}>
+          <Icon name="checkCircle" size={14} />Chuyển chính thức</button>
+      </div>
+      {err && <div style={{ fontSize: 12, color: 'var(--red-600)', marginTop: 6 }}>{err}</div>}
+      {confirming && (
+        <ConfirmModal title="Chuyển sang nhân viên chính thức"
+          message="Nhân viên sẽ lên Chính thức kể từ hôm nay, kèm mốc thăng tiến và nhắc việc tạo hợp đồng chính thức. Tiếp tục?"
+          confirmLabel="Chuyển chính thức"
+          onConfirm={run}
+          onClose={() => setConfirming(false)} />
+      )}
+    </div>
+  );
+}
+
 export default function OnboardingStepsPanel({ det, isMgr, onUpdated }) {
   const onb = det.onboarding || { steps: [], progress: { done: 0, total: 0 } };
   const steps = onb.steps || [];
@@ -315,6 +359,10 @@ export default function OnboardingStepsPanel({ det, isMgr, onUpdated }) {
           );
         })}
       </div>
+
+      {onb.canFinalize && onUpdated && (
+        <FinalizeButton empId={det.id} onDone={patch} />
+      )}
 
       {onb.officialDate && (
         <div style={{ marginTop: 14, padding: '12px 16px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 13 }}>
