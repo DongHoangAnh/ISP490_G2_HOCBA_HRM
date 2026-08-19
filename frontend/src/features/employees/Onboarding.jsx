@@ -15,6 +15,9 @@ import EmployeeDrawer from './EmployeeDrawer';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
+/* Cắt 1 dòng + "…" cho chữ dài — bù cho .tbl-scroll đã bỏ ellipsis của td. */
+const CLIP = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+
 /* Trạng thái tổng của 1 NV suy từ danh sách bước động. */
 function overallOf(o) {
   if (!o.steps || !o.steps.length)
@@ -28,6 +31,42 @@ function overallOf(o) {
 const overallKind = { done: 'green', fail: 'red', run: 'amber', none: 'gray' };
 const isOverdue = (o) =>
   o.current && o.current.dueDate && o.current.dueDate < TODAY;
+
+/* Ngày kết thúc thử việc — hệ thống KHÔNG lưu field riêng, suy từ quy trình:
+   chuỗi xong rồi thì lấy ngày làm xong bước cuối; còn đang chạy thì lấy hạn
+   muộn nhất của chuỗi (dự kiến). Trả {date, planned} — planned=true để bảng
+   nói rõ đó mới là dự kiến.
+
+   KHÔNG dùng officialDate: bảng này chỉ chứa NV đang thử việc, nên hồ sơ nào
+   còn giữ officialDate thì đó là dữ liệu rác cũ (có hồ sơ mang ngày chính thức
+   sớm hơn cả ngày bắt đầu thử việc) — bày ra là bảng tự mâu thuẫn. */
+function probationEndOf(o) {
+  const steps = o.steps || [];
+  if (steps.length && overallOf(o).key === 'done') {
+    const dones = steps.map((s) => s.doneDate).filter(Boolean).sort();
+    if (dones.length) return { date: dones[dones.length - 1], planned: false };
+  }
+  const dues = steps.map((s) => s.dueDate).filter(Boolean).sort();
+  if (dues.length) return { date: dues[dues.length - 1], planned: true };
+  return { date: null, planned: false };
+}
+
+/* Ô "ngày kết thúc thử việc": đỏ khi dự kiến đã trôi qua mà chưa xong. */
+function EndDateCell({ o }) {
+  const { date, planned } = probationEndOf(o);
+  if (!date) return <span className="faint">—</span>;
+  const late = planned && date < TODAY;
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 12.5, color: late ? 'var(--red-600)' : undefined }}>
+        {fmtDate(date)}
+      </div>
+      {planned && (
+        <div className="faint" style={{ fontSize: 11 }}>dự kiến</div>
+      )}
+    </div>
+  );
+}
 
 /* Ô "bước hiện tại": tên + loại + hạn (đỏ nếu quá hạn). */
 function CurrentStepCell({ o }) {
@@ -150,6 +189,7 @@ export default function Onboarding({ search, onQueueChanged }) {
     name: (o) => o.name,
     dep: (o) => o.depName,
     start: (o) => o.start,
+    end: (o) => probationEndOf(o).date,
     tpl: (o) => o.templateName,
     progress: (o) => {
       const p = o.progress || { done: 0, total: 0 };
@@ -226,13 +266,18 @@ export default function Onboarding({ search, onQueueChanged }) {
           <h3>Nhân viên đang thử việc</h3>
           <span className="sub">{filtered.length} người</span>
         </div>
-        <div className="tbl-wrap">
+        {/* tbl-scroll: 8 cột không vừa bề ngang thì cho KÉO NGANG. Mặc định
+            .tbl-wrap ép bảng width:100% + td ellipsis nên cột bị bóp lại và
+            cắt mất chữ mà chẳng bao giờ hiện thanh cuộn — đúng lỗi che dữ
+            liệu. Cùng cách các bảng bên Tuyển dụng đang dùng. */}
+        <div className="tbl-wrap tbl-scroll">
           <table className="tbl">
             <thead><tr>
               <SortTh sort={sort} k="name">Nhân viên</SortTh>
               <SortTh sort={sort} k="dep">Phòng ban</SortTh>
               <SortTh sort={sort} k="start">Ngày bắt đầu</SortTh>
-              <SortTh sort={sort} k="tpl">Quy trình</SortTh>
+              <SortTh sort={sort} k="end">Ngày kết thúc thử việc</SortTh>
+              <SortTh sort={sort} k="tpl">Quy trình thử việc</SortTh>
               <SortTh sort={sort} k="progress">Tiến độ</SortTh>
               <SortTh sort={sort} k="step">Bước hiện tại</SortTh>
               <SortTh sort={sort} k="state">Trạng thái</SortTh>
@@ -245,14 +290,17 @@ export default function Onboarding({ search, onQueueChanged }) {
                     <td>
                       <div className="cell-emp">
                         <Avatar emp={o} size={34} />
-                        <div>
-                          <div className="nm">{o.name}</div>
-                          <div className="id">{o.code} · {o.jobTitle}</div>
+                        {/* tbl-scroll bỏ ellipsis của td → chặn bề ngang tại
+                            đây, không thì một chức danh dài kéo cả bảng ra. */}
+                        <div style={{ minWidth: 0, maxWidth: 240 }}>
+                          <div className="nm" style={CLIP}>{o.name}</div>
+                          <div className="id" style={CLIP}>{o.code} · {o.jobTitle}</div>
                         </div>
                       </div>
                     </td>
                     <td className="muted">{o.depName}</td>
                     <td className="muted mono">{fmtDate(o.start)}</td>
+                    <td className="muted"><EndDateCell o={o} /></td>
                     <td className="muted" style={{ fontSize: 12.5 }}>{o.templateName || '—'}</td>
                     <td><ProgressCell o={o} /></td>
                     <td><CurrentStepCell o={o} /></td>
