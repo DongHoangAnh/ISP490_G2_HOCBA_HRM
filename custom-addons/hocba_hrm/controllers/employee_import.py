@@ -162,3 +162,23 @@ class HocBaEmployeeImport(http.Controller):
             return request.make_json_response(
                 {'error': ex.code, 'message': ex.message}, status=400)
         return request.make_json_response(res)
+
+    # ------------------------------------------- badge "cần hoàn thiện"
+    def _incomplete_count(self):
+        """Số hồ sơ đang thiếu giấy tờ pháp lý (CCCD/MST/BHXH).
+
+        Không quyền → 0 chứ không 403: badge chỉ là trang trí, bắt SPA xử lý
+        lỗi cho một con số cạnh menu là thừa (theo đúng quy ước của
+        /api/timeoff/pending-count).
+        """
+        if not _cap_import_emp(request.env):
+            return 0
+        return request.env['hr.employee'].sudo().search_count(
+            [('x_needs_profile_completion', '=', True)])
+
+    @http.route('/hocba-hrm/api/employees/incomplete-count', auth='user',
+                type='http', methods=['GET'])
+    def api_employees_incomplete_count(self, **kw):
+        if not SPA_ENABLED:
+            return request.make_json_response({'error': 'spa_disabled'}, status=410)
+        return request.make_json_response({'count': self._incomplete_count()})

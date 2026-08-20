@@ -3025,6 +3025,9 @@ class HocBaHRM(http.Controller):
             'empTypeId': e.x_employee_type_id.id or False,
             'empType': e.x_employee_type_id.name or '',
             'empTypeKey': e.x_employee_type_id.code or '',
+            # Giấy tờ pháp lý còn thiếu → icon cảnh báo trên dòng NV.
+            # Chuỗi rỗng = hồ sơ đủ.
+            'missingDocs': e.x_profile_missing or '',
             'probStart': _d(e.x_probation_start),
             'start': _d(e.x_probation_start) or _d(e.create_date and e.create_date.date()),
             'email': e.work_email or '',

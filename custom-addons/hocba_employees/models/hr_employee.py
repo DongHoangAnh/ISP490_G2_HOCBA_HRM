@@ -450,6 +450,25 @@ class HrEmployee(models.Model):
                 if emp.birthday and emp.x_id_date_issue < emp.birthday + relativedelta(years=14):
                     raise ValidationError(_('Ngày cấp CCCD phải sau sinh nhật 14 tuổi.'))
 
+    # ------------------------------------------------------------------
+    # Dấu "cần hoàn thiện hồ sơ" — nguồn của badge menu Nhân viên + icon
+    # trên dòng NV trong SPA. store=True để lọc/đếm bằng domain SQL.
+    # ------------------------------------------------------------------
+    x_needs_profile_completion = fields.Boolean(
+        string='Cần hoàn thiện hồ sơ',
+        compute='_compute_profile_missing', store=True)
+    x_profile_missing = fields.Char(
+        string='Giấy tờ còn thiếu',
+        compute='_compute_profile_missing', store=True)
+
+    @api.depends('version_id.identification_id', 'x_pit_code',
+                 'x_social_insurance_no')
+    def _compute_profile_missing(self):
+        for emp in self:
+            missing = emp._hocba_missing_official_fields()
+            emp.x_profile_missing = ', '.join(missing)
+            emp.x_needs_profile_completion = bool(missing)
+
     def _hocba_missing_official_fields(self):
         """Các mục BR-010 còn thiếu để lên chính thức — [] là đã đủ.
 

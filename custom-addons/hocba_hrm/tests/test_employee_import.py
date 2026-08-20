@@ -488,3 +488,87 @@ class TestEmployeeImportCommit(TransactionCase):
         with self.assertRaises(EmployeeImportError) as cm:
             self.ctrl._commit_rows(rows)
         self.assertEqual(cm.exception.code, 'code_exists')
+
+
+@tagged('post_install', '-at_install')
+class TestProfileCompletionFlag(TransactionCase):
+    """Dấu "cần hoàn thiện hồ sơ" — nguồn của badge menu + icon trên dòng NV."""
+
+    def _emp(self, **kw):
+        vals = {'name': 'NV Cờ', 'x_employment_status': 'probation'}
+        vals.update(kw)
+        return self.env['hr.employee'].create(vals)
+
+    def test_flag_on_when_papers_missing(self):
+        emp = self._emp()
+        self.assertTrue(emp.x_needs_profile_completion)
+        self.assertEqual(emp.x_profile_missing, 'CCCD, MST TNCN, Số sổ BHXH')
+
+    def test_flag_lists_only_what_is_missing(self):
+        emp = self._emp(x_pit_code='0000000001')
+        self.assertEqual(emp.x_profile_missing, 'CCCD, Số sổ BHXH')
+
+    def test_flag_off_when_complete(self):
+        emp = self._emp(x_pit_code='0000000001',
+                        x_social_insurance_no='1900000000')
+        emp.version_id.identification_id = '012345678901'
+        self.assertFalse(emp.x_needs_profile_completion)
+        self.assertFalse(emp.x_profile_missing)
+
+    def test_flag_recomputed_when_pit_filled_in(self):
+        emp = self._emp(x_social_insurance_no='1900000000')
+        emp.version_id.identification_id = '012345678902'
+        self.assertTrue(emp.x_needs_profile_completion)
+        emp.write({'x_pit_code': '0000000002'})
+        self.assertFalse(emp.x_needs_profile_completion)
+
+    def test_flag_recomputed_when_cccd_filled_in(self):
+        emp = self._emp(x_pit_code='0000000003',
+                        x_social_insurance_no='1900000000')
+        self.assertTrue(emp.x_needs_profile_completion)
+        emp.version_id.identification_id = '012345678903'
+        self.assertFalse(emp.x_needs_profile_completion)
+
+    def test_flag_is_searchable(self):
+        """Store=True để lọc/đếm bằng domain SQL — badge và chip lọc đều cần."""
+        emp = self._emp(name='NV Thiếu Giấy Tờ')
+        found = self.env['hr.employee'].search(
+            [('x_needs_profile_completion', '=', True), ('id', '=', emp.id)])
+        self.assertEqual(found, emp)
+
+    def test_archived_employee_not_counted(self):
+        """NV đã nghỉ/lưu trữ không nằm trong việc cần xử lý của HR."""
+        emp = self._emp(name='NV Đã lưu trữ')
+        emp.active = False
+        n = self.env['hr.employee'].search_count(
+            [('x_needs_profile_completion', '=', True), ('id', '=', emp.id)])
+        self.assertEqual(n, 0)
+
+
+@tagged('post_install', '-at_install')
+class TestIncompleteCountRoute(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.ctrl = HocBaEmployeeImport()
+        http._request_stack.push(_FakeRequest(self.env))
+        self.addCleanup(http._request_stack.pop)
+
+    def _user(self, login, groups):
+        return self.env['res.users'].create({
+            'name': login, 'login': login,
+            'group_ids': [(6, 0, [self.env.ref(g).id for g in groups])]})
+
+    def test_count_matches_search(self):
+        self.env['hr.employee'].create({'name': 'Thiếu 1'})
+        expected = self.env['hr.employee'].search_count(
+            [('x_needs_profile_completion', '=', True)])
+        self.assertEqual(self.ctrl._incomplete_count(), expected)
+        self.assertGreater(expected, 0)
+
+    def test_plain_employee_sees_zero_not_error(self):
+        """Badge chỉ là trang trí — không quyền thì trả 0, đừng bắt SPA bắt lỗi."""
+        u = self._user('cnt_nv@test.vn', [])
+        http._request_stack.pop()
+        http._request_stack.push(_FakeRequest(self.env(user=u)))
+        self.assertEqual(self.ctrl._incomplete_count(), 0)
