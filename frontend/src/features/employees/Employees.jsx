@@ -12,6 +12,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import { fmtDate, hbVND, hbStatusKind, hbTypeKind, hbEmpTypeKind } from '../../utils/format';
 import EmployeeDrawer from './EmployeeDrawer';
 import EmployeeForm from './EmployeeForm';
+import ImportEmployeesModal from './ImportEmployeesModal';
 
 const PAGE_SIZE = 20;
 
@@ -43,6 +44,7 @@ export default function Employees({ search, focus, onOpenCareer }) {
   const [sel, setSel] = useState(null);
   const [vmode, setVmode] = useState('table');
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [page, setPage] = useState(1);
   // Đóng drawer khi CHỈ XEM → không tải lại; chỉ khi có sửa mới refresh ngầm.
   const dirtyRef = useRef(false);
@@ -138,6 +140,11 @@ export default function Employees({ search, focus, onOpenCareer }) {
           <p>{emps.length} nhân sự · {deps.length} phòng ban · dữ liệu trực tiếp từ Odoo</p>
         </div>
         <div className="actions">
+          {data.canImport && (
+            <button className="btn btn-ghost" onClick={() => setImporting(true)}
+              title="Nhập hàng loạt hồ sơ nhân sự cũ từ file Excel">
+              <Icon name="upload" size={16} />Nhập từ Excel</button>
+          )}
           {data.canEditEmp && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} />Thêm nhân viên</button>
@@ -207,7 +214,15 @@ export default function Employees({ search, focus, onOpenCareer }) {
                       <div className="cell-emp">
                         <Avatar emp={e} />
                         <div>
-                          <div className="nm">{e.name}</div>
+                          <div className="nm">
+                            {e.name}
+                            {e.missingDocs && (
+                              <span title={'Cần hoàn thiện hồ sơ — thiếu ' + e.missingDocs}
+                                style={{ marginLeft: 6, color: 'var(--amber-600, #b45309)', verticalAlign: '-2px' }}>
+                                <Icon name="alertTriangle" size={14} />
+                              </span>
+                            )}
+                          </div>
                           <div className="id">{e.code} · {e.jobTitle}</div>
                         </div>
                       </div>
@@ -267,6 +282,11 @@ export default function Employees({ search, focus, onOpenCareer }) {
         <EmployeeForm emp={null} isMgr={data.isHrManager}
           onClose={() => setCreating(false)}
           onSaved={() => { setCreating(false); load(); }} />
+      )}
+      {importing && (
+        <ImportEmployeesModal
+          onClose={() => setImporting(false)}
+          onDone={() => { setImporting(false); load(); }} />
       )}
     </div>
   );

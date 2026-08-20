@@ -5,6 +5,7 @@ import { fetchPendingCount } from '../api/timeoff';
 import { fetchOnbPendingCount } from '../api/onboarding';
 import { fetchOffbPendingCount } from '../api/offboarding';
 import { fetchAttendancePendingCount } from '../api/attendance';
+import { fetchIncompleteCount } from '../api/employees';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
@@ -65,6 +66,10 @@ export default function App() {
     .then((d) => setBadge('offboarding')(d.count || 0)).catch(() => {});
   const reloadAttendanceBadge = () => fetchAttendancePendingCount()
     .then((d) => setAttendanceBadge(d.count || 0)).catch(() => {});
+  // Hồ sơ thiếu giấy tờ pháp lý (CCCD/MST/BHXH) — chủ yếu là nhân sự cũ nhập
+  // từ Excel. Route trả 0 cho người không có quyền nên badge tự ẩn.
+  const reloadIncompleteBadge = () => fetchIncompleteCount()
+    .then((d) => setBadge('employees')(d.count || 0)).catch(() => {});
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -116,6 +121,7 @@ export default function App() {
     reloadOnbBadge();
     reloadOffbBadge();
     reloadAttendanceBadge();
+    reloadIncompleteBadge();
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

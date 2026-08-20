@@ -1,5 +1,5 @@
 /* API domain Employees — Tân. Spec: docs/SPEC_HRM_SPA_API.md §3 */
-import { hbGet, hbPost } from './client';
+import { hbGet, hbPost, hbUploadFields } from './client';
 
 export const fetchEmployees = () => hbGet('/hocba-hrm/api/employees');
 export const fetchEmployee = (id) => hbGet(`/hocba-hrm/api/employee/${id}`);
@@ -72,3 +72,15 @@ export const setAccountActive = (empId, active) =>
 /* Phiếu đánh giá này đã dẫn tới quyết định thăng tiến nào chưa. */
 export const fetchReviewPromotion = (reviewId) =>
   hbGet(`/hocba-hrm/api/review/${reviewId}/promotion`);
+
+/* Nhập hồ sơ nhân viên từ Excel (chỉ HR Manager/Admin).
+   preview KHÔNG ghi gì — chỉ đọc-kiểm và trả bảng xem trước; commit mới ghi. */
+export const previewEmployeeImport = (file, sheet) =>
+  hbUploadFields('/hocba-hrm/api/employees/import/preview', file,
+    sheet ? { sheet } : {});
+export const commitEmployeeImport = (rows) =>
+  hbPost('/hocba-hrm/api/employees/import/commit', { rows });
+
+/* Số hồ sơ đang thiếu giấy tờ pháp lý — badge cạnh menu Nhân viên. */
+export const fetchIncompleteCount = () =>
+  hbGet('/hocba-hrm/api/employees/incomplete-count');
