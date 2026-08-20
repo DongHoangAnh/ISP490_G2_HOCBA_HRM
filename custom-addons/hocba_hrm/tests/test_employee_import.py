@@ -400,3 +400,91 @@ class TestEmployeeImportPreview(TransactionCase):
         content = _book([FULL_HDR, _row(dep='Phòng Test Import')])
         res = self.ctrl._preview_payload(_FakeUpload(content, 'ds-nhan-su.xlsx'), None)
         self.assertEqual(res['filename'], 'ds-nhan-su.xlsx')
+
+
+@tagged('post_install', '-at_install')
+class TestEmployeeImportCommit(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.ctrl = HocBaEmployeeImport()
+        http._request_stack.push(_FakeRequest(self.env))
+        self.addCleanup(http._request_stack.pop)
+        self.dep = self.env['hr.department'].create({'name': 'Phòng Test Import'})
+
+    def _preview(self, data_rows):
+        return self.ctrl._preview_payload(
+            _FakeUpload(_book([FULL_HDR] + data_rows)), None)
+
+    def test_commit_creates_employees_with_cccd_on_version(self):
+        prev = self._preview([_row(code='HB.C1', dep='Phòng Test Import')])
+        res = self.ctrl._commit_rows(prev['rows'])
+        self.assertEqual(res['created'], 1)
+        emp = self.env['hr.employee'].browse(res['employeeIds'][0])
+        self.assertEqual(emp.x_employee_code, 'HB.C1')
+        self.assertEqual(emp.department_id, self.dep)
+        self.assertEqual(emp.version_id.identification_id, '038098029187')
+
+    def test_commit_allows_official_missing_pit(self):
+        prev = self._preview([_row(code='HB.C2', dep='Phòng Test Import')])
+        res = self.ctrl._commit_rows(prev['rows'])
+        emp = self.env['hr.employee'].browse(res['employeeIds'][0])
+        self.assertEqual(emp.x_employment_status, 'official')
+        self.assertEqual(res['needCompletion'], 1)
+
+    def test_commit_rechecks_duplicate_even_if_client_lies(self):
+        self.env['hr.employee'].create({'name': 'Có rồi', 'x_employee_code': 'HB.C3'})
+        rows = [{'excelRow': 2, 'name': 'Nguyễn Văn A',
+                 'values': {'name': 'Nguyễn Văn A', 'x_employee_code': 'HB.C3'},
+                 'missingOfficial': []}]
+        with self.assertRaises(EmployeeImportError) as cm:
+            self.ctrl._commit_rows(rows)
+        self.assertEqual(cm.exception.code, 'code_exists')
+
+    def test_commit_ignores_field_outside_whitelist(self):
+        rows = [{'excelRow': 2, 'name': 'X',
+                 'values': {'name': 'X', 'wage': 99999999},
+                 'missingOfficial': []}]
+        res = self.ctrl._commit_rows(rows)
+        emp = self.env['hr.employee'].browse(res['employeeIds'][0])
+        self.assertNotEqual(emp.version_id.wage, 99999999)
+
+    def test_commit_rejects_empty_name(self):
+        rows = [{'excelRow': 5, 'name': '', 'values': {'name': '  '},
+                 'missingOfficial': []}]
+        with self.assertRaises(EmployeeImportError) as cm:
+            self.ctrl._commit_rows(rows)
+        self.assertEqual(cm.exception.code, 'empty_name')
+
+    def test_probation_row_gets_no_onboarding_steps(self):
+        prev = self._preview([_row(code='HB.C4', status='Thử việc',
+                                   dep='Phòng Test Import', prob='01/06/2024')])
+        res = self.ctrl._commit_rows(prev['rows'])
+        emp = self.env['hr.employee'].browse(res['employeeIds'][0])
+        self.assertEqual(emp.x_employment_status, 'probation')
+        self.assertFalse(emp.x_onboarding_step_ids)
+
+    def test_commit_is_all_or_nothing(self):
+        good = {'excelRow': 2, 'name': 'Tốt',
+                'values': {'name': 'Tốt', 'x_employee_code': 'HB.C5'},
+                'missingOfficial': []}
+        bad = {'excelRow': 3, 'name': '', 'values': {'name': ''},
+               'missingOfficial': []}
+        before = self.env['hr.employee'].search_count([])
+        # savepoint = đúng ngữ nghĩa cr.rollback() mà route dùng; Odoo cấm gọi
+        # thẳng rollback trong test (hỏng cursor của chính test).
+        with self.assertRaises(EmployeeImportError):
+            with self.env.cr.savepoint():
+                self.ctrl._commit_rows([good, bad])
+        self.assertEqual(self.env['hr.employee'].search_count([]), before)
+
+    def test_two_rows_sharing_a_code_rejected_at_commit(self):
+        rows = [{'excelRow': 2, 'name': 'A',
+                 'values': {'name': 'A', 'x_employee_code': 'HB.C6'},
+                 'missingOfficial': []},
+                {'excelRow': 3, 'name': 'B',
+                 'values': {'name': 'B', 'x_employee_code': 'HB.C6'},
+                 'missingOfficial': []}]
+        with self.assertRaises(EmployeeImportError) as cm:
+            self.ctrl._commit_rows(rows)
+        self.assertEqual(cm.exception.code, 'code_exists')
