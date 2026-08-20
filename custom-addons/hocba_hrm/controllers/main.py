@@ -1590,6 +1590,18 @@ def _cap_manage_account(env):
             or user.has_group('hr.group_hr_manager'))
 
 
+def _cap_import_emp(env):
+    """Nhập hồ sơ hàng loạt từ Excel: chỉ Admin | HR-Mgr.
+
+    Chặt hơn _cap_edit_emp có chủ đích — Trưởng phòng/Giáo vụ có phạm vi hẹp,
+    nhập cả file nhân sự toàn công ty sẽ đẻ hồ sơ ngoài phạm vi rồi bị
+    _emp_in_scope chặn giữa chừng.
+    """
+    user = env.user
+    return (user.has_group('base.group_system')
+            or user.has_group('hr.group_hr_manager'))
+
+
 def _cap_edit_dept(env):
     """Được THÊM/SỬA/LƯU TRỮ phòng ban: Admin | HR-Mgr. HR officer chỉ XEM.
 
@@ -3059,6 +3071,7 @@ class HocBaHRM(http.Controller):
             'canEditEmp': _cap_edit_emp(request.env),
             'canSeeSalary': see_salary,
             'canManageAccount': _cap_manage_account(request.env),
+            'canImport': _cap_import_emp(request.env),
             'departments': list(deps.values()),
             'employees': rows,
         })

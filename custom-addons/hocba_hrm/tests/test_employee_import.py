@@ -297,3 +297,106 @@ class TestLegacyImportEscapeHatch(TransactionCase):
         emp = self.env['hr.employee'].create({
             'name': 'NV Thử việc', 'x_employment_status': 'probation'})
         self.assertEqual(emp.x_employment_status, 'probation')
+
+
+from odoo import http
+
+from odoo.addons.hocba_hrm.controllers.employee_import import HocBaEmployeeImport
+from odoo.addons.hocba_hrm.controllers.main import _cap_import_emp
+
+
+class _FakeUpload:
+    """Stand-in cho werkzeug FileStorage: đủ .filename và .read()."""
+
+    def __init__(self, content, filename='ns.xlsx'):
+        self._content = content
+        self.filename = filename
+
+    def read(self):
+        return self._content
+
+
+class _FakeRequest:
+    """Đủ để controller đọc request.env khi gọi thẳng ngoài context HTTP."""
+
+    def __init__(self, env):
+        self.env = env
+
+
+@tagged('post_install', '-at_install')
+class TestEmployeeImportPermission(TransactionCase):
+
+    def _user(self, login, groups):
+        return self.env['res.users'].create({
+            'name': login, 'login': login,
+            'group_ids': [(6, 0, [self.env.ref(g).id for g in groups])]})
+
+    def test_hr_manager_can_import(self):
+        u = self._user('imp_mgr@test.vn', ['hr.group_hr_manager'])
+        self.assertTrue(_cap_import_emp(self.env(user=u)))
+
+    def test_admin_can_import(self):
+        u = self._user('imp_admin@test.vn', ['base.group_system'])
+        self.assertTrue(_cap_import_emp(self.env(user=u)))
+
+    def test_hr_officer_cannot_import(self):
+        u = self._user('imp_hr@test.vn', ['hr.group_hr_user'])
+        self.assertFalse(_cap_import_emp(self.env(user=u)))
+
+    def test_giaovu_cannot_import(self):
+        u = self._user('imp_gv@test.vn', ['hocba_employees.group_hocba_giaovu'])
+        self.assertFalse(_cap_import_emp(self.env(user=u)))
+
+
+@tagged('post_install', '-at_install')
+class TestEmployeeImportPreview(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        self.ctrl = HocBaEmployeeImport()
+        http._request_stack.push(_FakeRequest(self.env))
+        self.addCleanup(http._request_stack.pop)
+        self.dep = self.env['hr.department'].create({'name': 'Phòng Test Import'})
+
+    def test_catalogs_use_normalized_names(self):
+        cat = self.ctrl._catalogs()
+        self.assertEqual(cat['departments'].get('phong test import'), self.dep.id)
+
+    def test_existing_collects_codes_and_cccds(self):
+        emp = self.env['hr.employee'].create({
+            'name': 'Đã có', 'x_employee_code': 'HB.XX'})
+        emp.version_id.identification_id = '012345678901'
+        found = self.ctrl._existing()
+        self.assertIn('HB.XX', found['codes'])
+        self.assertIn('012345678901', found['cccds'])
+
+    def test_preview_creates_nothing(self):
+        content = _book([FULL_HDR, _row(dep='Phòng Test Import')])
+        before = self.env['hr.employee'].search_count([])
+        res = self.ctrl._preview_payload(_FakeUpload(content), None)
+        self.assertEqual(res['summary']['ok'], 1)
+        self.assertEqual(self.env['hr.employee'].search_count([]), before)
+
+    def test_preview_reports_existing_row_as_skipped(self):
+        emp = self.env['hr.employee'].create({
+            'name': 'Trùng', 'x_employee_code': 'HB.DUP'})
+        content = _book([FULL_HDR, _row(code='HB.DUP', dep='Phòng Test Import')])
+        res = self.ctrl._preview_payload(_FakeUpload(content), None)
+        self.assertEqual(res['rows'], [])
+        self.assertEqual(res['skipped'][0]['reason'], 'code_exists')
+        self.assertTrue(emp.exists())
+
+    def test_preview_rejects_non_xlsx(self):
+        with self.assertRaises(EmployeeImportError) as cm:
+            self.ctrl._preview_payload(_FakeUpload(b'x', filename='ns.csv'), None)
+        self.assertEqual(cm.exception.code, 'bad_ext')
+
+    def test_preview_rejects_missing_file(self):
+        with self.assertRaises(EmployeeImportError) as cm:
+            self.ctrl._preview_payload(None, None)
+        self.assertEqual(cm.exception.code, 'no_file')
+
+    def test_preview_keeps_filename(self):
+        content = _book([FULL_HDR, _row(dep='Phòng Test Import')])
+        res = self.ctrl._preview_payload(_FakeUpload(content, 'ds-nhan-su.xlsx'), None)
+        self.assertEqual(res['filename'], 'ds-nhan-su.xlsx')
