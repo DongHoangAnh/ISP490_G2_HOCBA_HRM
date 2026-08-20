@@ -70,7 +70,7 @@ Hai kết luận quyết định thiết kế:
 Nút **"Nhập từ Excel"** trên toolbar màn Nhân viên (cạnh nút thêm NV), chỉ hiện với
 HR Manager / Admin. Modal 2 bước:
 
-**Bước 1 — Chọn file.** Kéo/thả hoặc chọn `.xlsx` (≤ 2 MB). File nhiều sheet → hiện
+**Bước 1 — Chọn file.** Kéo/thả hoặc chọn `.xlsx` (≤ 10 MB). File nhiều sheet → hiện
 ô chọn sheet, mặc định chọn sheet đầu tiên dò được header hợp lệ.
 
 **Bước 2 — Xem trước.** Bảng chia 3 nhóm, mỗi dòng kèm **số dòng trong file Excel**:
@@ -162,7 +162,7 @@ Trả `{"created": 137, "needCompletion": 31, "employeeIds": [...]}`.
 |---|---|---|
 | Cả file | `no_file` | không đính kèm file |
 | Cả file | `bad_ext` | không phải `.xlsx` |
-| Cả file | `too_large` | > 2 MB |
+| Cả file | `too_large` | > 10 MB |
 | Cả file | `no_header` | không dò được dòng header trong 10 dòng đầu |
 | Cả file | `no_name_col` | không tìm thấy cột Họ và tên |
 | Dòng | `empty_name` | thiếu họ tên |

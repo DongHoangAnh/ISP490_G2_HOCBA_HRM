@@ -16,7 +16,7 @@
 - BR-010: NV `official` phải có CCCD + MST TNCN + số sổ BHXH. Luồng import được miễn qua context `hocba_legacy_import=True`; **mọi luồng khác vẫn phải bị chặn**.
 - Context `hocba_no_onb_assign=True` đã tồn tại sẵn trong `hr_employee.py` — dùng để NV nhập vào không bị gán quy trình nhận việc.
 - Quyền dùng import: **chỉ** `base.group_system` hoặc `hr.group_hr_manager`.
-- Giới hạn file: `.xlsx`, tối đa **2 MB** (`MAX_XLSX_BYTES = 2 * 1024 * 1024`).
+- Giới hạn file: `.xlsx`, tối đa **10 MB** (`MAX_XLSX_BYTES = 10 * 1024 * 1024`) — file nghiệp vụ thật đã 2,21 MB.
 - Route SPA: `type="http"`, trả JSON qua `request.make_json_response`, route ghi đặt `csrf=False`. Khoá JSON dạng camelCase.
 - Test bắt buộc chạy bằng lệnh dưới (thiếu `MSYS_NO_PATHCONV=1` trên Git Bash → chạy 0 test mà vẫn báo OK):
 
@@ -190,7 +190,7 @@ Tạo `custom-addons/hocba_hrm/controllers/employee_xlsx.py`:
 import re
 import unicodedata
 
-MAX_XLSX_BYTES = 2 * 1024 * 1024
+MAX_XLSX_BYTES = 10 * 1024 * 1024
 MAX_HEADER_SCAN = 10        # chỉ dò header trong ngần này dòng đầu
 MIN_HEADER_HITS = 3         # dòng phải khớp ngần này tiêu đề mới coi là header
 
@@ -1337,7 +1337,7 @@ export default function ImportEmployeesModal({ onClose, onDone }) {
     <Modal title="Nhập hồ sơ nhân viên từ Excel" onClose={onClose} wide>
       {!prev && (
         <div className="form-row">
-          <label className="lbl">Chọn file .xlsx (tối đa 2MB)</label>
+          <label className="lbl">Chọn file .xlsx (tối đa 10MB)</label>
           <input type="file" accept=".xlsx" disabled={busy}
             onChange={(e) => {
               const f = e.target.files?.[0];
