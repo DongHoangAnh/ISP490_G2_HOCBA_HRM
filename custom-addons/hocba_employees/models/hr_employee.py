@@ -470,6 +470,13 @@ class HrEmployee(models.Model):
 
     @api.constrains('x_employment_status', 'x_pit_code', 'x_social_insurance_no')
     def _check_official_required_fields(self):
+        # Di cư dữ liệu cũ (spec 2026-08-20-employee-excel-import): nhân sự có
+        # từ trước hệ thống đã "Chính thức" ngoài đời nhưng chưa từng đi qua
+        # quy trình thử việc — file của trung tâm không ai có MST. Nhập trọn
+        # gói nên một dòng vướng là huỷ cả mẻ. CHỈ controller nhập Excel bật cờ
+        # này; hồ sơ nhập vào vẫn bị chặn ở lần lên chính thức kế tiếp.
+        if self.env.context.get('hocba_legacy_import'):
+            return
         # BR-010 (mở rộng họp #2): chính thức bắt buộc CCCD + MST + BHXH
         for emp in self.sudo():
             if emp.x_employment_status == 'official':

@@ -241,3 +241,59 @@ class TestEmployeeXlsxParse(TransactionCase):
         res = self._parse([_row()])
         self.assertEqual(res['sheet'], '2.1. Quản lý nhân sự')
         self.assertIn('2.1. Quản lý nhân sự', res['sheets'])
+
+
+from odoo.exceptions import ValidationError
+
+
+@tagged('post_install', '-at_install')
+class TestLegacyImportEscapeHatch(TransactionCase):
+    """BR-010 phải MỞ cho luồng nhập dữ liệu cũ và ĐÓNG cho mọi luồng khác.
+
+    Lý do miễn: 29/112 nhân sự cũ của trung tâm đang là "Chính thức" ngoài đời
+    nhưng chưa từng đi qua quy trình thử việc của hệ thống (cả file không ai có
+    MST). Nhập trọn gói nên chỉ cần một dòng vướng là cả mẻ bị huỷ.
+    """
+
+    VALS = {'name': 'NV Cũ', 'x_employment_status': 'official'}
+
+    def test_official_without_pit_still_blocked_normally(self):
+        with self.assertRaises(ValidationError):
+            self.env['hr.employee'].create(dict(self.VALS))
+
+    def test_official_without_pit_allowed_under_import_context(self):
+        emp = self.env['hr.employee'].with_context(
+            hocba_legacy_import=True).create(dict(self.VALS))
+        self.assertEqual(emp.x_employment_status, 'official')
+        self.assertEqual(
+            set(emp._hocba_missing_official_fields()),
+            {'CCCD', 'MST TNCN', 'Số sổ BHXH'})
+
+    def test_promoting_imported_record_later_is_still_blocked(self):
+        """Hồ sơ đã nhập KHÔNG được tha luôn: đường lên chính thức bình thường
+        vẫn phải khai đủ."""
+        imported = self.env['hr.employee'].with_context(
+            hocba_legacy_import=True).create(dict(self.VALS))
+        # Cờ context DÍNH vào recordset vừa tạo. HR sửa hồ sơ ở một request
+        # khác, không có cờ — browse lại để mô phỏng đúng chuyện đó.
+        emp = self.env['hr.employee'].browse(imported.id)
+        self.assertNotIn('hocba_legacy_import', emp.env.context)
+        emp.write({'x_employment_status': 'probation'})
+        with self.assertRaises(ValidationError):
+            emp.write({'x_employment_status': 'official'})
+
+    def test_clearing_pit_on_official_still_blocked(self):
+        # CCCD nằm trên hr.version nên phải ghi TRƯỚC khi lên official, không
+        # thì vướng BR-010 ngay lúc tạo (chính là bẫy ghi trong CLAUDE.md).
+        emp = self.env['hr.employee'].create({
+            'name': 'NV Đủ giấy tờ', 'x_employment_status': 'probation',
+            'x_pit_code': '0000000001', 'x_social_insurance_no': '1900000000'})
+        emp.version_id.identification_id = '012345678901'
+        emp.write({'x_employment_status': 'official'})
+        with self.assertRaises(ValidationError):
+            emp.write({'x_pit_code': False})
+
+    def test_probation_never_needed_the_papers(self):
+        emp = self.env['hr.employee'].create({
+            'name': 'NV Thử việc', 'x_employment_status': 'probation'})
+        self.assertEqual(emp.x_employment_status, 'probation')
