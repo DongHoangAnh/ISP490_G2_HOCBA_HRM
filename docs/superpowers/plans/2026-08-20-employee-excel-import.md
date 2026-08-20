@@ -10,6 +10,10 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-20-employee-excel-import-design.md`
 
+> **Cập nhật 2026-08-21 khi thi công:** trần file nâng 2 MB → 10 MB (file thật 2,21 MB);
+> bỏ chuông tổng kết ở Task 5, thay bằng **Task 7** — dấu "cần hoàn thiện hồ sơ"
+> thường trực (2 field compute store + badge menu Nhân viên + icon trên dòng NV).
+
 ## Global Constraints
 
 - Odoo 19: `res.users` dùng `group_ids` (KHÔNG phải `groups_id`); CCCD (`identification_id`) nằm trên `hr.version`, không phải `hr.employee`.

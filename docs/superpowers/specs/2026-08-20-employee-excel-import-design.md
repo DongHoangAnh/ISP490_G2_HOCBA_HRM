@@ -150,9 +150,9 @@ Cùng kiểm quyền như 6.1. Xử lý:
    + `hocba_legacy_import=True` (cờ mới, mục 8).
 3. `hr.employee.create()` → ghi tiếp `hr.version` cho `identification_id`.
 4. Lỗi bất kỳ → `request.env.cr.rollback()`, trả `400 {"error":"rejected", "excelRow": n, "message": ...}`.
-5. Thành công → tạo **một** `hb.notification` tổng kết cho người import
-   ("Đã nhập 137 hồ sơ · 31 hồ sơ thiếu MST/BHXH cần hoàn thiện"), **không** bắn
-   thông báo theo từng hồ sơ.
+5. Thành công → **không bắn thông báo**. Hồ sơ thiếu giấy tờ được đánh dấu
+   thường trực (mục 8b) chứ không qua chuông — chuông trôi đi thì HR không tìm
+   lại được ai còn thiếu. *(Đổi 2026-08-21 theo yêu cầu: chuyển sang badge.)*
 
 Trả `{"created": 137, "needCompletion": 31, "employeeIds": [...]}`.
 
@@ -252,6 +252,19 @@ thì lần sau HR mở ra sửa trên UI vẫn bị BR-010 chặn cho tới khi 
 
 Không thêm field mới: "hồ sơ cần hoàn thiện" tính bằng
 `_hocba_missing_official_fields()` đã có sẵn.
+
+## 8b. Đánh dấu hồ sơ cần hoàn thiện *(bổ sung 2026-08-21)*
+
+Không dùng chuông. Dấu là **thường trực**, tính cho **mọi NV** thiếu CCCD/MST/BHXH
+(không riêng người nhập từ Excel — NV tuyển mới mà HR quên đòi giấy tờ cũng hiện):
+
+| Chỗ | Thể hiện |
+|---|---|
+| Model `hr.employee` | `x_needs_profile_completion` (Boolean) + `x_profile_missing` (Char) — compute **store=True** để lọc/đếm bằng domain SQL |
+| Menu **Nhân viên** | Badge số, nguồn `GET /hocba-hrm/api/employees/incomplete-count`. Không quyền → `200 {count: 0}` (khuôn của `/api/timeoff/pending-count`) |
+| Dòng NV trong bảng | Icon `alertTriangle` cạnh tên, tooltip *"Cần hoàn thiện hồ sơ — thiếu MST TNCN, Số sổ BHXH"*; nguồn là khoá `missingDocs` trong payload `/api/employees` |
+
+Quyền xem badge = quyền nhập (`_cap_import_emp`): HR Manager / Admin.
 
 ## 9. Test (TDD — đỏ trước)
 
