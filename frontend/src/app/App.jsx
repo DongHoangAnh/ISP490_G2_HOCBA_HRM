@@ -6,6 +6,7 @@ import { fetchOnbPendingCount } from '../api/onboarding';
 import { fetchOffbPendingCount } from '../api/offboarding';
 import { fetchAttendancePendingCount } from '../api/attendance';
 import { fetchIncompleteCount } from '../api/employees';
+import { fetchRequestPendingCount } from '../api/recruitment';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
@@ -70,6 +71,10 @@ export default function App() {
   // từ Excel. Route trả 0 cho người không có quyền nên badge tự ẩn.
   const reloadIncompleteBadge = () => fetchIncompleteCount()
     .then((d) => setBadge('employees')(d.count || 0)).catch(() => {});
+  // Phiếu yêu cầu tuyển dụng chờ duyệt. Chuông vẫn giữ nguyên — badge là lớp
+  // thêm, để việc tồn đọng không trôi mất theo chuông.
+  const reloadRecruitBadge = () => fetchRequestPendingCount()
+    .then((d) => setBadge('recruitment')(d.count || 0)).catch(() => {});
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -122,6 +127,7 @@ export default function App() {
     reloadOffbBadge();
     reloadAttendanceBadge();
     reloadIncompleteBadge();
+    reloadRecruitBadge();
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -177,7 +183,8 @@ export default function App() {
         {view === 'reviews' && canManage && (
           <Reviews search={search} canPromote={me.isHrManager} />
         )}
-        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}
+        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus}
+          onPendingCount={setBadge('recruitment')} />}
         {/* Điều kiện render PHẢI trùng điều kiện bày menu (Shell: need 'hr' =
             HR | HR Mgr | Admin), nên lấy thẳng từ allowedViews thay vì chép tay:
             trước đây chỉ xét me.isHrUser, mà tài khoản Admin "thuần"

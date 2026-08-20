@@ -84,3 +84,8 @@ export const bookInterviewSlot = (id, applicantId) =>
 export const unbookInterviewSlot = (id, applicantId) =>
   hbPost(`/hocba-hrm/api/recruitment/interview-slot/${id}/unbook`,
     applicantId ? { applicantId } : {});
+
+/* Số phiếu yêu cầu đang chờ duyệt — badge cạnh menu Tuyển dụng.
+   Chỉ người duyệt (HR/Admin/nhóm Tuyển dụng) mới ra số > 0. */
+export const fetchRequestPendingCount = () =>
+  hbGet('/hocba-hrm/api/recruitment/requests/pending-count');

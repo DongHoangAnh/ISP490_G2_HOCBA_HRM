@@ -35,7 +35,7 @@ const TAB_DESC = {
   mails:      'Mẫu email dùng trong quy trình tuyển dụng.',
 };
 
-export default function Recruitment({ search, focus }) {
+export default function Recruitment({ search, focus, onPendingCount }) {
   const [tab, setTab] = useState(() => localStorage.getItem('hocba_rec_tab') || 'cv');
 
   const select = (id) => { setTab(id); localStorage.setItem('hocba_rec_tab', id); };
@@ -73,7 +73,7 @@ export default function Recruitment({ search, focus }) {
       ) : activeTab === 'jobs' ? (
         <RequestTracking search={search} />
       ) : activeTab === 'requests' ? (
-        <Requests search={search} focus={focus} />
+        <Requests search={search} focus={focus} onPendingCount={onPendingCount} />
       ) : activeTab === 'interviews' ? (
         <InterviewSlots />
       ) : activeTab === 'offers' ? (

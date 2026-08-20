@@ -6,7 +6,7 @@ import Badge from '../../components/Badge';
 import { LoadingState, ErrorState, EmptyState } from '../../components/states';
 import Pagination, { usePaged } from '../../components/Pagination';
 import { fmtDate } from '../../utils/format';
-import { fetchRequests } from '../../api/recruitment';
+import { fetchRequests, fetchRequestPendingCount } from '../../api/recruitment';
 import { REQUEST_STATE_KIND } from './util';
 import RequestDrawer from './RequestDrawer';
 import RequestForm from './RequestForm';
@@ -41,7 +41,7 @@ const REQ_GUIDE_NOTE = (
     trên dữ liệu thật — bấm <b>Chờ BP duyệt</b> là ra ngay việc cần xử lý.</>
 );
 
-export default function Requests({ search, focus }) {
+export default function Requests({ search, focus, onPendingCount }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [state, setState] = useState('all');
@@ -86,10 +86,21 @@ export default function Requests({ search, focus }) {
   const { stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs, isRecruiter, canApprove } = data;
   const meta = { stateLabels, reasonLabels, levelLabels, educationLabels, workTypeLabels, departments, jobs };
 
-  const applyRow = (det) => setData((p) => {
-    const exists = p.rows.some((r) => r.id === det.id);
-    return { ...p, rows: exists ? p.rows.map((r) => (r.id === det.id ? { ...r, ...det } : r)) : [det, ...p.rows] };
-  });
+  /* Đổi trạng thái phiếu (duyệt/từ chối/gửi duyệt) → hỏi lại server số phiếu
+     chờ duyệt cho badge menu. Không tự trừ ở client: phạm vi đếm là quyền duyệt
+     phía server, đoán ở FE sẽ lệch với số nút bấm được. */
+  const refreshBadge = () => {
+    if (!onPendingCount) return;
+    fetchRequestPendingCount().then((d) => onPendingCount(d.count || 0)).catch(() => {});
+  };
+
+  const applyRow = (det) => {
+    setData((p) => {
+      const exists = p.rows.some((r) => r.id === det.id);
+      return { ...p, rows: exists ? p.rows.map((r) => (r.id === det.id ? { ...r, ...det } : r)) : [det, ...p.rows] };
+    });
+    refreshBadge();
+  };
 
   return (
     <div>
