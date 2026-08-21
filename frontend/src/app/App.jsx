@@ -26,6 +26,7 @@ import Finance from '../features/finance/Finance';
 import TimeoffConfig from '../features/timeoff-config/TimeoffConfig';
 import Service from '../features/service/Service';
 import AttendanceConfig from '../features/attendance-config/AttendanceConfig';
+import ReviewsConfig from '../features/reviews-config/ReviewsConfig';
 import { LoadingState, ErrorState } from '../components/states';
 import Login from '../features/auth/Login';
 
@@ -194,6 +195,7 @@ export default function App() {
         {view === 'departments' && navViews.has('departments') && <Departments search={search} />}
         {view === 'timeoffConfig' && me.isAdmin && <TimeoffConfig />}
         {view === 'attendanceConfig' && me.isAdmin && <AttendanceConfig search={search} />}
+        {view === 'reviewsConfig' && (me.isHrManager || me.isAdmin) && <ReviewsConfig />}
         {view === 'onboarding-config' && (me.isHrManager || me.isAdmin) && <OnboardingConfig />}
         {view === 'recruitment-config' && (me.isHrManager || me.isAdmin) && <RecruitmentConfig />}
         {view === 'profile' && <Profile />}

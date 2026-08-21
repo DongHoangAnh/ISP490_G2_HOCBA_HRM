@@ -40,6 +40,9 @@ const NAV = [
   { sec: 'Hệ thống', need: 'hrm', items: [
     { id: 'onboarding-config', label: 'Cấu hình nhận việc', icon: 'settings', need: 'hrm' },
     { id: 'recruitment-config', label: 'Cấu hình tuyển dụng', icon: 'settings', need: 'hrm' },
+    // Bộ câu hỏi/trọng số/ngưỡng của đánh giá định kỳ — sửa là ảnh hưởng cả
+    // trung tâm nên chỉ HR Manager/Admin, trưởng phòng & giáo vụ không thấy.
+    { id: 'reviewsConfig', label: 'Cấu hình đánh giá', icon: 'settings', need: 'hrm' },
     { id: 'timeoffConfig', label: 'Cấu hình nghỉ phép', icon: 'settings', need: 'admin' },
     { id: 'attendanceConfig', label: 'Cấu hình chấm công', icon: 'settings', need: 'admin' },
   ]},
@@ -112,6 +115,7 @@ export const PAGE_META = {
   // Crumb trung tính: view này xuất hiện ở CẢ 2 mục nav (quản lý + cá nhân),
   // PAGE_META lại theo view nên "Cá nhân / Self-service" sẽ sai với HR.
   service: { t: 'Yêu cầu dịch vụ nhân sự', c: 'Nhân sự / Yêu cầu & Góp ý' },
+  reviewsConfig: { t: 'Cấu hình đánh giá', c: 'Hệ thống / Đánh giá định kỳ' },
   timeoffConfig: { t: 'Cấu hình nghỉ phép', c: 'Hệ thống / Time Off' },
   attendanceConfig: { t: 'Cấu hình chấm công', c: 'Hệ thống / Attendance' },
 };
