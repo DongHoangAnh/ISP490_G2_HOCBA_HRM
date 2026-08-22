@@ -254,9 +254,10 @@ export default function OnboardingStepsPanel({ det, isMgr, onUpdated }) {
   const onb = det.onboarding || { steps: [], progress: { done: 0, total: 0 } };
   const steps = onb.steps || [];
   // Thao tác trả item onboarding mới → merge vào det cho drawer/profile.
-  // Hoàn thành bước cuối có thể CHỐT THỬ VIỆC (lên Chính thức), nên phải nhấc
-  // trạng thái mới lên tầng det: nhét riêng vào det.onboarding thì chip ở header
-  // drawer vẫn đọc det.statusKey cũ và còn hiện "Thử việc".
+  // "Chuyển chính thức" (và bước Đánh giá có cờ Đạt → lên chính thức) đổi
+  // TRẠNG THÁI nhân sự, nên phải nhấc trạng thái mới lên tầng det: nhét riêng
+  // vào det.onboarding thì chip ở header drawer vẫn đọc det.statusKey cũ và
+  // còn hiện "Thử việc".
   const patch = (resp) => onUpdated && onUpdated({
     ...det,
     ...(resp && resp.statusKey

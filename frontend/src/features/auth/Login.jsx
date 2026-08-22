@@ -47,6 +47,13 @@ export default function Login({ onSuccess }) {
       const data = await res.json();
       if (data.result && data.result.uid) {
         onSuccess();
+      } else if (data.error) {
+        // Lỗi phía server (sai tên db, registry hỏng…) thì đừng đổ cho người
+        // dùng gõ sai mật khẩu — hiện nguyên văn để còn đoán được bệnh.
+        const msg = data.error.data?.message || data.error.message || '';
+        setAuthError(!msg || /access denied|wrong login|invalid/i.test(msg)
+          ? 'Tài khoản hoặc mật khẩu không đúng.'
+          : `Không đăng nhập được: ${msg}`);
       } else {
         setAuthError('Tài khoản hoặc mật khẩu không đúng.');
       }

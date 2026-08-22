@@ -155,8 +155,8 @@ for i, (code, name, dep_name, job_name, status, wform, ptype, senior, wage,
         'emergency_phone': '098%03d%04d' % (i, 2000 + i),
     }
     # MST + BHXH khai cho cả NV thử việc: BR-010 chỉ BẮT BUỘC khi lên chính
-    # thức, nhưng thiếu thì lúc xong hết bước nhận việc _close_probation không
-    # chốt được, NV kẹt lại ở Thử việc + chuông "còn thiếu ...".
+    # thức, nhưng thiếu thì HR bấm "Chuyển chính thức" sẽ ăn ValidationError,
+    # NV kẹt lại ở Thử việc.
     if status != 'resigned':
         vals['x_pit_code'] = '8%09d' % (100000000 + i)
         vals['x_social_insurance_no'] = '01%08d' % (20000000 + i)

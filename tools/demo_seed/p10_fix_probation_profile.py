@@ -3,9 +3,13 @@
 
 Seed chỉ khai CCCD/MST/BHXH cho NV đã Chính thức (BR-010 chỉ bắt buộc ở trạng
 thái đó), nên NV thử việc chạy xong hết bước vẫn không lên Chính thức được —
-_close_probation sẽ giữ Thử việc + bắn chuông "còn thiếu ...". Với bản demo ta
-khai đủ cho NV thử việc để xem được cả luồng chốt thử việc.
-Idempotent: chỉ ghi field còn trống.
+BR-010 chặn ngay ở `_hocba_make_official`. Với bản demo ta khai đủ cho NV thử
+việc để xem được cả luồng chốt thử việc.
+
+Chốt thử việc đi đúng đường của quy trình: `action_hocba_finalize_onboarding`
+(nút "Chuyển chính thức" của HR) — hệ thống KHÔNG tự lên chính thức khi hết
+chuỗi bước, phải có người bấm.
+Idempotent: chỉ ghi field còn trống; NV đã Chính thức không còn khớp bộ lọc.
 """
 exec(open('/tmp/seed/common.py').read())
 
@@ -28,9 +32,19 @@ for i, e in enumerate(probation):
     say('bổ sung hồ sơ:', e.x_employee_code, e.name)
 env.cr.commit()
 
-res = Emp._hocba_close_finished_probations()
+official = blocked = 0
+for e in Emp.search([('x_employment_status', '=', 'probation')]):
+    ok, reason = e._hocba_onboarding_can_finalize()
+    if not ok:
+        continue
+    if e._hocba_missing_official_fields():
+        # BR-010 vẫn thiếu: bấm nút cũng chỉ ăn ValidationError giữa chừng.
+        blocked += 1
+        continue
+    e.action_hocba_finalize_onboarding()
+    official += 1
 say('chốt thử việc: %s NV lên Chính thức, %s NV còn thiếu hồ sơ'
-    % (res['official'], res['blocked']))
+    % (official, blocked))
 env.cr.commit()
 
 for e in Emp.search([('x_employee_code', '!=', False)],

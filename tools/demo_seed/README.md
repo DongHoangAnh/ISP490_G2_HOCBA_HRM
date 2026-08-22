@@ -48,7 +48,8 @@ Script chạy trong `odoo shell` của container `isp490_g2_hocba_hrm-odoo-1` n�
 - Các pha **idempotent**: chạy lại không nhân đôi dữ liệu. Riêng quỹ phép
   (`p4`) chỉ áp chính sách cho NV **chưa có** allocation — allocation đã dùng
   thì Odoo không cho giảm/xoá. `p11` thì **bù cho đủ 4**, không tạo lại: xong
-  hết bước là NV lên Chính thức và rời hàng đợi, nên chạy lại để nạp thêm.
+  hết bước rồi HR bấm "Chuyển chính thức" là NV rời hàng đợi, nên chạy lại để
+  nạp thêm.
 - `random.seed(490)` trong `common.py` → chạy lại ra đúng cùng bộ dữ liệu.
 - Nhóm `p5b/p5c/p5d` chỉ vá **dữ liệu cấu hình lương** trong DB. Lỗi gốc nằm ở
   module `hocba_payroll` (chi tiết ghi trong docstring từng file và trong

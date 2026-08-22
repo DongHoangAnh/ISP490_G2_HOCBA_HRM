@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """PHASE 11 — nạp lại hàng đợi màn Nhận việc.
 
-Từ khi _close_probation chốt thử việc lúc hết chuỗi bước, NV xong hết bước sẽ
-lên Chính thức và RỜI hàng đợi — đúng nghiệp vụ, nhưng làm màn Nhận việc trống
-nếu bản demo chỉ còn các ca đã xong. Phase này thêm 4 NV thử việc rải các giai
-đoạn để review được đủ bộ lọc của màn hình.
+NV xong hết bước rồi được HR bấm "Chuyển chính thức" sẽ RỜI hàng đợi — đúng
+nghiệp vụ, nhưng làm màn Nhận việc trống nếu bản demo chỉ còn các ca đã xong.
+Phase này thêm 4 NV thử việc rải các giai đoạn để review được đủ bộ lọc của
+màn hình.
 
-Khai đủ CCCD/MST/BHXH để người review bấm hết bước là thấy NV lên Chính thức
-thật (thiếu hồ sơ thì hệ thống giữ Thử việc + chuông, cũng đúng nhưng khó demo).
+Khai đủ CCCD/MST/BHXH để người review bấm hết bước rồi bấm "Chuyển chính thức"
+là thấy NV lên Chính thức thật (thiếu hồ sơ thì BR-010 chặn ở nút — cũng đúng
+nghiệp vụ nhưng khó demo).
 Idempotent: NV đã tồn tại theo mã thì bỏ qua.
 """
 exec(open('/tmp/seed/common.py').read())
@@ -32,7 +33,7 @@ def job(name, d):
 
 # (mã, tên, phòng, vị trí, loại NV, hình thức, loại vị trí, số bước đã Đạt)
 # Bể ứng viên: mỗi lần chạy chỉ lấy đủ để hàng đợi đạt TARGET. Review bấm hết
-# bước cho một NV là NV đó lên Chính thức và rời hàng đợi (đúng nghiệp vụ), nên
+# bước rồi chốt "Chuyển chính thức" là NV đó rời hàng đợi (đúng nghiệp vụ), nên
 # script phải "bù" được chứ không chỉ tạo một lần.
 TARGET = 4
 POOL = [
