@@ -42,3 +42,9 @@ HocBa_TimeOff_RemainingWork.md
 
 # CMS export chua PII (email/sdt giao vien) - khong commit
 tools/cms/exports/
+
+# Tài liệu tự học / ghi chú cá nhân của TimeOff (không commit)
+docs/HUONG_DAN_DOC_CODE_TIMEOFF.md
+docs/HUONG_DAN_DOC_CODE_TIMEOFF.docx
+docs/KIEN_THUC_PYTHON_CO_BAN.md
+docs/KIEN_THUC_PYTHON_CO_BAN.docx
