@@ -5,6 +5,8 @@ import { fetchPendingCount } from '../api/timeoff';
 import { fetchOnbPendingCount } from '../api/onboarding';
 import { fetchOffbPendingCount } from '../api/offboarding';
 import { fetchAttendancePendingCount } from '../api/attendance';
+import { fetchIncompleteCount } from '../api/employees';
+import { fetchRequestPendingCount } from '../api/recruitment';
 import Dashboard from '../features/dashboard/Dashboard';
 import Employees from '../features/employees/Employees';
 import Onboarding from '../features/employees/Onboarding';
@@ -24,6 +26,7 @@ import Finance from '../features/finance/Finance';
 import TimeoffConfig from '../features/timeoff-config/TimeoffConfig';
 import Service from '../features/service/Service';
 import AttendanceConfig from '../features/attendance-config/AttendanceConfig';
+import ReviewsConfig from '../features/reviews-config/ReviewsConfig';
 import { LoadingState, ErrorState } from '../components/states';
 import Login from '../features/auth/Login';
 
@@ -65,6 +68,14 @@ export default function App() {
     .then((d) => setBadge('offboarding')(d.count || 0)).catch(() => {});
   const reloadAttendanceBadge = () => fetchAttendancePendingCount()
     .then((d) => setAttendanceBadge(d.count || 0)).catch(() => {});
+  // Hồ sơ thiếu giấy tờ pháp lý (CCCD/MST/BHXH) — chủ yếu là nhân sự cũ nhập
+  // từ Excel. Route trả 0 cho người không có quyền nên badge tự ẩn.
+  const reloadIncompleteBadge = () => fetchIncompleteCount()
+    .then((d) => setBadge('employees')(d.count || 0)).catch(() => {});
+  // Phiếu yêu cầu tuyển dụng chờ duyệt. Chuông vẫn giữ nguyên — badge là lớp
+  // thêm, để việc tồn đọng không trôi mất theo chuông.
+  const reloadRecruitBadge = () => fetchRequestPendingCount()
+    .then((d) => setBadge('recruitment')(d.count || 0)).catch(() => {});
 
   /* Bấm 1 thông báo ở chuông → nhảy tới view đích; timeoff cần focus để mở
      đúng đơn/tab (kind giữ semantic cũ: sub_request → tab dạy thay).
@@ -116,6 +127,8 @@ export default function App() {
     reloadOnbBadge();
     reloadOffbBadge();
     reloadAttendanceBadge();
+    reloadIncompleteBadge();
+    reloadRecruitBadge();
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -171,7 +184,8 @@ export default function App() {
         {view === 'reviews' && canManage && (
           <Reviews search={search} canPromote={me.isHrManager} />
         )}
-        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus} />}
+        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus}
+          onPendingCount={setBadge('recruitment')} />}
         {/* Điều kiện render PHẢI trùng điều kiện bày menu (Shell: need 'hr' =
             HR | HR Mgr | Admin), nên lấy thẳng từ allowedViews thay vì chép tay:
             trước đây chỉ xét me.isHrUser, mà tài khoản Admin "thuần"
@@ -181,6 +195,7 @@ export default function App() {
         {view === 'departments' && navViews.has('departments') && <Departments search={search} />}
         {view === 'timeoffConfig' && me.isAdmin && <TimeoffConfig />}
         {view === 'attendanceConfig' && me.isAdmin && <AttendanceConfig search={search} />}
+        {view === 'reviewsConfig' && (me.isHrManager || me.isAdmin) && <ReviewsConfig />}
         {view === 'onboarding-config' && (me.isHrManager || me.isAdmin) && <OnboardingConfig />}
         {view === 'recruitment-config' && (me.isHrManager || me.isAdmin) && <RecruitmentConfig />}
         {view === 'profile' && <Profile />}

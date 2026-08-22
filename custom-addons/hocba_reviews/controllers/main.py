@@ -18,6 +18,9 @@ from odoo.http import request
 from ..models.hb_performance_review import (
     GRADE_SEL, PERIOD_COUNT, PERIOD_MONTHS, PERIOD_TYPE_SEL,
 )
+from ..models.hb_review_criteria import (
+    AUTO_SOURCE_SEL, MAX_SCORE_MAX, MAX_SCORE_MIN, ROLE_GROUP_SEL,
+)
 
 # Diễn giải xếp loại cho tab Hướng dẫn (§2 docs/CONG_THUC_DANH_GIA.md).
 GRADE_MEANING = {
@@ -541,3 +544,134 @@ class HocBaReviews(http.Controller):
         return request.make_json_response({
             'created': result['created'], 'skipped': result['skipped'],
         })
+
+    # ------------------------------------------------------------------
+    # Màn Cấu hình đánh giá — HR sửa bộ câu hỏi, trọng số, thang điểm, ngưỡng
+    # Spec: docs/superpowers/specs/2026-08-21-reviews-config-design.md
+    # ------------------------------------------------------------------
+    def _can_config(self):
+        """Chỉ HR Manager / Admin. Trưởng phòng và giáo vụ chấm điểm được
+        nhưng KHÔNG được đổi bộ tiêu chí của cả trung tâm."""
+        u = request.env.user
+        return (u.has_group('base.group_system')
+                or u.has_group('hr.group_hr_manager'))
+
+    def _criteria_row(self, c):
+        return {
+            'id': c.id,
+            'name': c.name,
+            'code': c.code,
+            'weight': c.weight,
+            'maxScore': c.max_score,
+            'autoSource': c.auto_source,
+            'guideline': c.guideline or '',
+            'anchorTop': c.anchor_top or '',
+            'anchorMid': c.anchor_mid or '',
+            'anchorLow': c.anchor_low or '',
+            'active': c.active,
+            'sequence': c.sequence,
+        }
+
+    def _config_payload(self):
+        env = request.env
+        crits = env['hb.review.criteria'].sudo().with_context(
+            active_test=False).search([], order='role_group, sequence, id')
+        groups = {'teacher': [], 'office': []}
+        for c in crits:
+            groups.setdefault(c.role_group, []).append(self._criteria_row(c))
+        Review = env['hb.performance.review']
+        grading = Review.sudo().grading_config()
+        return {
+            'canEdit': True,
+            'groups': groups,
+            'groupLabels': dict(ROLE_GROUP_SEL),
+            'weightSum': {
+                g: round(sum(r['weight'] for r in rows if r['active']), 2)
+                for g, rows in groups.items()
+            },
+            # Số phiếu Nháp đang dùng cấu hình cũ — màn cấu hình nhắc HR mở đợt
+            # mới để áp dụng (phiếu đã tạo giữ snapshot trọng số/thang điểm).
+            'draftCount': {
+                g: Review.sudo().search_count([
+                    ('state', '=', 'draft'), ('role_group', '=', g)])
+                for g in ('teacher', 'office')
+            },
+            'grades': {
+                'a': grading['grade_a'],
+                'b': grading['grade_b'],
+                'c': grading['grade_c'],
+            },
+            'params': {'sessionsTarget': grading['sessions_target']},
+            'autoSources': [{'key': k, 'label': label}
+                            for k, label in AUTO_SOURCE_SEL],
+            'maxScoreMin': MAX_SCORE_MIN,
+            'maxScoreMax': MAX_SCORE_MAX,
+        }
+
+    @http.route('/hocba-hrm/api/reviews/config', auth='user', type='http',
+                methods=['GET'])
+    def api_review_config(self, **kw):
+        if not self._can_config():
+            return _err('forbidden',
+                        'Chỉ HR Manager/Admin được xem cấu hình đánh giá.',
+                        status=403)
+        return request.make_json_response(self._config_payload())
+
+    @http.route('/hocba-hrm/api/reviews/config/criteria', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_review_config_criteria(self, **kw):
+        """Lưu CẢ BỘ câu hỏi của một nhóm. Lưu từng dòng lẻ thì gần như lúc nào
+        tổng trọng số cũng tạm lệch 100 -> không chặn cứng được."""
+        if not self._can_config():
+            return _err('forbidden',
+                        'Chỉ HR Manager/Admin được sửa cấu hình đánh giá.',
+                        status=403)
+        payload = request.get_json_data() or {}
+        group = 'teacher' if payload.get('group') == 'teacher' else 'office'
+        rows = []
+        for item in payload.get('criteria') or []:
+            row = {'id': int(item.get('id') or 0)}
+            for src, dest in (('name', 'name'), ('guideline', 'guideline'),
+                              ('autoSource', 'auto_source'),
+                              ('anchorTop', 'anchor_top'),
+                              ('anchorMid', 'anchor_mid'),
+                              ('anchorLow', 'anchor_low')):
+                if src in item:
+                    row[dest] = item[src] or ''
+            if 'weight' in item:
+                row['weight'] = float(item['weight'] or 0)
+            if 'maxScore' in item:
+                row['max_score'] = int(item['maxScore'] or 0)
+            if 'active' in item:
+                row['active'] = bool(item['active'])
+            rows.append(row)
+        try:
+            request.env['hb.review.criteria'].sudo().apply_group(group, rows)
+        except (UserError, ValidationError) as ex:
+            request.env.cr.rollback()
+            return _err('rejected', str(ex))
+        except (TypeError, ValueError):
+            request.env.cr.rollback()
+            return _err('bad_request', 'Dữ liệu cấu hình không hợp lệ.')
+        return request.make_json_response(self._config_payload())
+
+    @http.route('/hocba-hrm/api/reviews/config/grading', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_review_config_grading(self, **kw):
+        if not self._can_config():
+            return _err('forbidden',
+                        'Chỉ HR Manager/Admin được sửa ngưỡng xếp loại.',
+                        status=403)
+        payload = request.get_json_data() or {}
+        vals = {}
+        for src, dest in (('gradeA', 'grade_a'), ('gradeB', 'grade_b'),
+                          ('gradeC', 'grade_c'),
+                          ('sessionsTarget', 'sessions_target')):
+            if src in payload:
+                vals[dest] = payload[src]
+        try:
+            request.env['hb.performance.review'].sudo().set_grading(vals)
+        except (UserError, ValidationError) as ex:
+            request.env.cr.rollback()
+            return _err('rejected', str(ex))
+        return request.make_json_response(self._config_payload())

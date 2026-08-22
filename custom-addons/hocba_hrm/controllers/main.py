@@ -1,5 +1,6 @@
 import calendar
 import hashlib
+import json
 import re
 from datetime import date, datetime, time, timedelta
 
@@ -1589,6 +1590,18 @@ def _cap_manage_account(env):
             or user.has_group('hr.group_hr_manager'))
 
 
+def _cap_import_emp(env):
+    """Nhập hồ sơ hàng loạt từ Excel: chỉ Admin | HR-Mgr.
+
+    Chặt hơn _cap_edit_emp có chủ đích — Trưởng phòng/Giáo vụ có phạm vi hẹp,
+    nhập cả file nhân sự toàn công ty sẽ đẻ hồ sơ ngoài phạm vi rồi bị
+    _emp_in_scope chặn giữa chừng.
+    """
+    user = env.user
+    return (user.has_group('base.group_system')
+            or user.has_group('hr.group_hr_manager'))
+
+
 def _cap_edit_dept(env):
     """Được THÊM/SỬA/LƯU TRỮ phòng ban: Admin | HR-Mgr. HR officer chỉ XEM.
 
@@ -2885,6 +2898,7 @@ class HocBaHRM(http.Controller):
             with file_open('hocba_hrm/static/spa/index.html', 'r') as f:
                 html = f.read()
             html = self._bust_asset_cache(html)
+            html = self._inject_db_name(html)
         except (FileNotFoundError, OSError):
             html = ('<h3 style="font-family:sans-serif">SPA chưa được build.</h3>'
                     '<p style="font-family:sans-serif">Chạy: <code>cd frontend &amp;&amp; '
@@ -2893,6 +2907,22 @@ class HocBaHRM(http.Controller):
         resp = Response(html, content_type='text/html; charset=utf-8')
         resp.headers['Cache-Control'] = 'no-store'
         return resp
+
+    @staticmethod
+    def _inject_db_name(html):
+        """Nhúng tên database đang phục vụ vào trang SPA.
+
+        Form đăng nhập gọi /web/session/authenticate — route này BẮT BUỘC có
+        tham số `db`. Trước đây SPA ghi cứng 'neondb' nên chạy trên bất kỳ DB
+        nào khác (local, demo, DB của thành viên khác) là đăng nhập luôn sai
+        mật khẩu dù mật khẩu đúng. Lấy tên DB từ chính cursor đang chạy để
+        không phải sửa code mỗi lần đổi DB.
+        """
+        db = request.env.cr.dbname
+        tag = '<script>window.__HB_DB__=%s;</script>' % json.dumps(db)
+        if '</head>' in html:
+            return html.replace('</head>', tag + '</head>', 1)
+        return tag + html
 
     @staticmethod
     def _bust_asset_cache(html):
@@ -2995,6 +3025,9 @@ class HocBaHRM(http.Controller):
             'empTypeId': e.x_employee_type_id.id or False,
             'empType': e.x_employee_type_id.name or '',
             'empTypeKey': e.x_employee_type_id.code or '',
+            # Giấy tờ pháp lý còn thiếu → icon cảnh báo trên dòng NV.
+            # Chuỗi rỗng = hồ sơ đủ.
+            'missingDocs': e.x_profile_missing or '',
             'probStart': _d(e.x_probation_start),
             'start': _d(e.x_probation_start) or _d(e.create_date and e.create_date.date()),
             'email': e.work_email or '',
@@ -3041,6 +3074,7 @@ class HocBaHRM(http.Controller):
             'canEditEmp': _cap_edit_emp(request.env),
             'canSeeSalary': see_salary,
             'canManageAccount': _cap_manage_account(request.env),
+            'canImport': _cap_import_emp(request.env),
             'departments': list(deps.values()),
             'employees': rows,
         })
@@ -3235,6 +3269,12 @@ class HocBaHRM(http.Controller):
             'progress': {'done': done, 'total': total},
             'current': current,
             'canEval': can_eval,
+            # Chuỗi hết bước mà không bước nào "Đạt → lên chính thức" thì
+            # đây là đường DUY NHẤT để NV lên Chính thức. Chỉ HR Manager,
+            # khớp guard hr_employee.write().
+            'canFinalize': (
+                user.has_group('hr.group_hr_manager')
+                and e._hocba_onboarding_can_finalize()[0]),
         }
 
     def _onb_get_step(self, step_id):
@@ -3335,6 +3375,26 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'bad_request'},
                                               status=400)
         e._hocba_assign_onboarding(template=tpl)
+        return request.make_json_response(self._onb_emp_item(e))
+
+    @http.route('/hocba-hrm/api/employees/<int:emp_id>/onboarding/finalize',
+                auth='user', type='http', methods=['POST'], csrf=False)
+    def api_onb_finalize(self, emp_id, **kw):
+        """Chốt hoàn tất nhận việc → Chính thức. Chỉ HR Manager; model tự
+        kiểm lại điều kiện chuỗi nên ẩn nút ở FE không phải là chốt chặn."""
+        if not self._hr_flags()[1]:
+            return request.make_json_response({'error': 'forbidden'},
+                                              status=403)
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'},
+                                              status=404)
+        try:
+            e.with_user(request.env.user).action_hocba_finalize_onboarding()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=422)
         return request.make_json_response(self._onb_emp_item(e))
 
     # ---- Cấu hình template (chỉ HR Manager) ---------------------------
@@ -3486,7 +3546,13 @@ class HocBaHRM(http.Controller):
     def _onb_pending_count(self, env):
         user = env.user
         Step = env['hb.onboarding.step'].sudo()
-        waiting = Domain([('state', '=', 'open')])
+        # Chỉ đếm bước của NV CÒN thử việc: màn "Nhận việc" chỉ liệt kê
+        # x_employment_status='probation', nên bước treo lại trên NV đã lên
+        # chính thức/nghỉ là việc không màn nào bấm được — badge trỏ vào đó
+        # là mời người ta click rồi không thấy gì (23 vs 4 người).
+        waiting = Domain([('state', '=', 'open'),
+                          ('employee_id.x_employment_status', '=',
+                           'probation')])
         if (user.has_group('base.group_system')
                 or user.has_group('hr.group_hr_manager')):
             return {'canAct': True, 'count': Step.search_count(waiting)}

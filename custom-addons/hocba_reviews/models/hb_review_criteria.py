@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
@@ -5,6 +8,17 @@ ROLE_GROUP_SEL = [
     ('teacher', 'Giảng viên'),
     ('office', 'Nhân viên văn phòng'),
 ]
+
+# Thang điểm mỗi câu hỏi: HR chọn trong khoảng này (màn Cấu hình đánh giá).
+MAX_SCORE_MIN = 1
+MAX_SCORE_MAX = 10
+
+# Trường HR được sửa từ màn Cấu hình đánh giá. Không có 'code' và
+# 'role_group': mã do hệ thống sinh, nhóm do tab đang mở quyết định.
+CONFIG_FIELDS = (
+    'name', 'weight', 'max_score', 'auto_source', 'guideline',
+    'anchor_top', 'anchor_mid', 'anchor_low', 'active',
+)
 
 # Nguồn dữ liệu tự chấm. Công thức từng nguồn: docs/CONG_THUC_DANH_GIA.md §4.
 AUTO_SOURCE_SEL = [
@@ -170,7 +184,82 @@ class HbReviewCriteria(models.Model):
     @api.constrains('weight', 'max_score')
     def _check_ranges(self):
         for rec in self:
-            if rec.weight < 0:
-                raise ValidationError(_('Trọng số không được âm.'))
-            if rec.max_score < 1:
-                raise ValidationError(_('Điểm tối đa phải từ 1 trở lên.'))
+            if rec.weight < 0 or rec.weight > 100:
+                raise ValidationError(_(
+                    'Trọng số của "%s" phải trong khoảng 0–100.') % rec.name)
+            if not MAX_SCORE_MIN <= rec.max_score <= MAX_SCORE_MAX:
+                raise ValidationError(_(
+                    'Điểm tối đa của "%(n)s" phải trong khoảng %(lo)s–%(hi)s.')
+                    % {'n': rec.name, 'lo': MAX_SCORE_MIN, 'hi': MAX_SCORE_MAX})
+
+    # ------------------------------------------------------------------
+    # Màn Cấu hình đánh giá (HR sửa bộ câu hỏi)
+    # Spec: docs/superpowers/specs/2026-08-21-reviews-config-design.md
+    # ------------------------------------------------------------------
+    @api.model
+    def check_group_weight(self, role_group):
+        """Tổng trọng số các câu hỏi ĐANG BẬT của nhóm phải bằng 100.
+
+        Cố tình KHÔNG dùng @api.constrains: lúc cài module / nạp data XML các
+        bản ghi vào từng cái một nên tổng chưa đủ 100, constraint sẽ làm hỏng
+        install. Gọi method này sau khi đã áp cả lô trong cùng transaction.
+        """
+        total = sum(self.search(
+            [('role_group', '=', role_group)]).mapped('weight'))
+        if abs(total - 100.0) > 0.01:
+            raise ValidationError(_(
+                'Tổng trọng số nhóm "%(g)s" đang là %(t)s, phải bằng 100.') % {
+                    'g': dict(ROLE_GROUP_SEL).get(role_group, role_group),
+                    't': round(total, 2),
+                })
+        return True
+
+    @api.model
+    def _next_code(self, role_group, name):
+        """Sinh mã duy nhất cho câu hỏi HR vừa thêm (HR không phải nhập mã)."""
+        prefix = 't' if role_group == 'teacher' else 'o'
+        ascii_name = unicodedata.normalize('NFD', name or '').encode(
+            'ascii', 'ignore').decode()
+        slug = re.sub(r'[^a-z0-9]+', '_', ascii_name.lower()).strip('_')[:16]
+        base = '%s_%s' % (prefix, slug or 'q')
+        Crit = self.with_context(active_test=False)
+        code, i = base, 1
+        while Crit.search_count([('code', '=', code)]):
+            i += 1
+            code = '%s_%s' % (base, i)
+        return code
+
+    @api.model
+    def apply_group(self, role_group, rows):
+        """Lưu CẢ BỘ câu hỏi của một nhóm trong một transaction.
+
+        `rows` theo đúng thứ tự HR sắp trên màn hình; mỗi dòng có `id` (0 = câu
+        hỏi mới) cùng các trường trong CONFIG_FIELDS. Câu hỏi không nằm trong
+        payload thì giữ nguyên — payload thiếu không được phép âm thầm xoá bộ
+        tiêu chí. Bỏ câu hỏi = gửi `active: False` (không xoá cứng, phiếu cũ
+        còn phải tra được tên tiêu chí).
+        """
+        if role_group not in dict(ROLE_GROUP_SEL):
+            raise ValidationError(_('Nhóm nhân sự không hợp lệ.'))
+        Crit = self.with_context(active_test=False)
+        sequence = 10
+        for row in rows or []:
+            vals = {k: row[k] for k in CONFIG_FIELDS if k in row}
+            if 'name' in vals and not (vals['name'] or '').strip():
+                raise ValidationError(_('Tên câu hỏi không được để trống.'))
+            vals['sequence'] = sequence
+            sequence += 10
+            rec_id = int(row.get('id') or 0)
+            if rec_id:
+                rec = Crit.browse(rec_id)
+                if not rec.exists() or rec.role_group != role_group:
+                    raise ValidationError(_(
+                        'Câu hỏi #%s không thuộc nhóm đang sửa.') % rec_id)
+                rec.write(vals)
+            else:
+                vals['role_group'] = role_group
+                vals.setdefault('name', _('Câu hỏi mới'))
+                vals['code'] = self._next_code(role_group, vals['name'])
+                Crit.create(vals)
+        self.check_group_weight(role_group)
+        return True

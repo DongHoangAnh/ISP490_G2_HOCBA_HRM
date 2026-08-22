@@ -4,6 +4,12 @@
 > hình được** (`ir.config_parameter`), không hard-code trong công thức.
 > Thiết kế tổng thể: [spec đánh giá định kỳ](superpowers/specs/2026-07-26-performance-review-design.md).
 >
+> **Nơi HR sửa:** màn **Cấu hình đánh giá** (Hệ thống → Cấu hình đánh giá, chỉ
+> HR Manager/Admin) sửa được bộ câu hỏi, trọng số (tổng mỗi nhóm bắt buộc 100),
+> điểm tối đa 1–10, ngưỡng A/B/C/D và chỉ tiêu buổi dạy. Cấu hình mới chỉ ăn vào
+> phiếu tạo sau đó; phiếu đã mở giữ snapshot cũ.
+> Thiết kế: [spec cấu hình đánh giá](superpowers/specs/2026-08-21-reviews-config-design.md).
+>
 > **Bản cho người chấm:** tab **Hướng dẫn chấm điểm** trong màn Đánh giá nhân
 > viên trình bày lại đúng nội dung này ngay trong app, số liệu đọc động từ API
 > `GET /hocba-hrm/api/reviews/guide` (ngưỡng xếp loại, trọng số tiêu chí, bảng

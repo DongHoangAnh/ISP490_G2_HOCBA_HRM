@@ -450,6 +450,25 @@ class HrEmployee(models.Model):
                 if emp.birthday and emp.x_id_date_issue < emp.birthday + relativedelta(years=14):
                     raise ValidationError(_('Ngày cấp CCCD phải sau sinh nhật 14 tuổi.'))
 
+    # ------------------------------------------------------------------
+    # Dấu "cần hoàn thiện hồ sơ" — nguồn của badge menu Nhân viên + icon
+    # trên dòng NV trong SPA. store=True để lọc/đếm bằng domain SQL.
+    # ------------------------------------------------------------------
+    x_needs_profile_completion = fields.Boolean(
+        string='Cần hoàn thiện hồ sơ',
+        compute='_compute_profile_missing', store=True)
+    x_profile_missing = fields.Char(
+        string='Giấy tờ còn thiếu',
+        compute='_compute_profile_missing', store=True)
+
+    @api.depends('version_id.identification_id', 'x_pit_code',
+                 'x_social_insurance_no')
+    def _compute_profile_missing(self):
+        for emp in self:
+            missing = emp._hocba_missing_official_fields()
+            emp.x_profile_missing = ', '.join(missing)
+            emp.x_needs_profile_completion = bool(missing)
+
     def _hocba_missing_official_fields(self):
         """Các mục BR-010 còn thiếu để lên chính thức — [] là đã đủ.
 
@@ -470,6 +489,13 @@ class HrEmployee(models.Model):
 
     @api.constrains('x_employment_status', 'x_pit_code', 'x_social_insurance_no')
     def _check_official_required_fields(self):
+        # Di cư dữ liệu cũ (spec 2026-08-20-employee-excel-import): nhân sự có
+        # từ trước hệ thống đã "Chính thức" ngoài đời nhưng chưa từng đi qua
+        # quy trình thử việc — file của trung tâm không ai có MST. Nhập trọn
+        # gói nên một dòng vướng là huỷ cả mẻ. CHỈ controller nhập Excel bật cờ
+        # này; hồ sơ nhập vào vẫn bị chặn ở lần lên chính thức kế tiếp.
+        if self.env.context.get('hocba_legacy_import'):
+            return
         # BR-010 (mở rộng họp #2): chính thức bắt buộc CCCD + MST + BHXH
         for emp in self.sudo():
             if emp.x_employment_status == 'official':
@@ -685,6 +711,48 @@ class HrEmployee(models.Model):
             'probation_pass', 'success',
             _('Đạt thử việc — lên chính thức: %s') % self.name,
             body=_('Qua cổng %s.') % gate_label, include_employee=True)
+
+    def _hocba_onboarding_can_finalize(self):
+        """(ok, lý do từ chối) cho nút "Chuyển chính thức".
+
+        Chuỗi chạy hết mà không bước nào mang cờ pass_completes thì
+        `_advance` chỉ bắn chuông rồi dừng — không có đường nào lên official
+        (vd quy trình Giáo viên: thử giảng → ký hợp đồng). Đây là cửa để HR
+        Manager tự chốt, nên nó phải chặt đúng bằng quy trình: chỉ mở khi
+        mọi bước đã xong và không bước nào Không đạt."""
+        self.ensure_one()
+        if self.x_employment_status != 'probation':
+            return False, _('Nhân viên không ở trạng thái Thử việc.')
+        steps = self.sudo().x_onboarding_step_ids
+        if not steps:
+            return False, _('Nhân viên chưa được gán quy trình nhận việc.')
+        pending = steps.filtered(lambda s: s.state not in ('done', 'skipped'))
+        if pending:
+            return False, _('Còn %(n)s bước chưa xong: %(names)s.') % {
+                'n': len(pending),
+                'names': ', '.join(pending.mapped('name'))}
+        failed = steps.filtered(lambda s: s.result == 'fail')
+        if failed:
+            return False, _('Có bước Không đạt: %s.') % ', '.join(
+                failed.mapped('name'))
+        return True, ''
+
+    def action_hocba_finalize_onboarding(self):
+        """HR Manager chốt hoàn tất nhận việc → Chính thức từ HÔM NAY.
+
+        Chỉ HR Manager: khớp đúng guard của `write()` — ngoài automation cổng
+        đánh giá, không ai khác đặt được x_employment_status='official'."""
+        self.ensure_one()
+        if not self.env.su \
+                and not self.env.user.has_group('hr.group_hr_manager'):
+            raise AccessError(_(
+                'Chỉ HR Manager được chuyển nhân viên lên Chính thức.'))
+        ok, reason = self._hocba_onboarding_can_finalize()
+        if not ok:
+            raise ValidationError(_(
+                'Chưa thể chuyển Chính thức: %s') % reason)
+        self._hocba_make_official(_('nhận việc (HR xác nhận hoàn tất)'))
+        return True
 
     def _hocba_log_promotion(self, change_type, date_effective, reason):
         """Tạo snapshot lịch sử thăng tiến tự động (nhận việc / lên chính thức)."""

@@ -136,3 +136,70 @@ Mở đợt cho cả nhóm (idempotent — bỏ qua người đã có phiếu).
 ```
 
 **Response**: `{"created": 165, "skipped": 4}`
+
+---
+
+# Cấu hình đánh giá — `/hocba-hrm/api/reviews/config*`
+
+Màn **Cấu hình đánh giá** (SPA view `reviewsConfig`). Chỉ
+`base.group_system` / `hr.group_hr_manager`; trưởng phòng và giáo vụ chấm điểm
+được nhưng **không** đổi được bộ tiêu chí → `403 forbidden`.
+Thiết kế: [spec](superpowers/specs/2026-08-21-reviews-config-design.md).
+
+## GET `/hocba-hrm/api/reviews/config`
+
+```json
+{
+  "canEdit": true,
+  "groups": {
+    "teacher": [{"id": 12, "name": "Chất lượng giờ dạy", "code": "t_quality",
+                 "weight": 25.0, "maxScore": 5, "autoSource": "none",
+                 "guideline": "…", "anchorTop": "…", "anchorMid": "…",
+                 "anchorLow": "…", "active": true, "sequence": 10}],
+    "office": []
+  },
+  "weightSum": {"teacher": 100.0, "office": 100.0},
+  "draftCount": {"teacher": 3, "office": 0},
+  "grades": {"a": 85.0, "b": 70.0, "c": 55.0},
+  "params": {"sessionsTarget": 60.0},
+  "autoSources": [{"key": "none", "label": "Chấm tay"}],
+  "maxScoreMin": 1, "maxScoreMax": 10
+}
+```
+
+`groups` gồm cả tiêu chí đã tắt (`active: false`); `weightSum` chỉ cộng phần
+đang bật. `draftCount` = số phiếu Nháp đang dùng cấu hình cũ.
+
+## POST `/hocba-hrm/api/reviews/config/criteria`
+
+Lưu **cả bộ** câu hỏi của một nhóm; thứ tự trong mảng thành `sequence`.
+
+```json
+{"group": "teacher", "criteria": [
+  {"id": 12, "name": "Chất lượng giờ dạy", "weight": 30, "maxScore": 10,
+   "autoSource": "none", "guideline": "…", "anchorTop": "…",
+   "anchorMid": "…", "anchorLow": "…", "active": true},
+  {"id": 0, "name": "Câu hỏi mới", "weight": 10, "maxScore": 5,
+   "autoSource": "none", "active": true}
+]}
+```
+
+- `id: 0` = câu hỏi mới, `code` do hệ thống sinh (`t_*` / `o_*`).
+- Bỏ câu hỏi = `active: false` (không xoá cứng — phiếu cũ còn tham chiếu).
+- Câu hỏi không có trong payload thì giữ nguyên.
+- **Tổng trọng số phần đang bật phải bằng 100**, lệch → `400 rejected` và
+  **rollback cả lô**. `maxScore` ngoài 1–10 hoặc `weight` ngoài 0–100 → `rejected`.
+
+**Response**: y hệt `GET /config` sau khi lưu.
+
+## POST `/hocba-hrm/api/reviews/config/grading`
+
+```json
+{"gradeA": 85, "gradeB": 70, "gradeC": 55, "sessionsTarget": 60}
+```
+
+Ràng buộc `0 < C < B < A ≤ 100` và `sessionsTarget > 0`, sai → `400 rejected`.
+Ngưỡng không snapshot vào phiếu: phiếu **Nháp** được tính lại ngay, phiếu đã
+chốt/công bố giữ nguyên kết quả.
+
+**Response**: y hệt `GET /config`.

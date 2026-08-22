@@ -182,6 +182,54 @@ class HbPerformanceReview(models.Model):
                 rec.grade = 'd'
 
     # ------------------------------------------------------------------
+    # Cấu hình chấm điểm — màn Cấu hình đánh giá
+    # Spec: docs/superpowers/specs/2026-08-21-reviews-config-design.md
+    # ------------------------------------------------------------------
+    @api.model
+    def grading_config(self):
+        """Ngưỡng xếp loại + tham số đang chạy (nguồn: ir.config_parameter)."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        return {
+            'grade_a': float(ICP.get_param('hocba_reviews.grade_a', 85)),
+            'grade_b': float(ICP.get_param('hocba_reviews.grade_b', 70)),
+            'grade_c': float(ICP.get_param('hocba_reviews.grade_c', 55)),
+            'sessions_target': float(ICP.get_param(
+                'hocba_reviews.teacher_sessions_target', 60)),
+        }
+
+    @api.model
+    def set_grading(self, vals):
+        """Lưu ngưỡng A/B/C + chỉ tiêu buổi dạy.
+
+        Ngưỡng đọc lúc tính điểm (không snapshot vào phiếu), nên phiếu Nháp
+        được tính lại ngay để bảng xếp loại không hiển thị số cũ; phiếu đã
+        chốt/công bố giữ nguyên kết quả đã đóng băng.
+        """
+        cur = self.grading_config()
+        try:
+            ga = float(vals.get('grade_a', cur['grade_a']))
+            gb = float(vals.get('grade_b', cur['grade_b']))
+            gc = float(vals.get('grade_c', cur['grade_c']))
+            target = float(vals.get('sessions_target', cur['sessions_target']))
+        except (TypeError, ValueError):
+            raise ValidationError(_('Ngưỡng xếp loại phải là số.'))
+        if not 0 < gc < gb < ga <= 100:
+            raise ValidationError(_(
+                'Ngưỡng phải giảm dần và nằm trong 0–100: A (%(a)s) > B (%(b)s)'
+                ' > C (%(c)s) > 0.') % {'a': ga, 'b': gb, 'c': gc})
+        if target <= 0:
+            raise ValidationError(_('Chỉ tiêu buổi dạy phải lớn hơn 0.'))
+        ICP = self.env['ir.config_parameter'].sudo()
+        ICP.set_param('hocba_reviews.grade_a', str(ga))
+        ICP.set_param('hocba_reviews.grade_b', str(gb))
+        ICP.set_param('hocba_reviews.grade_c', str(gc))
+        ICP.set_param('hocba_reviews.teacher_sessions_target', str(target))
+        drafts = self.sudo().search([('state', '=', 'draft')])
+        if drafts:
+            drafts._compute_total()
+        return self.grading_config()
+
+    # ------------------------------------------------------------------
     # Tạo phiếu — sinh dòng chấm theo bộ tiêu chí của nhóm
     # ------------------------------------------------------------------
     @api.model

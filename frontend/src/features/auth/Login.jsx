@@ -34,7 +34,14 @@ export default function Login({ onSuccess }) {
         body: JSON.stringify({
           jsonrpc: '2.0',
           method: 'call',
-          params: { db: 'neondb', login: login.trim(), password },
+          // Tên DB do server nhúng vào trang (controller hrm_dashboard).
+          // Ghi cứng 'neondb' như trước thì mọi DB khác (local, demo) đều
+          // báo sai mật khẩu dù mật khẩu đúng.
+          params: {
+            db: window.__HB_DB__ || 'neondb',
+            login: login.trim(),
+            password,
+          },
         }),
       });
       const data = await res.json();

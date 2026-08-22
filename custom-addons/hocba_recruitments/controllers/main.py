@@ -1165,6 +1165,25 @@ class HocBaTuyenDung(http.Controller):
                 vals[field] = _conv(typ, payload[key])
         return vals
 
+    @http.route('/hocba-hrm/api/recruitment/requests/pending-count',
+                auth='user', type='http', methods=['GET'])
+    def api_recruitment_requests_pending_count(self, **kw):
+        """Số phiếu yêu cầu đang chờ duyệt — badge cạnh menu Tuyển dụng.
+
+        Đếm đúng thứ NGƯỜI ĐANG ĐĂNG NHẬP bấm được: chỉ người duyệt (_is_hr)
+        mới có việc. Theo quy trình 7.1, trưởng phòng là người ORDER phiếu chứ
+        không duyệt → họ đếm 0 dù nhìn thấy phiếu của phòng mình.
+
+        Không quyền trả 200 {count: 0} chứ không 403 — badge chỉ là trang trí,
+        bắt SPA bắt lỗi cho một con số cạnh menu là thừa (khuôn của
+        /api/timeoff/pending-count).
+        """
+        count = 0
+        if self._is_hr():
+            count = request.env['hb.recruitment.request'].sudo().search_count(
+                [('state', '=', 'submitted')])
+        return request.make_json_response({'count': count})
+
     @http.route('/hocba-hrm/api/recruitment/requests', auth='user',
                 type='http', methods=['GET'])
     def api_recruitment_requests(self, **kw):

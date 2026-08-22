@@ -24,3 +24,5 @@ from . import test_promotion_payload
 from . import test_nav_badges
 from . import test_promotion_review_link
 from . import test_me_password_scope
+
+from . import test_employee_import

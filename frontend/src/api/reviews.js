@@ -23,3 +23,16 @@ export const reviewAction = (id, action) =>
 
 export const bulkOpenReviews = (payload) =>
   hbPost('/hocba-hrm/api/reviews/bulk-open', payload);
+
+/* ---- Màn Cấu hình đánh giá (HR Manager/Admin) ----
+   Spec: docs/superpowers/specs/2026-08-21-reviews-config-design.md */
+
+export const fetchReviewConfig = () => hbGet('/hocba-hrm/api/reviews/config');
+
+/* Lưu CẢ BỘ câu hỏi của một nhóm — BE chặn cứng tổng trọng số 100 nên không
+   có endpoint sửa lẻ từng câu. */
+export const saveReviewCriteria = (group, criteria) =>
+  hbPost('/hocba-hrm/api/reviews/config/criteria', { group, criteria });
+
+export const saveReviewGrading = (payload) =>
+  hbPost('/hocba-hrm/api/reviews/config/grading', payload);

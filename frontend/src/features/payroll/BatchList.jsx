@@ -387,9 +387,25 @@ export default function BatchList({ search }) {
   const [confirmFilter, setConfirmFilter] = useState('');
   const startPolling = useCallback((m, y) => {
     setComputing(true);
+    // Backend trả 'idle' khi batch của kỳ không ở trạng thái tính toán nào.
+    // Trước đây nhánh này không được xử lý → gặp 'idle' là poll vô hạn, thanh
+    // tiến độ đứng 0% và nút "Tính lương" kẹt mãi. Chờ tối đa 5 nhịp (~6s) rồi
+    // dừng và tải lại bảng — batch đã tính xong hoặc chưa từng chạy.
+    let idleTicks = 0;
     const pollTimer = setInterval(async () => {
       try {
         const st = await fetchComputeStatus(Number(m), Number(y));
+        if (st.status === 'idle') {
+          idleTicks += 1;
+          if (idleTicks >= 5) {
+            clearInterval(pollTimer);
+            setComputeProgress(null);
+            setComputing(false);
+            load();
+          }
+          return;
+        }
+        idleTicks = 0;
         if (st.status === 'processing') {
           const pct = st.total > 0 ? Math.round((st.computed / st.total) * 100) : 0;
           setComputeProgress({ computed: st.computed, total: st.total, percent: pct });
