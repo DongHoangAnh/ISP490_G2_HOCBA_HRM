@@ -1829,7 +1829,20 @@ class HocBaTimeoff(http.Controller):
                         payload.get('medicalOverrideReason') or '').strip()
                 if write_vals:
                     leave.write(write_vals)
-                leave.action_approve()
+                # Học Bá coi bậc 'both' là "1 trong 2 vai trò (HR Manager HOẶC
+                # Trưởng phòng) duyệt là xong" — _can_decide_leave ở trên đã
+                # gác đúng vai trò rồi. Nhưng nghĩa gốc của 'both' trong Odoo
+                # core là "duyệt NỐI TIẾP 2 bước" (validate1 rồi validate);
+                # bước 2 đòi hỏi env.user (không đổi được bởi .sudo()) phải có
+                # group lõi hr_holidays.group_hr_holidays_user/_manager — group
+                # mà không tài khoản Học Bá nào có → luôn bị chặn với lỗi
+                # "you don't have the rights to apply second approval". Bỏ qua
+                # gate lõi đó bằng context leave_fast_create (đã có phân quyền
+                # thật ở _can_decide_leave nên an toàn để bỏ qua).
+                approve_leave = leave
+                if leave.validation_type == 'both':
+                    approve_leave = leave.with_context(leave_fast_create=True)
+                approve_leave.action_approve()
             # Vì duyệt chạy dưới sudo, Odoo ghi người duyệt = OdooBot. Ghi đè lại
             # bằng nhân viên đang đăng nhập (HR/Trưởng phòng) để hiển thị đúng.
             approver = request.env.user.employee_id
