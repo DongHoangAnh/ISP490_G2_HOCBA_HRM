@@ -58,7 +58,19 @@ export default function SubstitutionsPanel({ onChanged }) {
         </div>
       )}
       <div className="tbl-wrap">
-        <table className="tbl">
+        {/* table-layout:fixed + colgroup: các cột dữ liệu giữ bề rộng vừa nội dung,
+            phần thừa dồn hết vào cột "Lớp" (chuỗi dài nhất). Nhờ vậy cột Trạng thái
+            và cột nút nằm sát nhau, cả "Đồng ý" + "Từ chối" luôn hiện đủ thay vì bị
+            `table.tbl td { overflow:hidden }` cắt mất ở rìa phải. */}
+        <table className="tbl" style={{ tableLayout: 'fixed', minWidth: 940 }}>
+          <colgroup>
+            <col style={{ width: 180 }} />
+            <col />
+            <col style={{ width: 116 }} />
+            <col style={{ width: 128 }} />
+            <col style={{ width: 136 }} />
+            <col style={{ width: 208 }} />
+          </colgroup>
           <thead><tr>
             <th>Giáo viên nhờ</th><th>Lớp</th><th>Ngày</th><th>Giờ</th>
             <th>Trạng thái</th><th></th>
@@ -68,14 +80,15 @@ export default function SubstitutionsPanel({ onChanged }) {
               const m = STATE_META[r.state] || { kind: 'gray', label: r.state };
               return (
                 <tr key={r.id}>
-                  <td style={{ fontWeight: 600 }}>{r.requester}</td>
-                  <td>{r.className || '—'}</td>
+                  <td style={{ fontWeight: 600 }} title={r.requester || ''}>{r.requester}</td>
+                  <td title={r.className || ''}>{r.className || '—'}</td>
                   <td className="mono muted">{fmtDate(r.date)}</td>
                   <td className="mono muted">{r.startTime}{r.endTime ? `–${r.endTime}` : ''}</td>
                   <td><Badge kind={m.kind} dot>{m.label}</Badge></td>
-                  <td>
+                  {/* overflow:visible + padding hẹp: cụm 2 nút không bị cắt trong ô. */}
+                  <td style={{ overflow: 'visible', padding: '10px 12px 10px 8px' }}>
                     {r.state === 'pending' && (
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button className="btn btn-primary btn-sm" disabled={busy === r.id}
                           onClick={() => accept(r.id)}>
                           <Icon name="checkCircle" size={14} />{busy === r.id ? '…' : 'Đồng ý'}</button>
