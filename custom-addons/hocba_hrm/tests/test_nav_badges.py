@@ -80,6 +80,14 @@ class NavBadgeCase(TransactionCase):
 @tagged('post_install', '-at_install')
 class TestOnboardingBadge(NavBadgeCase):
 
+    def setUp(self):
+        """Badge chỉ đếm bước của NV CÒN thử việc (màn Nhận việc cũng chỉ
+        liệt kê nhóm này), nên bộ NV dùng chung phải ở 'probation' — để
+        'parttime' thì mọi delta đều bằng 0 và test đo nhầm."""
+        super().setUp()
+        (self.staff + self.out_emp + self.teacher).write(
+            {'x_employment_status': 'probation'})
+
     def _count(self, user):
         return self.ctrl._onb_pending_count(self._env(user))['count']
 
@@ -110,10 +118,18 @@ class TestOnboardingBadge(NavBadgeCase):
         report = self.env['hr.employee'].create({
             'name': 'Badge Report', 'identification_id': '017000000005',
             'parent_id': self.tp_emp.id, 'department_id': self.other_dept.id,
-            'x_employment_status': 'parttime'})
+            'x_employment_status': 'probation'})
         before = self._count(self.tp_user)
         self._step(report)
         self.assertEqual(self._count(self.tp_user), before + 1)
+
+    def test_khong_dem_buoc_cua_nv_da_het_thu_viec(self):
+        """Bước treo lại trên NV đã lên chính thức/nghỉ không vào badge: màn
+        Nhận việc không liệt kê họ nên bấm vào cũng chẳng thấy gì."""
+        before = self._count(self.hrm_user)
+        self._step(self.staff)
+        self.staff.write({'x_employment_status': 'parttime'})
+        self.assertEqual(self._count(self.hrm_user), before)
 
     def test_giao_vu_chi_dem_buoc_task_cua_giao_vien(self):
         before = self._count(self.gv_user)
