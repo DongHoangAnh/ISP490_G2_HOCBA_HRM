@@ -152,7 +152,7 @@ export default function ContractsTab({ det, onUpdated }) {
 
       {form && (
         <ContractForm empId={det.id} mode={form.mode} contract={form.contract}
-          options={det.contractOptions}
+          options={det.contractOptions} canEditWage={det.canEditWage}
           onClose={() => setForm(null)}
           onSaved={(d) => { setForm(null); onUpdated(d); }} />
       )}

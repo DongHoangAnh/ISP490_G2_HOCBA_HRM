@@ -12,6 +12,8 @@ const inp = {
   fontSize: 13.5, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit',
 };
 
+const lockedInp = { ...inp, background: 'var(--surface-2)', color: 'var(--muted)' };
+
 function Field({ label, full, hint, children }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5, gridColumn: full ? '1 / -1' : 'auto' }}>
@@ -36,7 +38,7 @@ const addMonths = (iso, months) => {
 /* mode: 'create' | 'edit' | 'renew'. Tái ký = tạo mới nhưng bê sẵn điều khoản
    của hợp đồng cũ, vì thực tế HR chỉ đổi ngày và (đôi khi) mức lương. */
 export default function ContractForm({ empId, contract, mode = 'create',
-  options, onClose, onSaved }) {
+  options, canEditWage = true, onClose, onSaved }) {
   const src = contract || {};
   const renew = mode === 'renew';
   const [f, setF] = useState({
@@ -134,11 +136,20 @@ export default function ContractForm({ empId, contract, mode = 'create',
               ))}
             </select></Field>
 
-          <Field label="Lương cơ bản (₫)">
-            <input type="number" min="0" step="100000" style={inp}
+          {/* Mức lương chỉ HR Manager/Admin sửa được — trưởng phòng & giáo vụ
+              xem được nhưng ô bị khoá, đúng như phân quyền ở form nhân viên. */}
+          <Field label="Lương cơ bản (₫)"
+            hint={canEditWage
+              ? 'Đồng bộ với ô "Lương cơ bản" ở tab Thông tin khi hợp đồng đang hiệu lực'
+              : 'Chỉ HR Manager sửa được mức lương'}>
+            <input type="number" min="0" step="100000"
+              style={canEditWage ? inp : lockedInp} disabled={!canEditWage}
               value={f.wage} onChange={set('wage')} placeholder="0" /></Field>
-          <Field label="Lương đóng BHXH (₫)" hint="Bỏ trống/0 = tính theo lương cơ bản">
-            <input type="number" min="0" step="100000" style={inp}
+          <Field label="Lương đóng BHXH (₫)"
+            hint={canEditWage ? 'Bỏ trống/0 = tính theo lương cơ bản'
+              : 'Chỉ HR Manager sửa được mức lương'}>
+            <input type="number" min="0" step="100000"
+              style={canEditWage ? inp : lockedInp} disabled={!canEditWage}
               value={f.insuranceBase} onChange={set('insuranceBase')} placeholder="0" /></Field>
 
           <Field label="Tên hợp đồng" full hint="Bỏ trống thì hệ thống tự đặt theo mã và tên nhân viên">

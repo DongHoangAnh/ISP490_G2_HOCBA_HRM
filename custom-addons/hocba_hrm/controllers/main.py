@@ -3277,6 +3277,7 @@ class HocBaHRM(http.Controller):
             data['contractOptions'] = _contract_options(e.env)
             # Sửa được hay chỉ xem: quản lý hồ sơ NV này + được xem lương.
             data['canEditContract'] = bool(is_hr)
+            data['canEditWage'] = _cap_edit_salary(e.env)
 
         # --- Chứng chỉ (F-008/009): chỉ HR ---
         if is_hr:
@@ -3829,13 +3830,44 @@ class HocBaHRM(http.Controller):
     def _can_edit_contract(self, e):
         return self._can_edit_emp_record(e) and _cap_see_salary(request.env)
 
+    def _reject_wage_change(self, vals, contract=None):
+        """Chỉ HR Manager/Admin được đặt hoặc đổi mức lương trên hợp đồng.
+
+        Trưởng phòng/Giáo vụ sửa được mọi trường còn lại. Form của họ gửi lên
+        nguyên payload nên chỉ chặn khi số THỰC SỰ đổi, không chặn việc gửi lại
+        đúng giá trị cũ. Trả về thông điệp lỗi, hoặc None nếu hợp lệ.
+        """
+        if _cap_edit_salary(request.env):
+            return None
+        for key, current in (('wage', contract.wage if contract else 0.0),
+                             ('x_insurance_base',
+                              contract.x_insurance_base if contract else 0.0)):
+            if key in vals and float(vals[key] or 0) != float(current or 0):
+                return ('Chỉ HR Manager được đặt hoặc sửa mức lương trên hợp '
+                        'đồng. Các trường còn lại bạn vẫn sửa được.')
+        return None
+
+    def _sync_profile_wage(self, contract):
+        """Lương hợp đồng ĐANG HIỆU LỰC = ô "Lương cơ bản" ở tab Thông tin.
+
+        Chiều ngược lại (sửa ở hồ sơ → ghi xuống hợp đồng) đã có sẵn ở
+        api_employee_save. Hợp đồng cũ/nháp không đụng tới hồ sơ: lương hiện
+        hưởng chỉ do hợp đồng đang chạy quyết định.
+        """
+        if contract.state != 'open' or not contract.wage:
+            return
+        version = contract.employee_id.sudo().version_id
+        if version and 'wage' in version._fields:
+            version.sudo().write({'wage': contract.wage})
+
     def _contract_write(self, contract, e, vals):
         """Ghi vals rồi trả hồ sơ mới; lỗi nghiệp vụ → 400 + rollback."""
         try:
             if contract:
                 contract.write(vals)
             else:
-                request.env['hb.contract'].sudo().create(vals)
+                contract = request.env['hb.contract'].sudo().create(vals)
+            self._sync_profile_wage(contract)
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -3856,6 +3888,10 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected',
                  'message': 'Cần nhập ngày hợp đồng bắt đầu hiệu lực.'},
                 status=400)
+        blocked = self._reject_wage_change(vals)
+        if blocked:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': blocked}, status=400)
         vals['employee_id'] = e.id
         # Tên hợp đồng chỉ để tra cứu; HR bỏ trống thì đặt theo mã + tên NV cho
         # thống nhất với các hợp đồng đang có.
@@ -3878,6 +3914,10 @@ class HocBaHRM(http.Controller):
                 {'error': 'rejected',
                  'message': 'Cần nhập ngày hợp đồng bắt đầu hiệu lực.'},
                 status=400)
+        blocked = self._reject_wage_change(vals, c)
+        if blocked:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': blocked}, status=400)
         return self._contract_write(c, e, vals)
 
     @http.route('/hocba-hrm/api/contract/<int:contract_id>/delete', auth='user',
@@ -4532,8 +4572,13 @@ class HocBaHRM(http.Controller):
                 e.sudo().write(emp_vals)
             if ver_vals:
                 e.version_id.sudo().write(ver_vals)
+                # Lương ở hồ sơ và lương trên hợp đồng ĐANG HIỆU LỰC phải là
+                # một con số (tab Thông tin ↔ tab Hợp đồng). Chỉ ghi xuống hợp
+                # đồng 'open': hợp đồng đã đóng là lịch sử trả lương, ghi đè lên
+                # đó thì mất dấu vết mức lương từng ký.
                 if 'wage' in ver_vals and ver_vals['wage'] is not None:
-                    contracts = request.env['hb.contract'].sudo().search([('employee_id', '=', e.id)])
+                    contracts = request.env['hb.contract'].sudo().search(
+                        [('employee_id', '=', e.id), ('state', '=', 'open')])
                     if contracts:
                         contracts.write({'wage': ver_vals['wage']})
         except IntegrityError:
