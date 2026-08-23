@@ -109,6 +109,53 @@ def _d(v):
     return v.isoformat() if v else None
 
 
+CONTRACT_FORM_FIELDS = {
+    'name': 'name',
+    'typeKey': 'x_contract_type',
+    'dateSigned': 'x_date_signed',
+    'dateStart': 'date_start',
+    'dateEnd': 'date_end',
+    'wage': 'wage',
+    'insuranceBase': 'x_insurance_base',
+    'state': 'state',
+    'structureId': 'x_structure_id',
+}
+
+
+def _contract_options(env):
+    """Danh mục cho form hợp đồng — loại, trạng thái, cấu trúc lương."""
+    if 'hb.contract' not in env:
+        return {'types': [], 'states': [], 'structures': []}
+    C = env['hb.contract']
+    structures = []
+    if 'hb.salary.structure' in env:
+        structures = [{'id': s.id, 'name': s.name}
+                      for s in env['hb.salary.structure'].sudo().search([])]
+    return {
+        'types': [{'key': k, 'label': v}
+                  for k, v in C._fields['x_contract_type'].selection],
+        'states': [{'key': k, 'label': v}
+                   for k, v in C._fields['state'].selection],
+        'structures': structures,
+    }
+
+
+def _contract_vals(payload, env):
+    """payload camelCase → vals hb.contract (chỉ field trong whitelist)."""
+    vals = {}
+    for key, field in CONTRACT_FORM_FIELDS.items():
+        if key not in payload:
+            continue
+        v = payload[key]
+        if field in ('wage', 'x_insurance_base'):
+            vals[field] = float(v or 0)
+        elif field == 'x_structure_id':
+            vals[field] = int(v) if v else False
+        else:
+            vals[field] = v if v not in ('', None) else False
+    return vals
+
+
 def _contract_rows(e):
     """Các lần ký hợp đồng của một nhân viên — tab "Hợp đồng" trong hồ sơ.
 
@@ -141,6 +188,7 @@ def _contract_rows(e):
             'dateEnd': _d(c.date_end),
             'wage': c.wage or 0,
             'insuranceBase': c.x_insurance_base or 0,
+            'structureId': c.x_structure_id.id or False,
             'structure': c.x_structure_id.name or '',
             'state': c.state or '',
             'stateLabel': state_label.get(c.state, ''),
@@ -3226,6 +3274,9 @@ class HocBaHRM(http.Controller):
         # --- Hợp đồng: đi theo cổng xem lương, giống khối ngân hàng/MST ---
         if see_salary:
             data['contracts'] = _contract_rows(e)
+            data['contractOptions'] = _contract_options(e.env)
+            # Sửa được hay chỉ xem: quản lý hồ sơ NV này + được xem lương.
+            data['canEditContract'] = bool(is_hr)
 
         # --- Chứng chỉ (F-008/009): chỉ HR ---
         if is_hr:
@@ -3764,6 +3815,92 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             a.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Hợp đồng lao động — tab "Hợp đồng" trong hồ sơ NV
+    # Cổng: quản lý được hồ sơ NV đó (_can_edit_emp_record) VÀ được xem lương
+    # (_cap_see_salary) — hợp đồng chứa mức lương nên HR officer bị chặn.
+    # ------------------------------------------------------------------
+    def _can_edit_contract(self, e):
+        return self._can_edit_emp_record(e) and _cap_see_salary(request.env)
+
+    def _contract_write(self, contract, e, vals):
+        """Ghi vals rồi trả hồ sơ mới; lỗi nghiệp vụ → 400 + rollback."""
+        try:
+            if contract:
+                contract.write(vals)
+            else:
+                request.env['hb.contract'].sudo().create(vals)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/contract', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_contract_create(self, emp_id, **kw):
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_edit_contract(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        vals = _contract_vals(request.get_json_data() or {}, request.env)
+        if not vals.get('date_start'):
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Cần nhập ngày hợp đồng bắt đầu hiệu lực.'},
+                status=400)
+        vals['employee_id'] = e.id
+        # Tên hợp đồng chỉ để tra cứu; HR bỏ trống thì đặt theo mã + tên NV cho
+        # thống nhất với các hợp đồng đang có.
+        if not vals.get('name'):
+            vals['name'] = 'HĐLĐ %s - %s' % (e.x_employee_code or e.id, e.name)
+        return self._contract_write(None, e, vals)
+
+    @http.route('/hocba-hrm/api/contract/<int:contract_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_contract_save(self, contract_id, **kw):
+        c = request.env['hb.contract'].sudo().browse(contract_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = c.employee_id
+        if not self._can_edit_contract(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        vals = _contract_vals(request.get_json_data() or {}, request.env)
+        if 'date_start' in vals and not vals['date_start']:
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Cần nhập ngày hợp đồng bắt đầu hiệu lực.'},
+                status=400)
+        return self._contract_write(c, e, vals)
+
+    @http.route('/hocba-hrm/api/contract/<int:contract_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_contract_delete(self, contract_id, **kw):
+        c = request.env['hb.contract'].sudo().browse(contract_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = c.employee_id
+        if not self._can_edit_contract(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Phiếu lương đã tham chiếu thì xoá là mất dấu vết trả lương -> chặn,
+        # hướng HR sang đổi trạng thái sang Đã huỷ/Hết hạn.
+        used = request.env['hb.payslip'].sudo().search_count(
+            [('contract_id', '=', c.id)])
+        if used:
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Hợp đồng đã có %s phiếu lương dùng tới — hãy đổi '
+                            'trạng thái sang "Đã huỷ" thay vì xoá.' % used},
+                status=400)
+        try:
+            c.unlink()
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(

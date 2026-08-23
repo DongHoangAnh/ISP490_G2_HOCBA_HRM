@@ -86,7 +86,7 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
         {det && tab === 'info' && <InfoTab det={det} isHr={canEdit} isMgr={canSeeSalary} editable={canEdit} onUpdated={update} />}
         {det && tab === 'probation' && <ProbationTab det={det} isHr={canEdit} isMgr={isMgr} onUpdated={update} />}
-        {det && tab === 'contracts' && canSeeSalary && <ContractsTab det={det} />}
+        {det && tab === 'contracts' && canSeeSalary && <ContractsTab det={det} onUpdated={update} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={canEdit} onUpdated={update} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr}
           onOpenCareer={onOpenCareer && (() => { onOpenCareer(det.id); onClose(); })} />}
