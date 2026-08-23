@@ -5,3 +5,4 @@ from . import test_bank_file_formatter
 from . import test_payroll_api_controllers
 from . import test_sale_level_salary
 from . import test_role_allowance_bulk
+from . import test_contract_fields

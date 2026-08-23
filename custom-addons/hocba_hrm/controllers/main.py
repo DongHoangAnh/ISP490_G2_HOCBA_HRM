@@ -109,6 +109,53 @@ def _d(v):
     return v.isoformat() if v else None
 
 
+def _contract_rows(e):
+    """Các lần ký hợp đồng của một nhân viên — tab "Hợp đồng" trong hồ sơ.
+
+    Xếp cũ → mới để "Lần ký 1, 2, 3" đọc xuôi. Cột dữ liệu bám sheet
+    "2.5. Theo dõi ký hợp đồng" của khách. Chỉ gọi khi người xem được phép
+    thấy lương (_cap_see_salary) vì payload có mức lương.
+    """
+    if 'hb.contract' not in e.env:
+        return []
+    Contract = e.env['hb.contract'].sudo()
+    recs = Contract.search([('employee_id', '=', e.id)])
+    ordered = recs.sorted(
+        key=lambda c: (c.x_date_signed or c.date_start or date.max, c.id))
+    alert_days = int(float(e.env['ir.config_parameter'].sudo().get_param(
+        'hocba_payroll.contract_alert_days', 60)))
+    today = fields.Date.context_today(e)
+    type_label = dict(Contract._fields['x_contract_type'].selection)
+    state_label = dict(Contract._fields['state'].selection)
+    rows = []
+    for c in ordered:
+        days = (c.date_end - today).days if c.date_end else None
+        rows.append({
+            'id': c.id,
+            'name': c.name or '',
+            'signCount': c.x_sign_count,
+            'typeKey': c.x_contract_type or '',
+            'type': type_label.get(c.x_contract_type, ''),
+            'dateSigned': _d(c.x_date_signed),
+            'dateStart': _d(c.date_start),
+            'dateEnd': _d(c.date_end),
+            'wage': c.wage or 0,
+            'insuranceBase': c.x_insurance_base or 0,
+            'structure': c.x_structure_id.name or '',
+            'state': c.state or '',
+            'stateLabel': state_label.get(c.state, ''),
+            'daysToExpire': days,
+            # Chỉ cảnh báo hợp đồng ĐANG hiệu lực: bản đã đóng thì hết hạn là
+            # chuyện bình thường, gắn nhãn vàng chỉ làm nhiễu.
+            'expiringSoon': bool(c.state == 'open' and days is not None
+                                 and 0 <= days <= alert_days),
+            'files': [{'id': a.id, 'name': a.name or '',
+                       'url': '/web/content/%s?download=true' % a.id}
+                      for a in c.x_attachment_ids],
+        })
+    return rows
+
+
 def _bank_options(env):
     """Danh sách ngân hàng cho dropdown form NV — đọc từ cấu hình payroll
     (hb.bank.format). Trả [] nếu module payroll chưa cài (loose coupling)."""
@@ -3175,6 +3222,10 @@ class HocBaHRM(http.Controller):
                              'toWage': p.to_wage or 0})
             promotions.append(item)
         data['promotions'] = promotions
+
+        # --- Hợp đồng: đi theo cổng xem lương, giống khối ngân hàng/MST ---
+        if see_salary:
+            data['contracts'] = _contract_rows(e)
 
         # --- Chứng chỉ (F-008/009): chỉ HR ---
         if is_hr:
