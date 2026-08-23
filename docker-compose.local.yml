@@ -40,11 +40,16 @@ services:
     volumes:
       # Ghi đè odoo.conf gốc (sslmode=require chỉ dành cho Neon)
       - ./odoo.local.conf:/etc/odoo/odoo.conf
+    # Danh sách module = 11 module CÓ THẬT trong custom-addons. Trước đây list này
+    # còn trỏ vào hr_holidays_modern + 6 module hb_timeoff_* — chúng đã được gộp
+    # hết vào hocba_timeoff và XOÁ khỏi đĩa, nên Odoo bỏ qua ("not installable,
+    # skipped") và DB local dựng ra KHÔNG có hocba_timeoff. Hậu quả: chạy
+    # `-u hocba_timeoff --test-tags /hocba_timeoff` ra "0 of 0 tests" mà vẫn báo OK.
     command: >
       odoo
       --database=hocba_hrm
-      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
-      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hr_holidays_modern,hb_timeoff_config,hb_timeoff_policy,hb_timeoff_emergency,hb_timeoff_medical_validation,hb_timeoff_schedule_conflict,hb_timeoff_analytics
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff
       --addons-path=/mnt/extra-addons
       --dev=xml
 
