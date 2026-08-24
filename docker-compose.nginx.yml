@@ -1,20 +1,21 @@
 # ═══════════════════════════════════════════════════════════════════════
 # NGINX stack — file docker-compose ĐỘC LẬP (không override docker-compose.yml).
 # DB Postgres nội bộ trong Docker, chạy sau reverse proxy nginx tại domain
-# hrm.dangch.tech. Project name: hocba_nginx
-#   → Odoo:     127.0.0.1:58011  (nginx proxy_pass vào cổng này)
+# hrm.dangch.tech. Project name: hrm → container/volume/network prefix "hrm-*"
+#   → Odoo:     127.0.0.1:58012  (nginx proxy_pass vào cổng này)
 #   → Postgres: 127.0.0.1:58010
-#   → Volumes: hocba_nginx_odoo_data, hocba_nginx_postgres_data
+#   → Volumes: hrm_odoo_data, hrm_postgres_data
 #              (TÁCH BIỆT hoàn toàn với local/online stack)
 #
 # Cách build + chạy (từ thư mục gốc dự án):
 #   docker compose -f docker-compose.nginx.yml up -d --build
 # ═══════════════════════════════════════════════════════════════════════
 
-name: hocba_nginx
+name: hrm
 
 services:
   db:
+    container_name: hrm-db
     # PG 18 để khớp Neon (Neon đang chạy PostgreSQL 18.4) → dump/restore
     # qua lại được, giống stack local.
     image: postgres:18
@@ -30,6 +31,7 @@ services:
       - postgres_data:/var/lib/postgresql
 
   odoo:
+    container_name: hrm-odoo
     build:
       context: .
       dockerfile: Dockerfile
