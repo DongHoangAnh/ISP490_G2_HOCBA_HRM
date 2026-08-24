@@ -51,9 +51,6 @@ services:
       - CMS_MYSQL_DB=${CMS_MYSQL_DB:-erp_database}
     env_file:
       - .env
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     volumes:
       - ./custom-addons:/mnt/extra-addons
       - odoo_data:/var/lib/odoo
