@@ -35,6 +35,13 @@ const addMonths = (iso, months) => {
   return d.toISOString().slice(0, 10);
 };
 
+const nextDay = (iso) => {
+  if (!iso) return TODAY;
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
+
 /* mode: 'create' | 'edit' | 'renew'. Tái ký = tạo mới nhưng bê sẵn điều khoản
    của hợp đồng cũ, vì thực tế HR chỉ đổi ngày và (đôi khi) mức lương. */
 export default function ContractForm({ empId, contract, mode = 'create',
@@ -45,7 +52,7 @@ export default function ContractForm({ empId, contract, mode = 'create',
     name: renew ? '' : (src.name || ''),
     typeKey: src.typeKey || 'fixed_12m',
     dateSigned: renew ? TODAY : (src.dateSigned || TODAY),
-    dateStart: renew ? (src.dateEnd || TODAY) : (src.dateStart || TODAY),
+    dateStart: renew ? nextDay(src.dateEnd) : (src.dateStart || TODAY),
     dateEnd: renew ? '' : (src.dateEnd || ''),
     wage: src.wage || '',
     insuranceBase: src.insuranceBase || '',
@@ -77,6 +84,7 @@ export default function ContractForm({ empId, contract, mode = 'create',
       setBusy(true);
       const payload = { ...f, wage: Number(f.wage || 0),
         insuranceBase: Number(f.insuranceBase || 0) };
+      if (renew) payload.renewFromId = contract.id;
       onSaved(mode === 'edit'
         ? await saveContract(contract.id, payload)
         : await createContract(empId, payload));

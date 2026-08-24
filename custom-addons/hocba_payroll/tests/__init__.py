@@ -7,3 +7,4 @@ from . import test_sale_level_salary
 from . import test_role_allowance_bulk
 from . import test_contract_fields
 from . import test_contract_autocreate
+from . import test_official_contract_payroll_flow

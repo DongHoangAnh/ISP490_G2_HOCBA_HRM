@@ -3882,7 +3882,8 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._can_edit_contract(e):
             return request.make_json_response({'error': 'forbidden'}, status=403)
-        vals = _contract_vals(request.get_json_data() or {}, request.env)
+        payload = request.get_json_data() or {}
+        vals = _contract_vals(payload, request.env)
         if not vals.get('date_start'):
             return request.make_json_response(
                 {'error': 'rejected',
@@ -3892,12 +3893,36 @@ class HocBaHRM(http.Controller):
         if blocked:
             return request.make_json_response(
                 {'error': 'rejected', 'message': blocked}, status=400)
+        renew_from = False
+        if payload.get('renewFromId'):
+            try:
+                renew_from = request.env['hb.contract'].sudo().browse(
+                    int(payload['renewFromId']))
+            except (TypeError, ValueError):
+                renew_from = request.env['hb.contract'].browse()
+            if (not renew_from.exists() or renew_from.employee_id != e
+                    or renew_from.state != 'open'):
+                return request.make_json_response(
+                    {'error': 'rejected',
+                     'message': 'Hợp đồng tái ký không hợp lệ hoặc không còn hiệu lực.'},
+                    status=400)
+        elif vals.get('state') == 'open' and request.env['hb.contract'].sudo().search_count([
+                ('employee_id', '=', e.id), ('state', '=', 'open')]):
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Nhân viên đã có hợp đồng đang hiệu lực. Hãy dùng “Tái ký” hoặc đóng hợp đồng cũ trước.'},
+                status=400)
         vals['employee_id'] = e.id
         # Tên hợp đồng chỉ để tra cứu; HR bỏ trống thì đặt theo mã + tên NV cho
         # thống nhất với các hợp đồng đang có.
         if not vals.get('name'):
             vals['name'] = 'HĐLĐ %s - %s' % (e.x_employee_code or e.id, e.name)
-        return self._contract_write(None, e, vals)
+        result = self._contract_write(None, e, vals)
+        if renew_from and getattr(result, 'status_code', 200) < 400:
+            end = fields.Date.to_date(vals['date_start']) - timedelta(days=1)
+            renew_from.write({'state': 'close', 'date_end': end})
+            return self._detail_response(e)
+        return result
 
     @http.route('/hocba-hrm/api/contract/<int:contract_id>', auth='user',
                 type='http', methods=['POST'], csrf=False)
@@ -4568,10 +4593,14 @@ class HocBaHRM(http.Controller):
         payload = request.get_json_data()
         emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
         try:
+            # CCCD nằm trên hr.version nhưng BR-010 chạy khi trạng thái official
+            # được ghi trên hr.employee. Ghi version trước để người dùng có thể
+            # bổ sung CCCD và chuyển chính thức trong cùng một lần Lưu.
+            if ver_vals:
+                e.version_id.sudo().write(ver_vals)
             if emp_vals:
                 e.sudo().write(emp_vals)
             if ver_vals:
-                e.version_id.sudo().write(ver_vals)
                 # Lương ở hồ sơ và lương trên hợp đồng ĐANG HIỆU LỰC phải là
                 # một con số (tab Thông tin ↔ tab Hợp đồng). Chỉ ghi xuống hợp
                 # đồng 'open': hợp đồng đã đóng là lịch sử trả lương, ghi đè lên

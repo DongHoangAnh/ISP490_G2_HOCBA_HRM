@@ -208,6 +208,22 @@ class TestEmployeeContractsWrite(HttpCase):
         err = self._create(self.mine, dateStart='', expect=400)
         self.assertEqual(err['error'], 'rejected')
 
+    def test_19_second_open_contract_requires_renew(self):
+        self._create(self.mine)
+        err = self._create(self.mine, dateStart='2027-01-06', expect=400)
+        self.assertIn('Tái ký', err['message'])
+
+    def test_20_renew_closes_old_contract(self):
+        old = self._create(self.mine)['contracts'][0]
+        body = self._create(
+            self.mine, dateStart='2027-01-06', dateEnd='2028-01-05',
+            renewFromId=old['id'])
+        rows = body['contracts']
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]['state'], 'close')
+        self.assertEqual(rows[0]['dateEnd'], '2027-01-05')
+        self.assertEqual(rows[1]['state'], 'open')
+
 
 @tagged('post_install', '-at_install')
 class TestContractSalaryGuard(HttpCase):

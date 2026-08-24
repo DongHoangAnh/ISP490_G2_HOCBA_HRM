@@ -11,10 +11,11 @@
 
 services:
   db:
-    # PG 18 để khớp Neon (Neon đang chạy PostgreSQL 18.4) → dump/restore
-    # qua lại được. Đổi từ postgres:15 ngày 2026-08-16; data dir PG15 cũ
-    # KHÔNG đọc được bằng PG18, đổi image thì phải xoá volume postgres_data.
-    image: postgres:18
+    # Volume offline hiện hữu được tạo bởi PostgreSQL 15. Giữ đúng major
+    # version để Docker không từ chối khởi động và tuyệt đối không buộc người
+    # dùng xoá dữ liệu local. Nâng major phải dùng pg_dump/pg_restore hoặc
+    # pg_upgrade theo một kế hoạch migration riêng, không chỉ đổi image tag.
+    image: postgres:15
     environment:
       POSTGRES_DB: hocba_hrm
       POSTGRES_USER: odoo
@@ -22,10 +23,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      # PG18 đổi quy ước: mount ở /var/lib/postgresql (data nằm trong
-      # subdir theo major version), KHÔNG phải /var/lib/postgresql/data
-      # như thời PG15 — mount sai thì container tự thoát ngay lúc start.
-      - postgres_data:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql/data
 
   odoo:
     depends_on:

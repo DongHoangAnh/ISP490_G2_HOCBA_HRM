@@ -912,11 +912,6 @@ class HbPayslip(models.Model):
         if not self:
             return {'computed': 0, 'errors': []}
 
-        if prefetched_rules is None:
-            prefetched_rules = self.env['hb.salary.rule'].search(
-                [('active', '=', True)], order='sequence, id',
-            )
-
         # 🚀 Xóa các dòng chi tiết lương cũ của các phiếu CHƯA LƯU LỊCH SỬ (state != 'close')
         slips_to_clear = self.filtered(lambda s: not s.payslip_run_id or s.payslip_run_id.state != 'close')
         old_lines = slips_to_clear.mapped('line_ids')
@@ -929,7 +924,15 @@ class HbPayslip(models.Model):
             emp_name = slip.employee_id.name if slip.employee_id else (slip.number or f'Slip #{slip.id}')
             try:
                 _logger.info('🧮 [PAYROLL COMPUTE] Đang tính lương cá nhân cho NV: %s (%s)', emp_name, slip.number or slip.id)
-                slip.action_compute_sheet(prefetched_rules=prefetched_rules)
+                # Không truyền toàn bộ rule của mọi cấu trúc vào một phiếu:
+                # STRUCT_OFFLINE và STRUCT_ONLINE có các code trùng nhau
+                # (tong_thu_nhap, thuc_lanh), gây topo cycle và cộng lương hai lần.
+                # Khi caller không cung cấp bộ rule đồng nhất, để từng phiếu tự
+                # resolve đúng structure theo hợp đồng/hình thức làm việc.
+                if prefetched_rules is None:
+                    slip.action_compute_sheet()
+                else:
+                    slip.action_compute_sheet(prefetched_rules=prefetched_rules)
                 computed += 1
             except Exception as e:
                 _logger.warning('❌ [PAYROLL COMPUTE ERROR] Lỗi tính phiếu %s (%s): %s', slip.number, emp_name, e)

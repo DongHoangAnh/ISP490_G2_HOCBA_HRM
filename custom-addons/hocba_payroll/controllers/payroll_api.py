@@ -503,6 +503,10 @@ class PayrollAPI(http.Controller):
             # Computes all slips iteratively using 100% accurate single-employee logic (action_compute_sheet)
             to_compute = Slip.search([
                 ('payslip_run_id', '=', batch.id),
+                # Chỉ tính đúng tập nhân viên mà bảng lương của kỳ đang hiển thị.
+                # Batch có thể còn phiếu draft cũ/stale của người chưa có hợp
+                # đồng trong kỳ; không được để các phiếu đó lọt vào worker.
+                ('employee_id', 'in', emp_ids_with_contract),
                 ('state', 'in', ('draft', 'verify')),
             ])
 
@@ -663,7 +667,12 @@ class PayrollAPI(http.Controller):
             nm = month + 1 if month < 12 else 1
             ny = year if month < 12 else year + 1
             date_start = f'{year}-{month:02d}-01'
-            date_end = f'{ny}-{nm:02d}-01'
+            next_month_start = f'{ny}-{nm:02d}-01'
+            # Ngày cuối kỳ dùng cho điều kiện hợp đồng (inclusive). Không dùng
+            # 01 của tháng kế tiếp với toán tử <= vì sẽ làm NV vào 01/08 xuất
+            # hiện sai trong bảng lương tháng 07.
+            import calendar
+            date_end = f'{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}'
 
             env = request.env
 
@@ -683,7 +692,7 @@ class PayrollAPI(http.Controller):
                 [('state', '=', 'close')]).ids
             slip_domain = [
                 ('date_from', '>=', date_start),
-                ('date_from', '<', date_end),
+                ('date_from', '<', next_month_start),
                 ('state', '!=', 'cancel'),
             ]
             if closed_batch_ids:

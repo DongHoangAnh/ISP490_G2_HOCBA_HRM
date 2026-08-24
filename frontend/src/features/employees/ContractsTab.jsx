@@ -44,7 +44,8 @@ export default function ContractsTab({ det, onUpdated }) {
   const [busy, setBusy] = useState(0);
   const rows = det.contracts || [];
   const official = det.statusKey === 'official';
-  const current = rows.find((r) => r.state === 'open');
+  // API xếp cũ → mới; lấy bản open mới nhất nếu dữ liệu legacy từng bị trùng.
+  const current = [...rows].reverse().find((r) => r.state === 'open');
   const canEdit = det.canEditContract && onUpdated;
 
   const remove = async (c) => {
