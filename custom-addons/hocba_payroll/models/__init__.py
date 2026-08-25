@@ -2,6 +2,7 @@ from . import salary_rule_category
 from . import salary_structure
 from . import salary_rule
 from . import hr_contract
+from . import hr_employee
 from . import work_entry_type
 from . import work_entry
 from . import payslip_run

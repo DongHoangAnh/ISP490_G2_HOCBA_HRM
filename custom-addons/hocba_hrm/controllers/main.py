@@ -109,6 +109,101 @@ def _d(v):
     return v.isoformat() if v else None
 
 
+CONTRACT_FORM_FIELDS = {
+    'name': 'name',
+    'typeKey': 'x_contract_type',
+    'dateSigned': 'x_date_signed',
+    'dateStart': 'date_start',
+    'dateEnd': 'date_end',
+    'wage': 'wage',
+    'insuranceBase': 'x_insurance_base',
+    'state': 'state',
+    'structureId': 'x_structure_id',
+}
+
+
+def _contract_options(env):
+    """Danh mục cho form hợp đồng — loại, trạng thái, cấu trúc lương."""
+    if 'hb.contract' not in env:
+        return {'types': [], 'states': [], 'structures': []}
+    C = env['hb.contract']
+    structures = []
+    if 'hb.salary.structure' in env:
+        structures = [{'id': s.id, 'name': s.name}
+                      for s in env['hb.salary.structure'].sudo().search([])]
+    return {
+        'types': [{'key': k, 'label': v}
+                  for k, v in C._fields['x_contract_type'].selection],
+        'states': [{'key': k, 'label': v}
+                   for k, v in C._fields['state'].selection],
+        'structures': structures,
+    }
+
+
+def _contract_vals(payload, env):
+    """payload camelCase → vals hb.contract (chỉ field trong whitelist)."""
+    vals = {}
+    for key, field in CONTRACT_FORM_FIELDS.items():
+        if key not in payload:
+            continue
+        v = payload[key]
+        if field in ('wage', 'x_insurance_base'):
+            vals[field] = float(v or 0)
+        elif field == 'x_structure_id':
+            vals[field] = int(v) if v else False
+        else:
+            vals[field] = v if v not in ('', None) else False
+    return vals
+
+
+def _contract_rows(e):
+    """Các lần ký hợp đồng của một nhân viên — tab "Hợp đồng" trong hồ sơ.
+
+    Xếp cũ → mới để "Lần ký 1, 2, 3" đọc xuôi. Cột dữ liệu bám sheet
+    "2.5. Theo dõi ký hợp đồng" của khách. Chỉ gọi khi người xem được phép
+    thấy lương (_cap_see_salary) vì payload có mức lương.
+    """
+    if 'hb.contract' not in e.env:
+        return []
+    Contract = e.env['hb.contract'].sudo()
+    recs = Contract.search([('employee_id', '=', e.id)])
+    ordered = recs.sorted(
+        key=lambda c: (c.x_date_signed or c.date_start or date.max, c.id))
+    alert_days = int(float(e.env['ir.config_parameter'].sudo().get_param(
+        'hocba_payroll.contract_alert_days', 60)))
+    today = fields.Date.context_today(e)
+    type_label = dict(Contract._fields['x_contract_type'].selection)
+    state_label = dict(Contract._fields['state'].selection)
+    rows = []
+    for c in ordered:
+        days = (c.date_end - today).days if c.date_end else None
+        rows.append({
+            'id': c.id,
+            'name': c.name or '',
+            'signCount': c.x_sign_count,
+            'typeKey': c.x_contract_type or '',
+            'type': type_label.get(c.x_contract_type, ''),
+            'dateSigned': _d(c.x_date_signed),
+            'dateStart': _d(c.date_start),
+            'dateEnd': _d(c.date_end),
+            'wage': c.wage or 0,
+            'insuranceBase': c.x_insurance_base or 0,
+            'structureId': c.x_structure_id.id or False,
+            'structure': c.x_structure_id.name or '',
+            'state': c.state or '',
+            'stateLabel': state_label.get(c.state, ''),
+            'daysToExpire': days,
+            # Chỉ cảnh báo hợp đồng ĐANG hiệu lực: bản đã đóng thì hết hạn là
+            # chuyện bình thường, gắn nhãn vàng chỉ làm nhiễu.
+            'expiringSoon': bool(c.state == 'open' and days is not None
+                                 and 0 <= days <= alert_days),
+            'files': [{'id': a.id, 'name': a.name or '',
+                       'url': '/web/content/%s?download=true' % a.id}
+                      for a in c.x_attachment_ids],
+        })
+    return rows
+
+
 def _bank_options(env):
     """Danh sách ngân hàng cho dropdown form NV — đọc từ cấu hình payroll
     (hb.bank.format). Trả [] nếu module payroll chưa cài (loose coupling)."""
@@ -3176,6 +3271,14 @@ class HocBaHRM(http.Controller):
             promotions.append(item)
         data['promotions'] = promotions
 
+        # --- Hợp đồng: đi theo cổng xem lương, giống khối ngân hàng/MST ---
+        if see_salary:
+            data['contracts'] = _contract_rows(e)
+            data['contractOptions'] = _contract_options(e.env)
+            # Sửa được hay chỉ xem: quản lý hồ sơ NV này + được xem lương.
+            data['canEditContract'] = bool(is_hr)
+            data['canEditWage'] = _cap_edit_salary(e.env)
+
         # --- Chứng chỉ (F-008/009): chỉ HR ---
         if is_hr:
             data['certs'] = [{
@@ -3713,6 +3816,156 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         try:
             a.unlink()
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    # ------------------------------------------------------------------
+    # Hợp đồng lao động — tab "Hợp đồng" trong hồ sơ NV
+    # Cổng: quản lý được hồ sơ NV đó (_can_edit_emp_record) VÀ được xem lương
+    # (_cap_see_salary) — hợp đồng chứa mức lương nên HR officer bị chặn.
+    # ------------------------------------------------------------------
+    def _can_edit_contract(self, e):
+        return self._can_edit_emp_record(e) and _cap_see_salary(request.env)
+
+    def _reject_wage_change(self, vals, contract=None):
+        """Chỉ HR Manager/Admin được đặt hoặc đổi mức lương trên hợp đồng.
+
+        Trưởng phòng/Giáo vụ sửa được mọi trường còn lại. Form của họ gửi lên
+        nguyên payload nên chỉ chặn khi số THỰC SỰ đổi, không chặn việc gửi lại
+        đúng giá trị cũ. Trả về thông điệp lỗi, hoặc None nếu hợp lệ.
+        """
+        if _cap_edit_salary(request.env):
+            return None
+        for key, current in (('wage', contract.wage if contract else 0.0),
+                             ('x_insurance_base',
+                              contract.x_insurance_base if contract else 0.0)):
+            if key in vals and float(vals[key] or 0) != float(current or 0):
+                return ('Chỉ HR Manager được đặt hoặc sửa mức lương trên hợp '
+                        'đồng. Các trường còn lại bạn vẫn sửa được.')
+        return None
+
+    def _sync_profile_wage(self, contract):
+        """Lương hợp đồng ĐANG HIỆU LỰC = ô "Lương cơ bản" ở tab Thông tin.
+
+        Chiều ngược lại (sửa ở hồ sơ → ghi xuống hợp đồng) đã có sẵn ở
+        api_employee_save. Hợp đồng cũ/nháp không đụng tới hồ sơ: lương hiện
+        hưởng chỉ do hợp đồng đang chạy quyết định.
+        """
+        if contract.state != 'open' or not contract.wage:
+            return
+        version = contract.employee_id.sudo().version_id
+        if version and 'wage' in version._fields:
+            version.sudo().write({'wage': contract.wage})
+
+    def _contract_write(self, contract, e, vals):
+        """Ghi vals rồi trả hồ sơ mới; lỗi nghiệp vụ → 400 + rollback."""
+        try:
+            if contract:
+                contract.write(vals)
+            else:
+                contract = request.env['hb.contract'].sudo().create(vals)
+            self._sync_profile_wage(contract)
+        except (AccessError, ValidationError, UserError) as ex:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'error': 'rejected', 'message': str(ex)}, status=400)
+        return self._detail_response(e)
+
+    @http.route('/hocba-hrm/api/employee/<int:emp_id>/contract', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_contract_create(self, emp_id, **kw):
+        e = request.env['hr.employee'].sudo().browse(emp_id)
+        if not e.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._can_edit_contract(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        payload = request.get_json_data() or {}
+        vals = _contract_vals(payload, request.env)
+        if not vals.get('date_start'):
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Cần nhập ngày hợp đồng bắt đầu hiệu lực.'},
+                status=400)
+        blocked = self._reject_wage_change(vals)
+        if blocked:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': blocked}, status=400)
+        renew_from = False
+        if payload.get('renewFromId'):
+            try:
+                renew_from = request.env['hb.contract'].sudo().browse(
+                    int(payload['renewFromId']))
+            except (TypeError, ValueError):
+                renew_from = request.env['hb.contract'].browse()
+            if (not renew_from.exists() or renew_from.employee_id != e
+                    or renew_from.state != 'open'):
+                return request.make_json_response(
+                    {'error': 'rejected',
+                     'message': 'Hợp đồng tái ký không hợp lệ hoặc không còn hiệu lực.'},
+                    status=400)
+        elif vals.get('state') == 'open' and request.env['hb.contract'].sudo().search_count([
+                ('employee_id', '=', e.id), ('state', '=', 'open')]):
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Nhân viên đã có hợp đồng đang hiệu lực. Hãy dùng “Tái ký” hoặc đóng hợp đồng cũ trước.'},
+                status=400)
+        vals['employee_id'] = e.id
+        # Tên hợp đồng chỉ để tra cứu; HR bỏ trống thì đặt theo mã + tên NV cho
+        # thống nhất với các hợp đồng đang có.
+        if not vals.get('name'):
+            vals['name'] = 'HĐLĐ %s - %s' % (e.x_employee_code or e.id, e.name)
+        result = self._contract_write(None, e, vals)
+        if renew_from and getattr(result, 'status_code', 200) < 400:
+            end = fields.Date.to_date(vals['date_start']) - timedelta(days=1)
+            renew_from.write({'state': 'close', 'date_end': end})
+            return self._detail_response(e)
+        return result
+
+    @http.route('/hocba-hrm/api/contract/<int:contract_id>', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_contract_save(self, contract_id, **kw):
+        c = request.env['hb.contract'].sudo().browse(contract_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = c.employee_id
+        if not self._can_edit_contract(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        vals = _contract_vals(request.get_json_data() or {}, request.env)
+        if 'date_start' in vals and not vals['date_start']:
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Cần nhập ngày hợp đồng bắt đầu hiệu lực.'},
+                status=400)
+        blocked = self._reject_wage_change(vals, c)
+        if blocked:
+            return request.make_json_response(
+                {'error': 'rejected', 'message': blocked}, status=400)
+        return self._contract_write(c, e, vals)
+
+    @http.route('/hocba-hrm/api/contract/<int:contract_id>/delete', auth='user',
+                type='http', methods=['POST'], csrf=False)
+    def api_contract_delete(self, contract_id, **kw):
+        c = request.env['hb.contract'].sudo().browse(contract_id)
+        if not c.exists():
+            return request.make_json_response({'error': 'not_found'}, status=404)
+        e = c.employee_id
+        if not self._can_edit_contract(e):
+            return request.make_json_response({'error': 'forbidden'}, status=403)
+        # Phiếu lương đã tham chiếu thì xoá là mất dấu vết trả lương -> chặn,
+        # hướng HR sang đổi trạng thái sang Đã huỷ/Hết hạn.
+        used = request.env['hb.payslip'].sudo().search_count(
+            [('contract_id', '=', c.id)])
+        if used:
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Hợp đồng đã có %s phiếu lương dùng tới — hãy đổi '
+                            'trạng thái sang "Đã huỷ" thay vì xoá.' % used},
+                status=400)
+        try:
+            c.unlink()
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
@@ -4340,12 +4593,21 @@ class HocBaHRM(http.Controller):
         payload = request.get_json_data()
         emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
         try:
+            # CCCD nằm trên hr.version nhưng BR-010 chạy khi trạng thái official
+            # được ghi trên hr.employee. Ghi version trước để người dùng có thể
+            # bổ sung CCCD và chuyển chính thức trong cùng một lần Lưu.
+            if ver_vals:
+                e.version_id.sudo().write(ver_vals)
             if emp_vals:
                 e.sudo().write(emp_vals)
             if ver_vals:
-                e.version_id.sudo().write(ver_vals)
+                # Lương ở hồ sơ và lương trên hợp đồng ĐANG HIỆU LỰC phải là
+                # một con số (tab Thông tin ↔ tab Hợp đồng). Chỉ ghi xuống hợp
+                # đồng 'open': hợp đồng đã đóng là lịch sử trả lương, ghi đè lên
+                # đó thì mất dấu vết mức lương từng ký.
                 if 'wage' in ver_vals and ver_vals['wage'] is not None:
-                    contracts = request.env['hb.contract'].sudo().search([('employee_id', '=', e.id)])
+                    contracts = request.env['hb.contract'].sudo().search(
+                        [('employee_id', '=', e.id), ('state', '=', 'open')])
                     if contracts:
                         contracts.write({'wage': ver_vals['wage']})
         except IntegrityError:

@@ -62,3 +62,44 @@ class TestPayrollAPIControllers(HttpCase):
         self.assertIn(res.status_code, [200, 201], 'API reset xác nhận phải trả về status success.')
         slip.invalidate_recordset()
         self.assertEqual(slip.confirm_status, 'pending', 'Slip status qua API reset phải về pending.')
+
+    def test_03_employee_payroll_respects_contract_month_boundary(self):
+        """NV bắt đầu 01/08 không được xuất hiện trong bảng lương tháng 07."""
+        july_emp = self.Employee.create({
+            'name': 'Boundary Payroll July Employee',
+            'x_employee_code': 'PAY-BOUNDARY-JULY',
+        })
+        august_emp = self.Employee.create({
+            'name': 'Boundary Payroll August Employee',
+            'x_employee_code': 'PAY-BOUNDARY-AUGUST',
+        })
+        Contract = self.env['hb.contract'].sudo()
+        Contract.create({
+            'name': 'Boundary July Contract',
+            'employee_id': july_emp.id,
+            'state': 'open',
+            'date_start': '2026-07-01',
+            'wage': 10_000_000,
+        })
+        Contract.create({
+            'name': 'Boundary August Contract',
+            'employee_id': august_emp.id,
+            'state': 'open',
+            'date_start': '2026-08-01',
+            'wage': 10_000_000,
+        })
+
+        self.authenticate('admin', 'admin')
+        july = self.url_open(
+            '/hocba-hrm/api/payroll/employee-payroll?month=7&year=2026').json()
+        july = july.get('data', july)
+        july_codes = {row['code'] for row in july['employees']}
+        self.assertIn('PAY-BOUNDARY-JULY', july_codes)
+        self.assertNotIn('PAY-BOUNDARY-AUGUST', july_codes)
+
+        august = self.url_open(
+            '/hocba-hrm/api/payroll/employee-payroll?month=8&year=2026').json()
+        august = august.get('data', august)
+        august_codes = {row['code'] for row in august['employees']}
+        self.assertIn('PAY-BOUNDARY-JULY', august_codes)
+        self.assertIn('PAY-BOUNDARY-AUGUST', august_codes)

@@ -1,6 +1,6 @@
 {
     'name': 'Hoc Ba Payroll',
-    'version': '19.0.4.0.0',
+    'version': '19.0.4.0.1',
     'category': 'Human Resources/Payroll',
     'summary': 'Payroll management for Hoc Ba Education — rule-based salary engine, bank files',
     'description': """
