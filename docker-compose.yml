@@ -11,6 +11,8 @@ services:
       - PORT=${DB_PORT:-5432}
       - USER=${DB_USER}
       - PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-neondb}
+      - DB_SSLMODE=${DB_SSLMODE:-require}
       - CMS_MYSQL_HOST=${CMS_MYSQL_HOST}
       - CMS_MYSQL_PORT=${CMS_MYSQL_PORT:-58008}
       - CMS_MYSQL_USER=${CMS_MYSQL_USER:-root}
@@ -25,13 +27,17 @@ services:
       - ./custom-addons:/mnt/extra-addons
       - odoo_data:/var/lib/odoo
       - ./odoo.conf:/etc/odoo/odoo.conf
-      - ./tools/fix_stale_assets.py:/fix_stale_assets.py:ro
-    command: >
-      bash -c "python3 /fix_stale_assets.py; exec odoo
-      --database=${DB_NAME:-neondb}
-      --addons-path=/mnt/extra-addons
-      -u hocba_payroll,hocba_hrm
-      --dev=xml"
+    # Startup thường không init/update/cleanup DB. Chỉ chạy migration trong
+    # một maintenance job riêng sau khi backup và được phê duyệt.
+    command:
+      - odoo
+      - --database=${DB_NAME:-neondb}
+      - --db_host=${DB_HOST}
+      - --db_port=${DB_PORT:-5432}
+      - --db_user=${DB_USER}
+      - --db_password=${DB_PASSWORD}
+      - --db_sslmode=${DB_SSLMODE:-require}
+      - --addons-path=/mnt/extra-addons
 
 volumes:
   odoo_data:

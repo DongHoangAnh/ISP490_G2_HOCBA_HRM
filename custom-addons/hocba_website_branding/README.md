@@ -38,15 +38,12 @@ Khối "Thông tin tuyển dụng / Yêu cầu ứng viên" trên trang tin **kh
 
 ## Cài / cập nhật
 
-```bash
-docker compose -f docker-compose.nginx.yml up -d --build
-```
-
-`docker-compose.nginx.yml` đã có `hocba_website_branding` trong cả `--init` lẫn `--update`,
-nên chỉ cần dựng lại container là xong. Cài trên DB đang chạy sẵn:
+Stack nginx (`docker-compose.nginx.yml`) **cố tình không chạy `--init/--update` lúc khởi động**
+để không đụng schema DB production (commit `f170ac6`), nên cài module là một **thao tác bảo trì
+riêng**, chạy tay khi đã thống nhất với nhóm:
 
 ```bash
-docker compose -f docker-compose.nginx.yml exec odoo odoo -d hocba_hrm -i hocba_website_branding --addons-path=/mnt/extra-addons --stop-after-init
+docker compose -f docker-compose.nginx.yml run --rm --no-deps odoo odoo -d "$DB_NAME" -i hocba_website_branding --addons-path=/mnt/extra-addons --stop-after-init
 ```
 
 Sau đó **BẮT BUỘC restart container** — không chỉ để xoá cache view mà vì Odoo chỉ dựng lại
@@ -56,6 +53,8 @@ bundle và ô CV vẫn không bắt buộc (đã gặp đúng lỗi này lúc ki
 ```bash
 docker compose -f docker-compose.nginx.yml restart odoo
 ```
+
+Lần sau sửa file trong module thì thay `-i` bằng `-u hocba_website_branding`, rồi restart y hệt.
 
 ## Lưu ý
 
@@ -67,8 +66,9 @@ docker compose -f docker-compose.nginx.yml restart odoo
 - DB `hocba_hrm` hiện có sẵn công ty id 2 tên *Học Bá Education*. Module đổi tên công ty id 1
   (`base.main_company`, công ty của website) thành *Học Bá Education* → sẽ có **hai công ty
   trùng tên**. Đó là chuyện tồn đọng của DB đó, cần dọn riêng.
-- Stack chạy `--dev=xml` nên view của module luôn nạp lại từ file XML — sửa file rồi restart
-  là thấy ngay, không cần đụng `arch_updated` như hồi sửa view trong DB.
+- View của module nằm trong file XML nên **không dính bẫy `arch_updated`** như hồi sửa view
+  trực tiếp trong DB. Đổi lại, stack nginx nay chạy không có `--dev=xml`: sửa file xong phải
+  `-u hocba_website_branding` rồi restart mới thấy, restart suông là chưa đủ.
 - Ô CV bắt buộc được làm bằng **JS vá interaction của Odoo**, không phải `required` trong XML —
   lý do chi tiết ghi trong comment ở `views/recruitment_branding_templates.xml` và trong file JS.
   Kiểm thử đã xác nhận: gửi thiếu CV bị chặn ngay trên ô CV, gửi kèm CV vẫn tạo được ứng viên
