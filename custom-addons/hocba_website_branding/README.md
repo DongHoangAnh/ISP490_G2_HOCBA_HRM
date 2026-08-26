@@ -43,8 +43,13 @@ Stack nginx (`docker-compose.nginx.yml`) **cố tình không chạy `--init/--up
 riêng**, chạy tay khi đã thống nhất với nhóm:
 
 ```bash
-docker compose -f docker-compose.nginx.yml run --rm --no-deps odoo odoo -d "$DB_NAME" -i hocba_website_branding --addons-path=/mnt/extra-addons --stop-after-init
+docker compose -f docker-compose.nginx.yml run --rm --no-deps --entrypoint bash odoo -lc 'odoo -d "$DB_NAME" -i hocba_website_branding --db_host="$HOST" --db_port="$PORT" --db_user="$USER" --db_password="$PASSWORD" --db_sslmode=prefer --addons-path=/mnt/extra-addons --stop-after-init'
 ```
+
+(Nháy đơn để **container** giãn biến chứ không phải shell ở máy bạn: `HOST/PORT/USER/PASSWORD/DB_NAME`
+do khối `environment:` trong compose bơm vào từ `.env`. Phải ghi rõ `--db_*` vì từ `f170ac6` thông tin
+kết nối không còn nằm trong `odoo.local.conf` mà được truyền qua `command:`, mà `run` thì thay luôn
+`command:` đó.)
 
 Sau đó **BẮT BUỘC restart container** — không chỉ để xoá cache view mà vì Odoo chỉ dựng lại
 bundle JS/CSS khi khởi động lại; thiếu bước này thì `apply_form_cv_required.js` không nằm trong
@@ -55,6 +60,10 @@ docker compose -f docker-compose.nginx.yml restart odoo
 ```
 
 Lần sau sửa file trong module thì thay `-i` bằng `-u hocba_website_branding`, rồi restart y hệt.
+
+⚠️ Hệ quả chung của `f170ac6` (không riêng module này): dựng lại container **không còn tự cập nhật
+module nào cả**. Deploy code mới mà quên `-u` thì DB và code lệch nhau — sửa Python thì restart là
+đủ, nhưng thêm field/bảng, sửa view XML, security hay data đều phải `-u` mới vào DB.
 
 ## Lưu ý
 
