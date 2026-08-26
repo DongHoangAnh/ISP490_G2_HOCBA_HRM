@@ -1604,6 +1604,12 @@ def _managed_department_ids(env, emp):
     return list(result)
 
 
+# Tài khoản vai trò (trưởng phòng) không phải hồ sơ nhân sự — mọi danh sách NV
+# đều loại nó ra (spec 2026-08-27). Tách thành hằng số vì _dash_scope_emp_ids
+# phải nhận ra "domain chỉ có đúng mệnh đề này" = không giới hạn gì cả.
+ROLE_ACCOUNT_EXCLUDED = ('x_is_role_account', '=', False)
+
+
 def _emp_scope_domain(env):
     """Domain giới hạn NV theo vai trò: HR/Admin=tất cả; Giáo vụ=giáo viên;
     Trưởng phòng=phòng mình; còn lại=rỗng (id=0).
@@ -1618,7 +1624,7 @@ def _emp_scope_domain(env):
     ('employee_id.x_is_role_account', '=', False).
     """
     user = env.user
-    base = [('x_is_role_account', '=', False)]
+    base = [ROLE_ACCOUNT_EXCLUDED]
     if (user.has_group('base.group_system')
             or user.has_group('hr.group_hr_user')
             or user.has_group('hr.group_hr_manager')):
@@ -2620,7 +2626,11 @@ def _dash_scope_emp_ids(env):
     """Phạm vi NV cho tab Chấm công/Nghỉ phép: None = tất cả (HR/Admin);
     [] = không có quyền; list id = giới hạn theo vai trò (trưởng phòng/giáo vụ)."""
     dom = _emp_scope_domain(env)
-    if not dom:
+    # "HR/Admin = tất cả" trước đây nhận ra bằng domain RỖNG. Từ khi domain luôn
+    # mang mệnh đề loại tài khoản vai trò, domain của HR không còn rỗng — phải so
+    # với đúng mệnh đề đó. Không so thì HR rơi xuống nhánh liệt kê id, và một DB
+    # chưa có nhân viên nào sẽ trả 403 thay vì dashboard trống.
+    if not dom or dom == [ROLE_ACCOUNT_EXCLUDED]:
         return None
     if dom == [('id', '=', 0)]:
         return []

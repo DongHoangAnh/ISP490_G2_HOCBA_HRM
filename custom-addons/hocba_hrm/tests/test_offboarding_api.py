@@ -1,7 +1,8 @@
 from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
-from odoo.addons.hocba_hrm.controllers.main import _emp_scope_domain
+from odoo.addons.hocba_hrm.controllers.main import (
+    _emp_scope_domain, ROLE_ACCOUNT_EXCLUDED)
 
 
 @tagged('post_install', '-at_install')
@@ -21,8 +22,11 @@ class TestOffboardingScope(TransactionCase):
             'employee_id': self.emp.id, 'reason_type': 'voluntary',
             'expected_leave_date': fields.Date.today()})
         env = self.env(user=self.hr_user)
-        # HR Manager: _emp_scope_domain trả [] → thấy mọi nhân viên
-        self.assertEqual(_emp_scope_domain(env), [])
+        # HR Manager: thấy mọi NHÂN VIÊN. Domain không còn rỗng vì từ spec
+        # 2026-08-27 mọi nhánh đều loại tài khoản vai trò (trưởng phòng tạo
+        # từ form Thêm phòng ban) — đó là tài khoản quản lý, không phải hồ sơ
+        # nhân sự nên không có đơn nghỉ việc để xét.
+        self.assertEqual(_emp_scope_domain(env), [ROLE_ACCOUNT_EXCLUDED])
         scope_emp_ids = env['hr.employee'].sudo().search(
             _emp_scope_domain(env)).ids
         found = env['hocba.offboarding'].sudo().search(
