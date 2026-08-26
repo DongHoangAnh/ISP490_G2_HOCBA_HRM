@@ -1,10 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════════
 # NGINX stack — file docker-compose ĐỘC LẬP (không override docker-compose.yml).
-# Kết nối PostgreSQL hiện hữu qua DB_HOST/DB_PORT trong .env, chạy sau
-# reverse proxy nginx tại domain hrm.dangch.tech. Compose này không tạo,
-# migrate hay dọn dữ liệu trong database.
+# DB Postgres nội bộ trong Docker, chạy sau reverse proxy nginx tại domain
+# hrm.dangch.tech. Project name: hrm → container/volume/network prefix "hrm-*"
 #   → Odoo:     127.0.0.1:58012  (nginx proxy_pass vào cổng này)
-#   → Volume:    hrm_odoo_data (filestore phải được backup cùng DB)
+#   → Postgres: 127.0.0.1:58010
+#   → Volumes: hrm_odoo_data, hrm_postgres_data
+#              (TÁCH BIỆT hoàn toàn với local/online stack)
 #
 # Cách build + chạy (từ thư mục gốc dự án):
 #   docker compose -f docker-compose.nginx.yml up -d --build
@@ -13,19 +14,38 @@
 name: hrm
 
 services:
+  db:
+    container_name: hrm-db
+    # PG 18 để khớp Neon (Neon đang chạy PostgreSQL 18.4) → dump/restore
+    # qua lại được, giống stack local.
+    image: postgres:18
+    environment:
+      POSTGRES_DB: hocba_hrm
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo_password
+    ports:
+      - "58010:5432"
+    volumes:
+      # PG18 mount ở /var/lib/postgresql (data nằm trong subdir theo major
+      # version), KHÔNG phải /var/lib/postgresql/data như PG15.
+      - postgres_data:/var/lib/postgresql
+
   odoo:
     container_name: hrm-odoo
     build:
       context: .
       dockerfile: Dockerfile
+    depends_on:
+      - db
     ports:
       - "58012:8069"
     environment:
-      - HOST=${DB_HOST:?Set DB_HOST in .env}
-      - PORT=${DB_PORT:-58010}
-      - USER=${DB_USER:-odoo}
-      - PASSWORD=${DB_PASSWORD:?Set DB_PASSWORD in .env}
-      - DB_NAME=${DB_NAME:-hocba_hrm}
+      - HOST=db
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo_password
+      - DB_NAME=hocba_hrm
+      - DB_SSLMODE=prefer
       - CMS_MYSQL_HOST=${CMS_MYSQL_HOST}
       - CMS_MYSQL_PORT=${CMS_MYSQL_PORT:-58008}
       - CMS_MYSQL_USER=${CMS_MYSQL_USER:-root}
@@ -40,18 +60,19 @@ services:
       # bộ không SSL như stack local, khác odoo.conf gốc (sslmode=require
       # chỉ dành cho Neon).
       - ./odoo.local.conf:/etc/odoo/odoo.conf
-    # Không dùng --init/--update/cleanup ở startup: tránh thay schema/data DB
-    # production. Migration phải là một thao tác bảo trì được phê duyệt riêng.
-    command:
-      - odoo
-      - --database=${DB_NAME:-hocba_hrm}
-      - --db_host=${DB_HOST}
-      - --db_port=${DB_PORT:-58010}
-      - --db_user=${DB_USER:-odoo}
-      - --db_password=${DB_PASSWORD}
-      - --db_sslmode=prefer
-      - --addons-path=/mnt/extra-addons
-    restart: unless-stopped
+      - ./tools/fix_stale_assets.py:/fix_stale_assets.py:ro
+    # ⚠️ website_hr_recruitment BẮT BUỘC (kéo theo website/website_mail/website_sms):
+    #    field `hr.job.is_published` và trang tuyển dụng công khai /jobs/detail/...
+    #    là của module này. Thiếu nó thì badge PUBLISHED không bật, nút "Chép link"
+    #    không hiện và link công khai 404. Xem docs/DB_TEST_DATA.md:223 (DB demo 17/08).
+    command: >
+      bash -c "python3 /fix_stale_assets.py; exec odoo
+      --database=hocba_hrm
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment,hocba_website_branding
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment,hocba_website_branding
+      --addons-path=/mnt/extra-addons
+      --dev=xml"
 
 volumes:
+  postgres_data:
   odoo_data:

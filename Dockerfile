@@ -1,4 +1,4 @@
-FROM odoo:19.0-20260817
+FROM odoo:19
 
 # Install pymysql for CMS MySQL integration
 RUN pip install pymysql --break-system-packages

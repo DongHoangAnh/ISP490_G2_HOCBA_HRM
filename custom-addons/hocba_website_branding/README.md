@@ -38,23 +38,15 @@ Khối "Thông tin tuyển dụng / Yêu cầu ứng viên" trên trang tin **kh
 
 ## Cài / cập nhật
 
-Stack nginx (`docker-compose.nginx.yml`) **cố tình không chạy `--init/--update` lúc khởi động**
-để không đụng schema DB production (commit `f170ac6`), nên cài module là một **thao tác bảo trì
-riêng**, chạy tay khi đã thống nhất với nhóm:
+Stack nginx (`docker-compose.nginx.yml`) có `hocba_website_branding` trong cả
+`--init` và `--update`, vì vậy module được cài/cập nhật tự động khi nhóm
+build lại stack:
 
 ```bash
-docker compose -f docker-compose.nginx.yml run --rm --no-deps odoo odoo -d "$DB_NAME" -i hocba_website_branding --addons-path=/mnt/extra-addons --stop-after-init
+docker compose -f docker-compose.nginx.yml up -d --build
 ```
 
-Sau đó **BẮT BUỘC restart container** — không chỉ để xoá cache view mà vì Odoo chỉ dựng lại
-bundle JS/CSS khi khởi động lại; thiếu bước này thì `apply_form_cv_required.js` không nằm trong
-bundle và ô CV vẫn không bắt buộc (đã gặp đúng lỗi này lúc kiểm thử):
-
-```bash
-docker compose -f docker-compose.nginx.yml restart odoo
-```
-
-Lần sau sửa file trong module thì thay `-i` bằng `-u hocba_website_branding`, rồi restart y hệt.
+Lệnh trên recreate container, nạp lại view và dựng bundle JS/CSS của module.
 
 ## Lưu ý
 
@@ -67,8 +59,8 @@ Lần sau sửa file trong module thì thay `-i` bằng `-u hocba_website_brandi
   (`base.main_company`, công ty của website) thành *Học Bá Education* → sẽ có **hai công ty
   trùng tên**. Đó là chuyện tồn đọng của DB đó, cần dọn riêng.
 - View của module nằm trong file XML nên **không dính bẫy `arch_updated`** như hồi sửa view
-  trực tiếp trong DB. Đổi lại, stack nginx nay chạy không có `--dev=xml`: sửa file xong phải
-  `-u hocba_website_branding` rồi restart mới thấy, restart suông là chưa đủ.
+  trực tiếp trong DB. Stack nginx tự chạy `--update=hocba_website_branding`
+  khi recreate, nên thay đổi XML/JS/CSS được nạp trong luồng deploy chung.
 - Ô CV bắt buộc được làm bằng **JS vá interaction của Odoo**, không phải `required` trong XML —
   lý do chi tiết ghi trong comment ở `views/recruitment_branding_templates.xml` và trong file JS.
   Kiểm thử đã xác nhận: gửi thiếu CV bị chặn ngay trên ô CV, gửi kèm CV vẫn tạo được ứng viên
