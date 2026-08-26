@@ -33,10 +33,10 @@ function Field({ label, full, children }) {
 
 const emptyMgr = {
   name: '', code: '', login: '', password: '', password_confirm: '',
-  email: '', phone: '', empTypeId: '',
+  email: '', phone: '',
 };
 
-export default function DepartmentForm({ dept, employees = [], empTypes = [],
+export default function DepartmentForm({ dept, employees = [],
                                          minPasswordLen = 8, onClose, onDone }) {
   const edit = !!dept;
   const [name, setName] = useState(dept ? dept.name : '');
@@ -159,12 +159,6 @@ export default function DepartmentForm({ dept, employees = [], empTypes = [],
               <Field label="Mã nhân sự">
                 <input style={inp} value={mgr.code} onChange={setM('code')}
                   placeholder="VD: HB.20" autoComplete="off" />
-              </Field>
-              <Field label="Loại nhân sự">
-                <select style={inp} value={mgr.empTypeId} onChange={setM('empTypeId')}>
-                  <option value="">— Chưa phân loại —</option>
-                  {empTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
               </Field>
               <Field label="Email công ty">
                 <input style={inp} value={mgr.email} onChange={setM('email')}

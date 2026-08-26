@@ -2440,9 +2440,6 @@ def _dept_list(env, archived=False):
         'employees': [{'id': e.id, 'name': e.name,
                        'code': e.x_employee_code or '',
                        'hasAccount': bool(e.user_id)} for e in emps],
-        # Cho khối "tạo trưởng phòng mới" trong form phòng ban.
-        'empTypes': [{'id': t.id, 'name': t.name, 'code': t.code or ''}
-                     for t in env['hocba.employee.type'].sudo().search([])],
         'minPasswordLen': MIN_PASSWORD_LEN,
         'canEdit': _cap_edit_dept(env),
     }
@@ -2476,8 +2473,6 @@ def _dept_new_manager(env, dept, body):
     code = (m.get('code') or '').strip()
     if code:
         emp_vals['x_employee_code'] = code
-    if m.get('empTypeId'):
-        emp_vals['x_employee_type_id'] = int(m['empTypeId'])
     emp = env['hr.employee'].sudo().create(emp_vals)
     user = env['res.users'].sudo().create({
         'name': emp.name, 'login': login, 'password': password,
