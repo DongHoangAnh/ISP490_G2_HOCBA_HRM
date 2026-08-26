@@ -187,3 +187,50 @@ class TestRoleAccount(TransactionCase):
             new_mgr.x_is_role_account,
             'Trưởng phòng mới tạo từ form Sửa phòng ban cũng phải là '
             'tài khoản vai trò.')
+
+    # ---- Task 3: biến mất khỏi các màn nhân sự ----
+    def test_khong_nam_trong_danh_sach_nhan_vien(self):
+        _dept, emp = self._create_dept(name='Phong DS', login='tp_role_4')
+        env = self.env(user=self.hrm)
+        found = env['hr.employee'].sudo().search(_emp_scope_domain(env))
+        self.assertNotIn(
+            emp, found, 'Tài khoản vai trò không được nằm trong danh sách NV.')
+
+    def test_khong_nam_trong_hang_doi_nhan_viec(self):
+        """api_onboarding lọc probation + _emp_scope_domain.
+
+        Cố tình ghi lại x_employment_status='probation' lên tài khoản vai trò
+        trước khi kiểm. Không ghi thì test này XANH GIẢ: Task 2 đã đặt trạng
+        thái rỗng nên bản ghi rơi khỏi vế ('x_employment_status','=',
+        'probation') chứ không phải nhờ bộ lọc của Task 3. Trạng thái
+        'probation' bám lại là chuyện có thật — bản ghi cũ trước migration
+        (vd NV #33107 trong DB local) và đường ghi ngược từ form Sửa nhân
+        viên của FE đều để lại đúng giá trị này. Hai lớp chặn độc lập.
+        """
+        _dept, emp = self._create_dept(name='Phong NV', login='tp_role_5')
+        emp.sudo().write({'x_employment_status': 'probation'})
+        env = self.env(user=self.hrm)
+        queue = env['hr.employee'].sudo().search(
+            [('x_employment_status', '=', 'probation')]
+            + _emp_scope_domain(env))
+        self.assertNotIn(
+            emp, queue, 'Tài khoản vai trò không được vào hàng đợi Nhận việc.')
+
+    def test_nv_that_van_nam_trong_danh_sach(self):
+        """Bộ lọc không được vơ đũa cả nắm."""
+        env = self.env(user=self.hrm)
+        that = env['hr.employee'].sudo().create({'name': 'NV That Trong DS'})
+        found = env['hr.employee'].sudo().search(_emp_scope_domain(env))
+        self.assertIn(that, found)
+
+    def test_tai_khoan_vai_tro_van_duyet_duoc_phong_minh(self):
+        """Quyền đến từ _managed_department_ids (search trên hr.department),
+        không từ việc bản thân nằm trong danh sách NV."""
+        dept, emp = self._create_dept(name='Phong Quyen', login='tp_role_6')
+        nv = self.env['hr.employee'].sudo().create({
+            'name': 'NV Duoi Quyen', 'department_id': dept.id})
+        env = self.env(user=emp.user_id)
+        thay_duoc = env['hr.employee'].sudo().search(_emp_scope_domain(env))
+        self.assertIn(
+            nv, thay_duoc,
+            'Tài khoản vai trò phải vẫn thấy NV phòng mình.')

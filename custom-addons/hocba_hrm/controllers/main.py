@@ -1606,17 +1606,31 @@ def _managed_department_ids(env, emp):
 
 def _emp_scope_domain(env):
     """Domain giới hạn NV theo vai trò: HR/Admin=tất cả; Giáo vụ=giáo viên;
-    Trưởng phòng=phòng mình; còn lại=rỗng (id=0)."""
+    Trưởng phòng=phòng mình; còn lại=rỗng (id=0).
+
+    Tài khoản vai trò (x_is_role_account) bị loại ở MỌI nhánh — nó là tài khoản
+    quản lý, không phải hồ sơ nhân sự (spec 2026-08-27). Điều này KHÔNG làm nó
+    mất quyền: quyền suy ra từ _managed_department_ids, hàm đó chỉ search trên
+    hr.department.
+
+    Các điểm gọi dịch domain này sang tiền tố employee_id.* bằng vòng lặp
+    `for field, op, val in ...` vẫn đúng: tuple mới sinh ra
+    ('employee_id.x_is_role_account', '=', False).
+    """
     user = env.user
+    base = [('x_is_role_account', '=', False)]
     if (user.has_group('base.group_system')
             or user.has_group('hr.group_hr_user')
             or user.has_group('hr.group_hr_manager')):
-        return []
+        return base
     if user.has_group('hocba_employees.group_hocba_giaovu'):
-        return [('x_employee_type_id.code', '=', 'teacher')]
+        return base + [('x_employee_type_id.code', '=', 'teacher')]
     dept_ids = _managed_department_ids(env, user.employee_id)
     if dept_ids:
-        return [('department_id', 'in', dept_ids)]
+        return base + [('department_id', 'in', dept_ids)]
+    # Giữ NGUYÊN [('id','=',0)]: đây là domain "không thấy gì cả", thêm điều
+    # kiện nữa là thừa. Ngoài ra _dashboard_stats và api_dashboard_* nhận diện
+    # "không có quyền" bằng cách so bằng đúng literal này.
     return [('id', '=', 0)]
 
 
