@@ -2469,6 +2469,11 @@ def _dept_new_manager(env, dept, body):
         'department_id': dept.id,
         'work_email': (m.get('email') or '').strip() or False,
         'work_phone': (m.get('phone') or '').strip() or False,
+        # Tài khoản QUẢN LÝ, không phải hồ sơ nhân sự (spec 2026-08-27). Phải
+        # ghi rõ x_employment_status=False, nếu không nó rơi vào default
+        # 'probation' của field và lọt thẳng vào hàng đợi Nhận việc.
+        'x_is_role_account': True,
+        'x_employment_status': False,
     }
     emp = env['hr.employee'].sudo().create(emp_vals)
     user = env['res.users'].sudo().create({

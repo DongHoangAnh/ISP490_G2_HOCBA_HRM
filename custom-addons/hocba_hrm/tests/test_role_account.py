@@ -142,3 +142,17 @@ class TestRoleAccount(TransactionCase):
             'Tài khoản vai trò không được cấp mã nhân sự.')
         self.assertTrue(
             real_emp.x_employee_code, 'NV thật vẫn phải có mã nhân sự.')
+
+    # ---- Task 2: form phòng ban bật cờ ----
+    def test_tao_phong_ban_sinh_tai_khoan_vai_tro(self):
+        dept, emp = self._create_dept(login='tp_role_2')
+        self.assertTrue(emp, 'Phòng ban mới phải có trưởng phòng.')
+        self.assertTrue(
+            emp.x_is_role_account,
+            'Trưởng phòng tạo từ form phòng ban phải là tài khoản vai trò.')
+
+    def test_tai_khoan_vai_tro_khong_o_trang_thai_thu_viec(self):
+        _dept, emp = self._create_dept(name='Phong KTT', login='tp_role_3')
+        self.assertFalse(
+            emp.x_employment_status,
+            'Tài khoản vai trò không có tình trạng làm việc — nó không đi làm.')
