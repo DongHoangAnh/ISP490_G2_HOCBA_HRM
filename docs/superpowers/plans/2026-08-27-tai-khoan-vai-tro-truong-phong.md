@@ -539,6 +539,8 @@ def migrate(cr, version):
 
 **`if not version: return`** là bắt buộc — bỏ nó thì migration chạy cả khi cài mới từ đầu.
 
+**Cột `x_is_role_account` mang `NULL`, KHÔNG phải `false`.** Đã đo trên DB local sau Task 1: cả 39 bản ghi cũ đều `NULL` — Odoo không backfill default vào hàng có sẵn. Domain Odoo `('x_is_role_account', '=', False)` vẫn đúng vì nó nở thành `IS NULL OR = false`. Nhưng SQL thô trong migration mà viết `WHERE x_is_role_account = false` sẽ **trượt sạch mọi hàng**. Dùng `IS NOT TRUE`. Cũng vì lý do này, đừng đổi domain sang dạng `'!='` hay `'not in'` — chúng sẽ rụng hết hàng legacy.
+
 - [ ] **Step 2: Nâng version module — PHẢI cùng commit với migration**
 
 `custom-addons/hocba_employees/__manifest__.py` dòng 3: `'version': '19.0.6.0.0'` → `'version': '19.0.7.0.0'`.
