@@ -15,7 +15,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
 from odoo.addons.hocba_hrm.controllers.main import (
-    _dept_create, _emp_scope_domain, _account_list)
+    _dept_create, _dept_update, _emp_scope_domain, _account_list)
 
 
 @tagged('post_install', '-at_install')
@@ -34,11 +34,16 @@ class TestRoleAccount(TransactionCase):
                 'password': 'Hocba@2026', 'password_confirm': 'Hocba@2026'}
 
     def _create_dept(self, name='Phong Vai Tro', login='tp_role_1'):
-        """Tạo phòng ban kèm tài khoản vai trò, trả về (dept, emp)."""
+        """Tạo phòng ban kèm tài khoản vai trò, trả về (dept, emp).
+
+        Lấy dept qua id trả về từ _dept_create, KHÔNG search theo tên — DB
+        hocba_hrm dùng chung, một phòng trùng tên còn sót lại (seed thủ công,
+        lần chạy trước crash không rollback) sẽ khiến search(limit=1) không
+        order bắt nhầm phòng cũ."""
         env = self.env(user=self.hrm)
-        _dept_create(env, {'name': name, 'manager': self._mgr_block(login=login)})
-        dept = env['hr.department'].sudo().search(
-            [('name', '=', name)], limit=1)
+        out = _dept_create(env, {'name': name,
+                                  'manager': self._mgr_block(login=login)})
+        dept = env['hr.department'].sudo().browse(out['id'])
         return dept, dept.manager_id
 
     # ---- Task 1: cờ trên model ----
@@ -145,6 +150,8 @@ class TestRoleAccount(TransactionCase):
 
     # ---- Task 2: form phòng ban bật cờ ----
     def test_tao_phong_ban_sinh_tai_khoan_vai_tro(self):
+        """Trưởng phòng tạo cùng lúc với phòng ban mới phải là tài khoản
+        vai trò, không phải hồ sơ nhân sự."""
         dept, emp = self._create_dept(login='tp_role_2')
         self.assertTrue(emp, 'Phòng ban mới phải có trưởng phòng.')
         self.assertTrue(
@@ -152,7 +159,31 @@ class TestRoleAccount(TransactionCase):
             'Trưởng phòng tạo từ form phòng ban phải là tài khoản vai trò.')
 
     def test_tai_khoan_vai_tro_khong_o_trang_thai_thu_viec(self):
+        """Tài khoản vai trò không đi làm nên không có tình trạng làm việc —
+        đối chứng bằng NV thật để chốt cứng default 'probation' của field
+        vẫn còn nguyên (không thì test này xanh giả, kể cả khi ai đó lỡ đổi
+        default field sang False và làm vỡ cả hệ)."""
         _dept, emp = self._create_dept(name='Phong KTT', login='tp_role_3')
         self.assertFalse(
             emp.x_employment_status,
             'Tài khoản vai trò không có tình trạng làm việc — nó không đi làm.')
+        that = self.env['hr.employee'].sudo().create({'name': 'NV That KTT'})
+        self.assertEqual(that.x_employment_status, 'probation',
+                          'NV thật vẫn phải mặc định Thử việc.')
+
+    def test_dept_update_doi_truong_phong_bang_tai_khoan_moi_cung_bat_co(self):
+        """Nhánh Sửa phòng ban: HR đổi trưởng phòng bằng cách tạo TÀI KHOẢN
+        MỚI ngay trong form Sửa (body['manager']) — đi qua cùng
+        _dept_new_manager như form Tạo, nên cũng phải bật cờ. Khóa nhánh này
+        lại bằng test riêng, đừng chỉ dựa vào chỗ nó dùng chung helper."""
+        dept, emp1 = self._create_dept(name='Phong Sua TP', login='tp_role_4')
+        out = _dept_update(self.env(user=self.hrm), dept.id, {
+            'name': dept.name,
+            'manager': self._mgr_block(login='tp_role_5', name='TP Moi')})
+        self.assertNotEqual(out['managerId'], emp1.id,
+                             'Trưởng phòng phải đổi sang người mới.')
+        new_mgr = self.env['hr.employee'].sudo().browse(out['managerId'])
+        self.assertTrue(
+            new_mgr.x_is_role_account,
+            'Trưởng phòng mới tạo từ form Sửa phòng ban cũng phải là '
+            'tài khoản vai trò.')
