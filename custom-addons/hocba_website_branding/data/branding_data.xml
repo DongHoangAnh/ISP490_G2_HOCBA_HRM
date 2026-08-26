@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate="1": chỉ áp lúc CÀI module. Sau này ai sửa tên/điện thoại công
+         ty trong giao diện thì lần `-u` sau không bị ghi đè ngược. -->
+    <data noupdate="1">
+
+        <record id="base.main_company" model="res.company">
+            <field name="name">Học Bá Education</field>
+            <field name="phone">0888861786</field>
+            <field name="email">info@hoc-ba.edu.vn</field>
+        </record>
+
+        <record id="website.default_website" model="website">
+            <field name="name">Học Bá Education</field>
+            <field name="social_facebook">https://www.facebook.com/hocba.education</field>
+            <field name="social_youtube">https://www.youtube.com/@MarketingH%E1%BB%8DcB%C3%A1</field>
+            <field name="social_instagram">https://www.instagram.com/hocba.education</field>
+            <field name="social_tiktok">https://www.tiktok.com/@hocba.hsk</field>
+        </record>
+
+    </data>
+</odoo>

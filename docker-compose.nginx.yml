@@ -66,8 +66,8 @@ services:
     command: >
       bash -c "python3 /fix_stale_assets.py; exec odoo
       --database=hocba_hrm
-      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment
-      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment,hocba_website_branding
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment,hocba_website_branding
       --addons-path=/mnt/extra-addons
       --dev=xml"
 
