@@ -1,0 +1,72 @@
+# ═══════════════════════════════════════════════════════════════════════
+# NGINX stack — file docker-compose ĐỘC LẬP (không override docker-compose.yml).
+# DB Postgres nội bộ trong Docker, chạy sau reverse proxy nginx tại domain
+# hrm.dangch.tech. Project name: hrm → container/volume/network prefix "hrm-*"
+#   → Odoo:     127.0.0.1:58012  (nginx proxy_pass vào cổng này)
+#   → Postgres: 127.0.0.1:58010
+#   → Volumes: hrm_odoo_data, hrm_postgres_data
+#              (TÁCH BIỆT hoàn toàn với local/online stack)
+#
+# Cách build + chạy (từ thư mục gốc dự án):
+#   docker compose -f docker-compose.nginx.yml up -d --build
+# ═══════════════════════════════════════════════════════════════════════
+
+name: hrm
+
+services:
+  db:
+    container_name: hrm-db
+    # PG 18 để khớp Neon (Neon đang chạy PostgreSQL 18.4) → dump/restore
+    # qua lại được, giống stack local.
+    image: postgres:18
+    environment:
+      POSTGRES_DB: hocba_hrm
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo_password
+    ports:
+      - "58010:5432"
+    volumes:
+      # PG18 mount ở /var/lib/postgresql (data nằm trong subdir theo major
+      # version), KHÔNG phải /var/lib/postgresql/data như PG15.
+      - postgres_data:/var/lib/postgresql
+
+  odoo:
+    container_name: hrm-odoo
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    ports:
+      - "58012:8069"
+    environment:
+      - HOST=db
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo_password
+      - CMS_MYSQL_HOST=${CMS_MYSQL_HOST}
+      - CMS_MYSQL_PORT=${CMS_MYSQL_PORT:-58008}
+      - CMS_MYSQL_USER=${CMS_MYSQL_USER:-root}
+      - CMS_MYSQL_PASSWORD=${CMS_MYSQL_PASSWORD}
+      - CMS_MYSQL_DB=${CMS_MYSQL_DB:-erp_database}
+    env_file:
+      - .env
+    volumes:
+      - ./custom-addons:/mnt/extra-addons
+      - odoo_data:/var/lib/odoo
+      # Dùng chung odoo.local.conf (sslmode=prefer) — cùng kiểu Postgres nội
+      # bộ không SSL như stack local, khác odoo.conf gốc (sslmode=require
+      # chỉ dành cho Neon).
+      - ./odoo.local.conf:/etc/odoo/odoo.conf
+      - ./tools/fix_stale_assets.py:/fix_stale_assets.py:ro
+    command: >
+      bash -c "python3 /fix_stale_assets.py; exec odoo
+      --database=hocba_hrm
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff
+      --addons-path=/mnt/extra-addons
+      --dev=xml"
+
+volumes:
+  postgres_data:
+  odoo_data:

@@ -11,6 +11,7 @@ import Modal from '../../components/Modal';
 import EmployeeForm from './EmployeeForm';
 import DependentForm from './DependentForm';
 import AssetForm from './AssetForm';
+import ContractsTab from './ContractsTab';
 import CertForm from './CertForm';
 import AccountForm from './AccountForm';
 import { SalaryJourneyChart, CriteriaRadar } from './PromoCharts';
@@ -34,9 +35,18 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
   const tabs = [
     ['info', 'Thông tin'],
     ['probation', 'Thử việc'],
+  ];
+  // Hợp đồng đứng cạnh Thử việc vì hai thứ nối nhau trong vòng đời nhân sự
+  // (hết thử việc → ký chính thức). Payload 'contracts' chỉ có với vai trò
+  // được xem lương, nên tab cũng chỉ hiện khi BE thực sự trả dữ liệu.
+  if (canSeeSalary) {
+    tabs.push(['contracts',
+      det ? `Hợp đồng (${(det.contracts || []).length})` : 'Hợp đồng']);
+  }
+  tabs.push(
     ['assets', det ? `Tài sản (${det.assets.length})` : 'Tài sản'],
     ['promo', det ? `Thăng tiến (${det.promotions.length})` : 'Thăng tiến'],
-  ];
+  );
   if (canManageAccount) tabs.push(['account', 'Tài khoản']);
 
   return (
@@ -76,6 +86,7 @@ export default function EmployeeDrawer({ emp, onClose, onChanged, isHr, isMgr,
         {!det && !derr && <EmptyState>Đang tải hồ sơ…</EmptyState>}
         {det && tab === 'info' && <InfoTab det={det} isHr={canEdit} isMgr={canSeeSalary} editable={canEdit} onUpdated={update} />}
         {det && tab === 'probation' && <ProbationTab det={det} isHr={canEdit} isMgr={isMgr} onUpdated={update} />}
+        {det && tab === 'contracts' && canSeeSalary && <ContractsTab det={det} onUpdated={update} />}
         {det && tab === 'assets' && <AssetsTab det={det} editable={canEdit} onUpdated={update} />}
         {det && tab === 'promo' && <PromoTab det={det} isMgr={isMgr}
           onOpenCareer={onOpenCareer && (() => { onOpenCareer(det.id); onClose(); })} />}

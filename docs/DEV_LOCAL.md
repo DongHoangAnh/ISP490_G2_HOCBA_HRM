@@ -12,6 +12,9 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 ```
 
 - Db: `hocba_hrm`, user/pass: `odoo` / `odoo_password`, port 5432.
+- PostgreSQL local dùng major version 15 để tương thích với volume dữ liệu
+  offline hiện hữu. Không đổi trực tiếp image sang major version khác; phải
+  dump/restore hoặc `pg_upgrade` để tránh DB không khởi động.
 - `docker-compose.local.yml` đã bật `--update` toàn bộ module → sau khi `git pull`
   chỉ cần restart container là schema tự nâng (không bị lỗi "Model ... has no table").
 - Dữ liệu nằm trong volume `postgres_data`, không mất khi recreate container.

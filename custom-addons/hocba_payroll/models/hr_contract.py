@@ -14,6 +14,19 @@ HOURLY_RATE_WARN_THRESHOLD = 1_000_000   # VND/h  (VR-009)
 THRESHOLD_MIN = 0.0
 THRESHOLD_MAX = 200.0                     # VR-003
 
+# Loại hợp đồng — 4 loại đầu lấy đúng sheet "2.5. Theo dõi ký hợp đồng" của
+# khách; 2 loại sau là hai hình thức lao động còn lại của Học Bá (HRM_DOC.md
+# §3 loại hình lao động): CTV ký HĐ dịch vụ, giảng viên thỉnh giảng ký HĐ ngắn
+# hạn theo buổi. Để trống với hợp đồng cũ chưa phân loại.
+CONTRACT_TYPE_SEL = [
+    ('probation', 'Hợp đồng thử việc'),
+    ('fixed_6m', 'HĐLĐ 6 tháng'),
+    ('fixed_12m', 'HĐLĐ 12 tháng'),
+    ('permanent', 'HĐLĐ không xác định thời hạn'),
+    ('service', 'HĐ dịch vụ (CTV)'),
+    ('teaching', 'HĐ thỉnh giảng'),
+]
+
 
 class HbContract(models.Model):
     _name = 'hb.contract'
@@ -44,6 +57,23 @@ class HbContract(models.Model):
         'res.company', string='Công ty',
         default=lambda self: self.env.company,
     )
+
+    # ── Hồ sơ ký kết ─────────────────────────────────────────
+    # Bám sheet "2.5. Theo dõi ký hợp đồng" của khách: loại HĐ, ngày ký (KHÁC
+    # ngày hiệu lực — vd HB.04 vào làm 30/12/2024 nhưng ký 01/07/2025), lần ký
+    # và file hợp đồng.
+    x_contract_type = fields.Selection(
+        CONTRACT_TYPE_SEL, string='Loại hợp đồng', tracking=True,
+        help='Bỏ trống với hợp đồng cũ chưa phân loại.')
+    x_date_signed = fields.Date(
+        string='Ngày ký', tracking=True,
+        help='Ngày hai bên ký giấy — có thể khác ngày hợp đồng bắt đầu hiệu lực.')
+    x_sign_count = fields.Integer(
+        string='Lần ký', compute='_compute_sign_count',
+        help='Hệ thống tự đánh số theo thứ tự ký của từng nhân viên.')
+    x_attachment_ids = fields.Many2many(
+        'ir.attachment', 'hb_contract_attachment_rel',
+        'contract_id', 'attachment_id', string='File hợp đồng')
 
     # ── Insurance ────────────────────────────────────────────
     x_insurance_base = fields.Float(
@@ -123,6 +153,27 @@ class HbContract(models.Model):
         string='Đơn giá vượt ngưỡng (thực tế)',
         compute='_compute_effective_extra_rate', digits=(12, 0),
     )
+
+    @api.depends('employee_id', 'x_date_signed', 'date_start')
+    def _compute_sign_count(self):
+        """Lần ký thứ mấy của nhân viên — xếp theo ngày ký, thiếu thì theo ngày
+        hiệu lực. Không lưu vào DB: thêm/xoá một hợp đồng là số của các hợp đồng
+        còn lại đổi theo, lưu sẵn sẽ lệch."""
+        by_emp = {}
+        for rec in self:
+            by_emp.setdefault(rec.employee_id.id, self.browse())
+        for emp_id in list(by_emp):
+            if not emp_id:
+                continue
+            by_emp[emp_id] = self.sudo().with_context(active_test=False).search(
+                [('employee_id', '=', emp_id)])
+        for rec in self:
+            siblings = by_emp.get(rec.employee_id.id) or rec
+            ordered = siblings.sorted(
+                key=lambda c: (c.x_date_signed or c.date_start or fields.Date.today(),
+                               c.id))
+            rec.x_sign_count = list(ordered).index(rec) + 1 \
+                if rec in ordered else 1
 
     @api.depends('x_teaching_hourly_rate', 'x_extra_rate')
     def _compute_effective_extra_rate(self):

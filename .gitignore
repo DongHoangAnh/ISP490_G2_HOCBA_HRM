@@ -42,3 +42,26 @@ HocBa_TimeOff_RemainingWork.md
 
 # CMS export chua PII (email/sdt giao vien) - khong commit
 tools/cms/exports/
+
+# Tài liệu tự học / ghi chú cá nhân của TimeOff (không commit)
+docs/HUONG_DAN_DOC_CODE_TIMEOFF.md
+docs/HUONG_DAN_DOC_CODE_TIMEOFF.docx
+docs/KIEN_THUC_PYTHON_CO_BAN.md
+docs/KIEN_THUC_PYTHON_CO_BAN.docx
+
+# Local E2E evidence and generated investigation output
+tools/e2e_*_evidence/
+tools/*_out.txt
+tools/*_output.txt
+tools/report_*.txt
+tools/*_summary.txt
+tools/e2e_*_web.py
+tools/seed_payroll_period_scope.py
+tools/verify_payroll_period_scope.py
+
+# One-off local scratch files (source/tests belong under tools/ or module tests)
+/scratch_*
+/_test_*.py
+/comparison_report.json
+/query_payslips.py
+/HRM_Hoc_Ba/

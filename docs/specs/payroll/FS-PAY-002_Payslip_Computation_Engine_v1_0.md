@@ -297,6 +297,7 @@ Counts active dependents from `employee.x_dependent_ids` where `date_start <= to
 |----------- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | BR-PAY-030 | The system must reject computation if the payslip state is not `draft` or `verify`. `_ensure_draft_state()` raises `UserError` for states `done` and `cancel`.        |
 | BR-PAY-031 | The system must resolve exactly one active contract (`state = 'open'`) overlapping the payslip date range `[date_from, date_to]`. `_resolve_contract()` raises `ValidationError` if none is found. |
+| BR-PAY-031A | Batch computation SHALL resolve salary rules per payslip structure; it SHALL NOT combine rules from `STRUCT_OFFLINE` and `STRUCT_ONLINE` in one evaluation. |
 | BR-PAY-032 | Structure resolution follows a strict priority: (1) explicit `payslip.structure_id`, (2) `contract.x_structure_id`, (3) auto-detect from `employee.x_work_form` (`'online'` maps to `STRUCT_ONLINE`, all others map to `STRUCT_OFFLINE`). `_resolve_structure()` raises `ValidationError` if no structure is resolved. |
 | BR-PAY-033 | All existing payslip lines (`line_ids`) must be deleted (`unlink()`) before recomputation. The engine always produces a fresh, complete set of lines.                  |
 | BR-PAY-034 | Salary rules are evaluated strictly in ascending `sequence` order. A rule may reference any previously computed rule's result via `rules.get('code', 0)` or the `categories` accumulator. Forward references are not supported. |
@@ -305,6 +306,8 @@ Counts active dependents from `employee.x_dependent_ids` where `date_start <= to
 | BR-PAY-037 | If a rule evaluation raises any exception, the engine must not abort. It logs a warning, appends a user-visible message to `x_compute_warnings`, and defaults the failed rule to `(amount=0.0, qty=1.0, rate=0.0)`. Subsequent rules continue to execute. |
 | BR-PAY-038 | A payslip line is created only when `rule.appears_on_payslip` is `True`. Rules with `appears_on_payslip = False` still compute and store their result in `localdict['rules']` and `categories`, but produce no visible line. |
 | BR-PAY-039 | The `_hocba_pit(taxable_income)` method must implement the 7-bracket Vietnam progressive PIT table exactly as defined in `PIT_BRACKETS`. The result must be rounded to the nearest integer. If `taxable_income <= 0`, the method returns `0.0`. |
+| BR-PAY-040 | WHEN HR selects a payroll month, THE payroll list SHALL include only employees whose open contract overlaps that calendar month. Contract boundaries SHALL be evaluated against the inclusive last day of the selected month; an employee whose contract starts on the first day of the following month SHALL NOT appear. |
+| BR-PAY-041 | WHEN HR starts batch computation for a selected month, THE system SHALL compute only draft/verify payslips belonging to the same valid-contract employee set returned by the payroll list for that month. Stale payslips for employees outside that set SHALL NOT be recomputed. |
 
 ---
 
@@ -374,6 +377,7 @@ Counts active dependents from `employee.x_dependent_ids` where `date_start <= to
 ---
 
 - **v2.1 (2026-08-07)**: Refactored batch salary engine (`action_compute_batch` and `compute-all`) to iteratively invoke the single-employee computation engine (`action_compute_sheet`), eliminating ThreadPoolExecutor thread-safety issues and bulk prefetch cache divergence for 100% calculation consistency.
+- **v2.2 (2026-08-25)**: Aligned payroll-list and batch-compute employee scope. Month boundaries now exclude contracts starting on the first day of the following month, and stale out-of-period payslips are excluded from batch computation.
 - **v2.0 (2026-08-06)**: Upgraded to Async Job Queue & Chunked DB Transaction Architecture with real-time progress polling for 1,000+ employee scalability.
 - **v1.1 (2026-08-06)**: Integrated `action_compute_batch` high-performance engine for batch salary computation (`/hocba-hrm/api/payroll/compute-all`), eliminated N+1 queries in summary endpoints, and added confirmation reset logic.
 

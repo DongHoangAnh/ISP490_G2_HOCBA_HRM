@@ -50,7 +50,17 @@ export default function App() {
   // "Mở trang đầy đủ" từ drawer hồ sơ.
   const [careerEmp, setCareerEmp] = useState(0);
 
-  const openCareer = (empId) => { setCareerEmp(empId || 0); setView('career'); };
+  /* Đổi view do người dùng tự bấm (menu trái, Dashboard, nút điều hướng trong
+     màn) → xoá focus deep-link còn treo. Không có bước này thì focus của thông
+     báo (vd đơn nghỉ id 123) vẫn nằm nguyên và màn kế tiếp — Yêu cầu dịch vụ,
+     Tuyển dụng… — lại lấy đúng id đó đi mở chi tiết, ra "404 not_found". */
+  const goView = (v) => { setFocus(null); setView(v); };
+
+  /* Focus chỉ dành cho ĐÚNG view mà thông báo trỏ tới; các màn khác nhận null
+     dù state focus vẫn còn (chặn lớp 2, phòng khi view đổi mà không qua goView). */
+  const focusFor = (v) => (focus && focus.view === v ? focus : null);
+
+  const openCareer = (empId) => { setCareerEmp(empId || 0); goView('career'); };
 
   /* Badge "việc cần xử lý" cạnh tên mục menu: Nghỉ phép (đơn chờ duyệt),
      Nhận việc (bước đang chờ), Nghỉ việc (đơn chờ duyệt/hoàn tất).
@@ -93,9 +103,12 @@ export default function App() {
     if (view === 'timeoff' || view === 'service' || view === 'recruitment'
         || view === 'employees' || view === 'attendance') {
       setFocus({
-        requestId: n.targetRef, kind: n.kind,
+        view, requestId: n.targetRef, kind: n.kind,
         targetTab: n.targetTab, nonce: Date.now(),
       });
+    } else {
+      // Thông báo trỏ tới view không dùng focus → dọn focus cũ, tránh treo.
+      setFocus(null);
     }
   };
 
@@ -158,24 +171,24 @@ export default function App() {
   const navViews = allowedViews(me);
   return (
     <div className={'app' + (navCollapsed ? ' nav-collapsed' : '')}>
-      <Sidebar view={view} setView={setView} me={me} badges={navBadges} collapsed={navCollapsed} />
+      <Sidebar view={view} setView={goView} me={me} badges={navBadges} collapsed={navCollapsed} />
       <div className="main">
         <Topbar view={view} onSearch={setSearch} me={me} onOpenNotification={openNotification}
           navCollapsed={navCollapsed} onToggleNav={toggleNav} />
-        {view === 'dashboard' && canManage && <Dashboard setView={setView} />}
-        {view === 'employees' && canManage && <Employees search={search} focus={focus} onOpenCareer={openCareer} />}
+        {view === 'dashboard' && canManage && <Dashboard setView={goView} />}
+        {view === 'employees' && canManage && <Employees search={search} focus={focusFor('employees')} onOpenCareer={openCareer} />}
         {view === 'career' && (
           <Career canManage={canManage} focusEmpId={careerEmp}
-            onBack={canManage ? () => setView('employees') : null} />
+            onBack={canManage ? () => goView('employees') : null} />
         )}
         {view === 'onboarding' && canManage && (
           <Onboarding search={search} onQueueChanged={reloadOnbBadge} />
         )}
-        {view === 'attendance' && <Attendance search={search} onNavigate={setView} onPendingCount={setAttendanceBadge} focus={focus} />}
+        {view === 'attendance' && <Attendance search={search} onNavigate={goView} onPendingCount={setAttendanceBadge} focus={focusFor('attendance')} />}
         {view === 'timeoff' && (
-          <TimeOff search={search} focus={focus} onPendingCount={setTimeoffBadge} />
+          <TimeOff search={search} focus={focusFor('timeoff')} onPendingCount={setTimeoffBadge} />
         )}
-        {view === 'service' && <Service search={search} focus={focus} />}
+        {view === 'service' && <Service search={search} focus={focusFor('service')} />}
         {view === 'offboarding' && (
           <Offboarding search={search} onQueueChanged={reloadOffbBadge} />
         )}
@@ -184,7 +197,7 @@ export default function App() {
         {view === 'reviews' && canManage && (
           <Reviews search={search} canPromote={me.isHrManager} />
         )}
-        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focus}
+        {view === 'recruitment' && canManage && <Recruitment search={search} focus={focusFor('recruitment')}
           onPendingCount={setBadge('recruitment')} />}
         {/* Điều kiện render PHẢI trùng điều kiện bày menu (Shell: need 'hr' =
             HR | HR Mgr | Admin), nên lấy thẳng từ allowedViews thay vì chép tay:

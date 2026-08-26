@@ -84,3 +84,12 @@ export const commitEmployeeImport = (rows) =>
 /* Số hồ sơ đang thiếu giấy tờ pháp lý — badge cạnh menu Nhân viên. */
 export const fetchIncompleteCount = () =>
   hbGet('/hocba-hrm/api/employees/incomplete-count');
+
+/* ---- Hợp đồng lao động (tab "Hợp đồng" trong hồ sơ NV) ----
+   Cả 3 route trả về hồ sơ chi tiết mới, giống nhóm tài sản/người phụ thuộc. */
+export const createContract = (empId, payload) =>
+  hbPost(`/hocba-hrm/api/employee/${empId}/contract`, payload);
+export const saveContract = (contractId, payload) =>
+  hbPost(`/hocba-hrm/api/contract/${contractId}`, payload);
+export const deleteContract = (contractId) =>
+  hbPost(`/hocba-hrm/api/contract/${contractId}/delete`, {});

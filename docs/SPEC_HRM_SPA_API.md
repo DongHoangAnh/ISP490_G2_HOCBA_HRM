@@ -1,6 +1,6 @@
 # ĐẶC TẢ MODULE `hocba_hrm` — SPA FRONTEND, THEME BACKEND & JSON API
 
-**Phiên bản:** 2.0 · **Ngày:** 13/06/2026 · **Trạng thái SPA: ✅ FRONTEND CHÍNH THỨC** (FE/BE tách riêng qua API — team chốt 12/06, triển khai G1 ngày 13/06)
+**Phiên bản:** 2.1 · **Ngày:** 24/08/2026 · **Trạng thái SPA: ✅ FRONTEND CHÍNH THỨC**
 
 > Đây là spec API của domain **Employees** (Tân) + vai trò module `hocba_hrm`.
 > Domain khác: copy `SPEC_API_TEMPLATE.md`. Quy ước FE: `QUY_UOC_FRONTEND.md`.
@@ -63,3 +63,23 @@ Trả về:
 ## 5. Nợ kỹ thuật / điểm cần chốt
 - API list trả toàn bộ nhân viên cho mọi user đăng nhập (ẩn field nhạy cảm nhưng vẫn thấy danh bạ) — xác nhận với khách mức lộ thông tin chấp nhận được cho role Employee/Contractor.
 - Dashboard tổng hợp (`features/dashboard/`) hiện chỉ điều hướng — hoàn thiện ở G4 khi API các domain sẵn sàng.
+
+## 6. Hợp đồng lao động trong hồ sơ nhân viên (v2.1)
+
+- `GET /hocba-hrm/api/employee/<id>` SHALL trả `contracts`, `contractOptions`,
+  `canEditContract`, `canEditWage` khi người dùng được xem dữ liệu lương.
+- `POST /hocba-hrm/api/employee/<id>/contract` SHALL tạo hợp đồng; hợp đồng hiệu
+  lực bắt buộc có `dateStart`.
+- WHERE nhân viên đã có hợp đồng `open`, API SHALL từ chối tạo thêm hợp đồng
+  `open` thông thường để tránh payroll chọn sai hợp đồng.
+- WHEN tái ký với `renewFromId`, hệ thống SHALL tạo hợp đồng mới và đóng hợp
+  đồng cũ trong cùng transaction; ngày kết thúc bản cũ là một ngày trước ngày
+  bắt đầu bản mới.
+- `POST /hocba-hrm/api/contract/<id>` SHALL cập nhật và
+  `POST /hocba-hrm/api/contract/<id>/delete` SHALL xoá nếu chưa có phiếu lương
+  tham chiếu.
+- Chỉ HR Manager/Admin được thay đổi lương; vai trò quản lý trong phạm vi chỉ
+  được sửa các điều khoản không phải lương.
+
+**Changelog 2.1 (24/08/2026):** bổ sung tab/API hợp đồng, tự đồng bộ lương và
+quy tắc tái ký bảo đảm tối đa một hợp đồng đang hiệu lực qua SPA.
