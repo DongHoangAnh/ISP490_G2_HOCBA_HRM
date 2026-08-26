@@ -39,7 +39,7 @@ Nếu `docker compose` báo lỗi bind cổng 5432: máy có Postgres native đa
 | File | Trách nhiệm | Trạng thái |
 |---|---|---|
 | `custom-addons/hocba_employees/models/hr_employee.py` | Định nghĩa cờ; `create()` bỏ qua mốc "Nhận việc" và gán quy trình cho tài khoản vai trò | Sửa |
-| `custom-addons/hocba_employees/__manifest__.py` | Version `19.0.6.0.0` → `19.0.7.0.0` | Sửa |
+| `custom-addons/hocba_employees/__manifest__.py` | Version `19.0.6.0.0` → `19.0.7.0.0` — **bump ở Task 6**, cùng commit với migration | Sửa |
 | `custom-addons/hocba_employees/migrations/19.0.7.0.0/post-migrate.py` | Gỡ `manager_id` của mọi phòng ban | Tạo |
 | `custom-addons/hocba_hrm/controllers/main.py` | `_dept_new_manager` bật cờ; `_emp_scope_domain` lọc; `_role_payload` trả `hasEmployee=False` | Sửa |
 | `custom-addons/hocba_hrm/tests/test_role_account.py` | Toàn bộ 8 test của tính năng | Tạo |
@@ -53,7 +53,6 @@ Nếu `docker compose` báo lỗi bind cổng 5432: máy có Postgres native đa
 
 **Files:**
 - Modify: `custom-addons/hocba_employees/models/hr_employee.py` (thêm field cạnh `x_employee_code`, dòng ~26-31)
-- Modify: `custom-addons/hocba_employees/__manifest__.py:3`
 - Test: `custom-addons/hocba_hrm/tests/test_role_account.py` (tạo mới)
 
 - [ ] **Step 1: Viết test đỏ**
@@ -177,18 +176,16 @@ Trong cùng file, thay toàn bộ thân `create()` (dòng ~507-521) bằng:
         return employees
 ```
 
-- [ ] **Step 5: Nâng version module**
+**KHÔNG nâng version module ở task này.** Bump version phải đi CÙNG commit với migration ở Task 6, nếu không: mỗi lần chạy test đều `-u hocba_employees` → DB ghi `latest_version = 19.0.7.0.0` → tới Task 6 Odoo thấy version không đổi và **bỏ qua post-migrate**. Đây đúng loại "migration vá trượt" dự án đã dính một lần ở `19.0.4.0.0`.
 
-`custom-addons/hocba_employees/__manifest__.py` dòng 3: `'version': '19.0.6.0.0'` → `'version': '19.0.7.0.0'`.
-
-- [ ] **Step 6: Chạy test, xác nhận XANH**
+- [ ] **Step 5: Chạy test, xác nhận XANH**
 
 Lệnh như Step 2. Kỳ vọng: `0 failed, 0 error(s) of 2 tests`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add custom-addons/hocba_employees/models/hr_employee.py custom-addons/hocba_employees/__manifest__.py custom-addons/hocba_hrm/tests/test_role_account.py
+git add custom-addons/hocba_employees/models/hr_employee.py custom-addons/hocba_hrm/tests/test_role_account.py
 git commit -m "feat(employees): co x_is_role_account, bo moc Nhan viec cho tai khoan vai tro"
 ```
 
@@ -538,13 +535,19 @@ def migrate(cr, version):
 
 **`if not version: return`** là bắt buộc — bỏ nó thì migration chạy cả khi cài mới từ đầu.
 
-- [ ] **Step 2: Chạy upgrade trên DB local**
+- [ ] **Step 2: Nâng version module — PHẢI cùng commit với migration**
+
+`custom-addons/hocba_employees/__manifest__.py` dòng 3: `'version': '19.0.6.0.0'` → `'version': '19.0.7.0.0'`.
+
+Thứ tự này là bắt buộc: Odoo chỉ chạy `migrations/19.0.7.0.0/` khi thấy version trong manifest CAO HƠN `latest_version` đang ghi trong `ir_module_module`. Bump sớm ở task trước = migration không bao giờ chạy.
+
+- [ ] **Step 3: Chạy upgrade trên DB local**
 
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm odoo odoo -d hocba_hrm -u hocba_employees,hocba_hrm --addons-path=/mnt/extra-addons --stop-after-init --log-level=info
 ```
 
-- [ ] **Step 3: Xác minh bằng SQL**
+- [ ] **Step 4: Xác minh bằng SQL**
 
 ```bash
 docker exec isp490_g2_hocba_hrm-db-1 psql -U odoo -d hocba_hrm -c "select count(*) as con_truong_phong from hr_department where manager_id is not null;"
@@ -552,10 +555,10 @@ docker exec isp490_g2_hocba_hrm-db-1 psql -U odoo -d hocba_hrm -c "select count(
 
 Kỳ vọng: `con_truong_phong = 0`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add custom-addons/hocba_employees/migrations/19.0.7.0.0/post-migrate.py
+git add custom-addons/hocba_employees/migrations/19.0.7.0.0/post-migrate.py custom-addons/hocba_employees/__manifest__.py
 git commit -m "chore(migration): go manager_id moi phong ban (19.0.7.0.0)"
 ```
 
