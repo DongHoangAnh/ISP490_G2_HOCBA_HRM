@@ -29,6 +29,17 @@ class HrEmployee(models.Model):
         index=True,
         help='Mã định danh nội bộ, định dạng HB.xx — tự sinh, HR có thể sửa trước khi lưu lần đầu.',
     )
+    # Tài khoản vai trò quản lý (trưởng phòng tạo từ form "Thêm phòng ban").
+    # Bản ghi hr.employee tồn tại chỉ vì hr.department.manager_id đòi hỏi, chứ
+    # đây KHÔNG phải hồ sơ nhân sự — spec 2026-08-27.
+    x_is_role_account = fields.Boolean(
+        string='Tài khoản vai trò',
+        default=False,
+        copy=False,
+        index=True,
+        help='Tài khoản quản lý (trưởng phòng) — không phải hồ sơ nhân sự. '
+             'Không tham gia Nhận việc, danh sách nhân viên, thống kê.',
+    )
     # Trục 1 — Hình thức làm việc
     x_work_form = fields.Selection(
         selection=[
@@ -511,13 +522,16 @@ class HrEmployee(models.Model):
                 vals['x_employee_code'] = self.env['ir.sequence'].next_by_code(
                     'hocba.employee.code') or '/'
         employees = super().create(vals_list)
+        # Tài khoản vai trò không phải hồ sơ nhân sự: không có "nhận việc" để
+        # ghi mốc, không có quy trình onboarding để gán (spec 2026-08-27).
+        real = employees.filtered(lambda e: not e.x_is_role_account)
         # Snapshot "nhận việc" cho lịch sử thăng tiến (khách họp #2)
         if not self.env.context.get('hocba_no_join_log'):
             today = fields.Date.context_today(self)
-            for emp in employees:
+            for emp in real:
                 emp._hocba_log_promotion('join', today, _('Nhận việc'))
         # NV thử việc có ngày bắt đầu → gán quy trình nhận việc bước động
-        employees._hocba_maybe_assign_onboarding()
+        real._hocba_maybe_assign_onboarding()
         return employees
 
     # ------------------------------------------------------------------

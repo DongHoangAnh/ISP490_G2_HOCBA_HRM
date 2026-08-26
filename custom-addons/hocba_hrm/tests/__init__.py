@@ -28,3 +28,5 @@ from . import test_me_password_scope
 from . import test_employee_import
 
 from . import test_employee_contracts
+
+from . import test_role_account
