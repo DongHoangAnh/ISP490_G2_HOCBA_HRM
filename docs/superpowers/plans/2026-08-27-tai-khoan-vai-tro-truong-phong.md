@@ -358,7 +358,11 @@ Lệnh như Task 1 Step 2. Kỳ vọng: `0 failed, 0 error(s) of 8 tests`.
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm odoo odoo -d hocba_hrm -u hocba_hrm,hocba_employees --addons-path=/mnt/extra-addons --test-enable --test-tags /hocba_hrm,/hocba_employees --stop-after-init --log-level=test
 ```
 
-Kỳ vọng: `0 failed, 0 error(s)`. Đây là bước dễ vỡ nhất của cả plan — `_emp_scope_domain` dùng chung ~15 chỗ. Nếu có test đỏ, đọc kỹ: nhiều khả năng một fixture cũ tạo NV rồi gán làm `manager_id` và nay bị lọc mất.
+Đây là bước dễ vỡ nhất của cả plan — `_emp_scope_domain` dùng chung ~15 chỗ.
+
+**Kỳ vọng KHÔNG phải là 0 đỏ.** Đã đo baseline ở commit sạch `0eea990` (worktree riêng): `--test-tags /hocba_employees` cho sẵn **`3 failed, 3 error(s) of 124 tests`**, ở hai file `test_onboarding_finalize` và `test_probation_notify` — tồn đọng môi trường DB local, không liên quan tính năng này.
+
+Kỳ vọng đúng: **không xuất hiện test đỏ MỚI** ngoài 6 cái kể trên. So sánh theo TÊN test, không theo con số. Nếu có tên lạ, đọc kỹ: nhiều khả năng một fixture cũ tạo NV rồi gán làm `manager_id`, và nay bị lọc mất.
 
 - [ ] **Step 6: Commit**
 
