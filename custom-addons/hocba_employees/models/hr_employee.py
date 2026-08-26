@@ -29,6 +29,7 @@ class HrEmployee(models.Model):
         index=True,
         help='Mã định danh nội bộ, định dạng HB.xx — tự sinh, HR có thể sửa trước khi lưu lần đầu.',
     )
+    # --- Tài khoản vai trò (spec 2026-08-27) ---
     # Tài khoản vai trò quản lý (trưởng phòng tạo từ form "Thêm phòng ban").
     # Bản ghi hr.employee tồn tại chỉ vì hr.department.manager_id đòi hỏi, chứ
     # đây KHÔNG phải hồ sơ nhân sự — spec 2026-08-27.
@@ -36,7 +37,6 @@ class HrEmployee(models.Model):
         string='Tài khoản vai trò',
         default=False,
         copy=False,
-        index=True,
         help='Tài khoản quản lý (trưởng phòng) — không phải hồ sơ nhân sự. '
              'Không tham gia Nhận việc, danh sách nhân viên, thống kê.',
     )
@@ -518,20 +518,23 @@ class HrEmployee(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            if not vals.get('x_employee_code'):
+            # Tài khoản vai trò không phải nhân viên → không cấp mã nhân sự,
+            # tránh thủng dãy HB.xx của HR (spec 2026-08-27).
+            if not vals.get('x_is_role_account') and not vals.get('x_employee_code'):
                 vals['x_employee_code'] = self.env['ir.sequence'].next_by_code(
                     'hocba.employee.code') or '/'
         employees = super().create(vals_list)
         # Tài khoản vai trò không phải hồ sơ nhân sự: không có "nhận việc" để
-        # ghi mốc, không có quy trình onboarding để gán (spec 2026-08-27).
-        real = employees.filtered(lambda e: not e.x_is_role_account)
+        # ghi mốc (spec 2026-08-27). Riêng quy trình onboarding thì chặn ngay
+        # trong _hocba_maybe_assign_onboarding() để write() cũng được bảo vệ.
+        real_employees = employees.filtered(lambda e: not e.x_is_role_account)
         # Snapshot "nhận việc" cho lịch sử thăng tiến (khách họp #2)
         if not self.env.context.get('hocba_no_join_log'):
             today = fields.Date.context_today(self)
-            for emp in real:
+            for emp in real_employees:
                 emp._hocba_log_promotion('join', today, _('Nhận việc'))
         # NV thử việc có ngày bắt đầu → gán quy trình nhận việc bước động
-        real._hocba_maybe_assign_onboarding()
+        employees._hocba_maybe_assign_onboarding()
         return employees
 
     # ------------------------------------------------------------------
@@ -868,7 +871,8 @@ class HrEmployee(models.Model):
         if self.env.context.get('hocba_no_onb_assign'):
             return
         for emp in self:
-            if (emp.x_employment_status == 'probation'
+            if (not emp.x_is_role_account
+                    and emp.x_employment_status == 'probation'
                     and emp.x_probation_start
                     and not emp.x_onboarding_step_ids):
                 emp._hocba_assign_onboarding()

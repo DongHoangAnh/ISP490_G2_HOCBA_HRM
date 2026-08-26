@@ -10,6 +10,7 @@ VẪN hiện ở màn Tài khoản để HR đổi mật khẩu / khoá.
 DB test dùng chung nên mọi assert so theo bản ghi do test tự tạo, không so số
 tuyệt đối.
 """
+from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
@@ -58,3 +59,86 @@ class TestRoleAccount(TransactionCase):
         logs = self.env['hr.promotion.history'].sudo().search(
             [('employee_id', '=', emp.id)])
         self.assertTrue(logs, 'NV thật vẫn phải có mốc "Nhận việc".')
+
+    # ---- Task 1 (code review): chặn onboarding trong _hocba_maybe_assign_onboarding ----
+    def _ensure_matching_onboarding_template(self, position_type='staff',
+                                              work_form='offline'):
+        """Bảo đảm có ít nhất 1 template khớp (position_type, work_form).
+
+        DB test dùng chung nên có thể đã có sẵn (vd onb_template_office từ
+        data seed) — chỉ tạo thêm khi thực sự chưa có gì khớp, tránh vọc
+        thêm dữ liệu ngoài phạm vi cần cho test này."""
+        Template = self.env['hb.onboarding.template'].sudo()
+        probe = self.env['hr.employee'].new({
+            'x_position_type': position_type, 'x_work_form': work_form})
+        if Template._match_for_employee(probe):
+            return
+        Template.create({
+            'name': 'Test tpl %s/%s' % (position_type, work_form),
+            'sequence': 1,
+            'apply_position_types': position_type,
+            'apply_work_form': work_form,
+            'step_ids': [(0, 0, {'name': 'Buoc test', 'step_type': 'task'})],
+        })
+
+    def test_tai_khoan_vai_tro_khong_gan_onboarding(self):
+        """Tài khoản vai trò thử việc + có ngày bắt đầu vẫn KHÔNG được gán
+        quy trình nhận việc — đối chứng: NV thật cùng dữ liệu thì CÓ.
+
+        Chốt điều kiện trong _hocba_maybe_assign_onboarding() thay vì chỉ
+        lọc ở create(): cách này còn bảo vệ được write() và
+        _hocba_migrate_legacy_gates() — cùng một chỗ, không lặp lại điều
+        kiện ở nhiều nơi."""
+        self._ensure_matching_onboarding_template()
+        today = fields.Date.context_today(self.env['hr.employee'])
+        role_emp = self.env['hr.employee'].create({
+            'name': 'TK Vai Tro Onb', 'x_is_role_account': True,
+            'x_position_type': 'staff', 'x_work_form': 'offline',
+            'x_probation_start': today})
+        real_emp = self.env['hr.employee'].create({
+            'name': 'NV That Onb', 'x_position_type': 'staff',
+            'x_work_form': 'offline', 'x_probation_start': today})
+        self.assertFalse(
+            role_emp.x_onboarding_step_ids,
+            'Tài khoản vai trò không được gán quy trình nhận việc.')
+        self.assertTrue(
+            real_emp.x_onboarding_step_ids,
+            'NV thật cùng dữ liệu phải được gán quy trình nhận việc '
+            '(nếu assert này fail, kiểm tra template khớp trong DB test).')
+
+    def test_batch_create_hon_hop_chi_nv_that_co_moc_join(self):
+        """create() một lần với recordset hỗn hợp (vai trò + NV thật) —
+        filtered() trong create() phải tách đúng từng bản ghi, không lẫn
+        theo vị trí trong vals_list."""
+        employees = self.env['hr.employee'].create([
+            {'name': 'TK Vai Tro Batch', 'x_is_role_account': True},
+            {'name': 'NV That Batch'},
+        ])
+        role_emp, real_emp = employees[0], employees[1]
+        Promotion = self.env['hr.promotion.history'].sudo()
+        self.assertFalse(
+            Promotion.search([('employee_id', '=', role_emp.id)]),
+            'Bản ghi vai trò trong batch không được có mốc "Nhận việc".')
+        self.assertTrue(
+            Promotion.search([('employee_id', '=', real_emp.id)]),
+            'Bản ghi NV thật trong cùng batch vẫn phải có mốc "Nhận việc".')
+
+    # ---- Task 1 (code review): không cấp mã nhân sự cho tài khoản vai trò ----
+    def test_tai_khoan_vai_tro_khong_cap_ma_nhan_su(self):
+        """Không ngốn số dãy HB.xx của HR. Tạo HAI tài khoản vai trò để
+        chứng minh ràng buộc unique(x_employee_code) chấp nhận nhiều bản ghi
+        cùng để trống (Postgres: NULL không so bằng NULL) — không suy luận
+        suông, để Odoo tự flush và raise nếu sai."""
+        role_emp_1 = self.env['hr.employee'].create({
+            'name': 'TK Vai Tro Ma 1', 'x_is_role_account': True})
+        role_emp_2 = self.env['hr.employee'].create({
+            'name': 'TK Vai Tro Ma 2', 'x_is_role_account': True})
+        real_emp = self.env['hr.employee'].create({'name': 'NV That Ma'})
+        self.assertFalse(
+            role_emp_1.x_employee_code,
+            'Tài khoản vai trò không được cấp mã nhân sự.')
+        self.assertFalse(
+            role_emp_2.x_employee_code,
+            'Tài khoản vai trò không được cấp mã nhân sự.')
+        self.assertTrue(
+            real_emp.x_employee_code, 'NV thật vẫn phải có mã nhân sự.')
