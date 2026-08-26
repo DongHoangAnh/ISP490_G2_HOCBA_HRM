@@ -12,13 +12,14 @@ DB_PORT = int(os.environ.get("DB_PORT") or os.environ.get("PORT") or 5432)
 DB_USER = os.environ.get("DB_USER") or os.environ.get("USER")
 DB_PASSWORD = os.environ.get("DB_PASSWORD") or os.environ.get("PASSWORD")
 DB_NAME = os.environ.get("DB_NAME", "neondb")
+DB_SSLMODE = os.environ.get("DB_SSLMODE", "require")
 FILESTORE = f"/var/lib/odoo/.local/share/Odoo/filestore/{DB_NAME}"
 
 def main():
     try:
         conn = psycopg2.connect(
             host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
-            user=DB_USER, password=DB_PASSWORD, sslmode="require",
+            user=DB_USER, password=DB_PASSWORD, sslmode=DB_SSLMODE,
             connect_timeout=10,
         )
     except Exception as e:
