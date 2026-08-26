@@ -2470,9 +2470,6 @@ def _dept_new_manager(env, dept, body):
         'work_email': (m.get('email') or '').strip() or False,
         'work_phone': (m.get('phone') or '').strip() or False,
     }
-    code = (m.get('code') or '').strip()
-    if code:
-        emp_vals['x_employee_code'] = code
     emp = env['hr.employee'].sudo().create(emp_vals)
     user = env['res.users'].sudo().create({
         'name': emp.name, 'login': login, 'password': password,

@@ -32,7 +32,7 @@ function Field({ label, full, children }) {
 }
 
 const emptyMgr = {
-  name: '', code: '', login: '', password: '', password_confirm: '',
+  name: '', login: '', password: '', password_confirm: '',
   email: '', phone: '',
 };
 
@@ -155,10 +155,6 @@ export default function DepartmentForm({ dept, employees = [],
               <Field label="Họ và tên *">
                 <input style={inp} value={mgr.name} onChange={setM('name')}
                   placeholder="Nguyễn Văn A" autoComplete="off" />
-              </Field>
-              <Field label="Mã nhân sự">
-                <input style={inp} value={mgr.code} onChange={setM('code')}
-                  placeholder="VD: HB.20" autoComplete="off" />
               </Field>
               <Field label="Email công ty">
                 <input style={inp} value={mgr.email} onChange={setM('email')}
