@@ -10,18 +10,22 @@ import { fetchRequest, requestAction } from '../../api/recruitment';
 import { REQUEST_STATE_KIND } from './util';
 import RequestForm from './RequestForm';
 
-/* Action khả dụng theo state hiện tại */
+/* Action khả dụng theo state hiện tại.
+   "Mở lại (về nháp)" CHỈ có ở trạng thái Từ chối — backend chặn mọi trạng thái
+   khác (hb_recruitment_request.action_reset_draft). Phiếu đang tuyển đã cộng
+   chỉ tiêu vào vị trí nên muốn dừng thì Đóng phiếu, lúc đó chỉ tiêu chưa tuyển
+   được trả lại; phiếu đã đóng là chốt đợt, cần nữa thì tạo phiếu mới. */
 const ACTIONS_BY_STATE = {
   draft: [['submit', 'Gửi duyệt', 'check']],
-  submitted: [['approve', 'Duyệt', 'checkCircle'], ['refuse', 'Từ chối', 'x'], ['reset', 'Về nháp', 'edit']],
+  submitted: [['approve', 'Duyệt', 'checkCircle'], ['refuse', 'Từ chối', 'x']],
   recruiting: [['close', 'Đóng phiếu', 'checkCircle']],
   refused: [['reset', 'Mở lại (về nháp)', 'edit']],
-  closed: [['reset', 'Mở lại (về nháp)', 'edit']],
+  closed: [],
 };
 
-/* Tách vai: duyệt/từ chối/đóng phiếu chỉ BP tuyển dụng/HR (canApprove);
-   gửi duyệt/về nháp thì TBP (người order) cũng làm được (isRecruiter). */
-const HR_ACTIONS = new Set(['approve', 'refuse', 'close']);
+/* Tách vai: duyệt/từ chối/đóng/mở lại nháp chỉ BP tuyển dụng/HR (canApprove);
+   TBP (người order) chỉ gửi duyệt (isRecruiter). */
+const HR_ACTIONS = new Set(['approve', 'refuse', 'close', 'reset']);
 
 export default function RequestDrawer({ req, meta, isRecruiter, canApprove, onClose, onChanged }) {
   const [det, setDet] = useState(null);

@@ -19,21 +19,5 @@
                    eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 01:00:00')"/>
             <field name="active" eval="True"/>
         </record>
-
-        <!-- CRON-REC-002: qua giờ phỏng vấn → đẩy ứng viên sang bước Kết quả
-             phỏng vấn. Chu kỳ 30 phút = đúng độ dài 1 slot, nên chậm nhất nửa
-             tiếng sau khi kết thúc PV là kanban đã đúng bước.
-             Cặp với luật đặt lịch (Hẹn & mời → Phỏng vấn) ở hb_interview_slot.py. -->
-        <record id="cron_recruitment_interview_passed" model="ir.cron">
-            <field name="name">HOCBA: Qua giờ PV → bước Kết quả phỏng vấn</field>
-            <field name="model_id" ref="model_hb_interview_slot"/>
-            <field name="state">code</field>
-            <field name="code">model._cron_advance_past_interviews()</field>
-            <field name="interval_number">30</field>
-            <field name="interval_type">minutes</field>
-            <field name="nextcall"
-                   eval="(DateTime.now() + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:00')"/>
-            <field name="active" eval="True"/>
-        </record>
     </data>
 </odoo>

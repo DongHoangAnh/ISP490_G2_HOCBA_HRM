@@ -74,8 +74,12 @@ class TestRequestNotify(TransactionCase):
         self.assertFalse(self._notifs(r, 'submitted', self.user_hr))
 
     def test_03_dedup_until_read(self):
+        # Đường quay lại Nháp hợp lệ duy nhất: bị từ chối rồi HR mở lại
+        # (action_reset_draft chỉ nhận trạng thái Từ chối — xem
+        # test_request_headcount.TestRequestHeadcount.test_11).
         r = self._request()
         r.with_user(self.user_tbp).sudo().action_submit()
+        r.with_user(self.user_hr).sudo().action_refuse()
         r.action_reset_draft()
         r.with_user(self.user_tbp).sudo().action_submit()
         self.assertEqual(len(self._notifs(r, 'submitted', self.user_hr)), 1)

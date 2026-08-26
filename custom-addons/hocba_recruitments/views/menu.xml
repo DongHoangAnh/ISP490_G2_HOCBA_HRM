@@ -41,7 +41,9 @@
         <field name="res_model">hr.applicant</field>
         <field name="view_mode">list,calendar,form</field>
         <field name="views" eval="[(ref('hocba_recruitments.hb_view_applicant_interview_list'), 'list'), (False, 'calendar'), (False, 'form')]"/>
-        <field name="domain">[('stage_id.name', '=', 'Phỏng vấn')]</field>
+        <!-- Bám XMLID bước, KHÔNG bám tên: màn Cấu hình cho admin đổi tên bước,
+             lọc theo tên thì đúng lúc đó menu rỗng trơn mà không báo gì. -->
+        <field name="domain" eval="[('stage_id', '=', ref('hocba_recruitments.hb_stage_interview'))]"/>
         <field name="context">{'search_default_applicants': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào ở bước Phỏng vấn</p>
@@ -54,7 +56,7 @@
         <field name="res_model">hr.applicant</field>
         <field name="view_mode">list,kanban,form</field>
         <field name="views" eval="[(ref('hocba_recruitments.hb_view_applicant_offer_list'), 'list'), (False, 'kanban'), (False, 'form')]"/>
-        <field name="domain">[('stage_id.name', 'in', ['Gửi Offer', 'Onboarding'])]</field>
+        <field name="domain" eval="[('stage_id', 'in', [ref('hocba_recruitments.hb_stage_offer'), ref('hocba_recruitments.hb_stage_onboarding')])]"/>
         <field name="context">{'search_default_applicants': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Chưa có ứng viên nào ở bước Gửi Offer / Onboarding</p>

@@ -12,3 +12,8 @@ from . import test_offer_onboard_result
 from . import test_request_tracking
 from . import test_slot_hours
 from . import test_request_pending_count
+from . import test_backend_actions
+from . import test_slot_scope
+from . import test_job_publish
+from . import test_funnel_stage_seq
+from . import test_request_headcount

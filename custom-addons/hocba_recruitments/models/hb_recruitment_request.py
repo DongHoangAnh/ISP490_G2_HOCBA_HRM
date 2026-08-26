@@ -202,6 +202,55 @@ class HbRecruitmentRequest(models.Model):
                 'Phiếu yêu cầu tuyển dụng đã được duyệt',
                 '%s · duyệt bởi %s' % (rec._label(), rec.env.user.name))
 
+    def _hired_count(self):
+        """Số ứng viên của phiếu này đã vào bước Bàn giao nhân sự.
+
+        active_test=False vì hồ sơ ứng viên hay bị lưu trữ sau khi nhận việc —
+        bỏ đi thì "đã tuyển" tụt số và phiếu trả lại chỉ tiêu nhiều hơn thực tế.
+        """
+        self.ensure_one()
+        return self.env['hr.applicant'].sudo().with_context(
+            active_test=False).search_count([
+                ('hb_request_id', '=', self.id),
+                ('stage_id.hired_stage', '=', True)])
+
+    def _release_headcount(self):
+        """Đóng phiếu ⇒ trả lại phần CHƯA tuyển vào chỉ tiêu của vị trí.
+
+        `no_of_recruitment` của core là "còn cần tuyển bao nhiêu": duyệt phiếu
+        cộng `qty_expected`, mỗi ứng viên vào bước hired thì core tự trừ 1. Đóng
+        phiếu mà không trả phần còn thiếu thì chỉ tiêu ma nằm lại vĩnh viễn —
+        vừa sai số, vừa làm `_hb_auto_close_if_filled` (chặn ở `> 0`) không bao
+        giờ kích hoạt lại cho vị trí đó.
+
+        Chỉ trừ đúng phần của phiếu này, kẹp ở 0: vị trí có thể đang gánh chỉ
+        tiêu của phiếu khác, và có thể đã tuyển vượt số phiếu ghi.
+        """
+        self.ensure_one()
+        if not self.job_id or not self.headcount_synced:
+            return 0
+        remaining = max(0, (self.qty_expected or 0) - self._hired_count())
+        if remaining:
+            self.job_id.sudo().no_of_recruitment = max(
+                0, (self.job_id.no_of_recruitment or 0) - remaining)
+        self.headcount_synced = False
+        return remaining
+
+    def write(self, vals):
+        # Bắt ở write() chứ không chỉ trong action_close(): phiếu còn bị đóng
+        # TỰ ĐỘNG khi vị trí tuyển đủ chỉ tiêu (hr_applicant._hb_auto_close_if_
+        # filled ghi thẳng state), và HR có thể đóng từ form backend.
+        closing = (self.filtered(lambda r: r.state != 'closed')
+                   if vals.get('state') == 'closed' else self.browse())
+        res = super().write(vals)
+        for rec in closing:
+            released = rec._release_headcount()
+            if released:
+                rec.message_post(body=(
+                    'Đóng phiếu khi còn %s chỉ tiêu chưa tuyển — đã trả lại '
+                    'chỉ tiêu cho vị trí "%s".' % (released, rec.job_id.name)))
+        return res
+
     def action_close(self):
         for rec in self:
             if rec.state != 'recruiting':
@@ -221,7 +270,22 @@ class HbRecruitmentRequest(models.Model):
                     ' · Lý do: %s' % rec.refuse_reason if rec.refuse_reason else ''))
 
     def action_reset_draft(self):
+        """Mở lại nháp — CHỈ từ trạng thái Từ chối (quyết định 2026-08-26).
+
+        Phiếu đang tuyển đã cộng chỉ tiêu vào vị trí; cho kéo thẳng về Nháp thì
+        chỉ tiêu treo lại mà phiếu trông như chưa duyệt, sửa `qty_expected` rồi
+        duyệt lại cũng không cộng thêm (đã có `headcount_synced`). Muốn sửa
+        phiếu đang tuyển thì Đóng trước — lúc đó chỉ tiêu được trả lại đàng
+        hoàng. Phiếu đã đóng là chốt đợt, mở lại thì tạo phiếu mới.
+        """
         for rec in self:
+            if rec.state != 'refused':
+                raise UserError(
+                    'Chỉ mở lại nháp được với phiếu đang ở trạng thái Từ chối. '
+                    'Phiếu "%s" đang ở "%s" — nếu cần dừng đợt tuyển này thì '
+                    'dùng nút Đóng phiếu.'
+                    % (rec.name, dict(rec._fields['state'].selection).get(
+                        rec.state, rec.state)))
             rec.state = 'draft'
 
     def action_create_job_position(self):

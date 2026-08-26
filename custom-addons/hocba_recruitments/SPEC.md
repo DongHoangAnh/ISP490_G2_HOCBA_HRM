@@ -48,9 +48,9 @@ hocba_recruitments/
 │   ├── hb_applicant_data.xml             # Sample ứng viên
 │   ├── hb_interview_results.xml          # Sample kết quả PV
 │   ├── hb_mail_templates.xml             # 4 mail template
-│   └── ir_cron_data.xml                  # CRON-REC-001, CRON-REC-002 (§12)
-├── migrations/                     # 19.0.2.2.0 · 2.5.0 · 2.6.0 · 2.7.0 (§13)
-├── tests/                          # 13 file · 188 test (§14)
+│   └── ir_cron_data.xml                  # CRON-REC-001 (§12)
+├── migrations/                     # 19.0.2.2.0 · 2.5.0 · 2.6.0 · 2.7.0 · 2.9.0 (§13)
+├── tests/                          # 19 file · 218 test (§14)
 └── security/
     └── ir.model.access.csv         # 8 dòng ACL
 ```
@@ -316,7 +316,6 @@ lùi**, bước bị xoá/ẩn thì im lặng bỏ qua, và **ghi chatter** đ�
 | Xếp UV vào slot | Hẹn & mời PV → Phỏng vấn | `hb_interview_slot.create/write` |
 | Gửi mail **Thư mời phỏng vấn** | Hẹn & mời PV → Phỏng vấn | `controllers.MAIL_STAGE_RULES` |
 | Gửi mail **Thư mời nhận việc** | Phỏng vấn / Kết quả PV → Gửi Offer | `controllers.MAIL_STAGE_RULES` |
-| Qua giờ slot PV (cron 30′) | Phỏng vấn → Kết quả phỏng vấn | `CRON-REC-002` |
 | NV lên `official` | Onboarding → Bàn giao nhân sự | `hr_employee.write` (§8) |
 
 > **Pass PV KHÔNG tự nhảy sang Gửi Offer** — quyết định offer là của HR, không phải của máy.
@@ -622,7 +621,11 @@ số bấm vào và danh sách hiện ra không bao giờ lệch nhau. Query ch�
 | Mã | Tên | Chu kỳ | Việc |
 |----|-----|--------|------|
 | CRON-REC-001 | HOCBA: Nhắc CV quá hạn xử lý | 1 ngày, `nextcall` 01:00 UTC (08:00 VN) | §5.7 |
-| CRON-REC-002 | HOCBA: Qua giờ PV → bước Kết quả phỏng vấn | 30 phút (= độ dài 1 slot) | §5.6 |
+
+~~CRON-REC-002 (Qua giờ PV → Kết quả phỏng vấn, 30 phút)~~ **đã gỡ 2026-08-26**
+theo yêu cầu: không cần cron quét slot nữa. Bước Phỏng vấn → Kết quả phỏng vấn
+nay chỉ chạy khi HR điền Kết quả PV. Bản ghi cũ trong DB được migration
+`19.0.2.9.0/post-migrate.py` xoá — `noupdate="1"` nên upgrade KHÔNG tự dọn.
 
 `noupdate="1"` — admin đổi giờ chạy không bị upgrade ghi đè.
 ⚠️ Odoo 19: `ir.cron` **không còn** `numbercall`, và `nextcall` không theo timezone.
@@ -642,7 +645,7 @@ số bấm vào và danh sách hiện ra không bao giờ lệch nhau. Query ch�
 
 ## 14. Test tự động
 
-`tests/` — **13 file · 188 test** (bản spec cũ ghi "chưa có test", đã lỗi thời).
+`tests/` — **19 file · 218 test** (bản spec cũ ghi "chưa có test", đã lỗi thời).
 
 | File | Tests | Phủ |
 |------|-------|-----|
@@ -678,7 +681,7 @@ Kịch bản kiểm thử thủ công: `docs/QUY_TRINH_TUYEN_DUNG.md`.
 
 | Việc | Ghi chú |
 |------|---------|
-| ✅ Test tự động | 13 file / 188 test (§14) — mục "Chưa có test" của bản cũ đã hết hiệu lực |
+| ✅ Test tự động | 19 file / 218 test (§14) — mục "Chưa có test" của bản cũ đã hết hiệu lực |
 | ✅ Màn Cấu hình tuyển dụng | Sửa/thêm/ẩn/xoá/kéo-thả bước, SLA từng bước, chế độ tự đóng, chế độ nhắc quá hạn, khung giờ PV (§11.3) |
 | ✅ Gắn CV vào ĐỢT TUYỂN | `hb_request_id` + migration 2.7.0 — hai đợt cùng vị trí không còn dùng chung số (§5.1) |
 | ✅ Phễu 8 mốc theo phiếu | `APPLICANT_GROUPS` dùng chung cho đếm và popup (§11.2) |
@@ -692,19 +695,23 @@ Kịch bản kiểm thử thủ công: `docs/QUY_TRINH_TUYEN_DUNG.md`.
 | ✅ Gửi mail qua Gmail | `/mail/log-sent` — không phụ thuộc `ir.mail_server` |
 | ✅ Bỏ ràng buộc Trình độ giảng dạy | Đối chiếu file quy trình gốc của khách (§4.3) |
 | ✅ Chặn kéo hồ sơ lùi khỏi Bàn giao | Khi NV đã lên chính thức (§5.3) |
+| ✅ Chỉ tiêu tuyển chỉ cộng không trừ | 2026-08-26 — đóng phiếu (kể cả tự đóng khi tuyển đủ) trả lại phần chưa tuyển qua `_release_headcount()`; "Mở lại nháp" siết còn HR + chỉ từ Từ chối. Test: `test_request_headcount.py` |
+| ✅ Nút Đăng tuyển vỡ HTTP 500 khi thiếu `website_hr_recruitment` | 2026-08-26 — controller chỉ ghi `x_published`, model tự mirror; 3 chỗ đọc dùng chung `_job_published()`; stack nginx cài thêm module. Test: `test_job_publish.py` |
+| ✅ Xếp lịch PV không kiểm phạm vi phòng ban | 2026-08-26 — book/unbook/xoá slot kiểm `_applicants_out_of_scope()` + `_slot_in_scope()`; GET lịch cắt theo phòng (trước đó mọi user đọc được tên ứng viên + danh bạ NV). Test: `test_slot_scope.py` |
+| ✅ Phễu bám số sequence cứng 60/90 | 2026-08-26 — `_stage_seq()` đọc sequence theo xmlid lúc chạy; thêm bước + kéo-thả không còn đếm nhầm PV/Nhận việc. Test: `test_funnel_stage_seq.py` |
+| ✅ Action backend lọc theo XMLID bước | 2026-08-26 — `hb_action_interview_list` / `hb_action_offer_hire` dùng `eval="[('stage_id','=',ref(...))]"`; đổi tên bước không còn làm menu rỗng. Test: `test_backend_actions.py` |
+| ✅ Gỡ CRON-REC-002 | 2026-08-26 — bỏ cron quét slot quá khứ (quét không giới hạn thời gian, càng chạy càng nặng); migration `19.0.2.9.0` xoá bản ghi cũ trong DB |
 | ✅ Xoá `Jobs.jsx` dead code | 2026-08-16 — màn gộp cũ đã tách thành `RequestTracking` + `JdLibrary`, file không còn được import (§11.4) |
 
 ### Còn lại
 
 | # | Vấn đề | Mức độ |
 |---|--------|--------|
-| 1 | **Action backend 20.3 / 25 lọc theo TÊN bước** (`menu.xml`) — admin đổi tên bước trên màn Cấu hình là menu rỗng. Sửa sang lọc theo xmlid như SPA | Trung bình |
 | 2 | Chưa cấu hình `ir.mail_server` (SMTP) — mail qua `/send` nằm hàng đợi; luồng thật đang đi đường Gmail + `/log-sent` | Trung bình |
 | 3 | `jd_google_link` trên `hb_job_positions.xml` bỏ trống — cần điền URL thực | Thấp |
 | 4 | Mail template hardcode thông tin liên hệ HR — cập nhật khi thay nhân sự | Thấp |
 | 5 | Sample data (`hb_applicant_data.xml`, `hb_interview_results.xml`) chưa rà lại nội dung | Cần xác nhận |
 | 6 | `cv_link` seed là tên file (không phải URL) → cột Link CV chỉ hiện text | Thấp |
 | 7 | Tạo hồ sơ NV xong chưa tự điều hướng sang form NV vừa tạo | Thấp (UX) |
-| 8 | Action `reset` (mở lại nháp) mở cho cả TBP trên phiếu closed/refused — cân nhắc giới hạn HR | Thấp (thiết kế) |
 | 9 | Dữ liệu CTV tuyển dụng trên Neon còn bẩn (đã hoãn xử lý) | Cần xác nhận |
 | 10 | Hai tên modal mail dễ nhầm: `SendMailModal` (1 mẫu → nhiều UV) vs `MailSendModal` (1 UV → chọn mẫu) — đảo chữ của nhau, nên đổi thành `MultiMailModal` / `SingleMailModal` | Thấp |

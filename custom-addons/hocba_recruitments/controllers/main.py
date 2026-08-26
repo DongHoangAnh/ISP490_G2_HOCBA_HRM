@@ -92,9 +92,11 @@ REQUEST_ACTIONS = {
     'reset': 'action_reset_draft',
 }
 
-# Tách vai theo sheet quy trình: TBP (người order) chỉ GỬI DUYỆT / mở lại nháp;
-# DUYỆT / TỪ CHỐI / ĐÓNG phiếu là việc của BP tuyển dụng/HR (_is_hr).
-REQUEST_HR_ACTIONS = frozenset({'approve', 'refuse', 'close'})
+# Tách vai theo sheet quy trình: TBP (người order) chỉ GỬI DUYỆT; DUYỆT / TỪ
+# CHỐI / ĐÓNG / MỞ LẠI NHÁP là việc của BP tuyển dụng/HR (_is_hr).
+# `reset` vào nhóm này từ 2026-08-26: mở lại nháp đụng tới chỉ tiêu tuyển đã
+# cộng cho vị trí, không phải thao tác của người order.
+REQUEST_HR_ACTIONS = frozenset({'approve', 'refuse', 'close', 'reset'})
 
 
 def _conv(typ, v):
@@ -666,6 +668,20 @@ class HocBaTuyenDung(http.Controller):
     # "Theo dõi tuyển dụng" (tên cũ: Vị trí tuyển dụng / JD) và "Kho quản lý JD".
     # ------------------------------------------------------------------
 
+    def _job_published(self, job):
+        """Vị trí này có đang đăng tuyển công khai không.
+
+        is_published (website_hr_recruitment) là nguồn sự thật khi có website;
+        DB không cài module đó thì lùi về cờ nội bộ x_published. Cả ba chỗ trả
+        payload cho SPA phải dùng CHUNG hàm này — trước đây mỗi chỗ getattr một
+        kiểu nên tab Theo dõi luôn báo "chưa đăng" và nút Chép link không hiện.
+        """
+        if not job:
+            return False
+        if 'is_published' in job._fields:
+            return bool(job.is_published)
+        return bool(job.x_published)
+
     def _job_row(self, j, detail=False):
         """Một vị trí tuyển dụng (wire format camelCase)."""
         data = {
@@ -676,7 +692,7 @@ class HocBaTuyenDung(http.Controller):
             'status': j.recruitment_status or '',
             # published = trạng thái hiển thị trên WEBSITE công khai (is_published) — nguồn sự thật.
             # x_published (badge nội bộ kanban) được giữ đồng bộ khi ghi.
-            'published': bool(getattr(j, 'is_published', j.x_published)),
+            'published': self._job_published(j),
             # Link trang tuyển dụng công khai (/jobs/detail/<slug>) — để copy đi truyền thông.
             'websiteUrl': getattr(j, 'website_url', '') or '',
             'jdLink': j.jd_google_link or '',
@@ -818,12 +834,14 @@ class HocBaTuyenDung(http.Controller):
                 vals[field] = bool(v)
             else:
                 vals[field] = v if v not in ('', None) else False
-        # "published" đẩy lên website thật: set cả is_published (web) lẫn
-        # x_published (badge kanban nội bộ) để hai nơi luôn khớp; đồng thời gắn
-        # trạng thái tuyển theo published: bật -> Đang tuyển, tắt -> Dừng tuyển.
+        # "published" CHỈ ghi x_published (cờ nội bộ, luôn tồn tại) — hr_job.write()
+        # tự soi gương sang is_published khi website_hr_recruitment có cài. Ghi
+        # thẳng is_published ở đây thì DB không cài module đó ném ValueError →
+        # HTTP 500, nút Đăng tuyển chết (xem tests/test_job_publish.py).
+        # Đồng thời gắn trạng thái tuyển: bật -> Đang tuyển, tắt -> Dừng tuyển.
         if 'published' in payload:
             pub = bool(payload['published'])
-            vals['is_published'] = pub
+            vals['x_published'] = pub
             vals['recruitment_status'] = 'recruiting' if pub else 'stopped'
         return vals
 
@@ -865,7 +883,7 @@ class HocBaTuyenDung(http.Controller):
             'qty': r.qty_expected or 0,
             'jobId': r.job_id.id or False,
             'jobName': r.job_id.name or '',
-            'published': bool(getattr(r.job_id, 'is_published', False)) if r.job_id else False,
+            'published': self._job_published(r.job_id),
             'websiteUrl': (getattr(r.job_id, 'website_url', '') or '') if r.job_id else '',
             'levelLabel': level_labels.get(r.level, '') if r.level else '',
             'state': r.state or '',
@@ -906,32 +924,55 @@ class HocBaTuyenDung(http.Controller):
     #               ngày nhận việc.
     #   Đã tuyển  = ở bước có cờ hired_stage (Bàn giao nhân sự) — nhân sự đã
     #               hoàn thiện thử việc, cùng con số với cột "Đã tuyển" ngoài bảng.
-    _STAGE_INTERVIEW_SEQ = 60   # data/hr_recruitment_stages.xml — bước "Phỏng vấn"
-    _STAGE_ONBOARD_SEQ = 90     # data/hr_recruitment_stages.xml — bước "Onboarding"
+    # Mốc seed (data/hr_recruitment_stages.xml) — CHỈ dùng làm dự phòng khi bước
+    # bị xoá; số thật đọc theo xmlid lúc chạy, xem _stage_seq().
+    _STAGE_INTERVIEW_SEQ = 60
+    _STAGE_ONBOARD_SEQ = 90
+
+    def _stage_seq(self, ref, fallback):
+        """Vị trí (sequence) HIỆN HÀNH của một bước, tra theo xmlid.
+
+        Màn Cấu hình cho thêm bước và kéo-thả, mà action_reorder ghi lại
+        sequence 10/20/30… — chèn một bước trước "Phỏng vấn" là mọi bước sau đó
+        dịch lên một nấc. Hằng số cứng khi đó đếm nhầm phễu mà không báo gì.
+
+        .sudo() vì trưởng phòng không có ACL đọc `hr.recruitment.stage` — quyền
+        của họ đến từ `manager_id`, không phải nhóm tuyển dụng. Thiếu sudo là
+        AccessError bay ra thành trang lỗi HTML 403 giữa lúc xem phễu.
+        """
+        stage = request.env.ref('hocba_recruitments.' + ref,
+                                raise_if_not_found=False)
+        return stage.sudo().sequence if stage else fallback
 
     # Nhóm ứng viên khi bấm vào con số ở dòng chi tiết → domain tương ứng.
     # Dùng chung cho cả đếm (_request_stats) và popup danh sách, để con số bấm
     # vào và danh sách hiện ra không bao giờ lệch nhau.
-    APPLICANT_GROUPS = {
-        'cv':      [],
-        'cv_pass': [('cv_filter_result', '=', 'pass')],
-        'fail_cv': [('cv_filter_result', '=', 'fail')],
-        'pv':      ['|', '|', '|',
-                    ('stage_id.sequence', '>=', _STAGE_INTERVIEW_SEQ),
-                    ('interview_date', '!=', False),
-                    ('attendance_status', '!=', False),
-                    ('interview_result', '!=', False)],
-        'pv_pass': [('interview_result', '=', 'pass')],
-        'fail_pv': [('interview_result', '=', 'fail')],
-        # Trừ hẳn người đã đánh "Không nhận việc": ngày nhận việc vẫn nằm trên hồ
-        # sơ sau khi ứng viên bùng, để nguyên luật cũ là đếm nhầm họ vào đây.
-        'onboard': ['&', ('onboard_result', '!=', 'no_show'),
-                    '|', '|',
-                    ('stage_id.sequence', '>=', _STAGE_ONBOARD_SEQ),
-                    ('start_date', '!=', False),
-                    ('onboard_result', '=', 'arrived')],
-        'hired':   [('stage_id.hired_stage', '=', True)],
-    }
+    def _applicant_groups(self):
+        """{tên nhóm: domain} — dựng lại mỗi request vì mốc bước đọc lúc chạy."""
+        seq_interview = self._stage_seq('hb_stage_interview',
+                                        self._STAGE_INTERVIEW_SEQ)
+        seq_onboard = self._stage_seq('hb_stage_onboarding',
+                                      self._STAGE_ONBOARD_SEQ)
+        return {
+            'cv':      [],
+            'cv_pass': [('cv_filter_result', '=', 'pass')],
+            'fail_cv': [('cv_filter_result', '=', 'fail')],
+            'pv':      ['|', '|', '|',
+                        ('stage_id.sequence', '>=', seq_interview),
+                        ('interview_date', '!=', False),
+                        ('attendance_status', '!=', False),
+                        ('interview_result', '!=', False)],
+            'pv_pass': [('interview_result', '=', 'pass')],
+            'fail_pv': [('interview_result', '=', 'fail')],
+            # Trừ hẳn người đã đánh "Không nhận việc": ngày nhận việc vẫn nằm trên
+            # hồ sơ sau khi ứng viên bùng, để nguyên luật cũ là đếm nhầm họ vào đây.
+            'onboard': ['&', ('onboard_result', '!=', 'no_show'),
+                        '|', '|',
+                        ('stage_id.sequence', '>=', seq_onboard),
+                        ('start_date', '!=', False),
+                        ('onboard_result', '=', 'arrived')],
+            'hired':   [('stage_id.hired_stage', '=', True)],
+        }
 
     # Khoá đếm trả về SPA cho từng nhóm. Tách khỏi APPLICANT_GROUPS vì tên khoá
     # JSON theo lối camelCase của SPA, còn khoá nhóm là tham số ?group= của API.
@@ -957,7 +998,8 @@ class HocBaTuyenDung(http.Controller):
             return {q.id: n for q, n in Applicant._read_group(
                 base + extra, ['hb_request_id'], ['__count'])}
 
-        counts = {g: by_req(dom) for g, dom in self.APPLICANT_GROUPS.items()}
+        counts = {g: by_req(dom)
+                  for g, dom in self._applicant_groups().items()}
         return {r.id: {key: counts[g].get(r.id, 0)
                        for g, key in self._STAT_KEYS.items()} for r in reqs}
 
@@ -974,13 +1016,14 @@ class HocBaTuyenDung(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._dep_in_scope(r.department_id.id):
             return self._forbidden()
-        if group not in self.APPLICANT_GROUPS:
+        groups = self._applicant_groups()
+        if group not in groups:
             return request.make_json_response(
                 {'error': 'bad_request', 'message': 'Nhóm ứng viên không hợp lệ.'},
                 status=400)
 
         apps = self._applicant_env().search(
-            [('hb_request_id', '=', r.id)] + self.APPLICANT_GROUPS[group],
+            [('hb_request_id', '=', r.id)] + groups[group],
             order='date_received desc, id desc')
         rows = [self._cv_row(a) for a in apps]
         return request.make_json_response({
@@ -1030,7 +1073,7 @@ class HocBaTuyenDung(http.Controller):
             'salary': salary,
             'jdLink': r.jd_link or '',
             'jdDescription': (r.job_id.description or '') if r.job_id else '',
-            'published': bool(getattr(r.job_id, 'is_published', False)) if r.job_id else False,
+            'published': self._job_published(r.job_id),
             'websiteUrl': (getattr(r.job_id, 'website_url', '') or '') if r.job_id else '',
         }
 
@@ -1643,6 +1686,30 @@ class HocBaTuyenDung(http.Controller):
                 or self._is_dept_manager()
                 or u.has_group('hr_recruitment.group_hr_recruitment_interviewer'))
 
+    def _slot_in_scope(self, slot):
+        """Slot này có nằm trong phạm vi thao tác của user không.
+
+        HR: mọi slot. Trưởng phòng: slot thuộc phòng mình (department_id của
+        slot tính theo phòng của người phỏng vấn). Ngoài ra ai cũng được dọn
+        slot do CHÍNH MÌNH đứng tên — người khai lịch rảnh, kể cả nhóm
+        Interviewer không quản phòng nào, phải tự xoá được lịch của mình.
+        """
+        if self._dept_scope_ids() is None:
+            return True
+        if slot.user_id.id == request.env.user.id:
+            return True
+        return self._dep_in_scope(slot.department_id.id)
+
+    def _applicants_out_of_scope(self, applicants):
+        """Các ứng viên nằm NGOÀI phạm vi phòng ban của user.
+
+        Xếp / gỡ lịch là thao tác GHI lên hồ sơ ứng viên (ngày hẹn, giờ hẹn,
+        người PV) và còn đẩy bước kanban, nên phải cùng một phạm vi với tab
+        Danh sách CV — không phải cứ quản được slot là đụng được mọi hồ sơ.
+        """
+        return applicants.filtered(
+            lambda a: not self._dep_in_scope(self._applicant_dep_id(a)))
+
     def _user_tz(self):
         return pytz.timezone(request.env.user.tz or 'Asia/Ho_Chi_Minh')
 
@@ -1686,11 +1753,22 @@ class HocBaTuyenDung(http.Controller):
         to_d = fields.Date.from_string(kw.get('to')) if kw.get('to') else from_d
         start_utc = self._local_to_utc(from_d, 0.0, tz)
         end_utc = tz.localize(datetime.combine(to_d, dt_time(23, 59, 59))).astimezone(pytz.utc).replace(tzinfo=None)
-        slots = env['hb.interview.slot'].sudo().search(
-            [('start_datetime', '>=', start_utc), ('start_datetime', '<=', end_utc)],
-            order='start_datetime')
+        # Payload này kèm HỌ TÊN ứng viên + danh bạ nhân viên nên phải cắt theo
+        # phạm vi như tab Danh sách CV: HR thấy tất, trưởng phòng thấy phòng
+        # mình, ai cũng thấy lịch do chính mình đứng tên (người khai lịch rảnh
+        # phải xem lại được lịch của họ). User thường ⇒ scope rỗng ⇒ không thấy gì.
+        scope = self._dept_scope_ids()
+        domain = [('start_datetime', '>=', start_utc),
+                  ('start_datetime', '<=', end_utc)]
+        emp_domain = [('user_id', '!=', False)]
+        if scope is not None:
+            mine = ['|', ('department_id', 'in', scope),
+                    ('user_id', '=', env.user.id)]
+            domain += mine
+            emp_domain += mine
+        slots = env['hb.interview.slot'].sudo().search(domain, order='start_datetime')
         # Danh sách người phỏng vấn (nhân viên có tài khoản) để chọn khi tạo slot
-        emps = env['hr.employee'].sudo().search([('user_id', '!=', False)], order='name')
+        emps = env['hr.employee'].sudo().search(emp_domain, order='name')
         interviewers = [{'id': e.user_id.id, 'name': e.name} for e in emps]
         return request.make_json_response({
             'canManage': self._can_manage_slots(),
@@ -1755,6 +1833,12 @@ class HocBaTuyenDung(http.Controller):
         s = request.env['hb.interview.slot'].sudo().browse(slot_id)
         if not s.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if not self._slot_in_scope(s):
+            return self._forbidden('Slot này không thuộc phòng ban bạn quản lý.')
+        if self._applicants_out_of_scope(s.applicant_ids):
+            return self._forbidden(
+                'Slot đang có ứng viên ngoài phòng ban bạn quản lý — xoá slot '
+                'sẽ huỷ lịch của họ. Hãy nhờ HR xử lý.')
         try:
             s.unlink()
         except (AccessError, ValidationError, UserError) as ex:
@@ -1782,6 +1866,9 @@ class HocBaTuyenDung(http.Controller):
         a = request.env['hr.applicant'].sudo().browse(int(aid))
         if not a.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
+        if self._applicants_out_of_scope(a):
+            return self._forbidden(
+                'Ứng viên này không thuộc phòng ban bạn quản lý.')
         if a in s.applicant_ids:
             return request.make_json_response(
                 {'error': 'rejected',
@@ -1817,6 +1904,13 @@ class HocBaTuyenDung(http.Controller):
         if not s.exists():
             return request.make_json_response({'error': 'not_found'}, status=404)
         aid = (request.get_json_data() or {}).get('applicantId')
+        # Gỡ 1 người thì kiểm đúng người đó; gỡ hết thì phải trong phạm vi TẤT
+        # CẢ — không được mượn nút "gỡ hết" để huỷ lịch của phòng khác.
+        targets = (request.env['hr.applicant'].sudo().browse(int(aid)).exists()
+                   if aid else s.applicant_ids)
+        if self._applicants_out_of_scope(targets):
+            return self._forbidden(
+                'Slot đang có ứng viên ngoài phòng ban bạn quản lý.')
         try:
             s.write({'applicant_ids': [(3, int(aid))] if aid else [(5, 0, 0)]})
         except (AccessError, ValidationError, UserError) as ex:

@@ -205,40 +205,6 @@ class HbInterviewSlot(models.Model):
                 rec._hb_advance_booked(added)
         return res
 
-    @api.model
-    def _cron_advance_past_interviews(self):
-        """CRON-REC-002: qua giờ phỏng vấn ⇒ Phỏng vấn → Kết quả phỏng vấn.
-
-        Chạy mỗi 30 phút (bằng đúng độ dài 1 slot). Chỉ đụng ứng viên CÒN ở
-        bước "Phỏng vấn": ai đã được điền kết quả và đi tiếp (Pass → Gửi Offer)
-        hoặc bị HR kéo đi bước khác thì bỏ qua — _hb_advance_stage() không kéo lùi.
-
-        Không lọc theo "Tham gia PV": ứng viên vắng mặt vẫn cần vào bước Kết quả
-        để HR ghi nhận (fail / hẹn lại), chứ không phải kẹt ở bước Phỏng vấn.
-        """
-        st_interview = self.env.ref(
-            'hocba_recruitments.hb_stage_interview', raise_if_not_found=False)
-        if not st_interview:
-            return 0
-        now = fields.Datetime.now()
-        slots = self.sudo().search([
-            ('stop_datetime', '<', now),
-            ('applicant_ids', '!=', False),
-        ])
-        moved = 0
-        for slot in slots:
-            todo = slot.applicant_ids.filtered(
-                lambda a: a.stage_id == st_interview)
-            if not todo:
-                continue
-            todo._hb_advance_stage(
-                'hb_stage_interview', 'hb_stage_result',
-                'Do đã qua khung giờ phỏng vấn %s.' % slot._slot_label())
-            moved += len(todo)
-        if moved:
-            _logger.info('CRON-REC-002: %s ứng viên chuyển sang bước Kết quả phỏng vấn.', moved)
-        return moved
-
 
 class HbInterviewSlotWizard(models.TransientModel):
     """Wizard để TBP khai báo nhiều slot rảnh trong một lần."""

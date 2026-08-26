@@ -59,11 +59,15 @@ services:
       # chỉ dành cho Neon).
       - ./odoo.local.conf:/etc/odoo/odoo.conf
       - ./tools/fix_stale_assets.py:/fix_stale_assets.py:ro
+    # ⚠️ website_hr_recruitment BẮT BUỘC (kéo theo website/website_mail/website_sms):
+    #    field `hr.job.is_published` và trang tuyển dụng công khai /jobs/detail/...
+    #    là của module này. Thiếu nó thì badge PUBLISHED không bật, nút "Chép link"
+    #    không hiện và link công khai 404. Xem docs/DB_TEST_DATA.md:223 (DB demo 17/08).
     command: >
       bash -c "python3 /fix_stale_assets.py; exec odoo
       --database=hocba_hrm
-      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff
-      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff
+      --init=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment
+      --update=hocba_employees,hocba_attendance,hocba_users,hocba_recruitments,hocba_payroll,hocba_hrm,hocba_finance,hocba_service,hocba_reviews,hocba_notify,hocba_timeoff,website_hr_recruitment
       --addons-path=/mnt/extra-addons
       --dev=xml"
 
