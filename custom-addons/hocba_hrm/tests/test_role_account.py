@@ -269,3 +269,26 @@ class TestRoleAccount(TransactionCase):
             emp, thay_duoc,
             'Giáo vụ không được thấy tài khoản vai trò dù nó mang loại '
             'giáo viên.')
+
+    # ---- Task 4: màn Tài khoản cố tình KHÔNG lọc ----
+    def test_van_hien_o_man_tai_khoan(self):
+        """Đây là chỗ duy nhất HR đổi mật khẩu / khoá tài khoản vai trò.
+        Lọc nó ở đây là biến tài khoản thành vô hình, không quản được.
+
+        Kiểm cả 'có mặt' lẫn 'role' đúng, vì _account_list suy ra role
+        bằng cách xem employee id có nằm trong manager_emp_ids (tập
+        manager_id của mọi phòng ban active) hay không — nếu sau này ai
+        đó lọc tài khoản vai trò ở tầng nào đó trước khi build set này
+        (vd đổi search() thành có domain loại trừ), cột role trên màn
+        Tài khoản sẽ âm thầm hiển thị sai thành 'employee' dù bản ghi
+        vẫn còn trong danh sách — assertIn không bắt được lỗi đó."""
+        _dept, emp = self._create_dept(name='Phong TK', login='tp_role_7')
+        data = _account_list(self.env(user=self.hrm))
+        rows = [r for r in data['accounts'] if r['employeeId'] == emp.id]
+        self.assertTrue(
+            rows,
+            'Tài khoản vai trò phải hiện ở màn Tài khoản để HR quản lý.')
+        self.assertEqual(
+            rows[0]['role'], 'truongphong',
+            'Tài khoản vai trò tạo từ form phòng ban phải mang role '
+            "'truongphong' trên màn Tài khoản.")
