@@ -5,6 +5,7 @@ Spec reference: docs/SPEC_HRM_SPA_API.md
                 docs/specs/payroll/FS-PAY-003_Payslip_Lifecycle_Batch_Management_v1_0.md
 """
 import json
+from odoo import Command
 from odoo.tests import HttpCase, tagged
 
 
@@ -20,6 +21,15 @@ class TestPayrollAPIControllers(HttpCase):
         self.emp = self.Employee.create({
             'name': 'API Test Employee Payroll',
             'work_email': 'api_payroll_test@hocba.edu.vn',
+        })
+
+    def _make_user(self, login, groups):
+        return self.env['res.users'].sudo().create({
+            'name': login,
+            'login': login,
+            'email': f'{login}@hocba.test',
+            'password': 'Payroll@Test2026',
+            'group_ids': [Command.set(groups.ids)],
         })
 
     def test_01_get_batch_list_endpoint(self):
@@ -47,21 +57,20 @@ class TestPayrollAPIControllers(HttpCase):
             'employee_id': self.emp.id,
             'date_from': '2026-08-01',
             'date_to': '2026-08-31',
-            'confirm_status': 'confirmed',
+            'x_employee_confirm': 'confirmed',
         })
 
         self.authenticate('admin', 'admin')
         payload = json.dumps({'payslip_ids': [slip.id]})
         res = self.url_open(
-            '/hocba-hrm/api/payroll/bulk-reset-confirm',
+            '/hocba-hrm/api/payroll/payslip/bulk-reset-confirm',
             data=payload,
             headers={'Content-Type': 'application/json'},
-            csrf=False
         )
 
         self.assertIn(res.status_code, [200, 201], 'API reset xác nhận phải trả về status success.')
         slip.invalidate_recordset()
-        self.assertEqual(slip.confirm_status, 'pending', 'Slip status qua API reset phải về pending.')
+        self.assertEqual(slip.x_employee_confirm, 'pending', 'Slip status qua API reset phải về pending.')
 
     def test_03_employee_payroll_respects_contract_month_boundary(self):
         """NV bắt đầu 01/08 không được xuất hiện trong bảng lương tháng 07."""
@@ -103,3 +112,59 @@ class TestPayrollAPIControllers(HttpCase):
         august_codes = {row['code'] for row in august['employees']}
         self.assertIn('PAY-BOUNDARY-JULY', august_codes)
         self.assertIn('PAY-BOUNDARY-AUGUST', august_codes)
+
+    def test_04_department_manager_cannot_read_company_payroll(self):
+        """An authenticated non-HR role account must receive HTTP 403."""
+        manager = self._make_user(
+            'payroll_shared_manager',
+            self.env.ref('base.group_user'),
+        )
+        self.authenticate(manager.login, 'Payroll@Test2026')
+
+        res = self.url_open(
+            '/hocba-hrm/api/payroll/employee-payroll?month=8&year=2026')
+
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.json().get('code'), 'payroll_forbidden')
+
+    def test_05_hr_can_read_company_payroll(self):
+        """The shared HR role account may access aggregate payroll data."""
+        groups = self.env.ref('base.group_user') | self.env.ref('hr.group_hr_user')
+        hr_user = self._make_user('payroll_shared_hr', groups)
+        self.authenticate(hr_user.login, 'Payroll@Test2026')
+
+        res = self.url_open(
+            '/hocba-hrm/api/payroll/employee-payroll?month=8&year=2026')
+
+        self.assertEqual(res.status_code, 200)
+
+    def test_06_employee_sees_only_own_payslip(self):
+        """Self-service is tied to user_id, never to a shared role/email."""
+        employee_user = self._make_user(
+            'payroll_personal_employee',
+            self.env.ref('base.group_user'),
+        )
+        own_emp = self.Employee.create({
+            'name': 'Personal Payroll Employee',
+            'user_id': employee_user.id,
+            'work_email': employee_user.email,
+        })
+        other_emp = self.Employee.create({'name': 'Other Payroll Employee'})
+        own_slip = self.Payslip.create({
+            'employee_id': own_emp.id,
+            'date_from': '2026-08-01',
+            'date_to': '2026-08-31',
+        })
+        self.Payslip.create({
+            'employee_id': other_emp.id,
+            'date_from': '2026-08-01',
+            'date_to': '2026-08-31',
+        })
+
+        self.authenticate(employee_user.login, 'Payroll@Test2026')
+        res = self.url_open('/hocba-hrm/api/payroll/my-payslips')
+
+        self.assertEqual(res.status_code, 200)
+        payload = res.json().get('data', {})
+        self.assertEqual(payload['employee']['id'], own_emp.id)
+        self.assertEqual([s['id'] for s in payload['payslips']], [own_slip.id])

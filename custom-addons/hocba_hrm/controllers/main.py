@@ -2745,7 +2745,11 @@ def _dashboard_stats(env):
             'recruitment': is_hr,
             'attendance': scoped,
             'timeoff': scoped,
-            'payroll': user.has_group('hr.group_hr_manager'),
+            # Payroll-wide data is available to company Admin/HR role
+            # accounts. Department managers use neither the aggregate payroll
+            # screen nor another employee's payslip; personal payslips are
+            # exposed separately by the Payroll self-service API.
+            'payroll': is_hr,
         },
         'byDepartment': by_department,
         'turnoverByMonth': turnover,

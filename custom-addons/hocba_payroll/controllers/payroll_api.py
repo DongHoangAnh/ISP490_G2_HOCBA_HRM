@@ -43,6 +43,7 @@ import json
 import logging
 import threading
 import concurrent.futures
+from functools import wraps
 
 import odoo
 from odoo import http, fields, _
@@ -137,6 +138,51 @@ def _get_json_body():
         return {}
 
 
+def _is_payroll_admin(env):
+    """Only company Admin/HR role accounts may access payroll management.
+
+    Department managers and ordinary employees intentionally do not inherit
+    payroll-wide visibility.  Employees use the two explicitly whitelisted
+    self-service endpoints below to access their own payslips.
+    """
+    user = env.user
+    return (
+        user.has_group('base.group_system')
+        or user.has_group('hr.group_hr_user')
+    )
+
+
+def _payroll_admin_required(method):
+    """Preserve Odoo route metadata while enforcing Payroll RBAC server-side."""
+    @wraps(method)
+    def guarded(*args, **kwargs):
+        if not _is_payroll_admin(request.env):
+            return _error_response(
+                'Bạn không có quyền truy cập dữ liệu quản trị bảng lương.',
+                status=403,
+                code='payroll_forbidden',
+            )
+        return method(*args, **kwargs)
+    return guarded
+
+
+def _protect_payroll_management_routes(controller_cls):
+    """Guard every Payroll route except narrowly scoped employee self-service.
+
+    Keeping the allow-list here prevents a newly added management endpoint
+    from accidentally being exposed with only ``auth='user'`` and ``sudo()``.
+    """
+    self_service = {'get_my_payslips', 'employee_confirm_payslip'}
+    for name, method in list(vars(controller_cls).items()):
+        if name in self_service or not callable(method):
+            continue
+        # Odoo 19 marks routed methods with ``original_routing``.
+        if hasattr(method, 'original_routing'):
+            setattr(controller_cls, name, _payroll_admin_required(method))
+    return controller_cls
+
+
+@_protect_payroll_management_routes
 class PayrollAPI(http.Controller):
 
     # ═════════════════════════════════════════════════════════
@@ -2357,8 +2403,11 @@ class PayrollAPI(http.Controller):
         """Fetch payslips for the currently logged-in employee."""
         try:
             user = request.env.user
+            # A personal payslip is bound to the employee's personal Odoo
+            # account.  Never fall back to email: shared Admin/HR/Manager role
+            # accounts must not be mistaken for an employee account.
             employee = request.env['hr.employee'].sudo().search([
-                '|', ('user_id', '=', user.id), ('work_email', '=ilike', user.partner_id.email or '')
+                ('user_id', '=', user.id),
             ], limit=1)
 
             if not employee:
@@ -2442,7 +2491,7 @@ class PayrollAPI(http.Controller):
             # Current user → employee
             user = request.env.user
             employee = request.env['hr.employee'].sudo().search([
-                '|', ('user_id', '=', user.id), ('work_email', '=ilike', user.partner_id.email or '')
+                ('user_id', '=', user.id),
             ], limit=1)
             if not employee:
                 return _error_response(
