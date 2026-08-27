@@ -246,6 +246,44 @@ class TestOnboardingEngine(TransactionCase):
         s[0].action_evaluate('pass')
         self.assertEqual(self._steps()[2].state, 'open')
 
+    # ---- Phải Đạt CẢ tháng-2 mới lên chính thức (chốt khách 2026-08-27) ----
+    def _tpl_bat_buoc_thang_2(self):
+        """Chỉnh template về đúng hình dạng đã chốt: tháng-1 KHÔNG kết thúc
+        thử việc, tháng-2 không phải bước gia hạn và mới là bước chốt."""
+        s = self._steps()
+        s[2].sudo().write({'pass_completes': False})
+        s[3].sudo().write({'is_extension': False, 'pass_completes': True})
+        return self._steps()
+
+    def test_dat_thang_1_chua_len_chinh_thuc_ma_mo_thang_2(self):
+        s = self._tpl_bat_buoc_thang_2()
+        s[0].action_evaluate('pass')
+        self._steps()[2].action_evaluate('pass')
+        s = self._steps()
+        self.assertEqual(s[2].result, 'pass')
+        self.assertEqual(s[3].state, 'open',
+                         'tháng-2 phải mở ra, không được bỏ qua')
+        self.assertEqual(self.emp.x_employment_status, 'probation',
+                         'Đạt tháng-1 chưa được lên chính thức')
+
+    def test_dat_them_thang_2_moi_len_chinh_thuc(self):
+        s = self._tpl_bat_buoc_thang_2()
+        s[0].action_evaluate('pass')
+        self._steps()[2].action_evaluate('pass')
+        self._steps()[3].action_evaluate('pass')
+        self.assertEqual(self.emp.x_employment_status, 'official')
+
+    def test_danh_gia_thang_1_som_van_phai_qua_thang_2(self):
+        """Khách nói rõ: đánh giá tháng-1 trước hạn cũng không được rút ngắn."""
+        s = self._tpl_bat_buoc_thang_2()
+        s[0].action_evaluate('pass')
+        s = self._steps()
+        self.assertGreater(s[2].due_date, fields.Date.today(),
+                           'fixture phải để tháng-1 CHƯA tới hạn')
+        s[2].action_evaluate('pass')
+        self.assertEqual(self.emp.x_employment_status, 'probation')
+        self.assertEqual(self._steps()[3].state, 'open')
+
     # ---- Gia hạn phải CỘNG NGÀY (chốt với khách 2026-08-27) ----
     # Trước bản này gia hạn không đụng ngày nào: bấm 2 lần rồi NV vẫn lên
     # chính thức đúng ngày cũ, vì "ngày kết thúc thử việc" ở màn Nhận việc
@@ -404,8 +442,13 @@ class TestOnboardingEngine(TransactionCase):
         steps = vp.step_ids.sorted(lambda s: (s.sequence, s.id))
         self.assertEqual(steps.mapped('step_type'),
                          ['evaluation', 'task', 'evaluation', 'evaluation'])
-        self.assertTrue(steps[2].pass_completes)
-        self.assertTrue(steps[3].is_extension and steps[3].pass_completes)
+        # Khách 2026-08-27: phải Đạt CẢ tháng-2 mới lên chính thức. Nên
+        # tháng-1 KHÔNG kết thúc thử việc, và tháng-2 KHÔNG phải bước gia hạn
+        # (để is_extension thì _advance() bỏ qua nó mỗi khi tháng-1 Đạt —
+        # chính là lý do trước đây không ai đi tới tháng-2).
+        self.assertFalse(steps[2].pass_completes)
+        self.assertFalse(steps[3].is_extension)
+        self.assertTrue(steps[3].pass_completes)
         # Khách 2026-08-07: cấp thiết bị tách khỏi chuỗi, làm lúc nào cũng
         # được → độc lập và KHÔNG automation (nếu không nó tự chạy ngày đầu).
         self.assertTrue(steps[1].is_independent)
