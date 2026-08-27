@@ -450,3 +450,50 @@ class TestRoleAccountFormWriteGuard(HttpCase):
         res = self.url_open('/hocba-hrm/api/me/roles')
         self.assertEqual(res.status_code, 200, res.text[:300])
         self.assertFalse(res.json()['hasEmployee'])
+
+
+@tagged('post_install', '-at_install')
+class TestRoleAccountIncompleteBadge(HttpCase):
+    """Badge "cần hoàn thiện hồ sơ" (menu Nhân viên) không được đếm tài
+    khoản vai trò (dọn từ review tổng thể trước khi gộp main).
+
+    x_needs_profile_completion bật khi thiếu CCCD/MST/BHXH — tài khoản vai
+    trò thiếu cả ba nên luôn True. Nếu badge đếm nó, HR bấm vào con số rồi mở
+    danh sách (đã lọc _emp_scope_domain) sẽ không tìm ra ai tương ứng.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.hr_mgr = cls.env['res.users'].create({
+            'name': 'HR Mgr Badge WG', 'login': 'hrmgr_badge_wg',
+            'password': PWD,
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id,
+                                  cls.env.ref('hr.group_hr_manager').id])]})
+
+    def _count(self):
+        self.authenticate('hrmgr_badge_wg', PWD)
+        res = self.url_open('/hocba-hrm/api/employees/incomplete-count')
+        self.assertEqual(res.status_code, 200, res.text[:300])
+        return res.json()['count']
+
+    def test_tai_khoan_vai_tro_khong_tang_badge(self):
+        """Đối chứng bằng NV thật: nếu tạo tài khoản vai trò không đổi số mà
+        tạo NV thật thiếu giấy tờ cũng không đổi số, test này không phân
+        biệt được 'lọc đúng' với 'endpoint hỏng luôn trả hằng số' — nên phải
+        kiểm cả hai chiều."""
+        before = self._count()
+        self.env['hr.employee'].sudo().create({
+            'name': 'TP Vai Tro Badge', 'x_is_role_account': True,
+            'x_employment_status': False})
+        after_role = self._count()
+        self.assertEqual(
+            after_role, before,
+            'Tài khoản vai trò thiếu CCCD/MST/BHXH nhưng không phải hồ sơ '
+            'nhân sự — không được cộng vào badge "cần hoàn thiện hồ sơ".')
+        self.env['hr.employee'].sudo().create({'name': 'NV That Badge'})
+        after_real = self._count()
+        self.assertEqual(
+            after_real, before + 1,
+            'NV thật thiếu giấy tờ vẫn phải tăng badge — nếu không tăng, '
+            'endpoint có thể đang luôn trả hằng số chứ không thật sự đếm.')

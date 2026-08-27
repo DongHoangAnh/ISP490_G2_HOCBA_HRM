@@ -14,7 +14,7 @@ from odoo.http import request
 from .employee_xlsx import (
     EmployeeImportError, MAX_XLSX_BYTES, norm_header, parse_employees_xlsx,
 )
-from .main import SPA_ENABLED, _cap_import_emp
+from .main import ROLE_ACCOUNT_EXCLUDED, SPA_ENABLED, _cap_import_emp
 
 # Field được phép ghi từ file import. KHÔNG có wage — lương không nhập qua
 # đường này (spec §10), và không tin payload client gửi field ngoài danh sách.
@@ -173,8 +173,13 @@ class HocBaEmployeeImport(http.Controller):
         """
         if not _cap_import_emp(request.env):
             return 0
+        # Tài khoản vai trò (trưởng phòng) thiếu cả CCCD/MST/BHXH nên luôn
+        # bật x_needs_profile_completion, nhưng nó không phải hồ sơ nhân sự
+        # (spec 2026-08-27) và đã bị _emp_scope_domain loại khỏi danh sách
+        # Nhân viên — không loại nó ở đây thì badge đếm cả người HR bấm vào
+        # không tìm ra trong danh sách mở ra.
         return request.env['hr.employee'].sudo().search_count(
-            [('x_needs_profile_completion', '=', True)])
+            [('x_needs_profile_completion', '=', True), ROLE_ACCOUNT_EXCLUDED])
 
     @http.route('/hocba-hrm/api/employees/incomplete-count', auth='user',
                 type='http', methods=['GET'])
