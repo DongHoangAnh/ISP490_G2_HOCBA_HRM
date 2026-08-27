@@ -95,7 +95,7 @@ class TestProbationNotify(TransactionCase):
     def test_step_extend_notifies(self):
         # Tuần-2 Đạt rồi tháng-1 Gia hạn (→ mở tháng-2) → warning QL + NV
         self._steps()[0].action_evaluate('pass')
-        self._steps()[2].action_evaluate('extend')
+        self._steps()[2].action_evaluate('extend', extend_days=14)
         self.assertEqual(self._steps()[3].state, 'open')
         notifs = self._notifs('probation_extend')
         self.assertTrue(notifs)

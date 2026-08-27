@@ -227,7 +227,7 @@ class TestOnboardingEngine(TransactionCase):
     def test_eval_extend_to_extension_step(self):
         s = self._steps()
         s[0].action_evaluate('pass')
-        self._steps()[2].action_evaluate('extend')
+        self._steps()[2].action_evaluate('extend', extend_days=14)
         s = self._steps()
         self.assertEqual(s[2].state, 'done')
         self.assertEqual(s[2].result, 'extend')
@@ -237,7 +237,7 @@ class TestOnboardingEngine(TransactionCase):
     def test_eval_extend_in_place_when_no_extension_next(self):
         # tuần-2 extend → bước kế là task → giữ open + extend_count
         s = self._steps()
-        s[0].action_evaluate('extend')
+        s[0].action_evaluate('extend', extend_days=14)
         s = self._steps()
         self.assertEqual(s[0].state, 'open')
         self.assertEqual(s[0].extend_count, 1)
@@ -245,6 +245,84 @@ class TestOnboardingEngine(TransactionCase):
         # tái đánh giá pass sau đó vẫn chạy tiếp
         s[0].action_evaluate('pass')
         self.assertEqual(self._steps()[2].state, 'open')
+
+    # ---- Gia hạn phải CỘNG NGÀY (chốt với khách 2026-08-27) ----
+    # Trước bản này gia hạn không đụng ngày nào: bấm 2 lần rồi NV vẫn lên
+    # chính thức đúng ngày cũ, vì "ngày kết thúc thử việc" ở màn Nhận việc
+    # suy ra từ hạn muộn nhất của chuỗi mà hạn thì đóng băng lúc gán.
+    def test_extend_doi_han_buoc_nay_va_moi_buoc_sau(self):
+        s = self._steps()
+        cu = [x.due_date for x in s]
+        s[0].action_evaluate('extend', extend_days=14)
+        s = self._steps()
+        self.assertEqual(s[0].due_date, cu[0] + timedelta(days=14),
+                         'hạn bước đang gia hạn phải lùi ra')
+        self.assertEqual(s[2].due_date, cu[2] + timedelta(days=14))
+        self.assertEqual(s[3].due_date, cu[3] + timedelta(days=14))
+        self.assertEqual(s[0].extend_days_total, 14)
+
+    def test_extend_cong_don_nhieu_lan(self):
+        s = self._steps()
+        cu = s[0].due_date
+        cu_thang1 = s[2].due_date
+        s[0].action_evaluate('extend', extend_days=14)
+        self._steps()[0].action_evaluate('extend', extend_days=7)
+        s = self._steps()
+        self.assertEqual(s[0].due_date, cu + timedelta(days=21))
+        self.assertEqual(s[2].due_date, cu_thang1 + timedelta(days=21))
+        self.assertEqual(s[0].extend_count, 2)
+        self.assertEqual(s[0].extend_days_total, 21)
+
+    def test_extend_khong_doi_han_buoc_da_xong(self):
+        """Bước đã done là lịch sử — sửa hạn của nó là viết lại quá khứ."""
+        s = self._steps()
+        s[0].action_evaluate('pass')
+        han_da_xong = self._steps()[0].due_date
+        self._steps()[2].action_evaluate('extend', extend_days=10)
+        self.assertEqual(self._steps()[0].due_date, han_da_xong)
+
+    def test_extend_khong_doi_han_buoc_doc_lap(self):
+        """Gia hạn một kỳ đánh giá không có lý do gì làm chậm việc cấp máy."""
+        s = self._steps()
+        # auto_action phải tắt trước: _check_independent_flags cấm bước độc
+        # lập mang automation (nó mở ngay ngày đầu nên sẽ tự chạy).
+        s[1].sudo().write({'auto_action': 'none', 'is_independent': True,
+                           'due_date': self.emp.x_probation_start})
+        han_doc_lap = self._steps()[1].due_date
+        s[0].action_evaluate('extend', extend_days=14)
+        self.assertEqual(self._steps()[1].due_date, han_doc_lap)
+
+    def test_extend_sang_buoc_gia_han_cung_doi_han(self):
+        """Nhánh tháng-1 → tháng-2: bước gia hạn phải MỞ RA với hạn đã cộng,
+        không phải hạn cũ rồi mới sửa."""
+        s = self._steps()
+        s[0].action_evaluate('pass')
+        s = self._steps()
+        cu = s[3].due_date
+        s[2].action_evaluate('extend', extend_days=14)
+        s = self._steps()
+        self.assertEqual(s[3].state, 'open')
+        self.assertEqual(s[3].due_date, cu + timedelta(days=14))
+        self.assertEqual(s[2].extend_days_total, 14)
+
+    def test_extend_thieu_hoac_sai_so_ngay_bi_tu_choi(self):
+        s = self._steps()
+        for bad in (None, 0, -3, 366, 'abc', ''):
+            with self.assertRaises(ValidationError):
+                s[0].action_evaluate('extend', extend_days=bad)
+        # không được để lại dấu vết nào sau khi từ chối
+        s = self._steps()
+        self.assertEqual(s[0].extend_count, 0)
+        self.assertEqual(s[0].extend_days_total, 0)
+
+    def test_extend_buoc_khong_han_van_doi_buoc_sau(self):
+        s = self._steps()
+        s[0].sudo().due_date = False
+        cu_thang1 = s[2].due_date
+        s[0].action_evaluate('extend', extend_days=14)
+        s = self._steps()
+        self.assertFalse(s[0].due_date, 'không hạn thì vẫn không hạn')
+        self.assertEqual(s[2].due_date, cu_thang1 + timedelta(days=14))
 
     def test_eval_fail_starts_offboarding_and_skips(self):
         s = self._steps()
@@ -532,7 +610,7 @@ class TestOnboardingIndependentStep(TransactionCase):
         phải bước độc lập đứng giữa) nên không có bước gia hạn liền sau →
         giữ open + tăng extend_count."""
         s = self._steps()
-        s[0].action_evaluate('extend')
+        s[0].action_evaluate('extend', extend_days=14)
         s = self._steps()
         self.assertEqual(s[0].state, 'open')
         self.assertEqual(s[0].extend_count, 1)

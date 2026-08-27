@@ -37,6 +37,55 @@ const inp = {
   fontFamily: 'inherit',
 };
 
+/* yyyy-mm-dd + n ngày → yyyy-mm-dd. Dùng UTC để khỏi lệch 1 ngày khi máy ở
+   múi giờ âm (new Date('2026-07-25') là mốc UTC, getDate() lại theo giờ máy). */
+function addDays(iso, n) {
+  if (!iso) return null;
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/* Nội dung hộp xác nhận Gia hạn: nhập số ngày + xem trước hạn mới.
+   Nói rõ số ngày này cộng vào CẢ các bước sau, vì đó mới là thứ làm "ngày kết
+   thúc thử việc" ở màn Nhận việc lùi ra. */
+function ExtendFields({ step, days, setDays }) {
+  const n = Number(days);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 365;
+  const newDue = valid ? addDays(step.dueDate, n) : null;
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      <div>
+        Gia hạn bước <b>{step.name}</b> — cộng thêm số ngày vào hạn của bước
+        này <b>và mọi bước sau</b>.
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>Gia hạn thêm</span>
+        <input type="number" min={1} max={365} value={days}
+          onChange={(e) => setDays(e.target.value)}
+          style={{ ...inp, width: 90 }} />
+        <span style={{ fontSize: 12.5 }}>ngày</span>
+      </label>
+      {!valid && (
+        <div style={{ fontSize: 12, color: 'var(--red-600)' }}>
+          Nhập số nguyên từ 1 đến 365.
+        </div>
+      )}
+      {valid && step.dueDate && (
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          Hạn bước này: {fmtDate(step.dueDate)} → <b>{fmtDate(newDue)}</b>
+        </div>
+      )}
+      {valid && !step.dueDate && (
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          Bước này không đặt hạn nên hạn của nó giữ nguyên (không có gì để
+          cộng); các bước sau vẫn lùi thêm {n} ngày.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Khối hành động cho bước đang mở (canAct). ConfirmModal thay
    window.confirm (quy ước SPA từ đợt dọn timeoff). */
 function StepActions({ step, onDone }) {
@@ -44,6 +93,9 @@ function StepActions({ step, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'extend' | 'fail' | null
+  // Số ngày gia hạn — mặc định 14 (nửa tháng) chỉ là gợi ý cho đỡ gõ, HR sửa
+  // được. Backend mới là chỗ chốt khoảng hợp lệ.
+  const [days, setDays] = useState(14);
   const run = async (fn) => {
     setErr(null); setBusy(true);
     try { onDone(await fn()); } catch (e) {
@@ -54,7 +106,10 @@ function StepActions({ step, onDone }) {
     } finally { setBusy(false); }
   };
   const doEvaluate = (result) =>
-    run(() => evaluateOnbStep(step.id, { result, note: note.trim() }));
+    run(() => evaluateOnbStep(step.id, {
+      result, note: note.trim(),
+      ...(result === 'extend' ? { days: Number(days) } : {}),
+    }));
   const evaluate = (result) => {
     setErr(null);
     if (result === 'fail' && !note.trim()) {
@@ -99,10 +154,10 @@ function StepActions({ step, onDone }) {
       {err && <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red-600)' }}>{err}</div>}
       {confirm && (
         <ConfirmModal
-          title={confirm === 'fail' ? 'Xác nhận Không đạt' : 'Xác nhận Gia hạn'}
+          title={confirm === 'fail' ? 'Xác nhận Không đạt' : 'Gia hạn thử việc'}
           message={confirm === 'fail'
             ? `Đánh dấu KHÔNG ĐẠT bước "${step.name}" sẽ chuyển nhân viên sang offboarding. Tiếp tục?`
-            : `Gia hạn bước "${step.name}" sẽ kéo dài thử việc (mở bước gia hạn hoặc hẹn tái đánh giá). Tiếp tục?`}
+            : <ExtendFields step={step} days={days} setDays={setDays} />}
           confirmLabel={confirm === 'fail' ? 'Không đạt' : 'Gia hạn'}
           onConfirm={() => doEvaluate(confirm).then(() => setConfirm(null))}
           onClose={() => setConfirm(null)} />
@@ -335,6 +390,7 @@ export default function OnboardingStepsPanel({ det, isMgr, onUpdated }) {
                       <span className="faint" style={{ fontWeight: 500, fontSize: 11.5, marginLeft: 8 }}>
                         {s.stepType === 'evaluation' ? 'Đánh giá' : 'Việc cần làm'}
                         {s.extendCount > 0 ? ` · đã gia hạn ×${s.extendCount}` : ''}
+                        {s.extendDays > 0 ? ` (+${s.extendDays} ngày)` : ''}
                       </span>
                       {s.isIndependent && (
                         <span style={{ marginLeft: 8 }}>

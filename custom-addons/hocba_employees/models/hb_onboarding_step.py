@@ -1,5 +1,11 @@
+from datetime import timedelta
+
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessError, ValidationError
+
+# Trần cho một lần gia hạn. Không phải luật nghiệp vụ, chỉ là chặn gõ nhầm:
+# nhập 3650 vì thừa số 0 thì hạn nhảy 10 năm mà không ai nhận ra ngay.
+MAX_EXTEND_DAYS = 365
 
 STATE_SEL = [
     ('waiting', 'Chưa tới lượt'),
@@ -44,6 +50,10 @@ class HbOnboardingStep(models.Model):
         required=True, index=True)
     result = fields.Selection(RESULT_SEL, string='Kết quả')
     extend_count = fields.Integer(string='Số lần gia hạn tại chỗ', default=0)
+    extend_days_total = fields.Integer(
+        string='Tổng ngày đã gia hạn', default=0,
+        help='Cộng dồn số ngày HR đã gia hạn tại bước này. Số ngày đó đã được '
+             'cộng thẳng vào Hạn của bước này và mọi bước sau nó.')
     done_date = fields.Date(string='Ngày hoàn thành')
     done_by_id = fields.Many2one('res.users', string='Người thực hiện')
     result_note = fields.Text(string='Nhận xét')
@@ -181,13 +191,47 @@ class HbOnboardingStep(models.Model):
             '✅ Bước nhận việc "%s" hoàn thành.') % self.name)
         self._advance()
 
-    def action_evaluate(self, result, note=None, eval_date=None):
+    @staticmethod
+    def _clean_extend_days(value):
+        """Số ngày gia hạn HR nhập → int hợp lệ, hoặc ValidationError."""
+        try:
+            days = int(value)
+        except (TypeError, ValueError):
+            raise ValidationError(_('Cần nhập số ngày gia hạn.'))
+        if not 1 <= days <= MAX_EXTEND_DAYS:
+            raise ValidationError(_(
+                'Số ngày gia hạn phải từ 1 đến %s.') % MAX_EXTEND_DAYS)
+        return days
+
+    def _shift_later_dues(self, days):
+        """Dời hạn của mọi bước SAU bước này trong chuỗi, thêm `days` ngày.
+
+        Chỉ đụng bước chưa xong: bước đã done/skipped là lịch sử, sửa hạn của
+        nó là viết lại quá khứ. Bước ĐỘC LẬP nằm ngoài chuỗi (vd cấp thiết bị
+        làm việc) nên KHÔNG dời — gia hạn một kỳ đánh giá không có lý do gì
+        làm chậm việc cấp máy cho người ta. Bước không có hạn thì vẫn không có
+        hạn: cộng ngày vào "không hạn" là bịa ra một cái hạn chưa ai đặt."""
+        self.ensure_one()
+        chain = [s for s in self._chain() if not s.is_independent]
+        if self not in chain:
+            return
+        for step in chain[chain.index(self) + 1:]:
+            if step.state in ('waiting', 'open') and step.due_date:
+                step.sudo().due_date = step.due_date + timedelta(days=days)
+
+    def action_evaluate(self, result, note=None, eval_date=None,
+                        extend_days=None):
         """Ghi kết quả bước evaluation: pass / extend / fail.
 
         - pass + pass_completes → lên Chính thức, skip bước còn lại.
         - pass thường → mở bước kế (bước gia hạn kế tiếp bị skip).
-        - extend: bước kế là is_extension → done + mở bước đó (cổng tháng-1
-          cũ); không thì giữ open + extend_count++ (tái đánh giá — cổng
+        - extend: BẮT BUỘC kèm extend_days. Số ngày đó cộng vào hạn của bước
+          này (nếu nó còn mở) và hạn của mọi bước sau — nhờ vậy "ngày kết thúc
+          thử việc" ở màn Nhận việc (suy ra từ hạn muộn nhất) mới thực sự lùi
+          ra. Trước 2026-08-27 gia hạn KHÔNG đụng ngày nào: bấm gia hạn 2 lần
+          rồi vẫn lên chính thức đúng ngày cũ.
+          Bước kế là is_extension → done + mở bước đó (cổng tháng-1 cũ);
+          không thì giữ open + extend_count++ (tái đánh giá — cổng
           tuần-2/tháng-2 cũ).
         - fail → skip bước còn lại + khởi động offboarding (hành vi cũ)."""
         self.ensure_one()
@@ -206,24 +250,36 @@ class HbOnboardingStep(models.Model):
         emp = self.employee_id.sudo()
 
         if result == 'extend':
+            days = self._clean_extend_days(extend_days)
             nxt = self._next_waiting()
-            if nxt and nxt.is_extension:
-                # hành vi cổng tháng-1 cũ: done + mở bước gia hạn
-                self.sudo().write(dict(done_vals, state='done',
-                                       result='extend'))
-                self._advance()
-            else:
+            stays_open = not (nxt and nxt.is_extension)
+            # Dời hạn TRƯỚC khi đổi trạng thái: _advance() có thể mở bước kế,
+            # và bước đó phải mở ra với hạn ĐÃ cộng thêm, không phải hạn cũ.
+            if stays_open and self.due_date:
+                self.sudo().due_date = self.due_date + timedelta(days=days)
+            self._shift_later_dues(days)
+            vals = dict(done_vals,
+                        extend_days_total=self.extend_days_total + days)
+            if stays_open:
                 # hành vi cổng 2w/2m cũ: giữ open, hẹn tái đánh giá
-                self.sudo().write(dict(done_vals,
+                self.sudo().write(dict(vals,
                                        extend_count=self.extend_count + 1))
+            else:
+                # hành vi cổng tháng-1 cũ: done + mở bước gia hạn
+                self.sudo().write(dict(vals, state='done', result='extend'))
+                self._advance()
             if not self._skip_auto():
                 emp._hocba_notify_probation(
                     'probation_extend', 'warning',
                     _('Gia hạn thử việc: %s') % emp.name,
-                    body=_('Bước "%s" gia hạn.') % self.name,
+                    body=_('Bước "%s" gia hạn thêm %s ngày.')
+                         % (self.name, days),
                     include_employee=True)
+            han_moi = (_(' — hạn mới %s') % self.due_date
+                       if stays_open and self.due_date else '')
             emp.sudo().message_post(body=_(
-                '⏳ Bước "%s" GIA HẠN — tiếp tục thử việc.') % self.name)
+                '⏳ Bước "%s" GIA HẠN +%s ngày%s. Hạn các bước sau cũng lùi '
+                'thêm %s ngày.') % (self.name, days, han_moi, days))
             return
 
         self.sudo().write(dict(done_vals, state='done', result=result))

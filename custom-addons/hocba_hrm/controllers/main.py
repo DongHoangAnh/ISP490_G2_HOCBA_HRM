@@ -3396,6 +3396,7 @@ class HocBaHRM(http.Controller):
                 'id': s.id, 'name': s.name, 'stepType': s.step_type,
                 'state': s.state, 'result': s.result or '',
                 'extendCount': s.extend_count,
+                'extendDays': s.extend_days_total,
                 'dueDate': _d(s.due_date), 'doneDate': _d(s.done_date),
                 'doneBy': s.done_by_id.name or '',
                 'note': s.note or '', 'resultNote': s.result_note or '',
@@ -3496,7 +3497,8 @@ class HocBaHRM(http.Controller):
         try:
             step.with_user(request.env.user).action_evaluate(
                 result, note=(payload.get('note') or '').strip() or None,
-                eval_date=payload.get('date') or None)
+                eval_date=payload.get('date') or None,
+                extend_days=payload.get('days'))
         except (AccessError, ValidationError, UserError) as ex:
             request.env.cr.rollback()
             return request.make_json_response(
