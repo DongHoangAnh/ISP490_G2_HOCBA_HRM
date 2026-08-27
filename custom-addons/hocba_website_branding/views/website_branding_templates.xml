@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ FOOTER HỌC BÁ ═══════════════
+         Thay trọn khối #footer mặc định của Odoo. Kế thừa `website.layout` với
+         priority cao để chạy SAU `website.footer_custom` (priority 16) — dù
+         người dùng có đổi mẫu footer trong trình soạn thì bản này vẫn đè lên.
+         Phần CSS nằm ở static/src/scss/branding.scss (.hb-footer). -->
+    <template id="hb_website_footer" inherit_id="website.layout"
+              name="HB: Footer Học Bá" priority="90">
+        <xpath expr="//div[@id='footer']" position="replace">
+            <div id="footer" class="oe_structure oe_structure_solo text-break"
+                 t-ignore="true" t-if="not no_footer">
+                <section class="pt40 pb24" style="background-color:#8E0F12;"
+                         data-snippet="s_text_block" data-name="Footer Học Bá">
+                    <div class="container hb-footer">
+
+                        <div class="d-flex align-items-center mb-4 flex-wrap" style="gap:16px;">
+                            <img src="https://cdn-landing.hoc-ba.edu.vn/landing/1747153583987-logohocba.webp"
+                                 alt="Học Bá" style="height:56px;width:auto;" loading="lazy"/>
+                            <div class="hb-tagline">
+                                Học Bá – Hệ thống giáo dục Hán ngữ<br/>trực tuyến uy tín số 1 Việt Nam
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-lg-5 pb24">
+                                <h5>Thông tin liên hệ</h5>
+                                <div class="mb-3" style="max-width:440px;">
+                                    <iframe src="https://www.google.com/maps?q=H%E1%BB%8Dc%20B%C3%A1%20Education%2C%20257%20Gi%E1%BA%A3i%20Ph%C3%B3ng%2C%20H%C3%A0%20N%E1%BB%99i&amp;output=embed"
+                                            width="100%" height="220" class="hb-map" loading="lazy"
+                                            title="Bản đồ Học Bá Education"/>
+                                </div>
+                                <ul class="list-unstyled">
+                                    <li><i class="fa fa-map-marker fa-fw me-2"/>Toà Hoà Phát, 257 Giải Phóng, Bạch Mai, Hà Nội</li>
+                                    <li><i class="fa fa-envelope fa-fw me-2"/><a href="mailto:info@hoc-ba.edu.vn">info@hoc-ba.edu.vn</a></li>
+                                    <li><i class="fa fa-phone fa-fw me-2"/><a href="tel:0888861786">0888861786</a></li>
+                                    <li><i class="fa fa-clock-o fa-fw me-2"/>Thời gian làm việc: 8:00 – 18:30 (Thứ Hai đến Thứ Bảy)</li>
+                                </ul>
+                            </div>
+
+                            <div class="col-lg-3 offset-lg-1 pb24">
+                                <h5>Về Học Bá</h5>
+                                <ul class="list-unstyled">
+                                    <li><a href="https://hoc-ba.edu.vn/gioi-thieu" target="_blank" rel="noreferrer">Giới thiệu</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/chuyen-gia/gs-baozhang-he" target="_blank" rel="noreferrer">Cố vấn chuyên môn</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/doi-ngu-giang-vien" target="_blank" rel="noreferrer">Đội ngũ giảng viên</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/tin-tuc-su-kien" target="_blank" rel="noreferrer">Tin tức &amp; sự kiện</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/hoc-vien-diem-cao" target="_blank" rel="noreferrer">Học viên điểm cao</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/khoa-hoc-hsk" target="_blank" rel="noreferrer">Khóa học</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/lich-khai-giang" target="_blank" rel="noreferrer">Lịch khai giảng</a></li>
+                                </ul>
+
+                                <h5 class="mt-4">Kết nối với Học Bá</h5>
+                                <div class="d-flex flex-wrap" style="gap:10px;">
+                                    <a href="https://www.facebook.com/hocba.education" target="_blank" rel="noreferrer"
+                                       aria-label="Facebook"
+                                       class="hb-social d-inline-flex align-items-center justify-content-center rounded-circle"
+                                       style="background:#1877F2;"><i class="fa fa-facebook"/></a>
+                                    <a href="https://www.tiktok.com/@hocba.hsk" target="_blank" rel="noreferrer"
+                                       aria-label="TikTok"
+                                       class="hb-social d-inline-flex align-items-center justify-content-center rounded-circle"
+                                       style="background:#000;">
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+                                    </a>
+                                    <a href="https://www.instagram.com/hocba.education" target="_blank" rel="noreferrer"
+                                       aria-label="Instagram"
+                                       class="hb-social d-inline-flex align-items-center justify-content-center rounded-circle"
+                                       style="background:linear-gradient(45deg,#F58529,#DD2A7B,#8134AF);"><i class="fa fa-instagram"/></a>
+                                    <a href="https://www.youtube.com/@MarketingH%E1%BB%8DcB%C3%A1" target="_blank" rel="noreferrer"
+                                       aria-label="YouTube"
+                                       class="hb-social d-inline-flex align-items-center justify-content-center rounded-circle"
+                                       style="background:#FF0000;"><i class="fa fa-youtube-play"/></a>
+                                </div>
+                            </div>
+
+                            <div class="col-lg-3 pb24">
+                                <h5>Trung tâm hỗ trợ</h5>
+                                <ul class="list-unstyled">
+                                    <li><a href="https://hoc-ba.edu.vn/dieu-khoan-su-dung" target="_blank" rel="noreferrer">Điều khoản sử dụng</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/chinh-sach-bao-mat" target="_blank" rel="noreferrer">Chính sách bảo mật</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/chinh-sach-ban-quyen" target="_blank" rel="noreferrer">Chính sách bản quyền</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/cam-ket-dau-ra" target="_blank" rel="noreferrer">Cam kết đầu ra</a></li>
+                                    <li><a href="https://hoc-ba.edu.vn/lien-he" target="_blank" rel="noreferrer">Đối tác / Yêu cầu hợp tác</a></li>
+                                </ul>
+
+                                <h5 class="mt-4">Thông tin pháp lý</h5>
+                                <p class="mb-1">CÔNG TY CỔ PHẦN GD &amp; ĐT Học Bá</p>
+                                <p class="mb-0">Mã số thuế: 0110883975</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </xpath>
+    </template>
+
+    <!-- ═══════════════ SỐ ĐIỆN THOẠI / EMAIL TRÊN HEADER ═══════════════
+         Bản gốc của Odoo nhét cứng "+1 555-555-5556" và
+         "info@yourcompany.example.com". Thay bằng dữ liệu công ty
+         (data/branding_data.xml) để sau này đổi số chỉ cần sửa hồ sơ công ty. -->
+    <template id="hb_header_text_element" inherit_id="website.header_text_element"
+              name="HB: Lien he tren header">
+        <!-- Ban goc cua Odoo nhet cung so/email demo o 5 nhanh tuy chon giao
+             dien. Moi xpath duoi day bat DUNG mot the <a> con lai mang gia tri
+             demo (Odoo lay ket qua dau tien), theo thu tu tai lieu:
+               tel  #1 -> nhanh phone_mail
+               tel  #2 -> nhanh mail_stretched
+               tel  #3 -> nhanh mac dinh (t-else)
+               mail #1 -> nhanh phone_mail
+               mail #2 -> nhanh mail
+             Thay bang du lieu cong ty (data/branding_data.xml) de sau nay doi
+             so chi can sua ho so cong ty. `res_company` do website.layout dat. -->
+        <xpath expr="//a[@href='tel:+1 555-555-5556']" position="replace">
+            <a t-attf-href="tel:#{res_company.phone}" class="nav-link o_nav-link_secondary">
+                <small>
+                    <i class="fa fa-1x fa-fw fa-phone me-1"/>
+                    <span class="o_force_ltr" t-out="res_company.phone"/>
+                </small>
+            </a>
+        </xpath>
+        <xpath expr="//a[@href='tel:+1 555-555-5556']" position="replace">
+            <a t-attf-href="tel:#{res_company.phone}"
+               class="nav-link o_nav-link_secondary p-2 o_navlink_background_hover d-flex align-items-center h-100 text-reset">
+                <i class="fa fa-1x fa-fw fa-phone me-1"/>
+                <span class="o_force_ltr"><small t-out="res_company.phone"/></span>
+            </a>
+        </xpath>
+        <xpath expr="//a[@href='tel:+1 555-555-5556']" position="replace">
+            <a t-attf-href="tel:#{res_company.phone}" class="nav-link o_nav-link_secondary p-2">
+                <i class="fa fa-1x fa-fw fa-phone me-1"/>
+                <span class="o_force_ltr"><small t-out="res_company.phone"/></span>
+            </a>
+        </xpath>
+        <xpath expr="//a[@href='mailto:info@yourcompany.example.com']" position="replace">
+            <a t-attf-href="mailto:#{res_company.email}" class="nav-link o_nav-link_secondary">
+                <small>
+                    <i class="fa fa-1x fa-fw fa-envelope me-1"/>
+                    <t t-out="res_company.email"/>
+                </small>
+            </a>
+        </xpath>
+        <xpath expr="//a[@href='mailto:info@yourcompany.example.com']" position="replace">
+            <a t-attf-href="mailto:#{res_company.email}" class="nav-link o_nav-link_secondary">
+                <small><i class="fa fa-1x fa-fw fa-envelope me-1"/> <t t-out="res_company.email"/></small>
+            </a>
+        </xpath>
+    </template>
+
+    <!-- ═══════════════ DÒNG COPYRIGHT ═══════════════
+         `website.footer_copyright_company_name` (priority 15) thay tên công ty
+         động của Odoo bằng chữ "Company name" gõ cứng → footer hiện "Bản quyền
+         © Tên công ty". Trả lại tên công ty thật. -->
+    <template id="hb_footer_copyright_company_name" inherit_id="website.footer_copyright_company_name"
+              name="HB: Tên công ty ở dòng copyright">
+        <xpath expr="//footer//span[hasclass('o_footer_copyright_name')]" position="replace">
+            <span class="o_footer_copyright_name me-2 small">
+                Copyright © <span t-field="res_company.name" itemprop="name">Học Bá Education</span>
+            </span>
+        </xpath>
+    </template>
+
+    <!-- ═══════════════ ẨN &quot;Powered by Odoo&quot; ═══════════════ -->
+    <template id="hb_hide_brand_promotion" inherit_id="web.brand_promotion"
+              name="HB: ẩn brand promotion">
+        <xpath expr="//div[hasclass('o_brand_promotion')]" position="replace"/>
+    </template>
+
+</odoo>

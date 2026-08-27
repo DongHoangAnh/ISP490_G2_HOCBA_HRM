@@ -240,118 +240,24 @@ class TestAutoStage(TransactionCase):
         self._slot().write({'applicant_ids': [(4, a.id)]})
         self.assertGreater(len(a.message_ids), before)
 
-    # ── CRON-REC-002: qua giờ phỏng vấn ──────────────────────────────────────
+    # ── CRON-REC-002 đã gỡ ──────────────────────────────────────────────────
 
-    def _run_cron(self):
-        return self.env['hb.interview.slot']._cron_advance_past_interviews()
+    def test_42_cron_qua_gio_pv_da_go_han(self):
+        """Không còn cron quét slot quá khứ, và không để lại method mồ côi.
 
-    def test_30_past_slot_moves_interview_to_result(self):
-        a = self._applicant(self.st_interview)
-        self._slot(hours_from_now=-3, applicants=a)
-        self.assertEqual(self._run_cron(), 1)
-        self.assertEqual(a.stage_id, self.st_result)
-
-    def test_31_future_slot_untouched(self):
-        a = self._applicant(self.st_interview)
-        self._slot(hours_from_now=5, applicants=a)
-        self._run_cron()
-        self.assertEqual(a.stage_id, self.st_interview,
-                         'Chưa tới giờ PV thì không được đẩy bước')
-
-    def test_32_slot_still_running_untouched(self):
-        """Slot bắt đầu 30 phút trước, chưa kết thúc ⇒ vẫn đang phỏng vấn."""
-        a = self._applicant(self.st_interview)
-        self._slot(hours_from_now=-0.5, applicants=a)
-        self._run_cron()
-        self.assertEqual(a.stage_id, self.st_interview)
-
-    def test_33_applicant_not_in_interview_stage_untouched(self):
-        """Ứng viên còn ở "Lên lịch phỏng vấn" (xếp slot không đẩy bước này) thì
-        qua giờ slot cũng không bị cron kéo sang Kết quả — chỉ bước Phỏng vấn mới
-        là đầu vào hợp lệ của cron."""
-        a = self._applicant(self.st_sched)
-        self._slot(hours_from_now=-3, applicants=a)
-        self.assertEqual(a.stage_id, self.st_sched)
-        self._run_cron()
-        self.assertEqual(a.stage_id, self.st_sched,
-                         'Chỉ ứng viên đang ở bước Phỏng vấn mới bị đẩy')
-
-    def test_34_already_at_offer_not_pulled_back(self):
-        a = self._applicant(self.st_interview)
-        self._slot(hours_from_now=-3, applicants=a)
-        a.write({'interview_result': 'pass'})       # → Kết quả phỏng vấn
-        self.assertEqual(a.stage_id, self.st_result)
-        a.write({'stage_id': self.st_offer.id})     # HR tự kéo sang Gửi Offer
-        self._run_cron()
-        self.assertEqual(a.stage_id, self.st_offer)
-
-    def test_35_cron_is_idempotent(self):
-        a = self._applicant(self.st_interview)
-        self._slot(hours_from_now=-3, applicants=a)
-        self._run_cron()
-        self.assertEqual(self._run_cron(), 0, 'Lượt chạy sau không đụng ai nữa')
-        self.assertEqual(a.stage_id, self.st_result)
-
-    def test_36_absent_applicant_still_moves_to_result(self):
-        """Vắng mặt vẫn phải vào bước Kết quả để HR ghi nhận, không kẹt lại."""
-        a = self._applicant(self.st_interview)
-        a.write({'attendance_status': 'absent'})
-        self._slot(hours_from_now=-3, applicants=a)
-        self._run_cron()
-        self.assertEqual(a.stage_id, self.st_result)
-
-    def test_37_cron_then_result_pass_stays_at_result(self):
-        """Chuỗi đầy đủ: xếp slot → qua giờ → chấm Pass. Cron đã đưa sang Kết
-        quả phỏng vấn rồi nên chấm Pass không đẩy thêm; sang Offer là HR kéo."""
-        a = self._applicant(self.st_invite)
-        self._slot(hours_from_now=-3, applicants=a)
-        self.assertEqual(a.stage_id, self.st_interview)
-        self._run_cron()
-        self.assertEqual(a.stage_id, self.st_result)
-        a.write({'interview_result': 'pass'})
-        self.assertEqual(a.stage_id, self.st_result)
-
-    def test_38_cron_then_result_fail_stays(self):
-        a = self._applicant(self.st_invite)
-        self._slot(hours_from_now=-3, applicants=a)
-        self._run_cron()
-        a.write({'interview_result': 'fail'})
-        self.assertEqual(a.stage_id, self.st_result,
-                         'Fail thì đứng nguyên ở Kết quả phỏng vấn, HR tự quyết')
-
-    def test_41_result_before_cron_short_circuits(self):
-        """HR chấm kết quả ngay trong buổi PV (chưa tới lượt cron) ⇒ đã sang
-        Kết quả phỏng vấn, cron chạy sau không đụng nữa."""
-        a = self._applicant(self.st_invite)
-        self._slot(hours_from_now=-3, applicants=a)
-        a.write({'interview_result': 'potential'})
-        self.assertEqual(a.stage_id, self.st_result)
-        self.assertEqual(self._run_cron(), 0)
-        self.assertEqual(a.stage_id, self.st_result)
-
-    def test_40_cron_record_wired_correctly(self):
-        """Bản ghi CRON-REC-002 phải tồn tại và gọi đúng model/method.
-
-        Sai `model_id` hay gõ nhầm tên method thì XML vẫn load êm, cron chỉ nổ
-        lúc chạy nền lúc 30 phút sau — không ai thấy. Chốt bằng test.
+        Yêu cầu 2026-08-26: bỏ hẳn tự-động "qua giờ PV → Kết quả phỏng vấn".
+        Bước đó nay CHỈ chạy khi HR điền Kết quả PV (test_12) — ai chưa chấm thì
+        đứng yên ở Phỏng vấn, không bị máy đẩy sau lưng. Cron cũ còn quét TOÀN BỘ
+        slot quá khứ mỗi 30 phút nên càng chạy càng nặng.
         """
-        cron = self.env.ref(
-            'hocba_recruitments.cron_recruitment_interview_passed',
-            raise_if_not_found=False)
-        self.assertTrue(cron, 'Thiếu bản ghi cron trong ir_cron_data.xml')
-        self.assertEqual(cron.model_id.model, 'hb.interview.slot')
-        self.assertEqual(cron.state, 'code')
-        self.assertIn('_cron_advance_past_interviews', cron.code)
-        self.assertTrue(cron.active)
-        self.assertTrue(hasattr(self.env[cron.model_id.model],
-                                '_cron_advance_past_interviews'))
-
-    def test_39_cron_posts_chatter_note(self):
-        a = self._applicant(self.st_interview)
-        self._slot(hours_from_now=-3, applicants=a)
-        before = len(a.message_ids)
-        self._run_cron()
-        self.assertGreater(len(a.message_ids), before)
+        self.assertFalse(
+            self.env.ref('hocba_recruitments.cron_recruitment_interview_passed',
+                         raise_if_not_found=False),
+            'Bản ghi cron phải được gỡ khỏi ir_cron_data.xml')
+        self.assertFalse(
+            hasattr(self.env['hb.interview.slot'],
+                    '_cron_advance_past_interviews'),
+            'Method của cron phải xoá theo, đừng để lại code chết')
 
 
 @tagged('post_install', '-at_install')

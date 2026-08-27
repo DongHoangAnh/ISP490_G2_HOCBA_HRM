@@ -1,0 +1,49 @@
+// Màu thương hiệu Học Bá. Trước đây nằm trong `website.custom_code_head` của DB
+// (185 ký tự CSS gõ tay trong Cài đặt Website) → mất khi dựng DB mới.
+$hb-red: #8E0F12;
+$hb-red-dark: #6F0B0E;
+
+// Nút "Ứng tuyển" / "Nộp hồ sơ" dùng .btn-primary sẵn có của Odoo.
+.btn-primary {
+    background-color: $hb-red !important;
+    border-color: $hb-red !important;
+
+    &:hover, &:focus, &:active {
+        background-color: $hb-red-dark !important;
+        border-color: $hb-red-dark !important;
+    }
+}
+
+// Footer đỏ. Trước đây là thẻ <style> nhúng thẳng trong arch của view footer.
+.hb-footer {
+    color: #fff;
+
+    a { color: #fff !important; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    h5 {
+        color: #fff;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        margin-bottom: 14px;
+    }
+
+    ul li { margin-bottom: 9px; }
+
+    .hb-social {
+        width: 42px;
+        height: 42px;
+        color: #fff !important;
+    }
+
+    .hb-tagline {
+        border-left: 3px solid #fff;
+        padding-left: 16px;
+        font-weight: 800;
+        text-transform: uppercase;
+        line-height: 1.4;
+    }
+
+    .hb-map { border: 0; border-radius: 10px; }
+}

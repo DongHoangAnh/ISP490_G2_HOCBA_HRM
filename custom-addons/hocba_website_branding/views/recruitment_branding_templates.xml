@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ TRANG CHI TIẾT TIN TUYỂN DỤNG ═══════════════
+         Đổi "Apply Now!" → "Ứng tuyển". Màu đỏ #8E0F12 do .btn-primary trong
+         branding.scss lo, nên giữ nguyên class của Odoo (không nhét style
+         inline như bản làm bằng trình soạn website). -->
+    <template id="hb_job_detail" inherit_id="website_hr_recruitment.detail"
+              name="HB: Trang chi tiết tin tuyển dụng">
+        <xpath expr="//div[hasclass('col-md-3')]//a[@role='button']" position="replace">
+            <a role="button" t-attf-href="/jobs/apply/#{slug(job)}" class="btn btn-primary btn-lg">Ứng tuyển</a>
+        </xpath>
+        <xpath expr="//section[hasclass('o_job_bottom_bar')]//a[@role='button']" position="replace">
+            <a role="button" t-attf-href="/jobs/apply/#{slug(job)}" class="btn btn-primary btn-lg">Ứng tuyển</a>
+        </xpath>
+    </template>
+
+    <!-- ═══════════════ FORM NỘP HỒ SƠ ═══════════════
+         · Bỏ hẳn ô LinkedIn (ứng viên Học Bá không dùng).
+         · CV thành BẮT BUỘC.
+         · Nhãn/nút sang tiếng Việt.
+
+         BA CÁI BẪY JS ở form này (đã lần lượt gặp và kiểm chứng trên máy, đừng
+         "sửa lại cho gọn" nếu chưa mở form.js và hr_recruitment_form.js):
+         1. Ẩn field bằng `d-none` KHÔNG ăn: website/…/s_website_form/form.js
+            buộc lại class này theo hàm isFieldVisible() ngay khi tải trang.
+         2. Đặt `required` cứng cho ô CV cũng KHÔNG ăn: interaction
+            website_hr_recruitment/…/hr_recruitment_form.js gắn
+            `t-att-required` vào #recruitment6 nên nó ghi đè attribute trong
+            arch. Bù lại, chính interaction đó bắt buộc "phải có CV HOẶC
+            LinkedIn" lúc bấm nút — không còn LinkedIn thì CV thành bắt buộc,
+            đúng điều mình cần. Ở đây chỉ giữ phần hiển thị: class
+            s_website_form_required + dấu * trên nhãn.
+         3. Vì vậy phải XOÁ ô LinkedIn chứ không phải ẩn: ẩn thì nó vẫn là một
+            input `required` nhưng vô hình → trình duyệt chặn submit mà không
+            hiện được thông báo lỗi (không focus được vào field ẩn), người dùng
+            bấm "Nộp hồ sơ" và không thấy gì xảy ra. Xoá hẳn thì
+            `this.linkedinInputEl` = null, interaction đã có nhánh xử lý null. -->
+    <template id="hb_job_apply" inherit_id="website_hr_recruitment.apply"
+              name="HB: Form nộp hồ sơ">
+        <xpath expr="//input[@id='recruitment4']/ancestor::div[@data-type='char'][1]" position="replace"/>
+
+        <xpath expr="//div[@data-type='binary']" position="attributes">
+            <attribute name="class" add="s_website_form_required" separator=" "/>
+        </xpath>
+        <xpath expr="//label[@for='recruitment6']/span[hasclass('s_website_form_label_content')]" position="replace">
+            <span class="s_website_form_label_content">CV của bạn</span>
+            <span class="s_website_form_mark"> *</span>
+        </xpath>
+        <!-- Bỏ dòng "Provide either a resume file or a linkedin profile" — không
+             còn đúng khi ô LinkedIn đã ẩn. -->
+        <xpath expr="//input[@id='recruitment6']/following-sibling::span[hasclass('text-muted')]" position="replace"/>
+
+        <xpath expr="//a[@id='apply-btn']" position="replace">
+            <a href="#" role="button" class="btn btn-primary btn-lg s_website_form_send" id="apply-btn">Nộp hồ sơ</a>
+        </xpath>
+    </template>
+
+    <!-- ═══════════════ CỘT PHẢI TRANG /jobs ═══════════════
+         Giới thiệu Học Bá thay đoạn "We are a team of passionate people…" và
+         thông tin liên hệ thật thay số demo. -->
+    <template id="hb_job_right_side_bar" inherit_id="website_hr_recruitment.job_right_side_bar"
+              name="HB: Cột phải trang tuyển dụng">
+        <xpath expr="//div[@id='jobs_grid_right']//img" position="attributes">
+            <attribute name="alt">Về Học Bá</attribute>
+        </xpath>
+        <xpath expr="//div[@id='jobs_grid_right']//p" position="replace">
+            <p class="mt24 mb8">
+                Học Bá Education là trung tâm tiếng Trung đồng hành cùng học viên chinh phục
+                HSK/TOCFL và giao tiếp tự tin, với đội ngũ giảng viên tận tâm và lộ trình học
+                cá nhân hoá.
+            </p>
+        </xpath>
+        <xpath expr="//div[@id='jobs_grid_right']//ul[hasclass('list-unstyled')]" position="replace">
+            <ul class="list-unstyled text-nowrap">
+                <li><i class="fa fa-comment fa-fw me-2"/><span><a href="/contactus">Liên hệ</a></span></li>
+                <li><i class="fa fa-envelope fa-fw me-2"/><span><a t-attf-href="mailto:#{res_company.email}" t-out="res_company.email"/></span></li>
+                <li><i class="fa fa-phone fa-fw me-2"/><span class="o_force_ltr"><a t-attf-href="tel:#{res_company.phone}" t-out="res_company.phone"/></span></li>
+            </ul>
+        </xpath>
+    </template>
+
+</odoo>
