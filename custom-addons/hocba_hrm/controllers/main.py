@@ -1622,21 +1622,34 @@ def _emp_scope_domain(env):
     Các điểm gọi dịch domain này sang tiền tố employee_id.* bằng vòng lặp
     `for field, op, val in ...` vẫn đúng: tuple mới sinh ra
     ('employee_id.x_is_role_account', '=', False).
+
+    Hàm này LUÔN trả về một list MỚI (không phải hằng số module-level dùng
+    chung) — nên điểm gọi được phép .append() thẳng vào kết quả (vd dòng ~906)
+    mà không sợ ghi đè chéo giữa các request. Đừng "dọn dẹp" bằng cách trả về
+    một biến toàn cục đã tính sẵn; hai request chạy cùng lúc sẽ append vào
+    chung một list và làm hỏng domain của nhau.
     """
     user = env.user
+    # Thêm vế thứ hai vào base ⇒ PHẢI sửa _dash_scope_emp_ids (so
+    # dom == [ROLE_ACCOUNT_EXCLUDED]).
     base = [ROLE_ACCOUNT_EXCLUDED]
     if (user.has_group('base.group_system')
             or user.has_group('hr.group_hr_user')
             or user.has_group('hr.group_hr_manager')):
         return base
     if user.has_group('hocba_employees.group_hocba_giaovu'):
+        # base ở đây thực ra thừa: tài khoản vai trò không có x_employee_type_id
+        # nên đã bị loại sẵn bởi vế 'code'='teacher' phía sau. Giữ base là
+        # phòng thủ chiều sâu, CÓ test đối xứng (xem
+        # test_role_account.TestRoleAccount.test_giao_vu_khong_thay_tai_khoan_vai_tro).
         return base + [('x_employee_type_id.code', '=', 'teacher')]
     dept_ids = _managed_department_ids(env, user.employee_id)
     if dept_ids:
         return base + [('department_id', 'in', dept_ids)]
     # Giữ NGUYÊN [('id','=',0)]: đây là domain "không thấy gì cả", thêm điều
-    # kiện nữa là thừa. Ngoài ra _dashboard_stats và api_dashboard_* nhận diện
-    # "không có quyền" bằng cách so bằng đúng literal này.
+    # kiện nữa là thừa. _dashboard_stats nhận diện "không có quyền" bằng cách
+    # so trực tiếp với đúng literal này; api_dashboard_attendance/timeoff nhận
+    # diện gián tiếp qua _dash_scope_emp_ids(...) == [] (xem hàm đó).
     return [('id', '=', 0)]
 
 
@@ -2624,13 +2637,25 @@ def _m_label(y, m):
 
 def _dash_scope_emp_ids(env):
     """Phạm vi NV cho tab Chấm công/Nghỉ phép: None = tất cả (HR/Admin);
-    [] = không có quyền; list id = giới hạn theo vai trò (trưởng phòng/giáo vụ)."""
+    [] = không có quyền; list id = giới hạn theo vai trò (trưởng phòng/giáo vụ).
+
+    Giới hạn đã biết: trả None cho HR nghĩa là 2 tab Chấm công/Nghỉ phép của
+    dashboard KHÔNG lọc tài khoản vai trò ra khi user là HR (trong khi
+    _dashboard_stats và các vai trò khác — trưởng phòng, giáo vụ — thì có, vì
+    chúng đi qua nhánh liệt kê id ở dưới). Thực tế vô hại: tài khoản vai trò
+    không chấm công được và không được cấp phép năm nên không tự xuất hiện
+    trong dữ liệu 2 tab này, nhưng đây là một bất nhất cần biết nếu sau này
+    thêm nguồn dữ liệu khác cho 2 tab đó.
+    """
     dom = _emp_scope_domain(env)
     # "HR/Admin = tất cả" trước đây nhận ra bằng domain RỖNG. Từ khi domain luôn
     # mang mệnh đề loại tài khoản vai trò, domain của HR không còn rỗng — phải so
     # với đúng mệnh đề đó. Không so thì HR rơi xuống nhánh liệt kê id, và một DB
     # chưa có nhân viên nào sẽ trả 403 thay vì dashboard trống.
     if not dom or dom == [ROLE_ACCOUNT_EXCLUDED]:
+        # `not dom` (thủ sẵn): không nhánh nào của _emp_scope_domain còn trả
+        # [] — nó luôn trả ít nhất [ROLE_ACCOUNT_EXCLUDED]. Giữ lại để phòng
+        # thủ, không phải đường đang thực sự chạy.
         return None
     if dom == [('id', '=', 0)]:
         return []

@@ -15,7 +15,8 @@ from odoo.tests.common import TransactionCase
 from odoo.tests import tagged
 
 from odoo.addons.hocba_hrm.controllers.main import (
-    _dept_create, _dept_update, _emp_scope_domain, _account_list)
+    _dept_create, _dept_update, _emp_scope_domain, _account_list,
+    _user_can_manage)
 
 
 @tagged('post_install', '-at_install')
@@ -223,9 +224,16 @@ class TestRoleAccount(TransactionCase):
         found = env['hr.employee'].sudo().search(_emp_scope_domain(env))
         self.assertIn(that, found)
 
-    def test_tai_khoan_vai_tro_van_duyet_duoc_phong_minh(self):
-        """Quyền đến từ _managed_department_ids (search trên hr.department),
-        không từ việc bản thân nằm trong danh sách NV."""
+    def test_tai_khoan_vai_tro_van_quan_ly_duoc_phong_minh(self):
+        """Chứng minh 3 điều cho tài khoản vai trò đăng nhập bằng chính nó:
+        (1) vẫn thấy NV thật trong phòng mình — quyền đến từ
+        _managed_department_ids (search trên hr.department), không từ việc
+        bản thân nằm trong danh sách NV; (2) không thấy CHÍNH NÓ trong danh
+        sách đó — _dept_new_manager gán department_id=dept.id cho tài khoản
+        vai trò nên nó khớp vế ('department_id','in',dept_ids), thứ duy nhất
+        loại nó ra là ROLE_ACCOUNT_EXCLUDED; (3) _user_can_manage (cổng thật
+        sự mở hàng đợi duyệt, qua _is_dept_manager) không bị ăn theo domain
+        danh sách NV — nó suy ra thẳng từ hr.department.manager_id."""
         dept, emp = self._create_dept(name='Phong Quyen', login='tp_role_6')
         nv = self.env['hr.employee'].sudo().create({
             'name': 'NV Duoi Quyen', 'department_id': dept.id})
@@ -234,3 +242,30 @@ class TestRoleAccount(TransactionCase):
         self.assertIn(
             nv, thay_duoc,
             'Tài khoản vai trò phải vẫn thấy NV phòng mình.')
+        self.assertNotIn(emp, thay_duoc,
+                         'Tài khoản vai trò không thấy chính nó trong danh sách phòng.')
+        self.assertTrue(_user_can_manage(env), 'Quyền duyệt không được suy giảm.')
+
+    def test_giao_vu_khong_thay_tai_khoan_vai_tro(self):
+        """Nhánh giáo vụ của _emp_scope_domain nối thêm base (đã có
+        ROLE_ACCOUNT_EXCLUDED) trước vế ('x_employee_type_id.code','=',
+        'teacher') — hôm nay vế teacher đã tự loại tài khoản vai trò (nó
+        không có x_employee_type_id), nên base ở nhánh này là phòng thủ
+        chiều sâu. Test đối xứng: ép tài khoản vai trò MANG loại giáo viên,
+        để nếu ai đó lỡ xoá ROLE_ACCOUNT_EXCLUDED khỏi base thì test này đỏ
+        thay vì im lặng."""
+        _dept, emp = self._create_dept(name='Phong GV', login='tp_role_7')
+        teacher_type = self.env.ref('hocba_employees.employee_type_teacher')
+        emp.sudo().write({'x_employee_type_id': teacher_type.id})
+        gu = self.env.ref('base.group_user').id
+        gv_user = self.env['res.users'].create({
+            'name': 'GV Role Test', 'login': 'gv_role_test',
+            'group_ids': [(6, 0, [
+                gu, self.env.ref(
+                    'hocba_employees.group_hocba_giaovu').id])]})
+        env = self.env(user=gv_user)
+        thay_duoc = env['hr.employee'].sudo().search(_emp_scope_domain(env))
+        self.assertNotIn(
+            emp, thay_duoc,
+            'Giáo vụ không được thấy tài khoản vai trò dù nó mang loại '
+            'giáo viên.')
