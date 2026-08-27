@@ -132,3 +132,66 @@ class TestOnboardingFinalize(TransactionCase):
             self.hr_user)._hocba_onboarding_can_finalize()
         self.assertTrue(ok)
         self.assertFalse(reason)
+
+    # ---- Chốt khách 2026-08-27 (bản 2): văn phòng cũng đi đường NÚT ----
+    def test_office_seed_chain_does_not_auto_promote(self):
+        """Quy trình văn phòng seed: Đạt tháng-2 chỉ là XONG BƯỚC.
+
+        Trước bản này tháng-2 mang cờ pass_completes nên Đạt là lên chính
+        thức luôn, HR không có chỗ nào chốt lại — nút "Chuyển chính thức"
+        vì thế không bao giờ hiện ra với nhân viên văn phòng."""
+        emp = self.env['hr.employee'].create({
+            'name': 'NV Văn phòng', 'x_position_type': 'staff',
+            'x_work_form': 'offline',
+            'identification_id': '017788990204',
+            'x_pit_code': '8017788994',
+            'x_social_insurance_no': '0117788994',
+            'x_employment_status': 'probation',
+            'x_probation_start': fields.Date.today() - timedelta(days=60)})
+        self.assertEqual(emp.x_onboarding_template_id,
+                         self.env.ref('hocba_employees.onb_template_office'))
+
+        def steps():
+            return emp.x_onboarding_step_ids.sorted(
+                lambda s: (s.sequence, s.id))
+
+        steps()[0].action_evaluate('pass')   # ĐG tuần-2
+        steps()[2].action_evaluate('pass')   # ĐG tháng-1
+        steps()[3].action_evaluate('pass')   # ĐG tháng-2
+        self.assertEqual(steps()[3].state, 'done')
+        self.assertEqual(emp.x_employment_status, 'probation')
+
+    def test_open_independent_step_does_not_block_button(self):
+        """Bước độc lập (vd cấp thiết bị) còn dở KHÔNG chặn nút.
+
+        Nó nằm ngoài chuỗi — nhánh tự động (pass_completes) xưa nay vẫn cho
+        NV lên chính thức khi nó còn mở, nên nút thủ công phải xử như vậy."""
+        tpl = self.env['hb.onboarding.template'].create({
+            'name': 'TPL Có bước độc lập', 'apply_position_types': 'ctv',
+            'sequence': 2,
+            'step_ids': [
+                (0, 0, {'name': 'Đánh giá', 'step_type': 'evaluation',
+                        'sequence': 1}),
+                (0, 0, {'name': 'Cấp thiết bị', 'step_type': 'task',
+                        'sequence': 2, 'is_independent': True}),
+            ]})
+        emp = self.env['hr.employee'].with_context(
+            hocba_no_onb_assign=True).create({
+                'name': 'NV Bước độc lập', 'x_position_type': 'ctv',
+                'identification_id': '017788990205',
+                'x_pit_code': '8017788995',
+                'x_social_insurance_no': '0117788995',
+                'x_employment_status': 'probation',
+                'x_probation_start': fields.Date.today() - timedelta(days=30)})
+        emp._hocba_assign_onboarding(template=tpl)
+        steps = emp.x_onboarding_step_ids.sorted(lambda s: (s.sequence, s.id))
+        steps[0].action_evaluate('pass')
+        self.assertEqual(steps[1].state, 'open')
+
+        ok, reason = emp.with_user(
+            self.hr_user)._hocba_onboarding_can_finalize()
+        self.assertTrue(ok, reason)
+        emp.with_user(self.hr_user).action_hocba_finalize_onboarding()
+        self.assertEqual(emp.x_employment_status, 'official')
+        # Lên chính thức không được âm thầm đóng việc cấp thiết bị hộ HR.
+        self.assertEqual(steps[1].state, 'open')

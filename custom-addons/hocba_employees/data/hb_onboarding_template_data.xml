@@ -48,7 +48,11 @@
        tháng-1 được đánh giá sớm. Vì thế tháng-1 KHÔNG mang pass_completes
        (Đạt chỉ mở tháng-2), và tháng-2 KHÔNG còn là bước gia hạn — để
        is_extension thì _advance() bỏ qua nó mỗi khi tháng-1 Đạt, đúng cái
-       làm NV lên chính thức sau 1 tháng. -->
+       làm NV lên chính thức sau 1 tháng.
+       Bổ sung cùng ngày: tháng-2 cũng KHÔNG mang pass_completes. Đạt tháng-2
+       chỉ là xong bước cuối; HR bấm "Chuyển chính thức" mới lên official —
+       giống hệt quy trình Giáo viên, để HR còn chỗ soát lại trước khi chốt
+       biên chế. -->
   <record id="onb_tpl_vp_step3" model="hb.onboarding.template.step">
     <field name="template_id" ref="onb_template_office"/>
     <field name="sequence">3</field>
@@ -62,6 +66,5 @@
     <field name="name">Đánh giá tháng-2</field>
     <field name="step_type">evaluation</field>
     <field name="due_days">60</field>
-    <field name="pass_completes" eval="True"/>
   </record>
 </odoo>

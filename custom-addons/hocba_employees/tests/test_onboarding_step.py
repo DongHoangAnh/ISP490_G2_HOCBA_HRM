@@ -448,7 +448,10 @@ class TestOnboardingEngine(TransactionCase):
         # chính là lý do trước đây không ai đi tới tháng-2).
         self.assertFalse(steps[2].pass_completes)
         self.assertFalse(steps[3].is_extension)
-        self.assertTrue(steps[3].pass_completes)
+        # Chốt khách 2026-08-27 (bản 2): tháng-2 Đạt cũng KHÔNG tự lên chính
+        # thức — chuỗi hết bước rồi HR bấm "Chuyển chính thức", giống hệt
+        # quy trình Giáo viên.
+        self.assertFalse(steps[3].pass_completes)
         # Khách 2026-08-07: cấp thiết bị tách khỏi chuỗi, làm lúc nào cũng
         # được → độc lập và KHÔNG automation (nếu không nó tự chạy ngày đầu).
         self.assertTrue(steps[1].is_independent)

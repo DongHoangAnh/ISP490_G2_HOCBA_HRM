@@ -262,10 +262,15 @@ function TemplatePicker({ empId, currentId, onDone }) {
 }
 
 /* Chốt hoàn tất nhận việc → Chính thức. Chỉ hiện khi backend trả canFinalize
-   (HR Manager + chuỗi đã xong, không bước nào Không đạt). Cần thiết vì quy
-   trình không có bước "Đạt → lên chính thức" — như Thử việc Giáo viên — thì
-   chạy hết chuỗi cũng không có gì chuyển trạng thái nhân sự. */
-function FinalizeButton({ empId, onDone }) {
+   (HR Manager + mọi bước trong chuỗi đã xong, không bước nào Không đạt).
+   Cần thiết vì quy trình không có bước "Đạt → lên chính thức" — Thử việc
+   Giáo viên, và Thử việc NV văn phòng từ 2026-08-27 — thì chạy hết chuỗi
+   cũng không có gì chuyển trạng thái nhân sự.
+
+   `pendingIndependent`: tên các bước ngoài chuỗi còn dở (vd cấp thiết bị).
+   Chúng KHÔNG chặn nút, nhưng phải nói ra — không thì HR tưởng bấm xong là
+   mọi việc đã khép lại. */
+function FinalizeButton({ empId, onDone, pendingIndependent = [] }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -282,11 +287,17 @@ function FinalizeButton({ empId, onDone }) {
     <div style={{ marginTop: 14, padding: '12px 16px', background: 'var(--green-bg)', border: '1px solid var(--border)', borderRadius: 11 }}>
       <div className="between" style={{ flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 13 }}>
-          <b>Đã xong toàn bộ bước nhận việc.</b>
+          <b>Đã xong toàn bộ đánh giá thử việc.</b>
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
             Quy trình này không có bước tự chuyển trạng thái — HR chốt để nhân
             viên lên Chính thức.
           </div>
+          {pendingIndependent.length > 0 && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              Còn chưa xong: {pendingIndependent.join(', ')} — không chặn việc
+              lên Chính thức.
+            </div>
+          )}
         </div>
         <button className="btn btn-primary btn-sm" disabled={busy}
           style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
@@ -427,7 +438,11 @@ export default function OnboardingStepsPanel({ det, isMgr, onUpdated }) {
       </div>
 
       {onb.canFinalize && onUpdated && (
-        <FinalizeButton empId={det.id} onDone={patch} />
+        <FinalizeButton empId={det.id} onDone={patch}
+          pendingIndependent={steps
+            .filter((s) => s.isIndependent
+              && s.state !== 'done' && s.state !== 'skipped')
+            .map((s) => s.name)} />
       )}
 
       {onb.officialDate && (

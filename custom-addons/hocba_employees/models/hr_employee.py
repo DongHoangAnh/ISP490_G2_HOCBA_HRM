@@ -734,16 +734,25 @@ class HrEmployee(models.Model):
 
         Chuỗi chạy hết mà không bước nào mang cờ pass_completes thì
         `_advance` chỉ bắn chuông rồi dừng — không có đường nào lên official
-        (vd quy trình Giáo viên: thử giảng → ký hợp đồng). Đây là cửa để HR
-        Manager tự chốt, nên nó phải chặt đúng bằng quy trình: chỉ mở khi
-        mọi bước đã xong và không bước nào Không đạt."""
+        (quy trình Giáo viên: thử giảng → ký hợp đồng; quy trình Văn phòng từ
+        2026-08-27: tuần-2 → tháng-1 → tháng-2). Đây là cửa để HR Manager tự
+        chốt, nên nó phải chặt đúng bằng quy trình: chỉ mở khi mọi bước
+        TRONG CHUỖI đã xong và không bước nào Không đạt.
+
+        Bước độc lập (vd "Cấp thiết bị làm việc") nằm ngoài chuỗi nên không
+        tính: nhánh tự động `pass_completes` xưa nay vẫn cho NV lên chính
+        thức khi nó còn mở, chặn ở đây là hai đường cùng một việc lại đòi hai
+        điều kiện khác nhau — và cấp máy chậm vài ngày thì không phải lý do
+        giữ người ta ở diện thử việc."""
         self.ensure_one()
         if self.x_employment_status != 'probation':
             return False, _('Nhân viên không ở trạng thái Thử việc.')
         steps = self.sudo().x_onboarding_step_ids
         if not steps:
             return False, _('Nhân viên chưa được gán quy trình nhận việc.')
-        pending = steps.filtered(lambda s: s.state not in ('done', 'skipped'))
+        pending = steps.filtered(
+            lambda s: s.state not in ('done', 'skipped')
+            and not s.is_independent)
         if pending:
             return False, _('Còn %(n)s bước chưa xong: %(names)s.') % {
                 'n': len(pending),

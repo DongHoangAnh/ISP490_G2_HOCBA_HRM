@@ -76,9 +76,14 @@ class TestProbationNotify(TransactionCase):
         self.assertEqual(len(self._notifs('probation_fail')), before)
 
     def test_step_pass_notifies(self):
-        # Tuần-2 Đạt (thiết bị auto) rồi tháng-1 Đạt → Chính thức + success
+        # Đạt hết tuần-2 → tháng-1 → tháng-2 thì chuỗi mới xong, và từ
+        # 2026-08-27 chính HR bấm "Chuyển chính thức" mới lên official →
+        # chuông success đi kèm nút đó, không đi kèm bước đánh giá cuối.
         self._steps()[0].action_evaluate('pass')
         self._steps()[2].action_evaluate('pass')
+        self._steps()[3].action_evaluate('pass')
+        self.assertEqual(self.emp.x_employment_status, 'probation')
+        self.emp.action_hocba_finalize_onboarding()
         self.assertEqual(self.emp.x_employment_status, 'official')
         notifs = self._notifs('probation_pass')
         self.assertTrue(notifs)
@@ -93,10 +98,14 @@ class TestProbationNotify(TransactionCase):
         self.assertEqual(mgr_n.target_view, 'employees')
 
     def test_step_extend_notifies(self):
-        # Tuần-2 Đạt rồi tháng-1 Gia hạn (→ mở tháng-2) → warning QL + NV
+        # Tuần-2 Đạt rồi tháng-1 Gia hạn → warning QL + NV. Từ 2026-08-27
+        # tháng-2 KHÔNG còn là bước gia hạn nên tháng-1 giữ nguyên 'open' để
+        # đánh giá lại, chứ không đóng lại để mở bước sau.
         self._steps()[0].action_evaluate('pass')
         self._steps()[2].action_evaluate('extend', extend_days=14)
-        self.assertEqual(self._steps()[3].state, 'open')
+        self.assertEqual(self._steps()[2].state, 'open')
+        self.assertEqual(self._steps()[2].extend_count, 1)
+        self.assertEqual(self._steps()[3].state, 'waiting')
         notifs = self._notifs('probation_extend')
         self.assertTrue(notifs)
         self.assertTrue(all(n.level == 'warning' for n in notifs))
