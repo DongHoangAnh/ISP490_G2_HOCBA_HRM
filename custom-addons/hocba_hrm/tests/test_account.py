@@ -40,40 +40,27 @@ class TestAccount(TransactionCase):
         self.assertFalse(self.emp.user_id.has_group(
             'hocba_employees.group_hocba_giaovu'))
 
-    def test_create_giaovu(self):
-        _account_create(self._env(self.hr), self.emp.id, {
-            'login': 'gv', 'password': '12345678',
-            'password_confirm': '12345678', 'role': 'giaovu'})
-        self.assertTrue(self.emp.user_id.has_group(
-            'hocba_employees.group_hocba_giaovu'))
-
-    def test_create_truongphong_sets_manager(self):
-        _account_create(self._env(self.hr), self.emp.id, {
-            'login': 'tp', 'password': '12345678',
-            'password_confirm': '12345678', 'role': 'truongphong',
-            'department_id': self.dept.id})
-        self.assertEqual(self.dept.manager_id, self.emp)
-
-    def test_truongphong_requires_department(self):
-        with self.assertRaises(ValidationError):
+    # Từ 2026-08-27 màn này CHỈ cấp tài khoản nhân viên thường. Trưởng phòng và
+    # giáo vụ là tài khoản vai trò riêng, tạo ở form phòng ban — cấp ở đây là
+    # đeo quyền quản lý vào tài khoản cá nhân của một NV có thật, đúng mô hình
+    # kiêm nhiệm mà migration 19.0.7.0.0 / 19.0.8.0.0 đã dọn.
+    def test_create_giaovu_bi_tu_choi(self):
+        with self.assertRaisesRegex(ValidationError, 'nhân viên thường'):
             _account_create(self._env(self.hr), self.emp.id, {
-                'login': 'tp2', 'password': '12345678',
-                'password_confirm': '12345678', 'role': 'truongphong'})
+                'login': 'gv', 'password': '12345678',
+                'password_confirm': '12345678', 'role': 'giaovu'})
+        self.assertFalse(self.emp.user_id)
 
-    def test_truongphong_overwrite_needs_confirm(self):
-        other = self.env['hr.employee'].create({
-            'name': 'Other', 'x_employee_code': 'EMP-ACCT-2'})
-        self.dept.manager_id = other.id
-        with self.assertRaises(UserError):
+    def test_create_truongphong_bi_tu_choi(self):
+        with self.assertRaisesRegex(ValidationError, 'nhân viên thường'):
             _account_create(self._env(self.hr), self.emp.id, {
-                'login': 'tp3', 'password': '12345678',
+                'login': 'tp', 'password': '12345678',
                 'password_confirm': '12345678', 'role': 'truongphong',
                 'department_id': self.dept.id})
-        _account_create(self._env(self.hr), self.emp.id, {
-            'login': 'tp3', 'password': '12345678',
-            'password_confirm': '12345678', 'role': 'truongphong',
-            'department_id': self.dept.id, 'confirm_overwrite': True})
-        self.assertEqual(self.dept.manager_id, self.emp)
+        # Quan trọng hơn cả việc ném lỗi: KHÔNG được để lại dấu vết nào —
+        # không tài khoản, không manager_id.
+        self.assertFalse(self.emp.user_id)
+        self.assertFalse(self.dept.manager_id)
 
     def test_create_forbidden_non_hr(self):
         with self.assertRaises(AccessError):

@@ -202,6 +202,7 @@ export default function Departments({ search = '' }) {
 
       {form && (
         <DepartmentForm dept={form.dept} employees={employees}
+          minPasswordLen={data.minPasswordLen}
           onClose={() => setForm(null)}
           onDone={() => { setForm(null); load(); }} />
       )}

@@ -1,7 +1,7 @@
 /* Hồ sơ chi tiết nhân viên (drawer) — Owner: Tân.
    Khối dữ liệu trả theo quyền do BE quyết định (SPEC_HRM_SPA_API.md §3.2). */
 import { useState, useEffect, Fragment } from 'react';
-import { fetchEmployee, deleteDependent, verifyCert, deleteCert, fetchAccounts, deleteAsset } from '../../api/employees';
+import { fetchEmployee, deleteDependent, verifyCert, deleteCert, deleteAsset } from '../../api/employees';
 import { fetchCareer } from '../../api/career';
 import OnboardingStepsPanel from './OnboardingStepsPanel';
 import Icon from '../../components/Icon';
@@ -411,10 +411,6 @@ function PromoTimeline({ path, isMgr }) {
 function AccountTab({ det, emp, onUpdated }) {
   const acc = det.account || { hasAccount: false };
   const [mode, setMode] = useState(null); // null | 'create' | 'reset'
-  const [depts, setDepts] = useState([]);
-  useEffect(() => {
-    fetchAccounts().then((d) => setDepts(d.departments || [])).catch(() => {});
-  }, []);
   const done = (accountPayload) => { onUpdated({ ...det, account: accountPayload }); setMode(null); };
   return (
     <div>
@@ -436,7 +432,7 @@ function AccountTab({ det, emp, onUpdated }) {
         </div>
       )}
       {mode && (
-        <AccountForm emp={emp} mode={mode} departments={depts}
+        <AccountForm emp={emp} mode={mode}
           onClose={() => setMode(null)} onDone={done} />
       )}
     </div>

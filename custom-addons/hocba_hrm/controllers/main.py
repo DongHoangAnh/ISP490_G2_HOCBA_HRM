@@ -1770,7 +1770,6 @@ def _cap_view_dept(env):
 
 
 # --- Quản lý tài khoản đăng nhập (account management) --------------------
-ACCOUNT_ROLES = ('employee', 'giaovu', 'truongphong')
 MIN_PASSWORD_LEN = 8
 
 
@@ -1798,9 +1797,15 @@ def _validate_password(body):
 
 
 def _account_create(env, emp_id, body):
-    """HR/Admin cấp tài khoản đăng nhập cho 1 nhân viên.
-    AccessError nếu không phải HR; ValidationError nếu dữ liệu sai;
-    UserError nếu trưởng phòng cần xác nhận ghi đè."""
+    """HR/Admin cấp tài khoản đăng nhập THƯỜNG cho 1 nhân viên.
+
+    Chỉ tạo được tài khoản nhân viên thường. Hai vai trò quản lý — trưởng phòng
+    và giáo vụ — nay là TÀI KHOẢN VAI TRÒ riêng, tạo ở form phòng ban (xem
+    _dept_new_manager), không phải quyền đeo thêm vào tài khoản cá nhân của một
+    NV có thật. Trước 2026-08-27 hàm này cấp được cả hai, chính là đường dựng
+    lại mô hình kiêm nhiệm mà migration 19.0.7.0.0 / 19.0.8.0.0 đã dọn.
+
+    AccessError nếu không phải HR; ValidationError nếu dữ liệu sai."""
     if not _is_hr(env):
         raise AccessError('Chỉ HR/Admin được cấp tài khoản.')
     emp = env['hr.employee'].sudo().browse(emp_id)
@@ -1816,34 +1821,16 @@ def _account_create(env, emp_id, body):
         raise ValidationError('Tên đăng nhập đã tồn tại.')
     password = _validate_password(body)
     role = body.get('role') or 'employee'
-    if role not in ACCOUNT_ROLES:
-        raise ValidationError('Loại tài khoản không hợp lệ.')
-
-    group_ids = [env.ref('base.group_user').id]
-    if role == 'giaovu':
-        group_ids.append(env.ref('hocba_employees.group_hocba_giaovu').id)
-
-    dept = None
-    if role == 'truongphong':
-        dept_id = body.get('department_id')
-        if not dept_id:
-            raise ValidationError('Trưởng phòng cần chọn phòng ban.')
-        dept = env['hr.department'].sudo().browse(int(dept_id))
-        if not dept.exists():
-            raise ValidationError('Phòng ban không hợp lệ.')
-        if (dept.manager_id and dept.manager_id != emp
-                and not body.get('confirm_overwrite')):
-            raise UserError(
-                'Phòng "%s" đã có trưởng phòng (%s). Xác nhận để ghi đè.'
-                % (dept.name, dept.manager_id.name))
+    if role != 'employee':
+        raise ValidationError(
+            'Màn này chỉ cấp tài khoản nhân viên thường. Tài khoản trưởng '
+            'phòng / giáo vụ là tài khoản vai trò riêng — tạo ở form phòng ban.')
 
     user = env['res.users'].sudo().create({
         'name': emp.name, 'login': login, 'password': password,
-        'group_ids': [(6, 0, group_ids)],
+        'group_ids': [(6, 0, [env.ref('base.group_user').id])],
     })
     emp.sudo().user_id = user.id
-    if dept is not None:
-        dept.manager_id = emp.id
     return _account_payload(emp)
 
 
@@ -2471,38 +2458,53 @@ def _dept_list(env, archived=False):
         raise AccessError('Chỉ HR/Admin được xem danh sách phòng ban.')
     Dept = env['hr.department'].sudo().with_context(active_test=not archived)
     depts = Dept.search([], order='name')
-    # Dropdown trưởng phòng CHỈ liệt kê NV đã có tài khoản đăng nhập (xem
-    # _dept_update). Vẫn kèm trưởng phòng đương nhiệm dù chưa có tài khoản —
-    # dữ liệu cũ có trường hợp đó, thiếu họ trong danh mục thì sửa tên phòng
-    # sẽ vô tình gỡ mất người đang gán.
+    # Danh mục này KHÔNG còn để gán người đứng đầu — nó chỉ nuôi ô "điền nhanh
+    # từ nhân viên có sẵn", tức lấy sẵn họ tên/email/điện thoại vào form tạo
+    # tài khoản vai trò. Vì thế:
+    #   - lọc bỏ tài khoản vai trò: lấy tên một tài khoản vai trò để tạo tài
+    #     khoản vai trò khác là vô nghĩa;
+    #   - BỎ điều kiện "phải có tài khoản đăng nhập": người được lấy tên không
+    #     cần account nào, tài khoản đứng đầu là account mới hoàn toàn.
     emps = env['hr.employee'].sudo().search(
-        ['|', ('user_id', '!=', False),
-         ('id', 'in', depts.mapped('manager_id').ids)],
-        order='x_employee_code, name')
+        [ROLE_ACCOUNT_EXCLUDED], order='x_employee_code, name')
     return {
         'departments': [_dept_payload(d) for d in depts],
         'employees': [{'id': e.id, 'name': e.name,
                        'code': e.x_employee_code or '',
-                       'hasAccount': bool(e.user_id)} for e in emps],
+                       'email': e.work_email or '',
+                       'phone': e.work_phone or ''} for e in emps],
         'minPasswordLen': MIN_PASSWORD_LEN,
         'canEdit': _cap_edit_dept(env),
     }
 
 
-def _dept_new_manager(env, dept, body):
-    """Tạo hồ sơ NV + tài khoản đăng nhập MỚI rồi gán làm trưởng phòng của dept.
+# Người đứng đầu phòng ban — hai vai trò được phép, cả hai đều là TÀI KHOẢN
+# VAI TRÒ (x_is_role_account) và đều đứng tên hr.department.manager_id.
+DEPT_HEAD_ROLES = ('truongphong', 'giaovu')
 
-    Quyền trưởng phòng trong hệ này suy ra từ hr.department.manager_id (xem
-    _emp_scope_domain), KHÔNG từ group riêng — nên chỉ cấp base.group_user,
-    y như nhánh role='truongphong' của _account_create.
+
+def _dept_new_manager(env, dept, body):
+    """Tạo TÀI KHOẢN VAI TRÒ mới rồi gán làm người đứng đầu của dept.
+
+    Vai trò lấy quyền theo hai đường khác hẳn nhau:
+      - truongphong: quyền suy ra từ hr.department.manager_id (xem
+        _emp_scope_domain), KHÔNG có group riêng ⇒ chỉ base.group_user.
+      - giaovu: quyền đến từ group_hocba_giaovu, phạm vi là TOÀN BỘ giảng viên
+        mọi phòng — không bó theo dept. Vẫn gán manager_id để phòng có người
+        đứng tên (chốt với khách 2026-08-27), nhưng đừng nhầm manager_id là
+        nguồn quyền của họ: _emp_scope_domain xét nhánh giáo vụ TRƯỚC nhánh
+        trưởng phòng nên phạm vi giáo vụ luôn thắng.
     """
     m = body.get('manager') or {}
+    role = (m.get('role') or 'truongphong').strip()
+    if role not in DEPT_HEAD_ROLES:
+        raise ValidationError('Vai trò người đứng đầu không hợp lệ.')
     name = (m.get('name') or '').strip()
     if not name:
-        raise ValidationError('Vui lòng nhập họ tên trưởng phòng.')
+        raise ValidationError('Vui lòng nhập họ tên người đứng đầu phòng ban.')
     login = (m.get('login') or '').strip()
     if not login:
-        raise ValidationError('Vui lòng nhập tên đăng nhập cho trưởng phòng.')
+        raise ValidationError('Vui lòng nhập tên đăng nhập.')
     if env['res.users'].sudo().with_context(active_test=False).search_count(
             [('login', '=', login)]):
         raise ValidationError('Tên đăng nhập "%s" đã tồn tại.' % login)
@@ -2521,9 +2523,12 @@ def _dept_new_manager(env, dept, body):
         'x_employment_status': False,
     }
     emp = env['hr.employee'].sudo().create(emp_vals)
+    group_ids = [env.ref('base.group_user').id]
+    if role == 'giaovu':
+        group_ids.append(env.ref('hocba_employees.group_hocba_giaovu').id)
     user = env['res.users'].sudo().create({
         'name': emp.name, 'login': login, 'password': password,
-        'group_ids': [(6, 0, [env.ref('base.group_user').id])],
+        'group_ids': [(6, 0, group_ids)],
     })
     emp.sudo().user_id = user.id
     dept.manager_id = emp.id
@@ -2557,12 +2562,19 @@ def _dept_create(env, body):
 
 
 def _dept_update(env, dept_id, body):
-    """HR Manager/Admin sửa tên / chức năng / trưởng phòng.
+    """HR Manager/Admin sửa tên / chức năng / người đứng đầu.
 
-    Đổi trưởng phòng theo 2 đường: chọn NV ĐÃ có tài khoản đăng nhập
-    (managerId), hoặc gửi khối 'manager' để tạo trưởng phòng mới. NV chưa có
-    tài khoản bị từ chối — làm trưởng phòng mà không đăng nhập được thì phòng
-    coi như không có ai quản.
+    Ba ý định về người đứng đầu, phân biệt bằng KHÓA CÓ MẶT trong body — không
+    phải bằng giá trị, vì body.get() không tách được "gửi rỗng" với "không gửi":
+      - có khối 'manager'  → tạo tài khoản vai trò mới, thay người cũ
+      - có khóa 'managerId' (rỗng/0/false) → gỡ người đứng đầu
+      - không có khóa nào  → giữ nguyên, chỉ sửa tên/chức năng
+
+    KHÔNG còn đường gán một NV có sẵn làm người đứng đầu (chốt 2026-08-27):
+    manager_id là nguồn quyền, gán thẳng hồ sơ NV thật nghĩa là âm thầm nâng
+    quyền tài khoản cá nhân của họ — đúng mô hình kiêm nhiệm mà migration
+    19.0.7.0.0 đã dọn. Muốn ai đó đứng đầu phòng thì cấp cho họ một tài khoản
+    vai trò RIÊNG; form phòng ban có ô điền nhanh lấy sẵn tên từ hồ sơ NV.
     """
     if not _cap_edit_dept(env):
         raise AccessError('Chỉ HR Manager/Admin được sửa phòng ban.')
@@ -2581,32 +2593,13 @@ def _dept_update(env, dept_id, body):
         _dept_new_manager(env, dept, body)
         return _dept_payload(dept)
 
-    manager_id = body.get('managerId')
-    new_mgr = int(manager_id) if manager_id else False
-    # Chỉ soi khi ĐỔI người: phòng cũ đang gán người chưa có tài khoản vẫn
-    # phải sửa được tên/chức năng, không thì dữ liệu cũ kẹt cứng.
-    if new_mgr and new_mgr != dept.manager_id.id:
-        emp = env['hr.employee'].sudo().browse(new_mgr)
-        if not emp.exists():
-            raise ValidationError('Nhân viên không hợp lệ.')
-        if not emp.user_id:
+    if 'managerId' in body:
+        if body.get('managerId'):
             raise ValidationError(
-                'Nhân viên "%s" chưa có tài khoản đăng nhập nên không đặt làm '
-                'trưởng phòng được. Cấp tài khoản ở màn Tài khoản, hoặc tạo '
-                'trưởng phòng mới ngay tại đây.' % emp.name)
-        if not emp.user_id.active:
-            raise ValidationError(
-                'Tài khoản đăng nhập của "%s" đang bị khóa.' % emp.name)
-        # Giáo vụ + trưởng phòng là mâu thuẫn có thật, không phải cẩn thận thừa:
-        # _emp_scope_domain xét nhánh giáo vụ TRƯỚC nhánh trưởng phòng, nên gán
-        # xong người này vẫn chỉ thấy giáo viên chứ không thấy phòng mình.
-        if emp.user_id.sudo().has_group('hocba_employees.group_hocba_giaovu'):
-            raise ValidationError(
-                'Tài khoản của "%s" đang là Giáo vụ — phạm vi giáo vụ (chỉ giáo '
-                'viên) sẽ lấn át quyền trưởng phòng, người này vẫn không xem '
-                'được phòng ban. Chọn người khác hoặc tạo trưởng phòng mới.'
-                % emp.name)
-    vals['manager_id'] = new_mgr
+                'Không gán được nhân viên có sẵn làm người đứng đầu phòng ban. '
+                'Người đứng đầu phải là tài khoản vai trò riêng — bấm "Đổi '
+                'người đứng đầu" để tạo tài khoản mới.')
+        vals['manager_id'] = False
     dept.write(vals)
     return _dept_payload(dept)
 
@@ -4731,9 +4724,13 @@ class HocBaHRM(http.Controller):
             return request.make_json_response(
                 {'error': 'rejected', 'message': str(ex)}, status=400)
         except UserError as ex:
+            # Từ 2026-08-27 hàm không còn ném UserError nào của mình (nhánh
+            # "ghi đè trưởng phòng" đã bỏ cùng luồng kiêm nhiệm). Giữ nhánh này
+            # để UserError từ core Odoo — vd chính sách mật khẩu — ra 400 kèm
+            # lời nhắn đọc được, thay vì rơi thành 500 trần.
             request.env.cr.rollback()
             return request.make_json_response(
-                {'error': 'needs_confirm', 'message': str(ex)}, status=409)
+                {'error': 'rejected', 'message': str(ex)}, status=400)
         return request.make_json_response(data)
 
     @http.route('/hocba-hrm/api/employee/<int:emp_id>/account/reset',

@@ -302,7 +302,8 @@ class TestLegacyImportEscapeHatch(TransactionCase):
 from odoo import http
 
 from odoo.addons.hocba_hrm.controllers.employee_import import HocBaEmployeeImport
-from odoo.addons.hocba_hrm.controllers.main import _cap_import_emp
+from odoo.addons.hocba_hrm.controllers.main import (
+    _cap_import_emp, ROLE_ACCOUNT_EXCLUDED)
 
 
 class _FakeUpload:
@@ -560,9 +561,17 @@ class TestIncompleteCountRoute(TransactionCase):
             'group_ids': [(6, 0, [self.env.ref(g).id for g in groups])]})
 
     def test_count_matches_search(self):
+        """Badge phải khớp DANH SÁCH mà nó mở ra — tức cùng loại tài khoản vai
+        trò như _emp_scope_domain. Trước đây 'expected' đếm bằng search thô nên
+        test xanh chỉ vì DB chưa có tài khoản vai trò nào; dựng một cái ngay
+        trong test để chỗ lệch không núp được nữa."""
         self.env['hr.employee'].create({'name': 'Thiếu 1'})
+        self.env['hr.employee'].create({
+            'name': 'TK vai trò', 'x_is_role_account': True,
+            'x_employment_status': False})
         expected = self.env['hr.employee'].search_count(
-            [('x_needs_profile_completion', '=', True)])
+            [('x_needs_profile_completion', '=', True),
+             ROLE_ACCOUNT_EXCLUDED])
         self.assertEqual(self.ctrl._incomplete_count(), expected)
         self.assertGreater(expected, 0)
 

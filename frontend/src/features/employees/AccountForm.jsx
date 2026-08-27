@@ -1,17 +1,16 @@
 /* ============================================================
    Form tạo / cấp lại tài khoản đăng nhập — chỉ HR/Admin. Owner: Tân.
    mode='create' | 'reset'. onDone(accountPayload) nhận khối account mới.
+
+   Chốt với khách 2026-08-27: màn này CHỈ cấp tài khoản nhân viên thường. Trưởng
+   phòng và giáo vụ là tài khoản vai trò riêng, tạo ở form phòng ban — trước đây
+   chọn được ở đây chính là đường đeo quyền quản lý vào tài khoản cá nhân của
+   một NV có thật (mô hình kiêm nhiệm đã bỏ). Backend chặn độc lập.
    ============================================================ */
 import { useState } from 'react';
 import Modal from '../../components/Modal';
 import Icon from '../../components/Icon';
 import { createAccount, resetAccountPassword } from '../../api/employees';
-
-const ROLE_OPTS = [
-  ['employee', 'Nhân viên thường'],
-  ['giaovu', 'Giáo vụ'],
-  ['truongphong', 'Trưởng phòng'],
-];
 
 const inp = {
   width: '100%', padding: '9px 12px', borderRadius: 10,
@@ -28,35 +27,22 @@ function Field({ label, full, children }) {
   );
 }
 
-export default function AccountForm({ emp, mode = 'create', departments = [], onClose, onDone }) {
+export default function AccountForm({ emp, mode = 'create', onClose, onDone }) {
   const reset = mode === 'reset';
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [role, setRole] = useState('employee');
-  const [deptId, setDeptId] = useState('');
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (overwrite = false) => {
+  const submit = async () => {
     setErr(null); setBusy(true);
     try {
-      let res;
-      if (reset) {
-        res = await resetAccountPassword(emp.id, { password, password_confirm: confirm });
-      } else {
-        res = await createAccount(emp.id, {
-          login, password, password_confirm: confirm, role,
-          department_id: role === 'truongphong' ? Number(deptId) || 0 : undefined,
-          confirm_overwrite: overwrite,
-        });
-      }
+      const res = reset
+        ? await resetAccountPassword(emp.id, { password, password_confirm: confirm })
+        : await createAccount(emp.id, { login, password, password_confirm: confirm });
       onDone(res);
     } catch (e) {
-      if (e.code === 'needs_confirm' && window.confirm(e.message)) {
-        setBusy(false);
-        return submit(true);
-      }
       setErr(e.message);
     } finally {
       setBusy(false);
@@ -92,22 +78,13 @@ export default function AccountForm({ emp, mode = 'create', departments = [], on
             <input type="password" style={inp} value={confirm} autoComplete="new-password"
               onChange={(e) => setConfirm(e.target.value)} />
           </Field>
-          {!reset && (
-            <Field label="Loại tài khoản *">
-              <select style={inp} value={role} onChange={(e) => setRole(e.target.value)}>
-                {ROLE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </Field>
-          )}
-          {!reset && role === 'truongphong' && (
-            <Field label="Phòng ban *">
-              <select style={inp} value={deptId} onChange={(e) => setDeptId(e.target.value)}>
-                <option value="">— Chọn phòng —</option>
-                {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </Field>
-          )}
         </div>
+        {!reset && (
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 12 }}>
+            Tài khoản nhân viên thường. Quyền trưởng phòng / giáo vụ không cấp ở
+            đây — đó là tài khoản vai trò riêng, tạo ở màn <b>Phòng ban</b>.
+          </div>
+        )}
         {err && (
           <div style={{ marginTop: 14, padding: '10px 13px', background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 10, color: 'var(--red-700)', fontSize: 12.5 }}>{err}</div>
         )}
@@ -115,7 +92,7 @@ export default function AccountForm({ emp, mode = 'create', departments = [], on
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
         <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Huỷ</button>
-        <button className="btn btn-primary" onClick={() => submit(false)} disabled={busy}>
+        <button className="btn btn-primary" onClick={submit} disabled={busy}>
           <Icon name="checkCircle" size={16} />{busy ? 'Đang lưu…' : (reset ? 'Cấp lại' : 'Tạo tài khoản')}
         </button>
       </div>

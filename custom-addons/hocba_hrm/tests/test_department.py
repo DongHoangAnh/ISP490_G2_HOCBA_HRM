@@ -167,11 +167,9 @@ class TestDepartment(TransactionCase):
     # ---- _dept_update (Task 4) ----
     def test_update_changes_fields(self):
         out = _dept_update(self._env(self.hrm), self.dept.id, {
-            'name': 'Phòng A2', 'functionDesc': 'Mới',
-            'managerId': self.emp_user.id})
+            'name': 'Phòng A2', 'functionDesc': 'Mới'})
         self.assertEqual(out['name'], 'Phòng A2')
         self.assertEqual(out['functionDesc'], 'Mới')
-        self.assertEqual(self.dept.manager_id, self.emp_user)
 
     def test_update_clears_manager(self):
         self.dept.manager_id = self.emp_user.id
@@ -184,31 +182,85 @@ class TestDepartment(TransactionCase):
         with self.assertRaises(ValidationError):
             _dept_update(self._env(self.hrm), self.dept.id, {'name': ''})
 
-    def test_update_manager_without_account_rejected(self):
-        with self.assertRaises(ValidationError):
-            _dept_update(self._env(self.hrm), self.dept.id, {
-                'name': 'Phòng A', 'managerId': self.emp.id})
-
-    def test_update_manager_giaovu_rejected(self):
-        """Giáo vụ + trưởng phòng là mâu thuẫn quyền: _emp_scope_domain xét
-        nhánh giáo vụ TRƯỚC, nên gán xong người này vẫn không thấy phòng mình."""
-        gv_user = self.env['res.users'].create({
-            'name': 'Giáo vụ', 'login': 'gv_dept',
-            'group_ids': [(6, 0, [
-                self.env.ref('base.group_user').id,
-                self.env.ref('hocba_employees.group_hocba_giaovu').id])]})
-        gv_emp = self.env['hr.employee'].create({
-            'name': 'Giáo vụ', 'user_id': gv_user.id})
-        with self.assertRaises(ValidationError):
-            _dept_update(self._env(self.hrm), self.dept.id, {
-                'name': 'Phòng A', 'managerId': gv_emp.id})
-        self.assertNotEqual(self.dept.manager_id, gv_emp)
-
-    def test_update_manager_with_locked_account_rejected(self):
-        self.emp_user.user_id.active = False
-        with self.assertRaises(ValidationError):
+    # ---- Người đứng đầu = tài khoản vai trò (chốt 2026-08-27) ----
+    def test_update_khong_gan_duoc_nv_co_san(self):
+        """Gán một hồ sơ NV THẬT làm người đứng đầu là dựng lại mô hình kiêm
+        nhiệm: manager_id là nguồn quyền, nên thao tác đó âm thầm nâng quyền
+        tài khoản cá nhân của họ."""
+        with self.assertRaisesRegex(ValidationError, 'tài khoản vai trò riêng'):
             _dept_update(self._env(self.hrm), self.dept.id, {
                 'name': 'Phòng A', 'managerId': self.emp_user.id})
+        self.assertFalse(self.dept.manager_id)
+
+    def test_update_khong_gui_managerId_thi_giu_nguyen(self):
+        """Ba ý định phân biệt bằng KHÓA CÓ MẶT, không bằng giá trị: thiếu khóa
+        'managerId' là 'giữ nguyên', không phải 'gỡ'. Sửa mỗi tên phòng mà mất
+        luôn người đứng đầu thì là mất dữ liệu thầm lặng."""
+        _dept_create(self._env(self.hrm), {
+            'name': 'Phòng Giữ', 'manager': self._mgr_block(login='tp_giu')})
+        dept = self.env['hr.department'].search([('name', '=', 'Phòng Giữ')])
+        head = dept.manager_id
+        self.assertTrue(head)
+        _dept_update(self._env(self.hrm), dept.id, {'name': 'Phòng Giữ 2'})
+        self.assertEqual(dept.manager_id, head)
+
+    def test_update_tao_nguoi_dung_dau_moi_thay_nguoi_cu(self):
+        _dept_create(self._env(self.hrm), {
+            'name': 'Phòng Thay', 'manager': self._mgr_block(login='tp_cu')})
+        dept = self.env['hr.department'].search([('name', '=', 'Phòng Thay')])
+        cu = dept.manager_id
+        _dept_update(self._env(self.hrm), dept.id, {
+            'name': 'Phòng Thay',
+            'manager': self._mgr_block(login='tp_thay', name='TP Thay')})
+        self.assertNotEqual(dept.manager_id, cu)
+        self.assertEqual(dept.manager_id.name, 'TP Thay')
+        self.assertTrue(dept.manager_id.x_is_role_account)
+
+    def test_tao_giao_vu_lam_nguoi_dung_dau(self):
+        """Giáo vụ ngang hàng trưởng phòng: cũng là tài khoản vai trò, cũng
+        đứng tên manager_id, khác ở chỗ được cấp thêm nhóm giáo vụ."""
+        _dept_create(self._env(self.hrm), {
+            'name': 'Phòng GV',
+            'manager': dict(self._mgr_block(login='gv_head', name='GV Head'),
+                            role='giaovu')})
+        dept = self.env['hr.department'].search([('name', '=', 'Phòng GV')])
+        head = dept.manager_id
+        self.assertTrue(head.x_is_role_account)
+        self.assertTrue(head.user_id.has_group(
+            'hocba_employees.group_hocba_giaovu'))
+
+    def test_truong_phong_khong_duoc_nhom_giao_vu(self):
+        _dept_create(self._env(self.hrm), {
+            'name': 'Phòng TP', 'manager': self._mgr_block(login='tp_khong_gv')})
+        dept = self.env['hr.department'].search([('name', '=', 'Phòng TP')])
+        self.assertFalse(dept.manager_id.user_id.has_group(
+            'hocba_employees.group_hocba_giaovu'))
+
+    def test_vai_tro_la_bi_tu_choi(self):
+        with self.assertRaisesRegex(ValidationError, 'Vai trò'):
+            _dept_create(self._env(self.hrm), {
+                'name': 'Phòng Lạ',
+                'manager': dict(self._mgr_block(login='vai_tro_la'),
+                                role='hieu_truong')})
+
+    def test_danh_muc_dien_nhanh_bo_tai_khoan_vai_tro(self):
+        """Danh mục này nuôi ô 'điền nhanh'. Tài khoản vai trò bị loại (lấy tên
+        nó để tạo tài khoản vai trò khác là vô nghĩa); NV CHƯA có tài khoản thì
+        vẫn phải có mặt — người được lấy tên không cần account nào."""
+        _dept_create(self._env(self.hrm), {
+            'name': 'Phòng Lọc', 'manager': self._mgr_block(login='tp_loc')})
+        dept = self.env['hr.department'].search([('name', '=', 'Phòng Lọc')])
+        ids = [e['id'] for e in _dept_list(self._env(self.hr))['employees']]
+        self.assertNotIn(dept.manager_id.id, ids)
+        self.assertIn(self.emp.id, ids, 'NV chưa có tài khoản vẫn phải liệt kê')
+        self.assertIn(self.emp_user.id, ids)
+
+    def test_danh_muc_dien_nhanh_kem_email_dien_thoai(self):
+        self.emp.write({'work_email': 'a@hocba.vn', 'work_phone': '0900000001'})
+        row = next(e for e in _dept_list(self._env(self.hr))['employees']
+                   if e['id'] == self.emp.id)
+        self.assertEqual(row['email'], 'a@hocba.vn')
+        self.assertEqual(row['phone'], '0900000001')
 
     def test_update_forbidden(self):
         with self.assertRaises(AccessError):
