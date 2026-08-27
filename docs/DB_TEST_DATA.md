@@ -33,11 +33,14 @@
 **Trên DB local (từ 2026-08-16): mỗi NV demo đều có tài khoản riêng**, mật khẩu
 chung `Hocba@2026`, login dạng `<tên>.<viếttắt>@hocba.vn` (vd `nam.nh@hocba.vn`,
 `linh.tk@hocba.vn`, `han.lg@hocba.vn`). Danh sách đầy đủ in ra khi chạy
-`tools/demo_seed/p9_finalize.py`. 5 người từng kiêm nhiệm trưởng phòng (ngoài 2 TK
-test ở trên) — **nay đều chỉ còn là NV thường** (xem cảnh báo ngay trên):
+`tools/demo_seed/p9_finalize.py`. 4 người từng kiêm nhiệm trưởng phòng (ngoài 2 TK
+test ở trên — `test_truongphong@hocba.vn` từng TP Kinh doanh, `test_hrmanager@hocba.vn`
+từng TP Kế toán_HCNS) — **nay đều chỉ còn là NV thường** (xem cảnh báo ngay trên):
 `nam.nh@hocba.vn` (từng TP BOD), `khoi.lm@hocba.vn` (từng TP Marketing),
-`linh.tk@hocba.vn` (từng TP Sản phẩm), `mai.vt@hocba.vn` (từng TP Vận hành);
-kế toán: `van.lth@hocba.vn`.
+`linh.tk@hocba.vn` (từng TP Sản phẩm), `mai.vt@hocba.vn` (từng TP Vận hành).
+(`van.lth@hocba.vn` không phải trưởng phòng của phòng nào — bản trước ghi nhầm
+nó là cựu TP Kế toán_HCNS, đã sửa: TP Kế toán_HCNS đúng là `test_hrmanager@hocba.vn`
+= HB.02 Đỗ Quang Huy.)
 
 ---
 

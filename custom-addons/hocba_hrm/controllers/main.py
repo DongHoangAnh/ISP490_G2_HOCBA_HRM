@@ -4654,36 +4654,14 @@ class HocBaHRM(http.Controller):
         if not self._can_edit_emp_record(e):
             return request.make_json_response({'error': 'forbidden'}, status=403)
         if e.x_is_role_account:
-            # Lỗ ghi ngược (review Task 2): EmployeeForm.jsx gửi
-            # status: statusKey || 'probation' — tài khoản vai trò trả
-            # statusKey rỗng nên nếu form này ghi được, nó sẽ ghi đè
-            # x_employment_status='probation' lên bản ghi. KHÔNG phải nguy cơ
-            # "lọt vào hàng đợi Nhận việc" — _emp_scope_domain (dùng bởi cả
-            # api_onboarding lẫn _hocba_maybe_assign_onboarding) đã có
-            # ROLE_ACCOUNT_EXCLUDED ở mọi nhánh nên bản ghi lai vẫn bị chặn ở
-            # đó. Nguy cơ thật là TOÀN VẸN DỮ LIỆU: bản ghi mang trạng thái
-            # nói dối (cờ x_is_role_account=True nhưng trạng thái thử việc),
-            # lộ ra ở filter "Thử việc" trên view Odoo backend
-            # (hocba_employees/views/hr_employee_views.xml), và nếu sau này
-            # ai đó gỡ cờ x_is_role_account thì bản ghi sẽ ăn theo mốc thăng
-            # tiến/onboarding như NV thật dù chưa từng đi làm.
-            #
-            # Đường tới được đây không chỉ là "gọi ngoài UI bằng tài khoản
-            # HR/Admin" (Postman, script) — _emp_in_scope có short-circuit
-            # `if e == user.employee_id: return True`, và _cap_edit_emp =
-            # _user_can_manage = True cho trưởng phòng. Nghĩa là CHÍNH tài
-            # khoản vai trò trưởng phòng cũng vượt được _can_edit_emp_record
-            # trên bản ghi CỦA CHÍNH NÓ — mà _role_payload vẫn trả
-            # 'employeeId': emp.id cho nó dùng. Trước khi có guard này, một
-            # trưởng phòng đăng nhập bình thường POST thẳng lên id của mình
-            # là ghi được, và bước kiểm phạm vi sau write cũng pass vì
-            # e == user.employee_id. Đây mới là lý do chính guard này tồn
-            # tại, không phải kịch bản Postman của HR.
-            #
-            # Kiểm quyền TRƯỚC (403 nếu không có quyền, không lộ thông tin
-            # bản ghi là tài khoản vai trò cho người ngoài phạm vi), rồi mới
-            # từ chối rõ ràng: tài khoản vai trò không phải hồ sơ nhân sự
-            # nên không sửa bằng form này — HR quản nó ở màn Tài khoản.
+            # Lỗ ghi ngược (review Task 2) + đường CHÍNH tài khoản vai trò tự
+            # sửa bản ghi của mình (short-circuit e == user.employee_id trong
+            # _emp_in_scope). Lý lẽ đầy đủ — vì sao nguy cơ thật là toàn vẹn
+            # dữ liệu chứ không phải lọt Nhận việc, và vì sao đường tới không
+            # chỉ qua Postman của HR — nằm ở docstring lớp
+            # TestRoleAccountFormWriteGuard trong
+            # hocba_hrm/tests/test_role_account.py. Kiểm quyền TRƯỚC (403
+            # nếu không có quyền), rồi mới từ chối rõ ràng ở đây.
             return request.make_json_response(
                 {'error': 'rejected',
                  'message': 'Đây là tài khoản vai trò (trưởng phòng), không '

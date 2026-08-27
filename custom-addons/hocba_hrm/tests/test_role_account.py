@@ -320,13 +320,16 @@ class TestRoleAccountFormWriteGuard(HttpCase):
 
     EmployeeForm.jsx gửi `status: emp?.statusKey || 'probation'` — tài khoản
     vai trò trả statusKey rỗng nên FE sẽ ghi ngược 'probation' nếu form này
-    mở được cho nó. Nguy cơ thật KHÔNG phải "lọt lại vào hàng đợi Nhận việc"
-    — _emp_scope_domain (dùng bởi cả api_onboarding lẫn
-    _hocba_maybe_assign_onboarding) đã có ROLE_ACCOUNT_EXCLUDED ở mọi nhánh
-    nên bản ghi lai vẫn bị chặn ở đó. Nguy cơ thật là TOÀN VẸN DỮ LIỆU: bản
-    ghi mang trạng thái nói dối (x_is_role_account=True nhưng thử việc), lộ
-    ra ở filter "Thử việc" trên view Odoo backend, và sẽ ăn theo mốc thăng
-    tiến/onboarding như NV thật nếu sau này ai đó gỡ cờ x_is_role_account.
+    mở được cho nó. Nguy cơ thật KHÔNG phải "lọt lại vào hàng đợi Nhận việc":
+    `api_onboarding` gọi `_emp_scope_domain` (đã có ROLE_ACCOUNT_EXCLUDED ở
+    mọi nhánh) nên bản ghi lai vẫn bị chặn ở đó; còn `_hocba_maybe_assign_onboarding`
+    (module hocba_employees, KHÔNG gọi `_emp_scope_domain` — vòng phụ thuộc
+    không cho phép) tự chặn độc lập bằng điều kiện `not emp.x_is_role_account`
+    ngay trong thân hàm (hr_employee.py:874). Nguy cơ thật là TOÀN VẸN DỮ
+    LIỆU: bản ghi mang trạng thái nói dối (x_is_role_account=True nhưng thử
+    việc), lộ ra ở filter "Thử việc" trên view Odoo backend, và sẽ ăn theo
+    mốc thăng tiến/onboarding như NV thật nếu sau này ai đó gỡ cờ
+    x_is_role_account.
 
     Đường tới được đây KHÔNG chỉ là "HR/Admin gọi ngoài UI" (Postman,
     script) — dù Task 3 đã lọc tài khoản vai trò khỏi mọi danh sách nên UI

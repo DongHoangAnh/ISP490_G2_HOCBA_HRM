@@ -55,7 +55,7 @@ Nếu `docker compose` báo lỗi bind cổng 5432: máy có Postgres native đa
 - Modify: `custom-addons/hocba_employees/models/hr_employee.py` (thêm field cạnh `x_employee_code`, dòng ~26-31)
 - Test: `custom-addons/hocba_hrm/tests/test_role_account.py` (tạo mới)
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 Tạo `custom-addons/hocba_hrm/tests/test_role_account.py`:
 
@@ -125,7 +125,7 @@ class TestRoleAccount(TransactionCase):
 Model lịch sử thăng tiến là `hr.promotion.history`, khoá ngoại `employee_id` — đã
 kiểm chứng khi soạn plan, không phải đoán.
 
-- [ ] **Step 2: Chạy test, xác nhận ĐỎ**
+- [x] **Step 2: Chạy test, xác nhận ĐỎ**
 
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm odoo odoo -d hocba_hrm -u hocba_hrm,hocba_employees --addons-path=/mnt/extra-addons --test-enable --test-tags /hocba_hrm:TestRoleAccount --stop-after-init --log-level=test
@@ -133,7 +133,7 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml 
 
 Kỳ vọng: FAIL với `Invalid field 'x_is_role_account' on model 'hr.employee'`.
 
-- [ ] **Step 3: Thêm field**
+- [x] **Step 3: Thêm field**
 
 Trong `custom-addons/hocba_employees/models/hr_employee.py`, ngay **sau** khối `x_employee_code` (kết thúc dòng ~31) và **trước** comment `# Trục 1 — Hình thức làm việc`:
 
@@ -151,7 +151,7 @@ Trong `custom-addons/hocba_employees/models/hr_employee.py`, ngay **sau** khối
     )
 ```
 
-- [ ] **Step 4: Bỏ mốc "Nhận việc" và gán quy trình cho tài khoản vai trò**
+- [x] **Step 4: Bỏ mốc "Nhận việc" và gán quy trình cho tài khoản vai trò**
 
 Trong cùng file, thay toàn bộ thân `create()` (dòng ~507-521) bằng:
 
@@ -178,11 +178,11 @@ Trong cùng file, thay toàn bộ thân `create()` (dòng ~507-521) bằng:
 
 **KHÔNG nâng version module ở task này.** Bump version phải đi CÙNG commit với migration ở Task 6, nếu không: mỗi lần chạy test đều `-u hocba_employees` → DB ghi `latest_version = 19.0.7.0.0` → tới Task 6 Odoo thấy version không đổi và **bỏ qua post-migrate**. Đây đúng loại "migration vá trượt" dự án đã dính một lần ở `19.0.4.0.0`.
 
-- [ ] **Step 5: Chạy test, xác nhận XANH**
+- [x] **Step 5: Chạy test, xác nhận XANH**
 
 Lệnh như Step 2. Kỳ vọng: `0 failed, 0 error(s) of 2 tests`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add custom-addons/hocba_employees/models/hr_employee.py custom-addons/hocba_hrm/tests/test_role_account.py
@@ -197,7 +197,7 @@ git commit -m "feat(employees): co x_is_role_account, bo moc Nhan viec cho tai k
 - Modify: `custom-addons/hocba_hrm/controllers/main.py` — `_dept_new_manager`, khối `emp_vals` (~dòng 2467-2473)
 - Test: `custom-addons/hocba_hrm/tests/test_role_account.py`
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 Thêm vào cuối class `TestRoleAccount`:
 
@@ -217,11 +217,11 @@ Thêm vào cuối class `TestRoleAccount`:
             'Tài khoản vai trò không có tình trạng làm việc — nó không đi làm.')
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận ĐỎ**
+- [x] **Step 2: Chạy test, xác nhận ĐỎ**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: FAIL — `x_is_role_account` là `False` và `x_employment_status` là `'probation'`.
 
-- [ ] **Step 3: Sửa `_dept_new_manager`**
+- [x] **Step 3: Sửa `_dept_new_manager`**
 
 Thay khối `emp_vals` hiện tại:
 
@@ -250,11 +250,11 @@ bằng:
     }
 ```
 
-- [ ] **Step 4: Chạy test, xác nhận XANH**
+- [x] **Step 4: Chạy test, xác nhận XANH**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: `0 failed, 0 error(s) of 4 tests`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add custom-addons/hocba_hrm/controllers/main.py custom-addons/hocba_hrm/tests/test_role_account.py
@@ -269,7 +269,7 @@ git commit -m "feat(departments): tai khoan truong phong duoc danh dau la tai kh
 - Modify: `custom-addons/hocba_hrm/controllers/main.py:1607-1620` (`_emp_scope_domain`)
 - Test: `custom-addons/hocba_hrm/tests/test_role_account.py`
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 Thêm vào cuối class:
 
@@ -312,11 +312,11 @@ Thêm vào cuối class:
             'Tài khoản vai trò phải vẫn thấy NV phòng mình.')
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận ĐỎ**
+- [x] **Step 2: Chạy test, xác nhận ĐỎ**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: 3 test đầu FAIL (tài khoản vai trò vẫn nằm trong kết quả), test cuối PASS sẵn.
 
-- [ ] **Step 3: Lọc trong `_emp_scope_domain`**
+- [x] **Step 3: Lọc trong `_emp_scope_domain`**
 
 Thay toàn bộ hàm:
 
@@ -348,11 +348,11 @@ def _emp_scope_domain(env):
 
 **Cạm bẫy đã kiểm chứng:** khoảng 5 điểm gọi dịch domain này sang tiền tố `employee_id.` bằng vòng lặp `for field, op, val in _emp_scope_domain(env)` với nhánh `if field == 'id'` (main.py:411, 487, 578, 1310, 1345). Tuple mới sinh ra `('employee_id.x_is_role_account', '=', False)` — hợp lệ và đúng ý. Không cần sửa các điểm đó.
 
-- [ ] **Step 4: Chạy test, xác nhận XANH**
+- [x] **Step 4: Chạy test, xác nhận XANH**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: `0 failed, 0 error(s) of 8 tests`.
 
-- [ ] **Step 5: Chạy TOÀN BỘ test hai module để bắt hồi quy**
+- [x] **Step 5: Chạy TOÀN BỘ test hai module để bắt hồi quy**
 
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm odoo odoo -d hocba_hrm -u hocba_hrm,hocba_employees --addons-path=/mnt/extra-addons --test-enable --test-tags /hocba_hrm,/hocba_employees --stop-after-init --log-level=test
@@ -364,7 +364,7 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml 
 
 Kỳ vọng đúng: **không xuất hiện test đỏ MỚI** ngoài 6 cái kể trên. So sánh theo TÊN test, không theo con số. Nếu có tên lạ, đọc kỹ: nhiều khả năng một fixture cũ tạo NV rồi gán làm `manager_id`, và nay bị lọc mất.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add custom-addons/hocba_hrm/controllers/main.py custom-addons/hocba_hrm/tests/test_role_account.py
@@ -380,7 +380,7 @@ Task này **không sửa code** — nó khoá hành vi cố ý để lần refac
 **Files:**
 - Test: `custom-addons/hocba_hrm/tests/test_role_account.py`
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
 ```python
     # ---- Task 4: màn Tài khoản cố tình KHÔNG lọc ----
@@ -398,11 +398,11 @@ Task này **không sửa code** — nó khoá hành vi cố ý để lần refac
 `_account_list` trả về `{'accounts': rows, 'departments': depts}` — đã kiểm chứng
 khi soạn plan.
 
-- [ ] **Step 2: Chạy test, xác nhận XANH ngay**
+- [x] **Step 2: Chạy test, xác nhận XANH ngay**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: `0 failed, 0 error(s) of 9 tests`. Test này xanh ngay từ đầu là **đúng** — nó là chốt chặn hồi quy, không phải TDD đỏ→xanh.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add custom-addons/hocba_hrm/tests/test_role_account.py
@@ -419,7 +419,7 @@ git commit -m "test(accounts): chot chan man Tai khoan van liet ke tai khoan vai
 
 **Bối cảnh:** `Shell.jsx` đã ẩn "Hồ sơ của tôi" cho mọi `isManager`, nên UI vốn đã đúng. Task này làm backend nói đúng sự thật, và làm `Attendance.jsx` (dùng `hasEmployee`) hiển thị đúng nhánh quản lý.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 `_role_payload` đọc `request`, thứ chỉ tồn tại trong ngữ cảnh HTTP, nên test khoá ở
 mức helper thuần — chính điều kiện mà `_role_payload` và `api_me` sẽ gọi. Hành vi
@@ -441,11 +441,11 @@ HTTP do bước kiểm chứng thủ công ở Task 7 phủ.
         self.assertTrue(_has_self_profile(nv_user))
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận ĐỎ**
+- [x] **Step 2: Chạy test, xác nhận ĐỎ**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: FAIL với `ImportError: cannot import name '_has_self_profile'`.
 
-- [ ] **Step 3: Thêm helper**
+- [x] **Step 3: Thêm helper**
 
 Trong `custom-addons/hocba_hrm/controllers/main.py`, đặt ngay **sau** `_emp_in_scope` (kết thúc ~dòng 1634):
 
@@ -461,7 +461,7 @@ def _has_self_profile(user):
     return bool(emp) and not emp.x_is_role_account
 ```
 
-- [ ] **Step 4: Dùng helper trong `_role_payload`**
+- [x] **Step 4: Dùng helper trong `_role_payload`**
 
 Trong `_role_payload`, thay dòng:
 
@@ -477,7 +477,7 @@ bằng:
 
 **Giữ nguyên** `'employeeId': emp.id if emp else False` — nhiều luồng quản lý ở FE dùng id này.
 
-- [ ] **Step 5: Chặn luôn ở `api_me`**
+- [x] **Step 5: Chặn luôn ở `api_me`**
 
 Trong `api_me`, thay:
 
@@ -495,11 +495,11 @@ bằng:
             return request.make_json_response({'hasEmployee': False})
 ```
 
-- [ ] **Step 6: Chạy test, xác nhận XANH**
+- [x] **Step 6: Chạy test, xác nhận XANH**
 
 Lệnh như Task 1 Step 2. Kỳ vọng: `0 failed, 0 error(s) of 10 tests`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add custom-addons/hocba_hrm/controllers/main.py custom-addons/hocba_hrm/tests/test_role_account.py
@@ -513,7 +513,7 @@ git commit -m "feat(me): tai khoan vai tro khong co Ho so cua toi"
 **Files:**
 - Create: `custom-addons/hocba_employees/migrations/19.0.7.0.0/post-migrate.py`
 
-- [ ] **Step 1: Viết migration**
+- [x] **Step 1: Viết migration**
 
 ```python
 """Gỡ manager_id của mọi phòng ban — chuẩn bị cho tài khoản vai trò.
@@ -541,19 +541,19 @@ def migrate(cr, version):
 
 **Cột `x_is_role_account` mang `NULL`, KHÔNG phải `false`.** Đã đo trên DB local sau Task 1: cả 39 bản ghi cũ đều `NULL` — Odoo không backfill default vào hàng có sẵn. Domain Odoo `('x_is_role_account', '=', False)` vẫn đúng vì nó nở thành `IS NULL OR = false`. Nhưng SQL thô trong migration mà viết `WHERE x_is_role_account = false` sẽ **trượt sạch mọi hàng**. Dùng `IS NOT TRUE`. Cũng vì lý do này, đừng đổi domain sang dạng `'!='` hay `'not in'` — chúng sẽ rụng hết hàng legacy.
 
-- [ ] **Step 2: Nâng version module — PHẢI cùng commit với migration**
+- [x] **Step 2: Nâng version module — PHẢI cùng commit với migration**
 
 `custom-addons/hocba_employees/__manifest__.py` dòng 3: `'version': '19.0.6.0.0'` → `'version': '19.0.7.0.0'`.
 
 Thứ tự này là bắt buộc: Odoo chỉ chạy `migrations/19.0.7.0.0/` khi thấy version trong manifest CAO HƠN `latest_version` đang ghi trong `ir_module_module`. Bump sớm ở task trước = migration không bao giờ chạy.
 
-- [ ] **Step 3: Chạy upgrade trên DB local**
+- [x] **Step 3: Chạy upgrade trên DB local**
 
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm odoo odoo -d hocba_hrm -u hocba_employees,hocba_hrm --addons-path=/mnt/extra-addons --stop-after-init --log-level=info
 ```
 
-- [ ] **Step 4: Xác minh bằng SQL**
+- [x] **Step 4: Xác minh bằng SQL**
 
 ```bash
 docker exec isp490_g2_hocba_hrm-db-1 psql -U odoo -d hocba_hrm -c "select count(*) as con_truong_phong from hr_department where manager_id is not null;"
@@ -561,7 +561,7 @@ docker exec isp490_g2_hocba_hrm-db-1 psql -U odoo -d hocba_hrm -c "select count(
 
 Kỳ vọng: `con_truong_phong = 0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add custom-addons/hocba_employees/migrations/19.0.7.0.0/post-migrate.py custom-addons/hocba_employees/__manifest__.py
@@ -575,29 +575,35 @@ git commit -m "chore(migration): go manager_id moi phong ban (19.0.7.0.0)"
 **Files:**
 - Modify: `docs/DB_TEST_DATA.md`
 
-- [ ] **Step 1: Đọc file để nắm khuôn bảng và nhật ký**
+- [x] **Step 1: Đọc file để nắm khuôn bảng và nhật ký**
 
 ```bash
 head -60 docs/DB_TEST_DATA.md && echo "..." && tail -30 docs/DB_TEST_DATA.md
 ```
 
-- [ ] **Step 2: Cập nhật bảng tài khoản**
+- [x] **Step 2: Cập nhật bảng tài khoản**
 
 Sửa dòng của `test_truongphong@hocba.vn`: nó **không còn** là trưởng phòng sau migration. Ghi rõ trạng thái mới (nhân viên thường, HB.06 Trần Quốc Việt) và cách lấy lại vai trò: HR vào màn Phòng ban → Thêm phòng ban → tạo tài khoản vai trò mới.
 
-- [ ] **Step 3: Thêm mục nhật ký**
+- [x] **Step 3: Thêm mục nhật ký**
 
 Theo khuôn nhật ký sẵn có trong file, thêm mục ngày **2026-08-27**: đã chạy migration `19.0.7.0.0` trên DB local `hocba_hrm`, gỡ `manager_id` của toàn bộ 7 phòng ban; Neon **chưa** chạy, chờ báo nhóm.
 
-- [ ] **Step 4: Chạy lại toàn bộ test hai module**
+- [x] **Step 4: Chạy lại toàn bộ test hai module**
 
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm odoo odoo -d hocba_hrm -u hocba_hrm,hocba_employees --addons-path=/mnt/extra-addons --test-enable --test-tags /hocba_hrm,/hocba_employees --stop-after-init --log-level=test
 ```
 
-Kỳ vọng: `0 failed, 0 error(s) of N tests`, N > 0.
+**Kỳ vọng KHÔNG phải là 0 đỏ** — cùng baseline như Task 3 Step 5: tồn đọng môi
+trường DB local đã đo ở commit sạch `0eea990` là `3 failed, 3 error(s) of 124
+tests` trên `--test-tags /hocba_employees` (hai file `test_onboarding_finalize`
+và `test_probation_notify`), không liên quan tính năng này. Kết quả thật đo
+được khi chạy `--test-tags /hocba_hrm,/hocba_employees` (gồm cả 2 module):
+`6 failed, 4 error(s) of 559 tests`. Kỳ vọng đúng: **không xuất hiện test đỏ
+MỚI** ngoài các cái tồn đọng đã biết — so theo TÊN test, không theo con số.
 
-- [ ] **Step 5: Kiểm chứng thủ công trên app**
+- [x] **Step 5: Kiểm chứng thủ công trên app**
 
 Khởi động lại Odoo (`docker restart isp490_g2_hocba_hrm-odoo-1`), đăng nhập `test_hrmanager@hocba.vn`, rồi kiểm:
 
@@ -607,7 +613,7 @@ Khởi động lại Odoo (`docker restart isp490_g2_hocba_hrm-odoo-1`), đăng 
 4. Màn **Tài khoản**: **có** xuất hiện, vai trò "Trưởng phòng".
 5. Đăng nhập bằng tài khoản vừa tạo: **không** có mục "Hồ sơ của tôi", nhưng **thấy** NV phòng mình.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/DB_TEST_DATA.md
