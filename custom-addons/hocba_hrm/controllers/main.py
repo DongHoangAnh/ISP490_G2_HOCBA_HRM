@@ -1666,6 +1666,17 @@ def _emp_in_scope(env, e):
         [('id', '=', e.id)] + _emp_scope_domain(env)))
 
 
+def _has_self_profile(user):
+    """User này có hồ sơ nhân sự của chính mình để xem không?
+
+    Tài khoản vai trò (trưởng phòng) có gắn hr.employee, nhưng đó là bản ghi kỹ
+    thuật để mang manager_id chứ không phải hồ sơ nhân sự — không có gì để bày
+    ở "Hồ sơ của tôi" (spec 2026-08-27).
+    """
+    emp = user.employee_id
+    return bool(emp) and not emp.x_is_role_account
+
+
 def _is_dept_manager(env, emp):
     """True nếu emp là quản lý trực tiếp (có cấp dưới) hoặc trưởng phòng ban."""
     return bool(emp) and (
@@ -4881,7 +4892,7 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         e = request.env.user.employee_id
-        if not e:
+        if not _has_self_profile(request.env.user):
             return request.make_json_response({'hasEmployee': False})
         return request.make_json_response(self._me_payload(e.sudo()))
 
@@ -4925,7 +4936,7 @@ class HocBaHRM(http.Controller):
             'name': user.name,
             'login': user.login,
             'employeeId': emp.id if emp else False,
-            'hasEmployee': bool(emp),
+            'hasEmployee': _has_self_profile(user),
             'roleLabel': ' · '.join(roles),
             'isAdmin': is_admin,
             'isHrManager': is_hr_mgr,

@@ -16,7 +16,7 @@ from odoo.tests import tagged
 
 from odoo.addons.hocba_hrm.controllers.main import (
     _dept_create, _dept_update, _emp_scope_domain, _account_list,
-    _user_can_manage)
+    _user_can_manage, _has_self_profile)
 
 
 @tagged('post_install', '-at_install')
@@ -292,3 +292,16 @@ class TestRoleAccount(TransactionCase):
             rows[0]['role'], 'truongphong',
             'Tài khoản vai trò tạo từ form phòng ban phải mang role '
             "'truongphong' trên màn Tài khoản.")
+
+    # ---- Task 5: không có "Hồ sơ của tôi" ----
+    def test_dieu_kien_an_ho_so_ca_nhan(self):
+        """hasEmployee phải False cho tài khoản vai trò. Test ở mức điều kiện
+        vì _role_payload cần request; hành vi HTTP do test thủ công phủ."""
+        _dept, emp = self._create_dept(name='Phong Me', login='tp_role_8')
+        self.assertFalse(_has_self_profile(emp.user_id))
+        nv_user = self.env['res.users'].create({
+            'name': 'NV Co Ho So', 'login': 'nv_co_ho_so',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])]})
+        self.env['hr.employee'].sudo().create({
+            'name': 'NV Co Ho So', 'user_id': nv_user.id})
+        self.assertTrue(_has_self_profile(nv_user))
