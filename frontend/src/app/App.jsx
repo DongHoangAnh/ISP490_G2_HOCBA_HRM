@@ -27,7 +27,7 @@ import TimeoffConfig from '../features/timeoff-config/TimeoffConfig';
 import Service from '../features/service/Service';
 import AttendanceConfig from '../features/attendance-config/AttendanceConfig';
 import ReviewsConfig from '../features/reviews-config/ReviewsConfig';
-import { LoadingState, ErrorState } from '../components/states';
+import { LoadingState, ErrorState, AccessDeniedState } from '../components/states';
 import Login from '../features/auth/Login';
 
 export default function App() {
@@ -157,7 +157,7 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get('payslip_id') && allowedViews(me).has('payroll')) {
         setView('payroll');
-      } else if (!allowedViews(me).has(view)) {
+      } else if (!allowedViews(me).has(view) && view !== 'payroll') {
         setView(defaultView(me));
       }
     }
@@ -192,7 +192,11 @@ export default function App() {
         {view === 'offboarding' && (
           <Offboarding search={search} onQueueChanged={reloadOffbBadge} />
         )}
-        {view === 'payroll' && <Payroll search={search} me={me} />}
+        {view === 'payroll' && (
+          navViews.has('payroll')
+            ? <Payroll search={search} me={me} />
+            : <AccessDeniedState />
+        )}
         {view === 'finance' && me.isFinance && <Finance search={search} />}
         {view === 'reviews' && canManage && (
           <Reviews search={search} canPromote={me.isHrManager} />

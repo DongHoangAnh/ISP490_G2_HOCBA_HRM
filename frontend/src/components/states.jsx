@@ -19,6 +19,14 @@ export function ErrorState({ message, onRetry }) {
   );
 }
 
+export function AccessDeniedState() {
+  return (
+    <div className="content fade-in">
+      <div className="empty">Bạn không có quyền truy cập.</div>
+    </div>
+  );
+}
+
 export function EmptyState({ children }) {
   return <div className="empty">{children}</div>;
 }

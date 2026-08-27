@@ -22,7 +22,7 @@ const NAV = [
     // Hộp thư yêu cầu/góp ý của nhân viên (HR + Trưởng phòng xử lý).
     { id: 'service', label: 'Yêu cầu dịch vụ', icon: 'mail', need: 'manage' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'manage' },
-    { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'manage' },
+    { id: 'payroll', label: 'Bảng lương', icon: 'wallet', need: 'payroll' },
     // Đánh giá định kỳ (giảng viên / văn phòng) — HR, trưởng phòng, giáo vụ
     { id: 'reviews', label: 'Đánh giá', icon: 'star', need: 'manage' },
     // Trang lịch sử từng người (họp 2026-08-07): thăng tiến + đánh giá +
@@ -55,7 +55,7 @@ const NAV = [
     // Gửi yêu cầu/góp ý (kể cả ẩn danh) tới HR hoặc trưởng phòng.
     { id: 'service', label: 'Yêu cầu & Góp ý', icon: 'mail', need: 'self' },
     { id: 'offboarding', label: 'Nghỉ việc', icon: 'logout', need: 'self' },
-    { id: 'payroll', label: 'Phiếu lương cá nhân', icon: 'wallet', need: 'self' },
+    { id: 'payroll', label: 'Phiếu lương cá nhân', icon: 'wallet', need: 'payrollSelf' },
     { id: 'profile', label: 'Hồ sơ của tôi', icon: 'user', need: 'self' },
     // Cùng view 'career', tự ghim vào bản thân — khách muốn nhân viên xem
     // được "họ được đánh giá như thế nào, thăng tiến như thế nào" (08:13).
@@ -70,6 +70,11 @@ const isRoleAccount = (me) => !!(me && (me.isAdmin || me.isHrManager || me.isHrU
 
 const allow = (need, me) => {
   if (need === 'manage') return !!(me && me.canManage);
+  // Bảng lương toàn công ty chứa dữ liệu nhạy cảm: chỉ Admin/HR được truy cập.
+  // Trưởng phòng/giáo vụ dù có canManage vẫn không được nhìn thấy menu này.
+  if (need === 'payroll') return !!(me && (me.isAdmin || me.isHrUser || me.isHrManager));
+  // Phiếu lương cá nhân chỉ dành cho tài khoản cá nhân có liên kết nhân viên.
+  if (need === 'payrollSelf') return !!(me && me.hasEmployee && !isRoleAccount(me) && !me.isFinance);
   if (need === 'hr') return !!(me && (me.isHrUser || me.isHrManager || me.isAdmin));
   if (need === 'admin') return !!(me && me.isAdmin);
   if (need === 'hrm') return !!(me && (me.isHrManager || me.isAdmin));
