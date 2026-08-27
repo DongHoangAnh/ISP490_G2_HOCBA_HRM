@@ -32,7 +32,7 @@ class TestBankFileFormatter(TransactionCase):
             'name': 'HĐ Bank Test',
             'state': 'open',
             'date_start': '2026-01-01',
-            'wage_base': 25000000.0,
+            'wage': 25000000.0,
         })
 
     def test_01_bank_file_creation_and_lines(self):
@@ -52,37 +52,42 @@ class TestBankFileFormatter(TransactionCase):
         slip.action_compute_sheet()
 
         # Create bank format if needed
-        format_mb = self.BankFormat.search([('code', '=', 'MBBANK')], limit=1)
+        format_mb = self.BankFormat.search([('code', '=', 'MB')], limit=1)
         if not format_mb:
             format_mb = self.BankFormat.create({
                 'name': 'MB Bank Standard Format',
-                'code': 'MBBANK',
-                'file_type': 'xlsx',
-                'template_header': 'STT,So_TK,Ten_Chu_TK,So_Tien,Noi_Dung',
+                'code': 'MB',
+                'file_extension': 'xlsx',
+                'formatter_class': 'MBBankFormatter',
             })
 
         # Generate Bank File
         bank_file = self.BankFile.create({
             'name': 'BANK-MB-202608',
-            'payslip_run_id': batch.id,
+            'batch_id': batch.id,
             'bank_format_id': format_mb.id,
-            'state': 'draft',
+            'payment_date': '2026-09-05',
+            'state': 'generated',
         })
 
-        self.assertEqual(bank_file.state, 'draft', 'File bank khởi tạo ở trạng thái draft.')
+        self.assertEqual(bank_file.state, 'generated', 'File bank khởi tạo ở trạng thái generated.')
         self.assertIsNotNone(bank_file.name, 'Tên file bank không được để trống.')
 
     def test_02_bank_file_status_transitions(self):
-        """Test state flow: draft -> uploaded -> confirmed."""
+        """Test state flow: generated -> uploaded -> confirmed."""
+        batch = self.Batch.create({
+            'name': 'Batch trạng thái file VCB',
+            'date_start': '2026-08-01',
+            'date_end': '2026-08-31',
+        })
         bank_file = self.BankFile.create({
             'name': 'BANK-VCB-202608',
-            'state': 'draft',
+            'batch_id': batch.id,
+            'payment_date': '2026-09-05',
+            'state': 'generated',
         })
 
-        if hasattr(bank_file, 'action_upload'):
-            bank_file.action_upload()
-            self.assertEqual(bank_file.state, 'uploaded')
-
-        if hasattr(bank_file, 'action_confirm'):
-            bank_file.action_confirm()
-            self.assertEqual(bank_file.state, 'confirmed')
+        bank_file.action_mark_uploaded()
+        self.assertEqual(bank_file.state, 'uploaded')
+        bank_file.action_mark_confirmed()
+        self.assertEqual(bank_file.state, 'confirmed')

@@ -71,10 +71,17 @@ class TestRoleAllowanceBulk(HttpCase):
             f'/hocba-hrm/api/payroll/batch/{batch.id}/bulk-bonus-penalty',
             data=payload,
             headers={'Content-Type': 'application/json'},
-            csrf=False
         )
 
         self.assertIn(res.status_code, [200, 201])
         slip.invalidate_recordset()
         self.assertEqual(slip.x_bonus_extra, 1000000.0)
         self.assertEqual(slip.x_penalty_amount, 200000.0)
+        self.assertEqual(
+            slip.line_ids.filtered(lambda line: line.code == 'bonus_extra').amount,
+            1000000.0,
+        )
+        self.assertEqual(
+            slip.line_ids.filtered(lambda line: line.code == 'penalty_amount').amount,
+            200000.0,
+        )

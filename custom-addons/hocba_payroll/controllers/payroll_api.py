@@ -77,7 +77,6 @@ def _run_async_batch_compute(db_name, batch_id, slip_ids):
         cr.commit()
 
         try:
-            rules = env['hb.salary.rule'].search([('active', '=', True)], order='sequence, id')
             CHUNK_SIZE = 50
             total_computed = 0
 
@@ -85,7 +84,7 @@ def _run_async_batch_compute(db_name, batch_id, slip_ids):
                 chunk_ids = slip_ids[i:i + CHUNK_SIZE]
                 slips = env['hb.payslip'].browse(chunk_ids).filtered(lambda s: s.state in ('draft', 'verify'))
                 if slips:
-                    res = slips.action_compute_batch(prefetched_rules=rules)
+                    res = slips.action_compute_batch()
                     total_computed += res.get('computed', 0)
 
                 batch.write({'computed_count': total_computed})

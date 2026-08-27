@@ -35,7 +35,7 @@ class TestBatchComputePayroll(TransactionCase):
                 'name': f'HD Test {i+1}',
                 'state': 'open',
                 'date_start': '2026-01-01',
-                'wage_base': 10000000 + i * 500000,
+                'wage': 10000000 + i * 500000,
             })
             emps.append(emp)
 

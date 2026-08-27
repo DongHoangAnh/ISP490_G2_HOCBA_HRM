@@ -76,6 +76,11 @@ class HbSalaryRule(models.Model):
     )
     note = fields.Text(string='Mô tả')
 
+    _structure_code_uniq = models.Constraint(
+        'unique (structure_id, code)',
+        'Mã quy tắc lương phải là duy nhất trong một cấu trúc lương!',
+    )
+
     # ── Lookup helpers ───────────────────────────────────────────
     @api.model
     def _get_lookup_source_options(self):

@@ -29,6 +29,9 @@ class TestSaleLevelSalary(TransactionCase):
             'name': 'Sale Chính Thức A',
             'work_email': 'official_sale_a@hocba.edu.vn',
             'x_employment_status': 'official',
+            'identification_id': '090000009911',
+            'x_pit_code': '8123459911',
+            'x_social_insurance_no': '3199999911',
             'job_id': self.sales_job.id,
         })
 
@@ -45,6 +48,9 @@ class TestSaleLevelSalary(TransactionCase):
             'name': 'Nhân viên IT C',
             'work_email': 'it_c@hocba.edu.vn',
             'x_employment_status': 'official',
+            'identification_id': '090000009912',
+            'x_pit_code': '8123459912',
+            'x_social_insurance_no': '3199999912',
             'job_id': self.it_job.id,
         })
 
@@ -53,21 +59,21 @@ class TestSaleLevelSalary(TransactionCase):
             'name': 'HĐ Sale Official',
             'state': 'open',
             'date_start': '2026-01-01',
-            'wage_base': 5000000.0,
+            'wage': 5000000.0,
         })
         self.Contract.create({
             'employee_id': self.emp_probation_sale.id,
             'name': 'HĐ Sale Probation',
             'state': 'open',
             'date_start': '2026-01-01',
-            'wage_base': 6000000.0,
+            'wage': 6000000.0,
         })
         self.Contract.create({
             'employee_id': self.emp_it.id,
             'name': 'HĐ IT Official',
             'state': 'open',
             'date_start': '2026-01-01',
-            'wage_base': 15000000.0,
+            'wage': 15000000.0,
         })
 
     def test_01_official_sale_achieves_level_3(self):
@@ -84,7 +90,7 @@ class TestSaleLevelSalary(TransactionCase):
         self.assertEqual(slip.x_sale_level_id.level_code, 'LEVEL_3', 'KPI 2.1 phải khớp Level 3 (kpi_target=2.0).')
 
     def test_02_probation_sale_uses_contract_wage(self):
-        """Test Probation Sale uses contract wage_base regardless of KPI score."""
+        """Test Probation Sale uses contract wage regardless of KPI score."""
         slip = self.Payslip.create({
             'employee_id': self.emp_probation_sale.id,
             'date_from': '2026-08-01',
@@ -96,7 +102,7 @@ class TestSaleLevelSalary(TransactionCase):
         self.assertFalse(slip.x_sale_level_id, 'Sale thử việc KHÔNG được dùng ngạch Level Sale.')
 
     def test_03_non_sales_staff_uses_contract_wage(self):
-        """Test IT employee uses contract wage_base."""
+        """Test IT employee uses contract wage."""
         slip = self.Payslip.create({
             'employee_id': self.emp_it.id,
             'date_from': '2026-08-01',

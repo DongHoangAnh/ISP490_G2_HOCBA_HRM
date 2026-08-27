@@ -912,6 +912,19 @@ class HbPayslip(models.Model):
         if not self:
             return {'computed': 0, 'errors': []}
 
+        # A prefetched set is safe only when every rule belongs to one salary
+        # structure.  Mixing OFFLINE and ONLINE introduces duplicate codes
+        # (for example tong_thu_nhap/thuc_lanh) and can calculate a slip with
+        # rules from the wrong structure.  Fall back to per-slip resolution.
+        if prefetched_rules is not None:
+            structure_ids = {rule.structure_id.id for rule in prefetched_rules}
+            if len(structure_ids) > 1:
+                _logger.warning(
+                    'Ignoring mixed-structure prefetched salary rules; '
+                    'resolving the correct structure for each payslip.',
+                )
+                prefetched_rules = None
+
         # 🚀 Xóa các dòng chi tiết lương cũ của các phiếu CHƯA LƯU LỊCH SỬ (state != 'close')
         slips_to_clear = self.filtered(lambda s: not s.payslip_run_id or s.payslip_run_id.state != 'close')
         old_lines = slips_to_clear.mapped('line_ids')
