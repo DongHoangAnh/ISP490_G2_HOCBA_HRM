@@ -11,10 +11,10 @@
 | Login | Vai trò | Nhóm quyền Odoo | Hồ sơ NV | Test gì |
 |---|---|---|---|---|
 | `test_admin@hocba.vn` | Admin | `base.group_system` + (từ 2026-08-16 trên local) `hr.group_hr_manager`, `hocba_finance.group_finance_manager` | — | Toàn quyền, mọi phòng ban |
-| `test_hrmanager@hocba.vn` | HR Manager | `hr.group_hr_manager` (Odoo tự kéo theo `hr.group_hr_user`) | **HB.02 Đỗ Quang Huy** (TP Kế toán_HCNS) | Quản lý NV + xem lương + duyệt cổng mọi NV + quản lý phòng ban |
+| `test_hrmanager@hocba.vn` | HR Manager | `hr.group_hr_manager` (Odoo tự kéo theo `hr.group_hr_user`) | **HB.02 Đỗ Quang Huy** (⚠️ **không còn** là TP Kế toán_HCNS từ 2026-08-27, xem Nhật ký) | Quản lý NV + xem lương + duyệt cổng mọi NV + quản lý phòng ban — quyền này đến từ nhóm HR, **không** phụ thuộc có là trưởng phòng hay không nên không đổi |
 | `test_hr@hocba.vn` | HR officer | `hr.group_hr_user` | **HB.03 Trần Thị Bích Ngọc** | Xem/sửa hồ sơ, **không** thấy lương, phòng ban **chỉ xem** (không thêm/sửa/lưu trữ) |
 | `test_giaovu@hocba.vn` | Giáo vụ | `hocba_employees.group_hocba_giaovu` | **HB.24 Phạm Văn Long** | **Chỉ thấy giáo viên** |
-| `test_truongphong@hocba.vn` | Trưởng phòng | (không nhóm HR) | **HB.06 Trần Quốc Việt** (TP Kinh doanh) | **Chỉ NV phòng mình**; duyệt cổng dù không có quyền HR |
+| `test_truongphong@hocba.vn` | ⚠️ **Nhân viên thường từ 2026-08-27** (KHÔNG còn là trưởng phòng) | (không nhóm HR) | **HB.06 Trần Quốc Việt** (nhân viên phòng Kinh doanh) | Chỉ còn self-service của chính mình; **không** duyệt cổng NV khác, **không** quản lý phòng ban nữa. Muốn có lại một tài khoản trưởng phòng để test: đăng nhập `test_hrmanager` → màn Phòng ban → **Thêm phòng ban** → form bắt buộc tạo kèm tài khoản trưởng phòng mới (tài khoản vai trò, không có hồ sơ NV — xem `custom-addons/hocba_hrm/tests/test_role_account.py`) |
 | `test_employee@hocba.vn` | Nhân viên | (không) | **HB.07 Nguyễn Thị Thu Hà** | Self-service: Hồ sơ của tôi, NPT, ảnh |
 | `test_ctv@hocba.vn` | Nhân viên (CTV) | (không) | **HB.21 Chu Tuyết Nhi** (GV cộng tác, online) | ⚠️ Có hồ sơ → **không dùng để test ca "user chưa gắn hồ sơ"** |
 
@@ -22,13 +22,22 @@
 > Trưởng phòng = officer phân theo phòng ban; với SPA (sudo sau kiểm phạm vi) thì
 > tài khoản thường vẫn duyệt được cổng NV trong phòng mình.
 > ⚠️ `test_employee2@hocba.vn` **đã bị xoá** khi dựng lại DB local ngày 2026-08-16.
+> ⚠️ **Từ 2026-08-27 (migration `19.0.7.0.0`, xem Nhật ký): CẢ 7 phòng ban trên DB
+> local đều đang KHÔNG có trưởng phòng** (`hr.department.manager_id` đã bị gỡ hết).
+> Danh sách "trưởng phòng" liệt kê ngay dưới đây (kể cả `test_truongphong@hocba.vn`
+> ở bảng trên) **chỉ còn đúng ở nghĩa "hồ sơ NV này từng kiêm nhiệm trưởng phòng"**
+> — hiện tại KHÔNG ai duyệt cổng được theo phòng ban trên DB local. Muốn có tài
+> khoản trưởng phòng để test, tạo mới qua form Thêm phòng ban (xem cột "Test gì"
+> của `test_truongphong@hocba.vn`).
 
 **Trên DB local (từ 2026-08-16): mỗi NV demo đều có tài khoản riêng**, mật khẩu
 chung `Hocba@2026`, login dạng `<tên>.<viếttắt>@hocba.vn` (vd `nam.nh@hocba.vn`,
 `linh.tk@hocba.vn`, `han.lg@hocba.vn`). Danh sách đầy đủ in ra khi chạy
-`tools/demo_seed/p9_finalize.py`. 5 trưởng phòng còn lại (ngoài 2 TK test ở trên):
-`nam.nh@hocba.vn` (BOD), `khoi.lm@hocba.vn` (Marketing), `linh.tk@hocba.vn`
-(Sản phẩm), `mai.vt@hocba.vn` (Vận hành); kế toán: `van.lth@hocba.vn`.
+`tools/demo_seed/p9_finalize.py`. 5 người từng kiêm nhiệm trưởng phòng (ngoài 2 TK
+test ở trên) — **nay đều chỉ còn là NV thường** (xem cảnh báo ngay trên):
+`nam.nh@hocba.vn` (từng TP BOD), `khoi.lm@hocba.vn` (từng TP Marketing),
+`linh.tk@hocba.vn` (từng TP Sản phẩm), `mai.vt@hocba.vn` (từng TP Vận hành);
+kế toán: `van.lth@hocba.vn`.
 
 ---
 
@@ -241,3 +250,4 @@ docker compose -f docker-compose.yml run --rm --no-deps -T odoo \
 | 2026-08-21 | Neon `neondb` | ✅ **Tạo 2 hợp đồng còn thiếu** (`hb.contract` id 9, 10) cho **HB.03 Trần Quốc Việt** (25.000.000 đ, từ 20/08/2026) và **HB.357 Nguyễn Thị Mai Anh** (1.000.000 đ, từ 09/08/2026) — lương lấy đúng `hr.version.wage` trên hồ sơ, ngày bắt đầu = ngày lên chính thức, `state = open`. **Vì sao thiếu**: 8 hợp đồng cũ đều do script seed demo tạo một lượt 27/06/2026 (create_uid OdooBot, tên `[DEMO] HĐLĐ …`); app **không có luồng nào tạo `hb.contract`** — `_hocba_make_official()` chỉ tạo Activity nhắc HR, và ô "Lương cơ bản" ở tab Nhân viên chỉ ghi đè hợp đồng ĐÃ CÓ. Ai vào hệ thống / lên chính thức sau 27/06 đều thiếu hợp đồng. Từ 17/08 (commit `6207f9e`) bảng lương lọc theo hợp đồng `open` nên họ biến mất: **10 NV văn phòng chính thức → bảng chỉ 8 dòng**. Sau khi tạo: **10/10 dòng**. Đã tính lại 2 phiếu Nháp 08/2026 (id 1521, 1709) → đã link hợp đồng, BHXH tính đúng trên nền lương HĐ. ⚠️ **Còn tồn**: `nctt` (ngày công thực tế) = 0 nên chưa có thu nhập theo công, net HB.03 vẫn −1.625.000; và 2 phiếu `done` trong đợt đã chốt (HB.03 −2.625.000, HB.357 −105.000) **chưa đụng tới**. | Việt/Claude |
 | 2026-08-22 | Local `hocba_hrm` | ⚠️ **DB local không khởi động được với `postgres:18`**: `docker-compose.local.yml` đã pin PG18 (commit `737f7f0`) và đổi mount sang `/var/lib/postgresql`, nhưng volume `isp490_g2_hocba_hrm_postgres_data` đang chứa **data PG15** (`PG_VERSION=15` ở gốc volume) → container `db` thoát ngay khi start ("There appears to be PostgreSQL data in /var/lib/postgresql"). Chưa xoá volume vì trong đó là **bộ demo 28 NV** seed ngày 2026-08-16. Cách chạy tạm (không sửa file đã commit): thêm override `image: postgres:15` + mount `/var/lib/postgresql/data`. **Cần quyết**: `pg_upgrade` giữ dữ liệu, hay xoá volume rồi seed lại bằng `tools/demo_seed/`. | Vu/Claude |
 | 2026-08-22 | Local `hocba_hrm` | 🧪 Chạy test `-u hocba_employees,hocba_hrm` (514 test): **15 lỗi và đúng 15 lỗi đó cũng có trên `origin/main` sạch** (đã dựng worktree `origin/main` chạy đối chứng cùng DB). Trong đó **5 lỗi `TestProbationNotify` là do dữ liệu DB local trôi**, không phải lỗi code: template `Thử việc Nhân viên văn phòng` (id 65) trong DB local đã bị sửa tay/seed thành `apply_position_types='staff,manager,ctv,freelancer'` **và gắn thêm điều kiện loại NV `office_staff`** (file seed gốc chỉ có `staff,manager`, không ràng loại NV) → NV trong test không khớp template nào nên không được gán bước. | Vu/Claude |
+| 2026-08-27 | **Local `hocba_hrm`** | ✅ **Chạy migration `-u hocba_employees` → `19.0.7.0.0`**, gỡ `manager_id` của **toàn bộ 7 phòng ban** (Marketing, Sản phẩm (R&D_SP), Kinh doanh, Vận hành, Kế toán_HCNS, BOD, Test) — thuộc tính năng "tài khoản vai trò trưởng phòng" (spec `docs/superpowers/specs/2026-08-27-tai-khoan-vai-tro-truong-phong-design.md`): từ nay trưởng phòng phải là **tài khoản vai trò riêng** tạo qua form Thêm/Sửa phòng ban (`hr.employee.x_is_role_account=True`, không hồ sơ NV, không mã NV, không mốc Nhận việc), không còn kiêm nhiệm bằng hồ sơ NV thật như trước. Verify: `select count(*) from hr_department where manager_id is not null` → **0**; `latest_version` → **`19.0.7.0.0`**. **6 NV thật từng kiêm nhiệm trưởng phòng nay chỉ còn là NV thường** (vẫn chấm công/lương bình thường, chỉ mất quyền duyệt phòng): HB.12 Lê Minh Khôi (Marketing), HB.17 Trần Khánh Linh (Sản phẩm), **HB.06 Trần Quốc Việt = `test_truongphong@hocba.vn`** (Kinh doanh), HB.23 Vũ Thị Mai (Vận hành), **HB.02 Đỗ Quang Huy = `test_hrmanager@hocba.vn`** (Kế toán_HCNS — không ảnh hưởng vì tài khoản này lên quyền từ nhóm HR), HB.01 Nguyễn Hoàng Nam (BOD); phòng Test còn lại kiêm nhiệm bằng `HB.25352`/`test123` — bản ghi tài khoản vai trò tạo TRƯỚC khi có cờ `x_is_role_account` nên **không** mang cờ này, đang trôi thành một "NV thử việc" giả trong hàng đợi Nhận việc (chưa xử lý trong đợt này, cần HR quyết dọn). Test sau migration: `6 failed, 4 error(s) of 559 tests` — đúng 10 tên đỏ baseline đã biết (`TestProbationNotify` ×5, `TestAttendanceApi.test_me_info_today_after_checkin`, `TestAttendanceRequest` ×2, `TestEmployeeImportPreview.test_preview_creates_nothing`, `TestRequestPreview.test_create_with_record_ok`), không có tên lạ. ⚠️ **Neon CHƯA chạy migration này** — `test_truongphong@hocba.vn` trên Neon **vẫn còn** là trưởng phòng Kinh doanh bình thường cho tới khi ai đó pull nhánh `feature/dept-bo-loai-nhan-su` về và `-u hocba_employees` lên Neon qua endpoint trực tiếp. Báo cả nhóm trước khi làm việc đó — deploy xong là **cả nhóm mất quyền trưởng phòng cũ trên Neon cùng lúc**, ai đang test luồng duyệt cổng theo phòng ban trên Neon sẽ gãy giữa chừng. | Tân/Claude |
