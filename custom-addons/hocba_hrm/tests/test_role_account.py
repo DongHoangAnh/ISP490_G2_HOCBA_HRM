@@ -10,13 +10,17 @@ VẪN hiện ở màn Tài khoản để HR đổi mật khẩu / khoá.
 DB test dùng chung nên mọi assert so theo bản ghi do test tự tạo, không so số
 tuyệt đối.
 """
+import json
+
 from odoo import fields
 from odoo.tests.common import TransactionCase
-from odoo.tests import tagged
+from odoo.tests import HttpCase, tagged
 
 from odoo.addons.hocba_hrm.controllers.main import (
     _dept_create, _dept_update, _emp_scope_domain, _account_list,
     _user_can_manage, _has_self_profile)
+
+PWD = 'Hocba@2026'
 
 
 @tagged('post_install', '-at_install')
@@ -305,3 +309,62 @@ class TestRoleAccount(TransactionCase):
         self.env['hr.employee'].sudo().create({
             'name': 'NV Co Ho So', 'user_id': nv_user.id})
         self.assertTrue(_has_self_profile(nv_user))
+
+
+@tagged('post_install', '-at_install')
+class TestRoleAccountFormWriteGuard(HttpCase):
+    """Bịt lỗ ghi ngược qua form Sửa nhân viên (phát hiện ở review Task 2).
+
+    EmployeeForm.jsx gửi `status: emp?.statusKey || 'probation'` — tài khoản
+    vai trò trả statusKey rỗng nên FE sẽ ghi ngược 'probation' nếu form này
+    mở được cho nó. Sau Task 3, UI không còn đường mở form Sửa cho tài khoản
+    vai trò (đã lọc khỏi mọi danh sách nhân viên), NHƯNG _emp_in_scope trả
+    True ngay cho HR/Admin trước khi hỏi _emp_scope_domain, nên API vẫn nhận
+    request POST thẳng bằng id nếu ai đó gọi ngoài UI (Postman, script, hoặc
+    một màn khác lỡ lộ id). Chặn thẳng ở backend, tại route
+    api_employee_update: từ chối sửa tài khoản vai trò qua form nhân viên —
+    HR quản nó ở màn Tài khoản, không phải form hồ sơ nhân sự.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.hr_mgr = cls.env['res.users'].create({
+            'name': 'HR Mgr Vai Tro WG', 'login': 'hrmgr_role_wg',
+            'password': PWD,
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id,
+                                  cls.env.ref('hr.group_hr_manager').id])]})
+        # x_employment_status=False vì mô phỏng đúng đường thật
+        # (_dept_new_manager) — create() không tự clear field này, chỉ mặc
+        # định 'probation' như NV thường. Nếu không set, test sẽ không phân
+        # biệt được "guard chặn ghi" với "chưa từng bị ghi gì".
+        cls.role_emp = cls.env['hr.employee'].sudo().create({
+            'name': 'TP Vai Tro WG', 'x_is_role_account': True,
+            'x_employment_status': False})
+
+    def _post(self, emp, payload, login='hrmgr_role_wg'):
+        self.authenticate(login, PWD)
+        return self.url_open(
+            '/hocba-hrm/api/employee/%s' % emp.id, data=json.dumps(payload),
+            headers={'Content-Type': 'application/json'})
+
+    def test_hr_khong_sua_duoc_tai_khoan_vai_tro_qua_form_nhan_vien(self):
+        res = self._post(self.role_emp, {'status': 'probation'})
+        self.assertEqual(
+            res.status_code, 400, res.text[:300])
+        self.role_emp.invalidate_recordset()
+        self.assertFalse(
+            self.role_emp.x_employment_status,
+            'Không được ghi ngược trạng thái thử việc lên tài khoản vai trò '
+            '— dù request bị từ chối, phải chắc chắn hoàn toàn không ghi gì.')
+        self.assertTrue(
+            self.role_emp.x_is_role_account,
+            'Cờ vai trò không được đổi trong lúc bị từ chối.')
+
+    def test_nv_that_van_sua_binh_thuong(self):
+        """Đối chứng: guard không được vơ đũa cả nắm sang NV thật."""
+        real_emp = self.env['hr.employee'].sudo().create({'name': 'NV That WG'})
+        res = self._post(real_emp, {'status': 'probation'})
+        self.assertEqual(res.status_code, 200, res.text[:300])
+        real_emp.invalidate_recordset()
+        self.assertEqual(real_emp.x_employment_status, 'probation')

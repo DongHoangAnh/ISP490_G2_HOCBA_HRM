@@ -4653,6 +4653,24 @@ class HocBaHRM(http.Controller):
             return request.make_json_response({'error': 'not_found'}, status=404)
         if not self._can_edit_emp_record(e):
             return request.make_json_response({'error': 'forbidden'}, status=403)
+        if e.x_is_role_account:
+            # Lỗ ghi ngược (review Task 2): EmployeeForm.jsx gửi
+            # status: statusKey || 'probation' — tài khoản vai trò trả
+            # statusKey rỗng nên nếu form này ghi được, nó sẽ tạo bản ghi lai
+            # (x_is_role_account=True nhưng trạng thái thử việc, quay lại
+            # hàng đợi Nhận việc). UI đã lọc tài khoản vai trò khỏi mọi danh
+            # sách nhân viên (Task 3) nên đường này khó tới được từ giao
+            # diện, nhưng _emp_in_scope trả True ngay cho HR/Admin trong
+            # _can_edit_emp_record nên API vẫn nhận request gọi thẳng bằng
+            # id. Kiểm quyền TRƯỚC (403 nếu không có quyền, không lộ thông
+            # tin bản ghi là tài khoản vai trò cho người ngoài phạm vi), rồi
+            # mới từ chối rõ ràng: tài khoản vai trò không phải hồ sơ nhân
+            # sự nên không sửa bằng form này — HR quản nó ở màn Tài khoản.
+            return request.make_json_response(
+                {'error': 'rejected',
+                 'message': 'Đây là tài khoản vai trò (trưởng phòng), không '
+                            'phải hồ sơ nhân sự. Sửa ở màn Tài khoản, không '
+                            'sửa bằng form nhân viên.'}, status=400)
         is_hr = _cap_edit_emp(request.env)
         payload = request.get_json_data()
         emp_vals, ver_vals = self._split_form_payload(payload, is_hr, is_mgr)
