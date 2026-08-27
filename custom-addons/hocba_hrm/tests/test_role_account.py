@@ -36,7 +36,7 @@ class TestRoleAccount(TransactionCase):
 
     def _mgr_block(self, login='tp_role_1', name='TP Vai Tro'):
         return {'name': name, 'login': login,
-                'password': 'Hocba@2026', 'password_confirm': 'Hocba@2026'}
+                'password': PWD, 'password_confirm': PWD}
 
     def _create_dept(self, name='Phong Vai Tro', login='tp_role_1'):
         """Tạo phòng ban kèm tài khoản vai trò, trả về (dept, emp).
@@ -300,7 +300,10 @@ class TestRoleAccount(TransactionCase):
     # ---- Task 5: không có "Hồ sơ của tôi" ----
     def test_dieu_kien_an_ho_so_ca_nhan(self):
         """hasEmployee phải False cho tài khoản vai trò. Test ở mức điều kiện
-        vì _role_payload cần request; hành vi HTTP do test thủ công phủ."""
+        (nhanh, không cần HTTP) cho _has_self_profile tự thân; hành vi HTTP
+        thật của /api/me và /api/me/roles có test riêng ở
+        TestRoleAccountFormWriteGuard (lớp đó đã dùng HttpCase nên không còn
+        lý do né HTTP)."""
         _dept, emp = self._create_dept(name='Phong Me', login='tp_role_8')
         self.assertFalse(_has_self_profile(emp.user_id))
         nv_user = self.env['res.users'].create({
@@ -317,13 +320,29 @@ class TestRoleAccountFormWriteGuard(HttpCase):
 
     EmployeeForm.jsx gửi `status: emp?.statusKey || 'probation'` — tài khoản
     vai trò trả statusKey rỗng nên FE sẽ ghi ngược 'probation' nếu form này
-    mở được cho nó. Sau Task 3, UI không còn đường mở form Sửa cho tài khoản
-    vai trò (đã lọc khỏi mọi danh sách nhân viên), NHƯNG _emp_in_scope trả
-    True ngay cho HR/Admin trước khi hỏi _emp_scope_domain, nên API vẫn nhận
-    request POST thẳng bằng id nếu ai đó gọi ngoài UI (Postman, script, hoặc
-    một màn khác lỡ lộ id). Chặn thẳng ở backend, tại route
-    api_employee_update: từ chối sửa tài khoản vai trò qua form nhân viên —
-    HR quản nó ở màn Tài khoản, không phải form hồ sơ nhân sự.
+    mở được cho nó. Nguy cơ thật KHÔNG phải "lọt lại vào hàng đợi Nhận việc"
+    — _emp_scope_domain (dùng bởi cả api_onboarding lẫn
+    _hocba_maybe_assign_onboarding) đã có ROLE_ACCOUNT_EXCLUDED ở mọi nhánh
+    nên bản ghi lai vẫn bị chặn ở đó. Nguy cơ thật là TOÀN VẸN DỮ LIỆU: bản
+    ghi mang trạng thái nói dối (x_is_role_account=True nhưng thử việc), lộ
+    ra ở filter "Thử việc" trên view Odoo backend, và sẽ ăn theo mốc thăng
+    tiến/onboarding như NV thật nếu sau này ai đó gỡ cờ x_is_role_account.
+
+    Đường tới được đây KHÔNG chỉ là "HR/Admin gọi ngoài UI" (Postman,
+    script) — dù Task 3 đã lọc tài khoản vai trò khỏi mọi danh sách nên UI
+    không còn đường mở form Sửa cho nó, _emp_in_scope vẫn trả True ngay cho
+    HR/Admin (trước khi hỏi _emp_scope_domain) nên API vẫn nhận request POST
+    thẳng bằng id. Nguy hiểm hơn: _emp_in_scope còn short-circuit
+    `e == user.employee_id`, và _cap_edit_emp = _user_can_manage = True cho
+    trưởng phòng — nghĩa là CHÍNH tài khoản vai trò trưởng phòng, đăng nhập
+    bình thường (không cần Postman), cũng vượt được _can_edit_emp_record
+    trên bản ghi CỦA CHÍNH NÓ, mà _role_payload vẫn trả 'employeeId': emp.id
+    cho nó dùng. test_truong_phong_tu_sua_chinh_minh_van_bi_chan bên dưới
+    khoá đúng đường này — đây mới là lý do chính guard tồn tại.
+
+    Chặn thẳng ở backend, tại route api_employee_update: từ chối sửa tài
+    khoản vai trò qua form nhân viên — HR quản nó ở màn Tài khoản, không
+    phải form hồ sơ nhân sự.
     """
 
     @classmethod
@@ -341,17 +360,45 @@ class TestRoleAccountFormWriteGuard(HttpCase):
         cls.role_emp = cls.env['hr.employee'].sudo().create({
             'name': 'TP Vai Tro WG', 'x_is_role_account': True,
             'x_employment_status': False})
+        # Tài khoản vai trò THẬT (tạo qua _dept_create, có login/password) để
+        # test được đường nguy hiểm nhất: chính nó tự đăng nhập rồi POST lên
+        # id của chính mình. role_emp ở trên không có user_id nên không
+        # đăng nhập được — không dùng lại được cho test này.
+        dept_env = cls.env(user=cls.hr_mgr)
+        out = _dept_create(dept_env, {
+            'name': 'Phong WG Tu Sua',
+            'manager': {'name': 'TP Tu Sua WG', 'login': 'tp_role_self_wg',
+                        'password': PWD, 'password_confirm': PWD}})
+        cls.self_role_emp = dept_env['hr.department'].sudo().browse(
+            out['id']).manager_id
 
     def _post(self, emp, payload, login='hrmgr_role_wg'):
+        """POST JSON tới api_employee_update, trả (status, body-dict) —
+        cùng khuôn với test_me_password_scope.py để test đọc gọn bằng
+        assertIn trên body['message']."""
         self.authenticate(login, PWD)
-        return self.url_open(
+        resp = self.url_open(
             '/hocba-hrm/api/employee/%s' % emp.id, data=json.dumps(payload),
             headers={'Content-Type': 'application/json'})
+        try:
+            return resp.status_code, resp.json()
+        except ValueError:
+            return resp.status_code, {}
 
     def test_hr_khong_sua_duoc_tai_khoan_vai_tro_qua_form_nhan_vien(self):
-        res = self._post(self.role_emp, {'status': 'probation'})
+        st, body = self._post(self.role_emp, {'status': 'probation'})
+        self.assertEqual(st, 400, body)
+        # Mã lỗi + nội dung message phải đúng — không chỉ status_code, không
+        # thì đổi nhầm thành {'error':'forbidden'} hay bỏ message vẫn xanh
+        # trong khi FE mất hẳn câu giải thích cho HR.
         self.assertEqual(
-            res.status_code, 400, res.text[:300])
+            body.get('error'), 'rejected',
+            'Phải là "rejected" (lỗi nghiệp vụ) chứ không phải "forbidden" '
+            '(lỗi quyền) — HR CÓ quyền sửa, chỉ là bản ghi này không sửa '
+            'được bằng form này.')
+        self.assertIn(
+            'tài khoản vai trò', body.get('message', ''),
+            'Mất câu giải thích thì HR không hiểu vì sao Lưu không được.')
         self.role_emp.invalidate_recordset()
         self.assertFalse(
             self.role_emp.x_employment_status,
@@ -361,10 +408,45 @@ class TestRoleAccountFormWriteGuard(HttpCase):
             self.role_emp.x_is_role_account,
             'Cờ vai trò không được đổi trong lúc bị từ chối.')
 
+    def test_truong_phong_tu_sua_chinh_minh_van_bi_chan(self):
+        """Đường nguy hiểm nhất — xem docstring lớp: KHÔNG cần Postman của
+        HR, chính trưởng phòng đăng nhập bình thường POST lên id của mình đã
+        vượt được _can_edit_emp_record (e == user.employee_id +
+        _user_can_manage). Guard tài khoản vai trò phải chặn độc lập với ai
+        gọi."""
+        st, body = self._post(self.self_role_emp, {'status': 'probation'},
+                              login='tp_role_self_wg')
+        self.assertEqual(st, 400, body)
+        self.assertEqual(body.get('error'), 'rejected')
+        self.assertIn('tài khoản vai trò', body.get('message', ''))
+        self.self_role_emp.invalidate_recordset()
+        self.assertFalse(
+            self.self_role_emp.x_employment_status,
+            'Trưởng phòng không được tự ghi trạng thái thử việc lên chính '
+            'mình qua form nhân viên.')
+
     def test_nv_that_van_sua_binh_thuong(self):
         """Đối chứng: guard không được vơ đũa cả nắm sang NV thật."""
         real_emp = self.env['hr.employee'].sudo().create({'name': 'NV That WG'})
-        res = self._post(real_emp, {'status': 'probation'})
-        self.assertEqual(res.status_code, 200, res.text[:300])
+        st, body = self._post(real_emp, {'status': 'probation'})
+        self.assertEqual(st, 200, body)
         real_emp.invalidate_recordset()
         self.assertEqual(real_emp.x_employment_status, 'probation')
+
+    # ---- Task 5 (code review): hành vi HTTP thật của /api/me, /api/me/roles ----
+    def test_api_me_an_ho_so_cho_tai_khoan_vai_tro(self):
+        """GET /api/me phải trả hasEmployee=False cho tài khoản vai trò —
+        hành vi HTTP thật, không chỉ điều kiện thuần (đối chứng với
+        test_dieu_kien_an_ho_so_ca_nhan ở TestRoleAccount)."""
+        self.authenticate('tp_role_self_wg', PWD)
+        res = self.url_open('/hocba-hrm/api/me')
+        self.assertEqual(res.status_code, 200, res.text[:300])
+        self.assertFalse(res.json()['hasEmployee'])
+
+    def test_api_me_roles_an_ho_so_cho_tai_khoan_vai_tro(self):
+        """GET /api/me/roles (nguồn cho SPA dựng nav) cũng phải đồng nhất
+        với /api/me — hai route dùng chung logic qua _has_self_profile."""
+        self.authenticate('tp_role_self_wg', PWD)
+        res = self.url_open('/hocba-hrm/api/me/roles')
+        self.assertEqual(res.status_code, 200, res.text[:300])
+        self.assertFalse(res.json()['hasEmployee'])

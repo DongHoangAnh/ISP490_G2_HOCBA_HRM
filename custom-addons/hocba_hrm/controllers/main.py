@@ -4656,16 +4656,34 @@ class HocBaHRM(http.Controller):
         if e.x_is_role_account:
             # Lỗ ghi ngược (review Task 2): EmployeeForm.jsx gửi
             # status: statusKey || 'probation' — tài khoản vai trò trả
-            # statusKey rỗng nên nếu form này ghi được, nó sẽ tạo bản ghi lai
-            # (x_is_role_account=True nhưng trạng thái thử việc, quay lại
-            # hàng đợi Nhận việc). UI đã lọc tài khoản vai trò khỏi mọi danh
-            # sách nhân viên (Task 3) nên đường này khó tới được từ giao
-            # diện, nhưng _emp_in_scope trả True ngay cho HR/Admin trong
-            # _can_edit_emp_record nên API vẫn nhận request gọi thẳng bằng
-            # id. Kiểm quyền TRƯỚC (403 nếu không có quyền, không lộ thông
-            # tin bản ghi là tài khoản vai trò cho người ngoài phạm vi), rồi
-            # mới từ chối rõ ràng: tài khoản vai trò không phải hồ sơ nhân
-            # sự nên không sửa bằng form này — HR quản nó ở màn Tài khoản.
+            # statusKey rỗng nên nếu form này ghi được, nó sẽ ghi đè
+            # x_employment_status='probation' lên bản ghi. KHÔNG phải nguy cơ
+            # "lọt vào hàng đợi Nhận việc" — _emp_scope_domain (dùng bởi cả
+            # api_onboarding lẫn _hocba_maybe_assign_onboarding) đã có
+            # ROLE_ACCOUNT_EXCLUDED ở mọi nhánh nên bản ghi lai vẫn bị chặn ở
+            # đó. Nguy cơ thật là TOÀN VẸN DỮ LIỆU: bản ghi mang trạng thái
+            # nói dối (cờ x_is_role_account=True nhưng trạng thái thử việc),
+            # lộ ra ở filter "Thử việc" trên view Odoo backend
+            # (hocba_employees/views/hr_employee_views.xml), và nếu sau này
+            # ai đó gỡ cờ x_is_role_account thì bản ghi sẽ ăn theo mốc thăng
+            # tiến/onboarding như NV thật dù chưa từng đi làm.
+            #
+            # Đường tới được đây không chỉ là "gọi ngoài UI bằng tài khoản
+            # HR/Admin" (Postman, script) — _emp_in_scope có short-circuit
+            # `if e == user.employee_id: return True`, và _cap_edit_emp =
+            # _user_can_manage = True cho trưởng phòng. Nghĩa là CHÍNH tài
+            # khoản vai trò trưởng phòng cũng vượt được _can_edit_emp_record
+            # trên bản ghi CỦA CHÍNH NÓ — mà _role_payload vẫn trả
+            # 'employeeId': emp.id cho nó dùng. Trước khi có guard này, một
+            # trưởng phòng đăng nhập bình thường POST thẳng lên id của mình
+            # là ghi được, và bước kiểm phạm vi sau write cũng pass vì
+            # e == user.employee_id. Đây mới là lý do chính guard này tồn
+            # tại, không phải kịch bản Postman của HR.
+            #
+            # Kiểm quyền TRƯỚC (403 nếu không có quyền, không lộ thông tin
+            # bản ghi là tài khoản vai trò cho người ngoài phạm vi), rồi mới
+            # từ chối rõ ràng: tài khoản vai trò không phải hồ sơ nhân sự
+            # nên không sửa bằng form này — HR quản nó ở màn Tài khoản.
             return request.make_json_response(
                 {'error': 'rejected',
                  'message': 'Đây là tài khoản vai trò (trưởng phòng), không '
@@ -4986,7 +5004,7 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         e = request.env.user.employee_id
-        if not e:
+        if not _has_self_profile(request.env.user):
             return request.make_json_response({'error': 'no_employee'}, status=400)
         payload = request.get_json_data()
         vals = {}
@@ -5022,7 +5040,7 @@ class HocBaHRM(http.Controller):
         if not SPA_ENABLED:
             return request.make_json_response({'error': 'spa_disabled'}, status=410)
         e = request.env.user.employee_id
-        if not e:
+        if not _has_self_profile(request.env.user):
             return request.make_json_response({'error': 'no_employee'}, status=400)
         img = (request.get_json_data() or {}).get('image') or ''
         if isinstance(img, str) and img.startswith('data:') and ',' in img:
