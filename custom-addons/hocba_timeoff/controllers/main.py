@@ -2609,12 +2609,18 @@ class HocBaTimeoff(http.Controller):
                           ('id', 'in', self._hb_leave_type_ids())]))
         for lt in types:
             allocated = lt.max_leaves
+            # `virtual_remaining_leaves` = max_leaves − (đã duyệt + đang chờ duyệt),
+            # còn `leaves_taken` chỉ đếm đơn ĐÃ DUYỆT ⇒ phần chênh là số ngày bị
+            # GIỮ CHỖ cho đơn chờ duyệt. Trả riêng ra để SPA nói rõ, tránh việc
+            # người dùng thấy remaining + taken != allocated (BUG: quỹ "hụt").
             remaining = lt.virtual_remaining_leaves
             taken = lt.leaves_taken
+            pending = max(0.0, allocated - remaining - taken)
             row = {
                 'id': lt.id, 'name': lt.name, 'color': _lt_color(lt),
                 'allocated': round(allocated, 2),
                 'taken': round(taken, 2),
+                'pending': round(pending, 2),
                 'remaining': round(remaining, 2),
                 'pct': round(min(100, taken / allocated * 100)) if allocated > 0 else 0,
                 'low': allocated > 0 and remaining <= 2,
