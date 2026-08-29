@@ -56,7 +56,13 @@ export default function SummaryPanel({ year, onYearChange }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <span style={{ fontSize: 34, fontWeight: 800, color: a.low ? 'var(--amber)' : 'var(--ink)' }}>{a.remaining}</span>
-            <span className="muted" style={{ fontSize: 13.5 }}>/ {a.allocated} ngày phép còn lại · đã dùng {a.taken}</span>
+            {/* remaining đã trừ cả đơn chờ duyệt ⇒ phải nêu rõ phần "giữ chỗ",
+                nếu không người xem sẽ thấy còn lại + đã dùng != tổng quỹ. */}
+            <span className="muted" style={{ fontSize: 13.5 }}>
+              / {a.allocated} ngày · đã dùng {a.taken}
+              {a.pending > 0 && ` · giữ chỗ chờ duyệt ${a.pending}`}
+              {' '}· còn lại {a.remaining}
+            </span>
           </div>
           <div className="bar"><span style={{ width: a.pct + '%', background: a.low ? 'var(--amber)' : a.color }}></span></div>
         </div>
