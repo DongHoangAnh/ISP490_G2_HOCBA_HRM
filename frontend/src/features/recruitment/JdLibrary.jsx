@@ -26,8 +26,10 @@ const JD_STEPS = [
    <>Bấm <b>Thêm vị trí</b> để tạo vị trí kèm JD. Tên vị trí <b>không trùng</b>
      trong cùng phòng ban, nên tra kho trước khi tạo.</>],
   ['Sửa nội dung JD',
-   <>Bấm vào dòng để mở chi tiết (mô tả, yêu cầu, số lượng, link JD). Sửa ở đây
-     thì mọi nơi dùng JD đó đổi theo, kể cả trang tuyển dụng công khai.</>],
+   <>Bấm vào dòng để mở chi tiết (mô tả, yêu cầu, link JD). Sửa ở đây thì mọi
+     nơi dùng JD đó đổi theo, kể cả trang tuyển dụng công khai. Số lượng cần
+     tuyển và số đơn ứng tuyển <b>không</b> nằm ở kho này — chúng thuộc từng đợt
+     tuyển, xem ở tab <b>Theo dõi tuyển dụng</b>.</>],
   ['Dùng lại khi mở phiếu',
    <>Ở tab <b>Phiếu yêu cầu</b>, chọn phòng ban rồi chọn <b>JD từ kho</b> — tên vị
      trí và link JD tự điền.</>],

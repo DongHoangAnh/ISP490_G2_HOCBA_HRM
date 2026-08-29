@@ -330,7 +330,13 @@ class HrApplicantHocBaExt(models.Model):
         return recs
 
     def _hb_auto_close_if_filled(self):
-        """Job đã tuyển đủ → tự Ngừng đăng + đóng phiếu đang tuyển.
+        """Tuyển đủ → tự đóng phiếu (theo số của phiếu) + Ngừng đăng vị trí.
+
+        Hai mức: VỊ TRÍ ngừng đăng khi hết chỉ tiêu TỔNG; PHIẾU chốt khi đủ
+        `qty_expected` của CHÍNH NÓ. Xét vị trí trước để chatter ghi đúng câu
+        "đã tuyển đủ chỉ tiêu"; phiếu đóng sau đó, và nếu đó là phiếu mở cuối
+        cùng thì vị trí cũng bị hạ về Dừng tuyển (xem
+        hb_recruitment_request._stop_job_if_no_open_request).
 
         Core Odoo 19 coi no_of_recruitment là số CÒN THIẾU: tự trừ 1 khi
         applicant vào stage hired, cộng lại khi kéo ra (hr_recruitment,
@@ -356,11 +362,7 @@ class HrApplicantHocBaExt(models.Model):
                     'Tin vẫn đang đăng — cân nhắc Ngừng đăng tuyển (chế độ tự '
                     'đóng đang đặt "Chỉ cảnh báo").</p>') % hired)
                 continue
-            vals = {'recruitment_status': 'stopped', 'x_published': False}
-            # website_hr_recruitment có thể không cài (vd DB test local)
-            if 'is_published' in job._fields:
-                vals['is_published'] = False
-            job.sudo().write(vals)
+            job.sudo()._hb_stop_recruiting()
             reqs = Request.browse()
             if mode == 'full':
                 reqs = Request.search([
@@ -372,6 +374,27 @@ class HrApplicantHocBaExt(models.Model):
                 'tự <b>Ngừng đăng tuyển</b>%s.</p>') % (
                     hired,
                     (' và đóng %s phiếu yêu cầu' % len(reqs)) if reqs else ''))
+
+        # Rồi mới xét TỪNG PHIẾU theo SỐ CỦA CHÍNH NÓ. Chỉ tiêu trên hr.job là
+        # TỔNG (số có sẵn trên JD + mọi phiếu đã duyệt), nên nếu chỉ trông vào
+        # vòng lặp vị trí ở trên thì một phiếu đã tuyển đủ người vẫn treo "Đang
+        # tuyển" chỉ vì vị trí còn chỉ tiêu của phiếu khác / của JD. Phiếu đóng
+        # ở đây mà là phiếu mở CUỐI CÙNG của vị trí thì
+        # hb_recruitment_request._stop_job_if_no_open_request() hạ luôn vị trí
+        # về Dừng tuyển. Chỉ chế độ full mới đụng tới phiếu — stop chỉ ngừng
+        # đăng, warn chỉ nhắc, off tắt hẳn.
+        if mode != 'full':
+            return
+        for req in self.sudo().mapped('hb_request_id'):
+            if req.state != 'recruiting' or not req.qty_expected:
+                continue
+            done = req._hired_count()
+            if done < req.qty_expected:
+                continue
+            req.write({'state': 'closed'})
+            req.message_post(body=Markup(
+                '<p>Đã tuyển đủ <b>%s/%s</b> người của phiếu — hệ thống tự '
+                '<b>đóng phiếu</b>.</p>') % (done, req.qty_expected))
 
     # ── Sheet 7.7 — Mail mẫu ─────────────────────────────────────────────────
     def _open_mail_compose_with_template(self, template_xmlid):

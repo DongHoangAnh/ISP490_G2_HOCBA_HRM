@@ -51,6 +51,48 @@ class HrJobHocBaExt(models.Model):
         for rec in self:
             rec.x_published = not rec.x_published
 
+    def _hb_resume_recruiting(self):
+        """Mở lại Đang tuyển. Trả về các vị trí THỰC SỰ đổi (idempotent).
+
+        KHÔNG bật cờ đăng tin: đăng tuyển là quyết định của HR ở tab Theo dõi
+        tuyển dụng, cùng luật với `action_approve` của phiếu yêu cầu. Ghi mỗi
+        `recruitment_status` nên `write()` bên dưới không soi gương publish.
+        """
+        changed = self.browse()
+        for job in self:
+            if job.recruitment_status == 'recruiting':
+                continue
+            job.sudo().write({'recruitment_status': 'recruiting'})
+            changed |= job
+        return changed
+
+    def _hb_stop_recruiting(self):
+        """Hạ vị trí về Dừng tuyển + gỡ tin đăng. Trả về các vị trí THỰC SỰ đổi.
+
+        Một chỗ duy nhất cho "ngừng tuyển", vì có 2 đường gọi tới:
+        tuyển đủ chỉ tiêu (hr_applicant._hb_auto_close_if_filled) và đóng phiếu
+        cuối cùng của vị trí (hb_recruitment_request.write). Idempotent — gọi
+        lại trên vị trí đã dừng thì không ghi và không đổi gì, để bên gọi khỏi
+        post chatter trùng.
+
+        `is_published` là field của `website_hr_recruitment` (module không
+        depends, xem tests/test_job_publish.py) nên chỉ ghi khi field tồn tại.
+        """
+        changed = self.browse()
+        for job in self:
+            vals = {}
+            if job.recruitment_status != 'stopped':
+                vals['recruitment_status'] = 'stopped'
+            if job.x_published:
+                vals['x_published'] = False
+                if 'is_published' in job._fields:
+                    vals['is_published'] = False
+            if not vals:
+                continue
+            job.sudo().write(vals)
+            changed |= job
+        return changed
+
     # ── Đồng bộ publish ↔ trạng thái tuyển (mọi cửa ghi) ─────────────────────
     # Đổi cờ publish từ BẤT KỲ đâu (SPA, backend, công tắc Publish trên
     # website) → gương 2 cờ is_published/x_published với nhau và khớp

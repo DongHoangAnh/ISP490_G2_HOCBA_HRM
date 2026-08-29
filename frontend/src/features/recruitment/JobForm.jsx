@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import { createJob, updateJob } from '../../api/recruitment';
+import { htmlToText } from './mailSend';
 
 const inp = {
   width: '100%', padding: '9px 12px', borderRadius: 10,
@@ -27,9 +28,12 @@ function initForm(j, meta) {
   const depMacDinh = deps.length === 1 ? deps[0].id : '';
   return {
     name: j?.name || '', depId: j?.depId || depMacDinh, status: j?.status || 'recruiting',
-    published: j?.published ?? false, jdLink: j?.jdLink || '', expected: j?.expected ?? '',
-    teachingLevel: j?.teachingLevel || '', sessionsPerWeek: j?.sessionsPerWeek ?? '',
-    description: j?.description || '',
+    jdLink: j?.jdLink || '',
+    teachingLevel: j?.teachingLevel || '',
+    /* description là field Html của Odoo (form backend lưu <p>…</p>). HR không
+       cần biết thẻ là gì nên ô này luôn hiện TEXT THUẦN; controller hoá HTML
+       lại lúc lưu (_job_vals + plaintext2html). */
+    description: htmlToText(j?.description) || '',
   };
 }
 
@@ -79,8 +83,14 @@ export default function JobForm({ job, meta, onClose, onSaved }) {
             <select style={inp} value={f.status} onChange={set('status')}>
               {Object.entries(meta.statusLabels).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select></Field>
-          <Field label="Số lượng cần tuyển">
-            <input type="number" style={inp} value={f.expected} onChange={set('expected')} placeholder="0" /></Field>
+          {/* KHÔNG có ô "Số lượng cần tuyển" và "Số buổi/tuần tối thiểu" ở form
+              này — bỏ 2026-08-29, cả lúc tạo lẫn lúc sửa. Chỉ tiêu là của ĐỢT
+              tuyển: duyệt phiếu cộng qty_expected vào vị trí, đóng phiếu trả
+              lại phần chưa tuyển. Gõ tay ở đây là chỉ tiêu ma — tuyển đủ người
+              của phiếu mà vị trí vẫn còn "còn thiếu" nên không bao giờ tự ngừng
+              đăng. Xem hr_applicant._hb_auto_close_if_filled. Form vì vậy không
+              gửi `expected` / `sessionsPerWeek`, sửa JD không đụng hai số này;
+              số lượng còn cần tuyển vẫn xem được ở drawer chi tiết vị trí. */}
           {/* Combobox: chọn trong gợi ý (HSK1-9 / HSKK / TOCFL) HOẶC gõ trình độ
               khác — trung tâm gặp chứng chỉ lạ thì không phải chờ sửa code. */}
           <Field label="Trình độ">
@@ -90,16 +100,16 @@ export default function JobForm({ job, meta, onClose, onSaved }) {
             <datalist id="hb-teaching-levels">
               {(meta.teachingLevels || []).map((l) => <option key={l} value={l} />)}
             </datalist></Field>
-          <Field label="Số buổi/tuần tối thiểu">
-            <input type="number" style={inp} value={f.sessionsPerWeek} onChange={set('sessionsPerWeek')} placeholder="0" /></Field>
           <Field label="Link JD (Google Docs/Drive)" full>
             <input style={inp} value={f.jdLink} onChange={set('jdLink')} placeholder="https://docs.google.com/..." /></Field>
           <Field label="Mô tả công việc (JD)" full>
             <textarea style={{ ...inp, minHeight: 120, resize: 'vertical' }} value={f.description} onChange={set('description')} placeholder="Mô tả nhiệm vụ, yêu cầu, quyền lợi…" /></Field>
-          <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            <input type="checkbox" checked={f.published} onChange={(e) => setF((p) => ({ ...p, published: e.target.checked }))} />
-            Đăng tuyển lên website công khai (/jobs)
-          </label>
+          {/* KHÔNG có ô "Đăng tuyển lên website" ở form này (bỏ 2026-08-29):
+              đăng / ngừng đăng chỉ còn MỘT chỗ là nút toggle ở tab Theo dõi
+              tuyển dụng — nút đó chỉ gửi {published} nên trạng thái tuyển suy
+              theo cờ đăng. Form này vì vậy KHÔNG gửi khoá `published`: không
+              gửi thì `_job_vals` không đụng `x_published`, sửa JD không vô
+              tình gỡ tin đang chạy. */}
         </div>
 
         {err && (

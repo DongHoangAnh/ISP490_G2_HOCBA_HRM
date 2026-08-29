@@ -1,20 +1,24 @@
 /* Chi tiết vị trí tuyển dụng / JD (drawer) — Owner: Việt.
-   Xem mô tả JD + nút Chỉnh sửa / toggle Đăng tuyển. */
+   Xem mô tả JD + nút Chỉnh sửa.
+
+   KHÔNG có gì dính tới TIN ĐĂNG và SỐ LIỆU TUYỂN ở đây (bỏ 2026-08-29): không
+   nút Đăng tuyển / Ngừng đăng, không badge "Đang hiển thị trên web", không link
+   trang công khai, không "Số lượng cần tuyển" / "Số đơn ứng tuyển". Kho JD là
+   màn TRA CỨU và soạn JD; tin đăng và số liệu của đợt tuyển nằm gọn ở tab
+   "Theo dõi tuyển dụng" — một chỗ duy nhất, đúng như hướng dẫn thao tác in ở
+   cuối màn Kho JD. */
 import { useState, useEffect } from 'react';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/states';
-import { fetchJob, updateJob } from '../../api/recruitment';
+import { fetchJob } from '../../api/recruitment';
 import JobForm from './JobForm';
-import CopyLinkBtn from './CopyLinkBtn';
-import { publicJobUrl } from './util';
 
 export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }) {
   const [det, setDet] = useState(null);
   const [derr, setDerr] = useState(null);
   const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     fetchJob(job.id).then(setDet).catch((e) => setDerr(e.message));
@@ -22,19 +26,13 @@ export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }
 
   const d = det || job;
 
-  const togglePublish = async () => {
-    setBusy(true);
-    try {
-      const nd = await updateJob(d.id, { published: !d.published });
-      setDet(nd); onChanged && onChanged(nd);
-    } catch (e) { alert(e.message); } finally { setBusy(false); }
-  };
-
+  /* Chỉ thông tin của JD. Số liệu tuyển dụng (số lượng cần tuyển, số đơn ứng
+     tuyển) và tình trạng đăng tin đã gỡ khỏi đây 2026-08-29: chúng thuộc về ĐỢT
+     tuyển, xem ở tab Theo dõi tuyển dụng — bày ở Kho JD chỉ gây hiểu nhầm là
+     JD tự mang chỉ tiêu. */
   const rows = [
     ['Phòng ban', d.depName],
     ['Trạng thái tuyển', meta.statusLabels[d.status] || '—'],
-    ['Số lượng cần tuyển', d.expected],
-    ['Số đơn ứng tuyển', d.applications],
     ['Địa điểm', d.location || '—'],
     // teachingLevel là chữ nhập tự do — giá trị chính là nhãn, không tra bảng nữa.
     ['Trình độ', d.teachingLevel || '—'],
@@ -51,18 +49,13 @@ export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-.4px' }}>{d.name}</h2>
             <Badge kind={d.status === 'recruiting' ? 'green' : 'gray'} dot>{meta.statusLabels[d.status] || '—'}</Badge>
-            {d.published && <Badge kind="teal">Đang hiển thị trên web</Badge>}
           </div>
           <div className="muted" style={{ fontSize: 13.5, marginTop: 3 }}>{d.depName}</div>
         </div>
         <div className="modal-x" style={{ display: 'flex', gap: 8 }}>
           {isRecruiter && det && (
-            <>
-              <button className="btn btn-ghost btn-sm" onClick={togglePublish} disabled={busy}>
-                <Icon name={d.published ? 'x' : 'check'} size={15} />{d.published ? 'Ngừng đăng' : 'Đăng tuyển'}</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
-                <Icon name="edit" size={15} />Chỉnh sửa</button>
-            </>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
+              <Icon name="edit" size={15} />Chỉnh sửa</button>
           )}
           <button className="icon-btn" onClick={onClose}><Icon name="x" size={20} /></button>
         </div>
@@ -78,16 +71,6 @@ export default function JobDrawer({ job, meta, isRecruiter, onClose, onChanged }
                 <div className="kv" key={i}><div className="k">{k}</div><div className="v">{(v === 0 || v) ? v : '—'}</div></div>
               ))}
             </div>
-            {d.published && d.websiteUrl && (
-              <div style={{ marginTop: 18 }}>
-                <div className="k" style={{ marginBottom: 4 }}>Trang tuyển dụng công khai</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <a href={publicJobUrl(d.websiteUrl)} target="_blank" rel="noreferrer" style={{ color: 'var(--teal)', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6, wordBreak: 'break-all' }}>
-                    <Icon name="briefcase" size={14} />{publicJobUrl(d.websiteUrl)}</a>
-                  <CopyLinkBtn url={d.websiteUrl} />
-                </div>
-              </div>
-            )}
             {d.jdLink && (
               <div style={{ marginTop: 18 }}>
                 <div className="k" style={{ marginBottom: 4 }}>Link JD</div>

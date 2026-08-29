@@ -1,4 +1,5 @@
 ﻿import pytz
+import re
 from datetime import date, datetime, time as dt_time
 from markupsafe import Markup, escape
 from psycopg2 import IntegrityError
@@ -6,11 +7,18 @@ from psycopg2 import IntegrityError
 from odoo import http, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
+from odoo.tools.mail import is_html_empty, plaintext2html
 
 from ..models.hr_job import HB_TEACHING_LEVELS
 from ..models.hb_interview_slot import (
     P_SLOT_CLOSE, P_SLOT_OPEN, P_SLOT_STEP, SLOT_STEPS_ALLOWED, _hour_label,
 )
+
+
+# Nhận diện "chuỗi này đã là HTML chưa". Cố ý CHẶT: phải là `<` + chữ cái (hoặc
+# `/`, `!`) rồi mới tới `>`, để câu text thuần kiểu "Lương < 10 triệu" không bị
+# nhầm là thẻ và bỏ qua escape.
+_HTML_TAG_RE = re.compile(r'<[a-zA-Z!/][^>]*>')
 
 
 def _d(v):
@@ -710,6 +718,19 @@ class HocBaTuyenDung(http.Controller):
             data['description'] = j.description or ''
         return data
 
+    def _as_html(self, value):
+        """Đưa giá trị về HTML để nhúng vào trang tuyển dụng công khai.
+
+        `hr.job.description` là field **Html** (ORM đã sanitize lúc ghi) nên nội
+        dung vốn là thẻ thật. `escape()` nó thì trang /jobs in ra đúng chữ
+        "<p>…</p>" cho ứng viên đọc — lỗi đã gặp 2026-08-29. Chỉ giá trị TEXT
+        THUẦN mới cần escape + đổi xuống dòng thành <br/>.
+        """
+        v = value or ''
+        if _HTML_TAG_RE.search(v):
+            return Markup(v)
+        return Markup('<p>%s</p>') % escape(v).replace('\n', Markup('<br/>'))
+
     def _build_website_description(self, j):
         """Tổng hợp TOÀN BỘ thông tin vị trí + phiếu yêu cầu tuyển dụng gắn với nó
         thành nội dung JD công khai (website_description) cho trang /jobs.
@@ -786,9 +807,9 @@ class HocBaTuyenDung(http.Controller):
             parts.append(Markup('<h4>Thông tin tuyển dụng</h4>%s') % ul(info))
         if require:
             parts.append(Markup('<h4 class="mt-4">Yêu cầu ứng viên</h4>%s') % ul(require))
-        if j.description:
-            desc = escape(j.description).replace('\n', Markup('<br/>'))
-            parts.append(Markup('<h4 class="mt-4">Mô tả công việc</h4><p>%s</p>') % desc)
+        if not is_html_empty(j.description):
+            parts.append(Markup('<h4 class="mt-4">Mô tả công việc</h4>%s')
+                         % self._as_html(j.description))
         if j.jd_google_link:
             link = j.jd_google_link
             parts.append(Markup('<p class="mt-3"><strong>JD chi tiết:</strong> '
@@ -839,10 +860,27 @@ class HocBaTuyenDung(http.Controller):
         # thẳng is_published ở đây thì DB không cài module đó ném ValueError →
         # HTTP 500, nút Đăng tuyển chết (xem tests/test_job_publish.py).
         # Đồng thời gắn trạng thái tuyển: bật -> Đang tuyển, tắt -> Dừng tuyển.
+        # Người gửi `published` giờ chỉ còn nút toggle nhanh ở tab Theo dõi
+        # tuyển dụng (RequestTracking) vốn chỉ gửi đúng {published} — form
+        # Thêm/Sửa vị trí đã bỏ ô tích và drawer Kho JD đã bỏ nút toggle
+        # (2026-08-29), cả hai KHÔNG gửi khoá `published` nữa.
+        # Vẫn giữ setdefault chứ KHÔNG gán đè, phòng payload gửi cả hai: gán đè
+        # thì lựa chọn ở ô "Trạng thái tuyển" bị vứt đi — người dùng đổi sang
+        # Đang tuyển, bấm Lưu, trạng thái âm thầm quay về Dừng tuyển, trông y
+        # như "lưu không được".
+        # Cùng luật với hr_job.write() — xem tests/test_job_publish.py.
         if 'published' in payload:
             pub = bool(payload['published'])
             vals['x_published'] = pub
-            vals['recruitment_status'] = 'recruiting' if pub else 'stopped'
+            vals.setdefault('recruitment_status',
+                            'recruiting' if pub else 'stopped')
+        # Ô "Mô tả công việc (JD)" trên SPA là textarea TEXT THUẦN (JobForm hiện
+        # text để HR khỏi phải nhìn thẻ), trong khi hr.job.description là field
+        # Html. Lưu thẳng text vào field Html thì mọi xuống dòng biến mất lúc
+        # render ⇒ hoá HTML ngay tại đây. Giá trị đã có thẻ (nhập từ form
+        # backend Odoo) thì giữ nguyên, không bọc thêm.
+        if vals.get('description') and not _HTML_TAG_RE.search(vals['description']):
+            vals['description'] = plaintext2html(vals['description'])
         return vals
 
     @http.route('/hocba-hrm/api/recruitment/jobs', auth='user',
@@ -1101,6 +1139,12 @@ class HocBaTuyenDung(http.Controller):
                 status=400)
         if not self._is_hr() and not self._dep_in_scope(vals.get('department_id')):
             return self._forbidden('Vị trí phải thuộc phòng ban bạn quản lý.')
+        # Vị trí mới KHÔNG mang sẵn chỉ tiêu tuyển: default của core hr.job là 1,
+        # để nguyên thì JD vừa tạo đã "còn thiếu 1 người" trong khi chưa có phiếu
+        # yêu cầu nào được duyệt. Chỉ tiêu ma đó khiến vị trí không bao giờ tự
+        # Ngừng đăng khi tuyển đủ (xem hr_applicant._hb_auto_close_if_filled).
+        # Form Thêm vị trí vì vậy cũng không còn ô "Số lượng cần tuyển".
+        vals.setdefault('no_of_recruitment', 0)
         try:
             j = request.env['hr.job'].sudo().create(vals)
             self._sync_website_description(j)

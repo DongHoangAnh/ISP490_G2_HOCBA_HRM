@@ -141,6 +141,30 @@ Model mới. Inherit `mail.thread`, `mail.activity.mixin`. Order: `create_date d
 
 `action_close` chỉ chạy khi đang `recruiting`. Tuyển đủ chỉ tiêu thì phiếu **tự đóng** — xem §5.5.
 
+### 3.6 Trạng thái tuyển của VỊ TRÍ bám theo vòng đời PHIẾU (2026-08-29)
+
+Kho JD là kho **dùng lại**: đợt trước tuyển đủ thì vị trí về `stopped` nhưng JD vẫn nằm đó
+cho đợt sau. Bất biến: **"Đang tuyển" ⇔ vị trí còn ít nhất một phiếu ĐANG MỞ.**
+
+`OPEN_STATES = ('draft', 'submitted', 'recruiting')` — "đang mở" gồm cả **nháp / chờ duyệt**,
+vì phiếu vừa tạo (còn Nháp) đã mở lại vị trí; chỉ đếm `recruiting` thì chốt đợt cũ sẽ dập tắt
+luôn đợt mới đang soạn.
+
+| Cửa | Hook | Hệ quả cho `hr.job` |
+|---|---|---|
+| Tạo phiếu / gắn phiếu sang vị trí khác (`create`, `write` đổi `job_id`) | `_resume_job_recruiting()` | `stopped` → **`recruiting`** ngay, không chờ duyệt |
+| Duyệt phiếu (`action_approve`) | `_hb_resume_recruiting()` | như trên (giữ cho phiếu cũ) |
+| Đóng phiếu — tự động khi tuyển đủ hoặc đóng tay | `_stop_jobs_without_open_request()` | hết phiếu mở ⇒ **`stopped`** + gỡ tin |
+| **Từ chối** phiếu (`action_refuse`) | nt | nt |
+| **Xoá** phiếu (`unlink`) | nt | nt |
+
+Hai helper trên `hr.job` đều **idempotent** và chỉ ghi khi có thay đổi thật, nên không post
+chatter trùng: `_hb_resume_recruiting()` (chỉ đổi `recruitment_status`, **không** tự bật đăng
+tin — đăng tuyển là quyết định của HR) và `_hb_stop_recruiting()` (hạ trạng thái **và** gỡ
+`x_published` / `is_published`).
+
+Test: `test_job_reuse.py` (11 ca, cả hai chiều) · `test_auto_close.py` (ca tuyển đủ).
+
 ### 3.4 Thông báo chuông (`hb.notification`, category `recruitment`)
 
 | Sự kiện | Người nhận | Level |
@@ -218,6 +242,48 @@ Content Marketing · Trợ giảng · Giáo vụ · Hành chính nhân sự.
 - **List inherit**: thêm `recruitment_status`, `address_id`, `new_application_count`, `x_published`, `jd_google_link`.
 - **Search view**: filter Đang tuyển / Dừng tuyển / Đã đăng tuyển; group by phòng ban / trạng thái.
 
+### 4.6 Chỉ tiêu tuyển (`no_of_recruitment`) đến từ PHIẾU, không nhập tay lúc tạo JD
+
+Chỉ tiêu là của **đợt tuyển**: duyệt phiếu cộng `qty_expected` vào vị trí, đóng phiếu trả lại
+phần chưa tuyển (`_release_headcount`, §3). Vì vậy từ 2026-08-29:
+
+- Form vị trí (Kho JD) **bỏ hẳn** ô "Số lượng cần tuyển" và "Số buổi/tuần tối thiểu" — **cả
+  lúc Thêm lẫn lúc Sửa**; form không gửi `expected` / `sessionsPerWeek` nên sửa JD không đụng
+  hai số này. Số "còn cần tuyển" vẫn xem được ở drawer chi tiết vị trí.
+- `api_recruitment_job_create` chốt `no_of_recruitment = 0` khi payload không gửi `expected`:
+  default của core `hr.job` là **1**, để nguyên thì JD vừa tạo đã "còn thiếu 1 người" trong
+  khi chưa có phiếu nào — chỉ tiêu ma đó khiến vị trí không bao giờ về 0 để tự ngừng đăng.
+- Test: `test_job_create_quota.py`.
+
+### 4.7 Mô tả công việc (JD) — DB giữ HTML, người dùng chỉ thấy text
+
+`hr.job.description` là field **Html** (`sanitize=True`). Quy ước chốt 2026-08-29 để không
+ai phải nhìn thấy thẻ:
+
+| Nơi | Xử lý |
+|---|---|
+| Ô "Mô tả công việc (JD)" trên SPA | `JobForm` hiện **text thuần** (`htmlToText` của `mailSend.js`) — HR không thấy `<p>…</p>` |
+| Lưu từ SPA | `_job_vals` gọi `plaintext2html` khi giá trị **chưa có thẻ** ⇒ DB luôn là HTML, xuống dòng không mất |
+| Drawer chi tiết JD | render bằng `dangerouslySetInnerHTML` (vốn đã đúng) |
+| Trang tuyển dụng công khai | `_as_html()` — **giữ nguyên thẻ thật**, chỉ escape + `nl2br` phần text thuần |
+
+> 🐞 Lỗi đã sửa: `_build_website_description` trước đây `escape(j.description)` một field Html
+> ⇒ trang `/jobs` in ra đúng chữ `<p>…</p>` cho ứng viên đọc. Nhận diện "đã là HTML chưa" bằng
+> `_HTML_TAG_RE` (cố ý chặt: `<` + chữ cái) để câu như "Lương < 10 triệu" vẫn được escape.
+> Test: `test_job_description_html.py`.
+>
+> **Phần mail đã rà cùng đợt và KHÔNG dính lỗi này:** `/preview` trả HTML thật, 3 chỗ hiển thị
+> (`MailSendModal`, `MailTemplateForm`, `MailTemplateImport`) đều render HTML, và thân thư gửi
+> qua Gmail được `htmlToText` hoá text thuần trước khi điền.
+
+Cùng đợt, **đăng / ngừng đăng tuyển gom về đúng MỘT chỗ: tab Theo dõi tuyển dụng.**
+Form Thêm/Sửa vị trí bỏ ô tích **"Đăng tuyển lên website công khai (/jobs)"** và `JobDrawer`
+(Kho JD) bỏ nút toggle **Đăng tuyển / Ngừng đăng** — cả hai **không gửi khoá `published`**
+nữa, nên sửa nội dung JD không còn vô tình gỡ tin đang chạy. Kho JD vẫn HIỆN trạng thái đăng
+(badge + link trang công khai) để tra cứu. Nút toggle ở `RequestTracking` chỉ gửi
+`{published}` và trạng thái tuyển suy theo cờ đăng (§4.2); luật `setdefault` ở `_job_vals`
+giữ nguyên cho payload nào gửi cả hai.
+
 ---
 
 ## 5. Model: `hr.applicant` (inherit)
@@ -285,17 +351,35 @@ có thể mở lại. Chỉ chặn khi NV đã chính thức — kéo nhầm lú
 không tính trễ. API trả `daysInStage` / `slaDays` / `slaOverdue`; SPA hiện badge
 "Quá hạn N ngày" trên card kanban.
 
-### 5.5 Tự động ngừng đăng khi tuyển đủ chỉ tiêu
+### 5.5 Tự động đóng phiếu / ngừng đăng khi tuyển đủ
 
 `_hb_auto_close_if_filled()` chạy khi ứng viên vào stage `hired_stage` (qua kéo kanban SPA,
-backend, hay import — đều đi qua `create`/`write`).
+backend, hay import — đều đi qua `create`/`write`). Hook xét **hai mức**, theo đúng thứ tự:
+
+1. **Vị trí** — chỉ tiêu **tổng** của `hr.job` về 0 ⇒ ngừng đăng (+ đóng mọi phiếu đang tuyển
+   ở chế độ `full`).
+2. **Phiếu** — đóng khi số ứng viên của chính phiếu (`hb_request_id`) đã vào bước Bàn giao
+   đạt `qty_expected`. Chỉ chạy ở chế độ `full`.
+
+Tách hai mức từ 2026-08-29: `no_of_recruitment` là **tổng** (số có sẵn trên JD + mọi phiếu đã
+duyệt), nên chờ tổng về 0 mới đóng thì một phiếu đã tuyển đủ người vẫn treo "Đang tuyển" chỉ
+vì vị trí còn chỉ tiêu của phiếu khác. Đi kèm: form Thêm vị trí không còn ô "Số lượng cần
+tuyển" và controller chốt `no_of_recruitment = 0` lúc tạo (§4.6).
+
+**Chốt phiếu cuối cùng ⇒ vị trí về Dừng tuyển.** `_stop_jobs_without_open_request()` chạy ở
+cả ba cửa chốt phiếu — **đóng** (tự động khi tuyển đủ hoặc đóng tay), **từ chối**, **xoá**:
+vị trí không còn phiếu nào ở `OPEN_STATES` thì hạ `recruitment_status` về `stopped` và gỡ tin
+đăng (`hr.job._hb_stop_recruiting()`, idempotent, cũng là chỗ vòng lặp vị trí ở trên dùng).
+Nhờ vậy "Đang tuyển" trên Kho JD luôn có nghĩa **còn đợt tuyển đang mở** — kể cả với vị trí
+mang chỉ tiêu dư của dữ liệu cũ. Còn phiếu khác đang mở thì KHÔNG đụng: đợt kia vẫn cần tin
+chạy. Chiều ngược (dùng lại JD cũ) ở §3.6.
 
 Core Odoo 19 coi `no_of_recruitment` là số **còn thiếu** (tự trừ 1 khi vào hired) ⇒ hook chạy
 sau `super().write()` nên "đủ chỉ tiêu" ⇔ `no_of_recruitment <= 0`.
 
 | `auto_close_mode` | Hành vi |
 |---|---|
-| `full` *(mặc định)* | Ngừng đăng tuyển **+ đóng** mọi phiếu đang tuyển của vị trí |
+| `full` *(mặc định)* | Đóng phiếu đủ số của nó · vị trí hết chỉ tiêu thì ngừng đăng **+ đóng** mọi phiếu đang tuyển còn lại |
 | `stop` | Chỉ ngừng đăng tuyển, giữ phiếu |
 | `warn` | Chỉ ghi cảnh báo lên chatter |
 | `off` | Không làm gì |

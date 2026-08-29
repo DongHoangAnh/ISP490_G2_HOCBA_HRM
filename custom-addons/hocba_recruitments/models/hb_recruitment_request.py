@@ -101,6 +101,12 @@ class HbRecruitmentRequest(models.Model):
         ('refused', 'Từ chối'),
     ], string='Trạng thái', default='draft', tracking=True, copy=False, index=True)
 
+    # Phiếu "còn mở" = chưa chốt. Dùng cho luật trạng thái của vị trí: còn ít
+    # nhất một phiếu ở đây thì Kho JD giữ "Đang tuyển", hết thì hạ về Dừng
+    # tuyển. Cố ý gồm cả draft/submitted vì tạo phiếu (còn Nháp) đã mở lại
+    # vị trí — xem _resume_job_recruiting / _stop_jobs_without_open_request.
+    OPEN_STATES = ('draft', 'submitted', 'recruiting')
+
     # ── Tạo mã phiếu tự động ─────────────────────────────────────────────────
     @api.model_create_multi
     def create(self, vals_list):
@@ -110,7 +116,30 @@ class HbRecruitmentRequest(models.Model):
                     self.env['ir.sequence'].next_by_code('hb.recruitment.request')
                     or 'Mới'
                 )
-        return super().create(vals_list)
+        recs = super().create(vals_list)
+        recs._resume_job_recruiting()
+        return recs
+
+    def _resume_job_recruiting(self):
+        """Chọn JD đang Dừng tuyển vào phiếu ⇒ mở lại Đang tuyển ngay.
+
+        Kho JD là kho DÙNG LẠI: đợt trước tuyển đủ thì vị trí về Dừng tuyển
+        nhưng JD vẫn nằm đó cho đợt sau. Trước đây chỉ `action_approve()` mới
+        mở lại trạng thái, nên từ lúc TBP tạo phiếu tới lúc HR duyệt thì Kho JD
+        vẫn hiện "Dừng tuyển" trong khi đợt mới đã mở — người xem tưởng chọn
+        nhầm JD chết. Chiều ngược: `_stop_jobs_without_open_request()`.
+
+        KHÔNG tự đăng tin: đăng tuyển vẫn là quyết định của HR (cùng luật với
+        `action_approve`, xem SPEC §3.3).
+        """
+        for rec in self:
+            if not rec.job_id:
+                continue
+            if rec.job_id.sudo()._hb_resume_recruiting():
+                rec.job_id.sudo().message_post(body=(
+                    'Phiếu %s dùng lại vị trí này nên hệ thống chuyển trạng '
+                    'thái tuyển về "Đang tuyển". Tin đăng giữ nguyên — bật đăng '
+                    'tuyển ở tab Theo dõi tuyển dụng khi cần.' % (rec.name or '')))
 
     # ── Onchange: lọc & tự điền vị trí theo phòng ban ──────────────────────────
     @api.onchange('department_id')
@@ -193,10 +222,12 @@ class HbRecruitmentRequest(models.Model):
                     (rec.job_id.no_of_recruitment or 0) + rec.qty_expected
                 )
                 rec.headcount_synced = True
-            # Job từng tự Ngừng tuyển (đủ chỉ tiêu) nay có phiếu mới được duyệt
-            # → mở lại trạng thái Đang tuyển; KHÔNG tự publish (HR chủ động đăng).
-            if rec.job_id and rec.job_id.recruitment_status != 'recruiting':
-                rec.job_id.recruitment_status = 'recruiting'
+            # Job từng tự Ngừng tuyển (đủ chỉ tiêu) nay có phiếu được duyệt →
+            # mở lại Đang tuyển; KHÔNG tự publish (HR chủ động đăng). Thường đã
+            # mở sẵn từ lúc tạo phiếu (_resume_job_recruiting), giữ ở đây cho
+            # phiếu cũ / phiếu tạo trước khi có luật đó.
+            if rec.job_id:
+                rec.job_id.sudo()._hb_resume_recruiting()
             rec._req_notify(
                 rec.requester_id, 'approved', 'success',
                 'Phiếu yêu cầu tuyển dụng đã được duyệt',
@@ -243,12 +274,57 @@ class HbRecruitmentRequest(models.Model):
         closing = (self.filtered(lambda r: r.state != 'closed')
                    if vals.get('state') == 'closed' else self.browse())
         res = super().write(vals)
+        # Gắn phiếu sang vị trí khác cũng là "dùng lại JD" — xử như lúc tạo.
+        if vals.get('job_id'):
+            self._resume_job_recruiting()
         for rec in closing:
             released = rec._release_headcount()
             if released:
                 rec.message_post(body=(
                     'Đóng phiếu khi còn %s chỉ tiêu chưa tuyển — đã trả lại '
                     'chỉ tiêu cho vị trí "%s".' % (released, rec.job_id.name)))
+            rec._stop_jobs_without_open_request(
+                rec.job_id, vi='phiếu %s đã đóng' % (rec.name or ''))
+        return res
+
+    def _stop_jobs_without_open_request(self, jobs, bo_qua_ids=(), vi=''):
+        """Vị trí hết đợt tuyển đang mở ⇒ về Dừng tuyển + gỡ tin đăng.
+
+        "Đang tuyển" trên Kho JD phải có nghĩa là CÒN ĐỢT TUYỂN ĐANG MỞ. Trước
+        đây chỉ hạ trạng thái khi chỉ tiêu TỔNG của vị trí về 0, nên vị trí mang
+        chỉ tiêu dư (JD cũ nhập tay, hoặc default 1 của core) thì phiếu chốt rồi
+        mà tin vẫn treo "Đang tuyển" và vẫn nằm trên trang tuyển dụng.
+
+        "Đợt còn mở" = phiếu ở `OPEN_STATES` (nháp / chờ duyệt / đang tuyển) —
+        KHÔNG chỉ mỗi `recruiting`. Phải khớp với `_resume_job_recruiting()`:
+        phiếu vừa tạo còn Nháp đã mở lại vị trí, nên nếu ở đây chỉ đếm phiếu
+        `recruiting` thì chốt đợt cũ sẽ dập tắt luôn đợt mới đang chờ duyệt.
+
+        Gọi ở cả 3 cửa chốt phiếu: đóng (tự động lẫn tay), từ chối, xoá phiếu.
+        `bo_qua_ids` cho ca phiếu đã bị xoá.
+        """
+        Req = self.sudo()
+        for job in jobs:
+            if not job:
+                continue
+            domain = [('job_id', '=', job.id), ('state', 'in', self.OPEN_STATES)]
+            if bo_qua_ids:
+                domain.append(('id', 'not in', list(bo_qua_ids)))
+            if Req.search_count(domain):
+                continue
+            if job.sudo()._hb_stop_recruiting():
+                job.sudo().message_post(body=(
+                    'Vị trí không còn phiếu yêu cầu tuyển dụng nào đang mở%s — '
+                    'hệ thống tự chuyển sang Dừng tuyển và ngừng đăng tin.'
+                    % (' (%s)' % vi if vi else '')))
+
+    def unlink(self):
+        """Xoá phiếu cũng là một cửa chốt đợt — vị trí phải theo kịp."""
+        jobs = self.mapped('job_id')
+        ids = self.ids
+        res = super().unlink()
+        self._stop_jobs_without_open_request(jobs, bo_qua_ids=ids,
+                                             vi='phiếu vừa bị xoá')
         return res
 
     def action_close(self):
@@ -268,6 +344,11 @@ class HbRecruitmentRequest(models.Model):
                 '%s · từ chối bởi %s%s' % (
                     rec._label(), rec.env.user.name,
                     ' · Lý do: %s' % rec.refuse_reason if rec.refuse_reason else ''))
+            # Phiếu bị từ chối cũng là hết đợt: lúc tạo, phiếu đã mở vị trí sang
+            # Đang tuyển (_resume_job_recruiting); từ chối mà không hạ lại thì
+            # vị trí treo "Đang tuyển" trong khi chẳng còn đợt nào.
+            rec._stop_jobs_without_open_request(
+                rec.job_id, vi='phiếu %s bị từ chối' % (rec.name or ''))
 
     def action_reset_draft(self):
         """Mở lại nháp — CHỈ từ trạng thái Từ chối (quyết định 2026-08-26).

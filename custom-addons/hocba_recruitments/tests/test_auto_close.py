@@ -181,3 +181,90 @@ class TestAutoCloseRecruitment(TransactionCase):
         self._hire_full_quota()
         self.assertEqual(self.job.recruitment_status, 'stopped')
         self.assertEqual(self.req.state, 'closed')
+
+    # ── Đóng phiếu theo SỐ LƯỢNG CỦA CHÍNH PHIẾU ─────────────────────────────
+    # Chỉ tiêu trên vị trí là TỔNG (JD có sẵn + mọi phiếu đã duyệt), nên chờ
+    # tổng về 0 mới đóng thì phiếu đã tuyển đủ người vẫn treo "Đang tuyển" chỉ
+    # vì vị trí còn chỉ tiêu của chỗ khác. Phiếu phải tự chốt theo số của nó.
+
+    def _fresh_job(self, name, expected=0):
+        dept = self.env['hr.department'].create({'name': 'Phòng %s' % name})
+        job = self.env['hr.job'].create({
+            'name': name, 'department_id': dept.id,
+            'recruitment_status': 'recruiting', 'x_published': True,
+            'no_of_recruitment': expected,
+        })
+        return dept, job
+
+    def _approved_request(self, dept, job, qty):
+        req = self.env['hb.recruitment.request'].create({
+            'department_id': dept.id, 'job_id': job.id,
+            'job_title': job.name, 'qty_expected': qty,
+        })
+        req.action_submit()
+        req.action_approve()
+        return req
+
+    def _hire_for(self, job, name):
+        a = self.env['hr.applicant'].create({
+            'partner_name': name, 'job_id': job.id,
+            'stage_id': self.stage_new.id,
+        })
+        a.write({'stage_id': self.stage_hired.id})
+        return a
+
+    def test_11_request_closes_on_its_own_quota(self):
+        """Phiếu đủ số của nó → đóng, và vị trí hết đợt mở nên Dừng tuyển.
+
+        Kể cả khi vị trí còn chỉ tiêu dư của JD (dữ liệu cũ, hoặc phiếu khác đã
+        đóng): "Đang tuyển" trên Kho JD phải có nghĩa là CÒN ĐỢT TUYỂN ĐANG MỞ.
+        """
+        dept, job = self._fresh_job('Vị trí JD dư chỉ tiêu', expected=3)
+        req = self._approved_request(dept, job, 1)
+        self.assertEqual(job.no_of_recruitment, 4, '3 của JD + 1 của phiếu')
+        self._hire_for(job, 'UV Đủ Phiếu')
+        self.assertEqual(req.state, 'closed', 'phiếu đủ 1/1 phải đóng')
+        self.assertEqual(job.no_of_recruitment, 3, 'chỉ tiêu JD còn nguyên')
+        self.assertEqual(job.recruitment_status, 'stopped',
+                         'hết phiếu đang tuyển ⇒ Kho JD phải về Dừng tuyển')
+        self.assertFalse(job.x_published, 'phải gỡ tin đăng')
+
+    def test_14_job_con_phieu_khac_thi_van_dang_tuyen(self):
+        """Đóng 1 phiếu mà vị trí còn phiếu khác đang tuyển → KHÔNG dừng tin."""
+        dept, job = self._fresh_job('Vị trí hai phiếu', expected=0)
+        req_a = self._approved_request(dept, job, 1)
+        req_b = self._approved_request(dept, job, 1)
+        self.assertEqual(job.no_of_recruitment, 2)
+        a = self.env['hr.applicant'].create({
+            'partner_name': 'UV phiếu A', 'job_id': job.id,
+            'hb_request_id': req_a.id, 'stage_id': self.stage_new.id})
+        a.write({'stage_id': self.stage_hired.id})
+        self.assertEqual(req_a.state, 'closed', 'phiếu A đủ 1/1 phải đóng')
+        self.assertEqual(req_b.state, 'recruiting', 'phiếu B chưa đụng tới')
+        self.assertEqual(job.recruitment_status, 'recruiting',
+                         'còn phiếu B đang tuyển thì vị trí vẫn Đang tuyển')
+        self.assertTrue(job.x_published)
+
+    def test_15_dong_phieu_bang_tay_cung_dung_tuyen(self):
+        """Đóng tay phiếu cuối cùng cũng phải hạ vị trí về Dừng tuyển."""
+        dept, job = self._fresh_job('Vị trí đóng tay', expected=0)
+        req = self._approved_request(dept, job, 5)
+        req.action_close()
+        self.assertEqual(job.no_of_recruitment, 0, 'trả lại 5 chỉ tiêu chưa tuyển')
+        self.assertEqual(job.recruitment_status, 'stopped')
+        self.assertFalse(job.x_published)
+
+    def test_12_request_not_closed_before_full_quota(self):
+        """Chưa đủ số của phiếu → phiếu vẫn Đang tuyển."""
+        dept, job = self._fresh_job('Vị trí chưa đủ', expected=0)
+        req = self._approved_request(dept, job, 2)
+        self._hire_for(job, 'UV Một Nửa')
+        self.assertEqual(req.state, 'recruiting')
+
+    def test_13_mode_stop_keeps_own_quota_request_open(self):
+        """stop: phiếu đủ số vẫn KHÔNG bị đóng (chỉ chế độ full mới đóng)."""
+        self._set_mode('stop')
+        dept, job = self._fresh_job('Vị trí mode stop', expected=3)
+        req = self._approved_request(dept, job, 1)
+        self._hire_for(job, 'UV Mode Stop')
+        self.assertEqual(req.state, 'recruiting')

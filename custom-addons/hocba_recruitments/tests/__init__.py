@@ -17,3 +17,6 @@ from . import test_slot_scope
 from . import test_job_publish
 from . import test_funnel_stage_seq
 from . import test_request_headcount
+from . import test_job_create_quota
+from . import test_job_description_html
+from . import test_job_reuse
