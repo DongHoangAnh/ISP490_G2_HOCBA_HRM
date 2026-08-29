@@ -13,7 +13,7 @@ Luật chốt ở đây:
     lịch của mình.
 """
 import json
-from datetime import timedelta
+from datetime import datetime, time as dt_time, timedelta
 
 from odoo import fields
 from odoo.tests import HttpCase, tagged
@@ -75,8 +75,17 @@ class TestSlotScope(HttpCase):
         self.app_b = Applicant.create({'partner_name': 'UV phòng B',
                                        'job_id': self.job_b.id})
 
+    # Slot đặt ở 03:00 UTC ngày mai — KHÔNG dùng "bây giờ + 1 ngày".
+    # Endpoint /interview-slots cắt cửa sổ theo NGÀY ĐỊA PHƯƠNG của user
+    # (Asia/Ho_Chi_Minh = UTC+7), nên "bây giờ + 1 ngày" chạy sau 17:00 UTC
+    # (tức sau nửa đêm giờ VN) sẽ rơi sang ngày địa phương kế tiếp và lọt ra
+    # ngoài cửa sổ ⇒ test đỏ theo GIỜ CHẠY. 03:00 UTC = 10:00 giờ VN, luôn nằm
+    # gọn trong ngày địa phương tương ứng dù chạy lúc nào.
+    def _slot_day(self):
+        return fields.Date.today() + timedelta(days=1)
+
     def _slot(self, user, applicants=None):
-        start = fields.Datetime.now() + timedelta(days=1)
+        start = datetime.combine(self._slot_day(), dt_time(3, 0))
         return self.env['hb.interview.slot'].create({
             'start_datetime': start,
             'stop_datetime': start + timedelta(hours=1),
@@ -160,7 +169,7 @@ class TestSlotScope(HttpCase):
 
     def _get_slots(self, login, expect=200):
         self.authenticate(login, PWD)
-        day = (fields.Datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        day = self._slot_day().strftime('%Y-%m-%d')
         res = self.url_open('%s/interview-slots?from=%s&to=%s' % (BASE, day, day))
         self.assertEqual(res.status_code, expect, res.text[:400])
         return res.json()
